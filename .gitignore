@@ -1,0 +1,10 @@
+.env
+*.log
+*.db
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+chroma_db/
+temp_*
+AI agent/
+AI Agent/
