@@ -28,6 +28,8 @@ Important paths:
 
 ## Setup
 
+Use Python 3.11 or 3.12 for the smoothest dependency support.
+
 1. Create and activate a virtual environment.
 
 ```powershell
