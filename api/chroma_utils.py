@@ -9,8 +9,15 @@ from pathlib import Path
 from api.settings import settings
 
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, length_function=len)
-embedding_function = OpenAIEmbeddings()
-vectorstore = Chroma(persist_directory=settings.chroma_persist_dir, embedding_function=embedding_function)
+_vectorstore = None
+
+
+def get_vectorstore():
+    global _vectorstore
+    if _vectorstore is None:
+        embedding_function = OpenAIEmbeddings()
+        _vectorstore = Chroma(persist_directory=settings.chroma_persist_dir, embedding_function=embedding_function)
+    return _vectorstore
 
 def load_and_split_document(file_path: str) -> List[Document]:
     if file_path.endswith('.pdf'):
@@ -35,7 +42,7 @@ def index_document_to_chroma(file_path: str, file_id: int, filename: str | None 
             split.metadata["filename"] = source_name
             split.metadata["chunk_index"] = index
         
-        vectorstore.add_documents(splits)
+        get_vectorstore().add_documents(splits)
         # vectorstore.persist()
         return True
     except Exception as e:
@@ -44,6 +51,7 @@ def index_document_to_chroma(file_path: str, file_id: int, filename: str | None 
 
 def delete_doc_from_chroma(file_id: int):
     try:
+        vectorstore = get_vectorstore()
         docs = vectorstore.get(where={"file_id": file_id})
         print(f"Found {len(docs['ids'])} document chunks for file_id {file_id}")
         
