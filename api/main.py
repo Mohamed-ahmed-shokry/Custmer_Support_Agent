@@ -32,7 +32,8 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html"}
 
 
 def sanitize_filename(filename: str) -> str:
-    return Path(filename).name.replace("\x00", "").strip()
+    cleaned = filename.replace("\\", "/")
+    return Path(cleaned).name.replace("\x00", "").strip()
 
 
 def build_sources(documents) -> list[SourceInfo]:
