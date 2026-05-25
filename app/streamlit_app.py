@@ -2,7 +2,8 @@ import streamlit as st
 from sidebar import display_sidebar
 from chat_interface import display_chat_interface
 
-st.title("Langchain RAG Chatbot")
+st.set_page_config(page_title="Ghali Realty Support Assistant", page_icon=":speech_balloon:")
+st.title("Ghali Realty Support Assistant")
 
 # Initialize session state variables
 if "messages" not in st.session_state:

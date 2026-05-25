@@ -29,5 +29,15 @@ def display_chat_interface():
                         st.code(response['model'])
                         st.subheader("Session ID")
                         st.code(response['session_id'])
+                    sources = response.get("sources", [])
+                    if sources:
+                        with st.expander("Sources"):
+                            for source in sources:
+                                label = source.get("filename") or "Unknown source"
+                                page = source.get("page")
+                                if page is not None:
+                                    label = f"{label}, page {page}"
+                                st.markdown(f"**{label}**")
+                                st.caption(source.get("preview", ""))
             else:
                 st.error("Failed to get a response from the API. Please try again.")

@@ -7,3 +7,6 @@ pypdf
 langchain_chroma
 python-multipart
 streamlit
+python-dotenv
+uvicorn
+pytest
