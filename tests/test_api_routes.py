@@ -49,7 +49,7 @@ def test_chat_returns_sources(monkeypatch):
             }
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(main, "get_rag_chain", lambda model: FakeChain())
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FakeChain())
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     response = client.post(

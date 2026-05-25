@@ -16,7 +16,6 @@ from api.pydantic_models import (
     SourceInfo,
     UploadDocumentResponse,
 )
-from api.langchain_utils import get_rag_chain
 from api.db_utils import insert_application_logs, get_chat_history, get_all_documents, insert_document_record, delete_document_record
 from api.chroma_utils import index_document_to_chroma, delete_doc_from_chroma
 from api.settings import settings
@@ -62,6 +61,12 @@ def build_sources(documents) -> list[SourceInfo]:
     return sources
 
 
+def get_rag_chain_for_model(model: str):
+    from api.langchain_utils import get_rag_chain
+
+    return get_rag_chain(model)
+
+
 @app.get("/health", response_model=HealthResponse)
 def health():
     return HealthResponse(status="ok", app=settings.app_name, version=settings.app_version)
@@ -76,7 +81,7 @@ def chat(query_input: QueryInput):
     
 
     chat_history = get_chat_history(session_id)
-    rag_chain = get_rag_chain(query_input.model.value)
+    rag_chain = get_rag_chain_for_model(query_input.model.value)
     result = rag_chain.invoke({
         "input": query_input.question,
         "chat_history": chat_history
