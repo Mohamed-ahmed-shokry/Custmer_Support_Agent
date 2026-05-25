@@ -5,10 +5,12 @@ from langchain_chroma import Chroma
 from typing import List
 from langchain_core.documents import Document
 import os
+from pathlib import Path
+from api.settings import settings
 
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, length_function=len)
 embedding_function = OpenAIEmbeddings()
-vectorstore = Chroma(persist_directory="./chroma_db", embedding_function=embedding_function)
+vectorstore = Chroma(persist_directory=settings.chroma_persist_dir, embedding_function=embedding_function)
 
 def load_and_split_document(file_path: str) -> List[Document]:
     if file_path.endswith('.pdf'):
@@ -23,13 +25,15 @@ def load_and_split_document(file_path: str) -> List[Document]:
     documents = loader.load()
     return text_splitter.split_documents(documents)
 
-def index_document_to_chroma(file_path: str, file_id: int) -> bool:
+def index_document_to_chroma(file_path: str, file_id: int, filename: str | None = None) -> bool:
     try:
         splits = load_and_split_document(file_path)
+        source_name = filename or Path(file_path).name
         
-        # Add metadata to each split
-        for split in splits:
-            split.metadata['file_id'] = file_id
+        for index, split in enumerate(splits):
+            split.metadata["file_id"] = file_id
+            split.metadata["filename"] = source_name
+            split.metadata["chunk_index"] = index
         
         vectorstore.add_documents(splits)
         # vectorstore.persist()

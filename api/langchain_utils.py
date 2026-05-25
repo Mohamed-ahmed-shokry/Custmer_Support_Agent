@@ -7,7 +7,9 @@ from typing import List
 from langchain_core.documents import Document
 import os
 from api.chroma_utils import vectorstore
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+from api.settings import settings
+
+retriever = vectorstore.as_retriever(search_kwargs={"k": settings.retriever_k})
 
 output_parser = StrOutputParser()
 

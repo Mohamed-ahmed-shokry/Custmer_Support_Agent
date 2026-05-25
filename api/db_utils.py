@@ -1,7 +1,7 @@
 import sqlite3
-from datetime import datetime
+from api.settings import settings
 
-DB_NAME = "rag_app.db"
+DB_NAME = settings.sqlite_db_path
 
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
