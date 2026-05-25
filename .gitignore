@@ -3,6 +3,8 @@
 *.db
 __pycache__/
 *.py[cod]
+.venv/
+.pytest_cache/
 .ipynb_checkpoints/
 chroma_db/
 temp_*
