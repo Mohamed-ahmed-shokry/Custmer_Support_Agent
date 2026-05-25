@@ -7,14 +7,22 @@ class ModelName(str, Enum):
     GPT4_O_MINI = "gpt-4o-mini"
 
 class QueryInput(BaseModel):
-    question: str
+    question: str = Field(min_length=1)
     session_id: str = Field(default=None)
     model: ModelName = Field(default=ModelName.GPT4_O_MINI)
+
+class SourceInfo(BaseModel):
+    file_id: int | None = None
+    filename: str | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    preview: str
 
 class QueryResponse(BaseModel):
     answer: str
     session_id: str
     model: ModelName
+    sources: list[SourceInfo] = Field(default_factory=list)
 
 class DocumentInfo(BaseModel):
     id: int
@@ -23,3 +31,15 @@ class DocumentInfo(BaseModel):
 
 class DeleteFileRequest(BaseModel):
     file_id: int
+
+class UploadDocumentResponse(BaseModel):
+    message: str
+    file_id: int
+
+class DeleteDocumentResponse(BaseModel):
+    message: str
+
+class HealthResponse(BaseModel):
+    status: str
+    app: str
+    version: str
