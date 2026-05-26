@@ -103,4 +103,3 @@ rg -n --hidden -S -g '!.git/**' 'sk-[A-Za-z0-9_-]+|lsv2_[A-Za-z0-9_-]+|AKIA[0-9A
 - Add authenticated admin document management.
 - Add website ingestion for approved public pages.
 - Add evaluation datasets for answer quality regression checks.
-- Add deployment templates for AWS or another hosting environment.
