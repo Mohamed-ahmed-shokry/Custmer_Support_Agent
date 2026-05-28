@@ -91,9 +91,3 @@ pytest
 - Never commit `.env`, logs, SQLite databases, Chroma stores, or uploaded runtime files.
 - Rotate any API key that was ever printed, saved in a notebook output, or committed.
 - This project is local-first. Add authentication before exposing upload/delete routes publicly.
-
-## Roadmap
-
-- Add authenticated admin document management.
-- Add website ingestion for approved public pages.
-- Add evaluation datasets for answer quality regression checks.
