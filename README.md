@@ -86,12 +86,6 @@ Open the Streamlit URL, upload documents, and ask questions.
 pytest
 ```
 
-Run a local secret scan before pushing:
-
-```powershell
-rg -n --hidden -S -g '!.git/**' 'sk-[A-Za-z0-9_-]+|lsv2_[A-Za-z0-9_-]+|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]+'
-```
-
 ## Security Notes
 
 - Never commit `.env`, logs, SQLite databases, Chroma stores, or uploaded runtime files.
