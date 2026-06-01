@@ -56,12 +56,20 @@ def insert_document_record(filename):
     conn.close()
     return file_id
 
+def get_document_record(file_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, filename, upload_timestamp FROM document_store WHERE id = ?', (file_id,))
+    document = cursor.fetchone()
+    conn.close()
+    return dict(document) if document else None
+
 def delete_document_record(file_id):
     conn = get_db_connection()
-    conn.execute('DELETE FROM document_store WHERE id = ?', (file_id,))
+    cursor = conn.execute('DELETE FROM document_store WHERE id = ?', (file_id,))
     conn.commit()
     conn.close()
-    return True
+    return cursor.rowcount > 0
 
 def get_all_documents():
     conn = get_db_connection()

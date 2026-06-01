@@ -16,11 +16,19 @@ from api.pydantic_models import (
     SourceInfo,
     UploadDocumentResponse,
 )
-from api.db_utils import insert_application_logs, get_chat_history, get_all_documents, insert_document_record, delete_document_record
+from api.db_utils import (
+    delete_document_record,
+    get_all_documents,
+    get_chat_history,
+    get_document_record,
+    insert_application_logs,
+    insert_document_record,
+)
 from api.chroma_utils import index_document_to_chroma, delete_doc_from_chroma
 from api.settings import settings
 
 logging.basicConfig(filename='app.log', level=logging.INFO)
+logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.app_name,
     description="Document-grounded customer support assistant API.",
@@ -111,6 +119,9 @@ def upload_and_index_document(file: UploadFile = File(...)):
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as buffer:
             shutil.copyfileobj(file.file, buffer)
             temp_file_path = buffer.name
+
+        if os.path.getsize(temp_file_path) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file cannot be empty.")
         
         file_id = insert_document_record(safe_filename)
         success = index_document_to_chroma(temp_file_path, file_id, safe_filename)
@@ -118,7 +129,8 @@ def upload_and_index_document(file: UploadFile = File(...)):
         if success:
             return UploadDocumentResponse(message=f"File {safe_filename} has been successfully uploaded and indexed.", file_id=file_id)
 
-        delete_document_record(file_id)
+        if not delete_document_record(file_id):
+            logger.warning("Failed to remove document metadata after indexing failed for file_id %s", file_id)
         raise HTTPException(status_code=500, detail=f"Failed to index {safe_filename}.")
     finally:
         if temp_file_path and os.path.exists(temp_file_path):
@@ -130,6 +142,9 @@ def list_documents():
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)
 def delete_document(request: DeleteFileRequest):
+    if get_document_record(request.file_id) is None:
+        raise HTTPException(status_code=404, detail=f"Document with file_id {request.file_id} was not found.")
+
     chroma_delete_success = delete_doc_from_chroma(request.file_id)
 
     if not chroma_delete_success:

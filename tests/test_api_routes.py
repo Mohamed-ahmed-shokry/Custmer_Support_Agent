@@ -30,6 +30,32 @@ def test_upload_rejects_unsupported_extension():
     assert "Unsupported file type" in response.json()["detail"]
 
 
+def test_upload_rejects_empty_supported_file():
+    response = client.post(
+        "/upload-doc",
+        files={"file": ("empty.pdf", b"", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file cannot be empty."
+
+
+def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
+    deleted_file_ids = []
+
+    monkeypatch.setattr(main, "insert_document_record", lambda filename: 42)
+    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args: False)
+    monkeypatch.setattr(main, "delete_document_record", lambda file_id: deleted_file_ids.append(file_id) or True)
+
+    response = client.post(
+        "/upload-doc",
+        files={"file": ("lease.pdf", b"not really a pdf", "application/pdf")},
+    )
+
+    assert response.status_code == 500
+    assert deleted_file_ids == [42]
+
+
 def test_chat_returns_sources(monkeypatch):
     class FakeChain:
         def invoke(self, payload):
@@ -61,3 +87,31 @@ def test_chat_returns_sources(monkeypatch):
     body = response.json()
     assert body["answer"].startswith("Use the tenant portal")
     assert body["sources"][0]["filename"] == "tenant-handbook.pdf"
+
+
+def test_delete_document_returns_404_for_unknown_document(monkeypatch):
+    monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
+
+    response = client.post("/delete-doc", json={"file_id": 999})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Document with file_id 999 was not found."
+
+
+def test_delete_document_rejects_non_positive_file_id():
+    response = client.post("/delete-doc", json={"file_id": 0})
+
+    assert response.status_code == 422
+
+
+def test_delete_document_deletes_chroma_and_record(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(main, "get_document_record", lambda file_id: {"id": file_id, "filename": "lease.pdf"})
+    monkeypatch.setattr(main, "delete_doc_from_chroma", lambda file_id: calls.append(("chroma", file_id)) or True)
+    monkeypatch.setattr(main, "delete_document_record", lambda file_id: calls.append(("db", file_id)) or True)
+
+    response = client.post("/delete-doc", json={"file_id": 42})
+
+    assert response.status_code == 200
+    assert calls == [("chroma", 42), ("db", 42)]
