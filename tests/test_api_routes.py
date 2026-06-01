@@ -89,6 +89,42 @@ def test_chat_returns_sources(monkeypatch):
     assert body["sources"][0]["filename"] == "tenant-handbook.pdf"
 
 
+def test_chat_returns_502_when_rag_chain_fails(monkeypatch):
+    class FailingChain:
+        def invoke(self, payload):
+            raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FailingChain())
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    response = client.post(
+        "/chat",
+        json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Failed to generate a response from the retrieval pipeline."
+
+
+def test_chat_returns_502_when_rag_response_is_invalid(monkeypatch):
+    class InvalidChain:
+        def invoke(self, payload):
+            return {"context": []}
+
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: InvalidChain())
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    response = client.post(
+        "/chat",
+        json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "The retrieval pipeline returned an invalid response."
+
+
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
     monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
 

@@ -82,23 +82,30 @@ def health():
 @app.post("/chat", response_model=QueryResponse)
 def chat(query_input: QueryInput):
     session_id = query_input.session_id
-    logging.info(f"Session ID: {session_id}, User Query: {query_input.question}, Model: {query_input.model.value}")
+    logger.info("Session ID: %s, User Query: %s, Model: %s", session_id, query_input.question, query_input.model.value)
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    
-
     chat_history = get_chat_history(session_id)
     rag_chain = get_rag_chain_for_model(query_input.model.value)
-    result = rag_chain.invoke({
-        "input": query_input.question,
-        "chat_history": chat_history
-    })
-    answer = result["answer"]
+    try:
+        result = rag_chain.invoke({
+            "input": query_input.question,
+            "chat_history": chat_history
+        })
+    except Exception as exc:
+        logger.exception("RAG chain failed for session_id %s", session_id)
+        raise HTTPException(status_code=502, detail="Failed to generate a response from the retrieval pipeline.") from exc
+
+    answer = result.get("answer") if isinstance(result, dict) else None
+    if not isinstance(answer, str):
+        logger.error("RAG chain returned an invalid response for session_id %s", session_id)
+        raise HTTPException(status_code=502, detail="The retrieval pipeline returned an invalid response.")
+
     sources = build_sources(result.get("context"))
     
     insert_application_logs(session_id, query_input.question, answer, query_input.model.value)
-    logging.info(f"Session ID: {session_id}, AI Response: {answer}")
+    logger.info("Session ID: %s, AI Response: %s", session_id, answer)
     return QueryResponse(answer=answer, session_id=session_id, model=query_input.model, sources=sources)
 
 @app.post("/upload-doc", response_model=UploadDocumentResponse)
