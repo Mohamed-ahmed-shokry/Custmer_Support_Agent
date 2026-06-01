@@ -4,10 +4,11 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from typing import List
 from langchain_core.documents import Document
-import os
+import logging
 from pathlib import Path
 from api.settings import settings
 
+logger = logging.getLogger(__name__)
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, length_function=len)
 _vectorstore = None
 
@@ -46,19 +47,20 @@ def index_document_to_chroma(file_path: str, file_id: int, filename: str | None 
         # vectorstore.persist()
         return True
     except Exception as e:
-        print(f"Error indexing document: {e}")
+        logger.exception("Error indexing document %s", file_path)
         return False
 
 def delete_doc_from_chroma(file_id: int):
     try:
         vectorstore = get_vectorstore()
         docs = vectorstore.get(where={"file_id": file_id})
-        print(f"Found {len(docs['ids'])} document chunks for file_id {file_id}")
+        chunk_count = len(docs["ids"])
+        logger.info("Found %s document chunks for file_id %s", chunk_count, file_id)
         
         vectorstore._collection.delete(where={"file_id": file_id})
-        print(f"Deleted all documents with file_id {file_id}")
+        logger.info("Deleted all documents with file_id %s", file_id)
         
         return True
     except Exception as e:
-        print(f"Error deleting document with file_id {file_id} from Chroma: {str(e)}")
+        logger.exception("Error deleting document with file_id %s from Chroma", file_id)
         return False
