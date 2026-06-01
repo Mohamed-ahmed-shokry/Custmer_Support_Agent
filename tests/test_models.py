@@ -9,6 +9,11 @@ def test_query_input_rejects_empty_question():
         QueryInput(question="")
 
 
+def test_query_input_rejects_whitespace_question():
+    with pytest.raises(ValidationError):
+        QueryInput(question="   ")
+
+
 def test_query_response_accepts_sources():
     response = QueryResponse(
         answer="Answer",

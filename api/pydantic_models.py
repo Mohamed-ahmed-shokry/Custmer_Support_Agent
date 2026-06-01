@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt, constr
 from enum import Enum
 from datetime import datetime
 
@@ -7,8 +7,8 @@ class ModelName(str, Enum):
     GPT4_O_MINI = "gpt-4o-mini"
 
 class QueryInput(BaseModel):
-    question: str = Field(min_length=1)
-    session_id: str = Field(default=None)
+    question: constr(strip_whitespace=True, min_length=1)
+    session_id: str | None = Field(default=None)
     model: ModelName = Field(default=ModelName.GPT4_O_MINI)
 
 class SourceInfo(BaseModel):
@@ -30,7 +30,7 @@ class DocumentInfo(BaseModel):
     upload_timestamp: datetime
 
 class DeleteFileRequest(BaseModel):
-    file_id: int
+    file_id: PositiveInt
 
 class UploadDocumentResponse(BaseModel):
     message: str
