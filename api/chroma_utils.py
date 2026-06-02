@@ -33,9 +33,18 @@ def load_and_split_document(file_path: str) -> List[Document]:
     documents = loader.load()
     return text_splitter.split_documents(documents)
 
+
+def build_chroma_document_ids(file_id: int, chunk_count: int) -> list[str]:
+    return [f"{file_id}:{index}" for index in range(chunk_count)]
+
+
 def index_document_to_chroma(file_path: str, file_id: int, filename: str | None = None) -> bool:
     try:
         splits = load_and_split_document(file_path)
+        if not splits:
+            logger.warning("Document %s produced no chunks for indexing", file_path)
+            return False
+
         source_name = filename or Path(file_path).name
         
         for index, split in enumerate(splits):
@@ -43,7 +52,7 @@ def index_document_to_chroma(file_path: str, file_id: int, filename: str | None 
             split.metadata["filename"] = source_name
             split.metadata["chunk_index"] = index
         
-        get_vectorstore().add_documents(splits)
+        get_vectorstore().add_documents(splits, ids=build_chroma_document_ids(file_id, len(splits)))
         # vectorstore.persist()
         return True
     except Exception as e:
@@ -54,10 +63,14 @@ def delete_doc_from_chroma(file_id: int):
     try:
         vectorstore = get_vectorstore()
         docs = vectorstore.get(where={"file_id": file_id})
-        chunk_count = len(docs["ids"])
+        document_ids = docs.get("ids", [])
+        chunk_count = len(document_ids)
         logger.info("Found %s document chunks for file_id %s", chunk_count, file_id)
+
+        if not document_ids:
+            return True
         
-        vectorstore._collection.delete(where={"file_id": file_id})
+        vectorstore.delete(ids=document_ids)
         logger.info("Deleted all documents with file_id %s", file_id)
         
         return True
