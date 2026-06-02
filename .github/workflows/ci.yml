@@ -13,9 +13,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
       - name: Run tests
-        run: pytest
+        run: python -m pytest
       - name: Secret scan
         run: |
           if grep -R -n -E 'sk-[A-Za-z0-9_-]+|lsv2_[A-Za-z0-9_-]+|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]+' --exclude-dir=.git .; then

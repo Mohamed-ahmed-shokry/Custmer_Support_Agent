@@ -40,7 +40,7 @@ python -m venv .venv
 2. Install dependencies.
 
 ```powershell
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 3. Create a local `.env` from the example and add your own keys.
@@ -83,7 +83,7 @@ Open the Streamlit URL, upload documents, and ask questions.
 ## Testing
 
 ```powershell
-pytest
+python -m pytest
 ```
 
 ## Security Notes
