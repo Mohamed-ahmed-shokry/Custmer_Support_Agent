@@ -1,15 +1,26 @@
 from pydantic import BaseModel, Field, PositiveInt, constr
 from enum import Enum
 from datetime import datetime
+from api.settings import settings
 
 class ModelName(str, Enum):
     GPT4_O = "gpt-4o"
     GPT4_O_MINI = "gpt-4o-mini"
 
+DEFAULT_MODEL = ModelName.GPT4_O_MINI
+
+
+def model_from_value(value: str | None) -> ModelName:
+    try:
+        return ModelName(value)
+    except (TypeError, ValueError):
+        return DEFAULT_MODEL
+
+
 class QueryInput(BaseModel):
     question: constr(strip_whitespace=True, min_length=1)
     session_id: str | None = Field(default=None)
-    model: ModelName = Field(default=ModelName.GPT4_O_MINI)
+    model: ModelName = Field(default_factory=lambda: model_from_value(settings.default_model))
 
 class SourceInfo(BaseModel):
     file_id: int | None = None

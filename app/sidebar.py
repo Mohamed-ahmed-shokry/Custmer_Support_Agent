@@ -1,5 +1,15 @@
 import streamlit as st
+from api.pydantic_models import ModelName, model_from_value
+from api.settings import settings
 from api_utils import API_BASE_URL, delete_document, get_health, list_documents, upload_document
+
+MODEL_OPTIONS = [model.value for model in ModelName]
+
+
+def get_default_model_index():
+    default_model = model_from_value(settings.default_model).value
+    return MODEL_OPTIONS.index(default_model)
+
 
 def display_sidebar():
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -14,8 +24,7 @@ def display_sidebar():
         st.session_state.session_id = None
         st.rerun()
 
-    model_options = ["gpt-4o", "gpt-4o-mini"]
-    st.sidebar.selectbox("Select Model", options=model_options, key="model")
+    st.sidebar.selectbox("Select Model", options=MODEL_OPTIONS, index=get_default_model_index(), key="model")
 
     st.sidebar.header("Upload Document")
     uploaded_file = st.sidebar.file_uploader("Choose a file", type=["pdf", "docx", "html"])

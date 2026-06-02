@@ -1,4 +1,6 @@
 import streamlit as st
+from api.pydantic_models import model_from_value
+from api.settings import settings
 from api_utils import get_api_response
 
 def display_chat_interface():
@@ -13,7 +15,8 @@ def display_chat_interface():
             st.markdown(prompt)
 
         with st.spinner("Generating response..."):
-            response = get_api_response(prompt, st.session_state.session_id, st.session_state.model)
+            selected_model = st.session_state.get("model", model_from_value(settings.default_model).value)
+            response = get_api_response(prompt, st.session_state.session_id, selected_model)
             
             if response:
                 st.session_state.session_id = response.get('session_id')
