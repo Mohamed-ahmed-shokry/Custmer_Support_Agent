@@ -77,9 +77,6 @@ Start the Streamlit app in another terminal:
 ```powershell
 streamlit run app/streamlit_app.py
 ```
-
-Open the Streamlit URL, upload documents, and ask questions.
-
 ## Testing
 
 ```powershell
