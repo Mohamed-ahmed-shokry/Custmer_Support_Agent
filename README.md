@@ -82,9 +82,3 @@ streamlit run app/streamlit_app.py
 ```powershell
 python -m pytest
 ```
-
-## Security Notes
-
-- Never commit `.env`, logs, SQLite databases, Chroma stores, or uploaded runtime files.
-- Rotate any API key that was ever printed, saved in a notebook output, or committed.
-- This project is local-first. Add authentication before exposing upload/delete routes publicly.
