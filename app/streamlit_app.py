@@ -1,6 +1,7 @@
 import streamlit as st
-from sidebar import display_sidebar
-from chat_interface import display_chat_interface
+
+from app.chat_interface import display_chat_interface
+from app.sidebar import display_sidebar
 
 st.set_page_config(page_title="Ghali Realty Support Assistant", page_icon=":speech_balloon:")
 st.title("Ghali Realty Support Assistant")

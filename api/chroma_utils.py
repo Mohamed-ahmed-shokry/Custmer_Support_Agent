@@ -1,35 +1,45 @@
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, UnstructuredHTMLLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
-from langchain_chroma import Chroma
-from typing import List
-from langchain_core.documents import Document
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from langchain_chroma import Chroma
+from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, UnstructuredHTMLLoader
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from api.settings import settings
 
+if TYPE_CHECKING:
+    from langchain_community.document_loaders.base import BaseLoader
+
 logger = logging.getLogger(__name__)
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, length_function=len)
-_vectorstore = None
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000, chunk_overlap=200, length_function=len
+)
 
 
-def get_vectorstore():
-    global _vectorstore
-    if _vectorstore is None:
+def get_vectorstore() -> Chroma:
+    if not hasattr(get_vectorstore, "_vectorstore"):
         embedding_function = OpenAIEmbeddings()
-        _vectorstore = Chroma(persist_directory=settings.chroma_persist_dir, embedding_function=embedding_function)
-    return _vectorstore
+        get_vectorstore._vectorstore = Chroma(  # type: ignore[attr-defined]
+            persist_directory=settings.chroma_persist_dir,
+            embedding_function=embedding_function,
+        )
+    return get_vectorstore._vectorstore  # type: ignore[attr-defined, no-any-return]
 
-def load_and_split_document(file_path: str) -> List[Document]:
-    if file_path.endswith('.pdf'):
+
+def load_and_split_document(file_path: str) -> list[Document]:
+    loader: BaseLoader
+    if file_path.endswith(".pdf"):
         loader = PyPDFLoader(file_path)
-    elif file_path.endswith('.docx'):
+    elif file_path.endswith(".docx"):
         loader = Docx2txtLoader(file_path)
-    elif file_path.endswith('.html'):
+    elif file_path.endswith(".html"):
         loader = UnstructuredHTMLLoader(file_path)
     else:
         raise ValueError(f"Unsupported file type: {file_path}")
-    
+
     documents = loader.load()
     return text_splitter.split_documents(documents)
 
@@ -46,18 +56,19 @@ def index_document_to_chroma(file_path: str, file_id: int, filename: str | None 
             return False
 
         source_name = filename or Path(file_path).name
-        
+
         for index, split in enumerate(splits):
             split.metadata["file_id"] = file_id
             split.metadata["filename"] = source_name
             split.metadata["chunk_index"] = index
-        
+
         get_vectorstore().add_documents(splits, ids=build_chroma_document_ids(file_id, len(splits)))
         # vectorstore.persist()
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Error indexing document %s", file_path)
         return False
+
 
 def delete_doc_from_chroma(file_id: int):
     try:
@@ -69,11 +80,11 @@ def delete_doc_from_chroma(file_id: int):
 
         if not document_ids:
             return True
-        
+
         vectorstore.delete(ids=document_ids)
         logger.info("Deleted all documents with file_id %s", file_id)
-        
+
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Error deleting document with file_id %s from Chroma", file_id)
         return False
