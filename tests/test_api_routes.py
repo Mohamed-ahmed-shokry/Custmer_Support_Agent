@@ -175,6 +175,26 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
     assert captured["use_hybrid"] is True
 
 
+def test_upload_rejects_invalid_chunk_params():
+    response = client.post(
+        "/upload-doc?chunk_size=10&chunk_overlap=5",
+        files={"file": ("doc.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert "chunk_size" in response.json()["detail"]
+
+
+def test_upload_rejects_chunk_overlap_not_smaller_than_size():
+    response = client.post(
+        "/upload-doc?chunk_size=500&chunk_overlap=500",
+        files={"file": ("doc.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert "chunk_overlap" in response.json()["detail"]
+
+
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
     monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
 

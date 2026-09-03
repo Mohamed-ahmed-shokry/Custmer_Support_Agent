@@ -60,6 +60,32 @@ def sanitize_filename(filename: str) -> str:
     return Path(cleaned).name.replace("\x00", "").strip()
 
 
+MIN_CHUNK_SIZE = 100
+MAX_CHUNK_SIZE = 4000
+
+
+def validate_chunk_params(chunk_size: int, chunk_overlap: int) -> None:
+    if not MIN_CHUNK_SIZE <= chunk_size <= MAX_CHUNK_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"chunk_size must be between {MIN_CHUNK_SIZE} and {MAX_CHUNK_SIZE}.",
+        )
+    if not 0 <= chunk_overlap < chunk_size:
+        raise HTTPException(
+            status_code=400,
+            detail="chunk_overlap must be >= 0 and smaller than chunk_size.",
+        )
+
+
+def validate_upload_size(size_bytes: int) -> None:
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    if size_bytes > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {settings.max_upload_mb} MB upload limit.",
+        )
+
+
 def build_sources(documents) -> list[SourceInfo]:
     sources = []
     seen = set()
@@ -240,6 +266,8 @@ def upload_and_index_document(
             status_code=400, detail=f"Unsupported file type. Allowed types are: {allowed}"
         )
 
+    validate_chunk_params(chunk_size, chunk_overlap)
+
     options = ChunkingOptions(
         strategy=chunking_strategy, chunk_size=chunk_size, chunk_overlap=chunk_overlap
     )
@@ -253,6 +281,7 @@ def upload_and_index_document(
 
         if os.path.getsize(temp_file_path) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file cannot be empty.")
+        validate_upload_size(os.path.getsize(temp_file_path))
 
         file_id = insert_document_record(safe_filename)
         success = index_document_to_chroma(
