@@ -14,7 +14,9 @@ class FakeResponse:
 
 
 def test_extract_error_detail_uses_fastapi_detail():
-    response = FakeResponse(payload={"detail": "Document was not found."}, text='{"detail":"Document was not found."}')
+    response = FakeResponse(
+        payload={"detail": "Document was not found."}, text='{"detail":"Document was not found."}'
+    )
 
     assert extract_error_detail(response) == "Document was not found."
 

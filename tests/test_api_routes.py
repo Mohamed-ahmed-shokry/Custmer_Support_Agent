@@ -1,17 +1,22 @@
 from types import SimpleNamespace
 
+from api import main
 from fastapi.testclient import TestClient
 
-from api import main
-
-
 client = TestClient(main.app)
+
+HTTP_OK = 200
+HTTP_BAD_REQUEST = 400
+HTTP_INTERNAL_ERROR = 500
+HTTP_BAD_GATEWAY = 502
+HTTP_NOT_FOUND = 404
+HTTP_UNPROCESSABLE_ENTITY = 422
 
 
 def test_health_route():
     response = client.get("/health")
 
-    assert response.status_code == 200
+    assert response.status_code == HTTP_OK
     assert response.json()["status"] == "ok"
 
 
@@ -26,7 +31,7 @@ def test_upload_rejects_unsupported_extension():
         files={"file": ("notes.txt", b"hello", "text/plain")},
     )
 
-    assert response.status_code == 400
+    assert response.status_code == HTTP_BAD_REQUEST
     assert "Unsupported file type" in response.json()["detail"]
 
 
@@ -36,7 +41,7 @@ def test_upload_rejects_empty_supported_file():
         files={"file": ("empty.pdf", b"", "application/pdf")},
     )
 
-    assert response.status_code == 400
+    assert response.status_code == HTTP_BAD_REQUEST
     assert response.json()["detail"] == "Uploaded file cannot be empty."
 
 
@@ -45,14 +50,16 @@ def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
 
     monkeypatch.setattr(main, "insert_document_record", lambda filename: 42)
     monkeypatch.setattr(main, "index_document_to_chroma", lambda *args: False)
-    monkeypatch.setattr(main, "delete_document_record", lambda file_id: deleted_file_ids.append(file_id) or True)
+    monkeypatch.setattr(
+        main, "delete_document_record", lambda file_id: deleted_file_ids.append(file_id) or True
+    )
 
     response = client.post(
         "/upload-doc",
         files={"file": ("lease.pdf", b"not really a pdf", "application/pdf")},
     )
 
-    assert response.status_code == 500
+    assert response.status_code == HTTP_INTERNAL_ERROR
     assert deleted_file_ids == [42]
 
 
@@ -63,7 +70,9 @@ def test_chat_returns_sources(monkeypatch):
                 "answer": "Use the tenant portal for maintenance requests.",
                 "context": [
                     SimpleNamespace(
-                        page_content="Maintenance requests should be submitted through the tenant portal.",
+                        page_content=(
+                            "Maintenance requests should be submitted through the tenant portal."
+                        ),
                         metadata={
                             "file_id": 7,
                             "filename": "tenant-handbook.pdf",
@@ -83,7 +92,7 @@ def test_chat_returns_sources(monkeypatch):
         json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == HTTP_OK
     body = response.json()
     assert body["answer"].startswith("Use the tenant portal")
     assert body["sources"][0]["filename"] == "tenant-handbook.pdf"
@@ -103,8 +112,10 @@ def test_chat_returns_502_when_rag_chain_fails(monkeypatch):
         json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
     )
 
-    assert response.status_code == 502
-    assert response.json()["detail"] == "Failed to generate a response from the retrieval pipeline."
+    assert response.status_code == HTTP_BAD_GATEWAY
+    assert response.json()["detail"] == (
+        "Failed to generate a response from the retrieval pipeline."
+    )
 
 
 def test_chat_returns_502_when_rag_response_is_invalid(monkeypatch):
@@ -121,7 +132,7 @@ def test_chat_returns_502_when_rag_response_is_invalid(monkeypatch):
         json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
     )
 
-    assert response.status_code == 502
+    assert response.status_code == HTTP_BAD_GATEWAY
     assert response.json()["detail"] == "The retrieval pipeline returned an invalid response."
 
 
@@ -130,24 +141,36 @@ def test_delete_document_returns_404_for_unknown_document(monkeypatch):
 
     response = client.post("/delete-doc", json={"file_id": 999})
 
-    assert response.status_code == 404
+    assert response.status_code == HTTP_NOT_FOUND
     assert response.json()["detail"] == "Document with file_id 999 was not found."
 
 
 def test_delete_document_rejects_non_positive_file_id():
     response = client.post("/delete-doc", json={"file_id": 0})
 
-    assert response.status_code == 422
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
 
 
 def test_delete_document_deletes_chroma_and_record(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(main, "get_document_record", lambda file_id: {"id": file_id, "filename": "lease.pdf"})
-    monkeypatch.setattr(main, "delete_doc_from_chroma", lambda file_id: calls.append(("chroma", file_id)) or True)
-    monkeypatch.setattr(main, "delete_document_record", lambda file_id: calls.append(("db", file_id)) or True)
+    monkeypatch.setattr(
+        main,
+        "get_document_record",
+        lambda file_id: {"id": file_id, "filename": "lease.pdf"},
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_doc_from_chroma",
+        lambda file_id: calls.append(("chroma", file_id)) or True,
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_document_record",
+        lambda file_id: calls.append(("db", file_id)) or True,
+    )
 
     response = client.post("/delete-doc", json={"file_id": 42})
 
-    assert response.status_code == 200
+    assert response.status_code == HTTP_OK
     assert calls == [("chroma", 42), ("db", 42)]

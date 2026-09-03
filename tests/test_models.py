@@ -1,7 +1,13 @@
 import pytest
+from api.pydantic_models import (
+    DEFAULT_MODEL,
+    ModelName,
+    QueryInput,
+    QueryResponse,
+    SourceInfo,
+    model_from_value,
+)
 from pydantic import ValidationError
-
-from api.pydantic_models import DEFAULT_MODEL, ModelName, QueryInput, QueryResponse, SourceInfo, model_from_value
 
 
 def test_query_input_rejects_empty_question():

@@ -1,6 +1,5 @@
-from langchain_core.documents import Document
-
 from api import chroma_utils
+from langchain_core.documents import Document
 
 
 class FakeVectorstore:
@@ -23,7 +22,11 @@ class FakeVectorstore:
 
 
 def test_build_chroma_document_ids_uses_file_id_and_chunk_index():
-    assert chroma_utils.build_chroma_document_ids(file_id=42, chunk_count=3) == ["42:0", "42:1", "42:2"]
+    assert chroma_utils.build_chroma_document_ids(file_id=42, chunk_count=3) == [
+        "42:0",
+        "42:1",
+        "42:2",
+    ]
 
 
 def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
@@ -36,7 +39,10 @@ def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
     monkeypatch.setattr(chroma_utils, "load_and_split_document", lambda file_path: documents)
     monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
 
-    assert chroma_utils.index_document_to_chroma("upload.pdf", file_id=42, filename="lease.pdf") is True
+    assert (
+        chroma_utils.index_document_to_chroma("upload.pdf", file_id=42, filename="lease.pdf")
+        is True
+    )
     assert vectorstore.added_ids == ["42:0", "42:1"]
     assert vectorstore.added_documents[0].metadata == {
         "file_id": 42,
@@ -57,7 +63,10 @@ def test_index_document_returns_false_when_document_has_no_chunks(monkeypatch):
     monkeypatch.setattr(chroma_utils, "load_and_split_document", lambda file_path: [])
     monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
 
-    assert chroma_utils.index_document_to_chroma("empty.pdf", file_id=42, filename="empty.pdf") is False
+    assert (
+        chroma_utils.index_document_to_chroma("empty.pdf", file_id=42, filename="empty.pdf")
+        is False
+    )
     assert vectorstore.added_documents is None
 
 
