@@ -1,4 +1,5 @@
 import logging
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -127,12 +128,37 @@ def index_document_to_chroma(
             split.metadata["filename"] = source_name
             split.metadata["chunk_index"] = index
 
-        get_vectorstore().add_documents(splits, ids=build_chroma_document_ids(file_id, len(splits)))
-        # vectorstore.persist()
+        document_ids = build_chroma_document_ids(file_id, len(splits))
+        _add_documents_with_retry(get_vectorstore(), splits, document_ids, file_path)
         return True
     except Exception:
         logger.exception("Error indexing document %s", file_path)
         return False
+
+
+INDEX_MAX_ATTEMPTS = 3
+INDEX_RETRY_BASE_DELAY_S = 0.5
+
+
+def _add_documents_with_retry(vectorstore, splits, document_ids, file_path: str) -> None:
+    """Persist chunks with exponential backoff on transient failures."""
+    last_error: Exception | None = None
+    for attempt in range(1, INDEX_MAX_ATTEMPTS + 1):
+        try:
+            vectorstore.add_documents(splits, ids=document_ids)
+            return
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Indexing attempt %s/%s failed for %s",
+                attempt,
+                INDEX_MAX_ATTEMPTS,
+                file_path,
+            )
+            if attempt < INDEX_MAX_ATTEMPTS:
+                time.sleep(INDEX_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
+    if last_error is not None:
+        raise last_error
 
 
 def delete_doc_from_chroma(file_id: int):
