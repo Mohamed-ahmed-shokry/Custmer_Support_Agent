@@ -25,7 +25,7 @@ def increment(counter: str, amount: int = 1) -> int:
 
 def snapshot() -> dict[str, int | float]:
     with _lock:
-        data = dict(_counters)
+        data: dict[str, int | float] = dict(_counters)
     data["uptime_seconds"] = round(time.monotonic() - _start_time, 2)
     return data
 
