@@ -3,9 +3,11 @@ import os
 import shutil
 import tempfile
 import uuid
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from api.chroma_utils import delete_doc_from_chroma, index_document_to_chroma
 from api.db_utils import (
@@ -117,6 +119,70 @@ def chat(query_input: QueryInput):
     logger.info("Session ID: %s, AI Response: %s", session_id, answer)
     return QueryResponse(
         answer=answer, session_id=session_id, model=query_input.model, sources=sources
+    )
+
+
+async def _stream_rag_response(
+    question: str, chat_history: list, model: str, session_id: str
+) -> AsyncGenerator[str, None]:
+    """Stream RAG chain response as SSE events."""
+    rag_chain = get_rag_chain_for_model(model)
+    try:
+        async for chunk in rag_chain.astream(
+            {"input": question, "chat_history": chat_history}
+        ):
+            if "answer" in chunk:
+                yield f"data: {chunk['answer']}\n\n"
+            elif "context" in chunk:
+                sources = build_sources(chunk["context"])
+                if sources:
+                    import json
+
+                    source_data = json.dumps([s.model_dump() for s in sources])
+                    yield f"event: sources\ndata: {source_data}\n\n"
+    except Exception:
+        logger.exception("RAG chain streaming failed for session_id %s", session_id)
+        yield "event: error\ndata: Failed to generate response\n\n"
+
+
+@app.post("/chat/stream")
+async def chat_stream(query_input: QueryInput):
+    session_id = query_input.session_id
+    logger.info(
+        "Stream Session ID: %s, User Query: %s, Model: %s",
+        session_id,
+        query_input.question,
+        query_input.model.value,
+    )
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    chat_history = get_chat_history(session_id)
+
+    async def event_generator():
+        full_answer = ""
+        async for event in _stream_rag_response(
+            query_input.question, chat_history, query_input.model.value, session_id
+        ):
+            if event.startswith("data: "):
+                full_answer += event[6:].strip()
+            yield event
+
+        # Log the complete interaction
+        if full_answer:
+            insert_application_logs(
+                session_id, query_input.question, full_answer, query_input.model.value
+            )
+            logger.info("Stream Session ID: %s, AI Response: %s", session_id, full_answer)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

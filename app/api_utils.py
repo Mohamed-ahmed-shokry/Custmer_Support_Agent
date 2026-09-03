@@ -49,6 +49,44 @@ def get_api_response(question, session_id, model):
         return None
 
 
+def get_api_stream_response(question, session_id, model):
+    """Get streaming response from the API."""
+    headers = {"accept": "text/event-stream", "Content-Type": "application/json"}
+    data = {"question": question, "model": model}
+    if session_id:
+        data["session_id"] = session_id
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/chat/stream", headers=headers, json=data, timeout=120, stream=True
+        )
+        if response.status_code == HTTP_OK:
+            return response.iter_lines(decode_unicode=True)
+        else:
+            show_api_error("API stream request failed", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        return None
+
+
+MIN_SSE_PARTS = 2
+
+
+def parse_sse_line(line):
+    """Parse a Server-Sent Events line."""
+    if not line or not line.startswith("data: "):
+        return None, None
+    event_type = "message"
+    if line.startswith("event: "):
+        parts = line.split("\n")
+        if len(parts) >= MIN_SSE_PARTS:
+            event_type = parts[0][7:]
+            line = parts[1]
+    data = line[6:]  # Remove "data: " prefix
+    return event_type, data
+
+
 def upload_document(file):
     try:
         files = {"file": (file.name, file, file.type)}
