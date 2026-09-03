@@ -1,12 +1,14 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.2.0)
-- FastAPI backend with chat, document upload/list/delete endpoints
-- Streamlit frontend with chat interface and document management
+## Current State (v0.3.0-dev, 2026-09-03)
+- FastAPI backend with chat, streaming chat (SSE), document upload/list/delete
+- Streamlit frontend with streaming toggle, chat interface, document management
 - SQLite for session history and document metadata
-- Chroma vector store with OpenAI embeddings
-- LangChain RAG chain with history-aware retrieval
-- 32 unit/integration tests passing
+- Chroma vector store with OpenAI embeddings; configurable chunking
+  (recursive/markdown) and file types: pdf, docx, html, md, txt, csv
+- LangChain RAG chain with history-aware retrieval; safe filtered + hybrid
+  retriever helpers (lazy imports for Python 3.14 compat)
+- 34 tests passing; ruff + black + mypy clean
 
 ---
 
@@ -44,35 +46,36 @@
 - [x] Add document preview/thumbnails
 - [x] Support more file types (txt, md, csv)
 
-### 2.3 Search & retrieval enhancements
-- [ ] Add hybrid search (BM25 + vector)
-- [ ] Add metadata filtering (by date, source, tags)
+### 2.3 Search & retrieval enhancements (IN PROGRESS)
+- [x] Add hybrid search helper (BM25 + vector, lazy import + vector fallback)
+- [x] Add metadata filtering helper (by file_id / filename)
+- [ ] Wire file_ids / hybrid flags through `/chat` + RAG chain
 - [ ] Add reranking with cross-encoder
 - [ ] Implement query expansion/rewriting
 
-### 2.4 Error handling & resilience
-- [ ] Add circuit breaker for external API calls
-- [ ] Implement retry logic with exponential backoff
-- [ ] Add request validation middleware
+### 2.4 Error handling & resilience (NEXT)
+- [ ] Add retry with exponential backoff for OpenAI / Chroma calls
+- [ ] Add request-ID middleware + timeout handling
+- [ ] Add upload size limits + chunk-param validation
 - [ ] Improve error messages and codes
 
 ---
 
-## Phase 3: Observability & Monitoring (Week 3)
+## Phase 3: Observability & Monitoring (Week 3, IN PROGRESS)
 
 ### 3.1 Logging improvements
-- [ ] Structured JSON logging
-- [ ] Correlation IDs for request tracing
+- [ ] Structured JSON logging (opt-in via LOG_FORMAT=json)
+- [ ] Correlation IDs for request tracing (X-Request-ID middleware)
 - [ ] Log levels per module
 
 ### 3.2 Metrics & tracing
-- [ ] Add Prometheus metrics endpoint
-- [ ] Integrate OpenTelemetry
-- [ ] Add LangSmith/LangFuse integration
+- [ ] Add lightweight `/metrics` endpoint (in-memory counters, no new deps)
+- [ ] Integrate OpenTelemetry (deferred: needs py3.11/3.12 verification)
+- [ ] Add LangSmith/LangFuse integration (already env-supported)
 - [ ] Dashboard for latency, token usage, error rates
 
 ### 3.3 Health checks
-- [ ] Deep health checks (DB, Chroma, OpenAI connectivity)
+- [ ] Deep health checks (`/health/ready`: DB + Chroma dir; `/health/live`)
 - [ ] Readiness/liveness probes for Kubernetes
 
 ---
