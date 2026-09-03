@@ -23,6 +23,7 @@ from api.db_utils import (
     insert_application_logs,
     insert_document_record,
 )
+from api.observability import increment, render_prometheus, snapshot
 from api.pydantic_models import (
     DeleteDocumentResponse,
     DeleteFileRequest,
@@ -134,8 +135,21 @@ def health():
     return HealthResponse(status="ok", app=settings.app_name, version=settings.app_version)
 
 
+@app.get("/metrics")
+def metrics():
+    from fastapi.responses import PlainTextResponse  # noqa: PLC0415 - keep import lazy
+
+    return PlainTextResponse(render_prometheus(), media_type="text/plain")
+
+
+@app.get("/metrics.json")
+def metrics_json():
+    return snapshot()
+
+
 @app.post("/chat", response_model=QueryResponse)
 def chat(query_input: QueryInput):
+    increment("chat_requests")
     session_id = query_input.session_id
     logger.info(
         "Session ID: %s, User Query: %s, Model: %s",
@@ -156,6 +170,7 @@ def chat(query_input: QueryInput):
     try:
         result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
     except Exception as exc:
+        increment("chat_errors")
         logger.exception("RAG chain failed for session_id %s", session_id)
         raise HTTPException(
             status_code=502, detail="Failed to generate a response from the retrieval pipeline."
@@ -163,6 +178,7 @@ def chat(query_input: QueryInput):
 
     answer = result.get("answer") if isinstance(result, dict) else None
     if not isinstance(answer, str):
+        increment("chat_errors")
         logger.error("RAG chain returned an invalid response for session_id %s", session_id)
         raise HTTPException(
             status_code=502, detail="The retrieval pipeline returned an invalid response."
@@ -207,6 +223,7 @@ async def _stream_rag_response(
 
 @app.post("/chat/stream")
 async def chat_stream(query_input: QueryInput):
+    increment("stream_requests")
     session_id = query_input.session_id
     logger.info(
         "Stream Session ID: %s, User Query: %s, Model: %s",
@@ -292,11 +309,13 @@ def upload_and_index_document(
         )
 
         if success:
+            increment("uploads")
             return UploadDocumentResponse(
                 message=f"File {safe_filename} has been successfully uploaded and indexed.",
                 file_id=file_id,
             )
 
+        increment("upload_errors")
         if not delete_document_record(file_id):
             logger.warning(
                 "Failed to remove document metadata after indexing failed for file_id %s", file_id
@@ -335,6 +354,7 @@ def delete_document(request: DeleteFileRequest):
         )
         raise HTTPException(status_code=500, detail=detail)
 
+    increment("deletes")
     return DeleteDocumentResponse(
         message=f"Successfully deleted document with file_id {request.file_id} from the system."
     )

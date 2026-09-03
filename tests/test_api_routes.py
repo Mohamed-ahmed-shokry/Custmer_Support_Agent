@@ -195,6 +195,16 @@ def test_upload_rejects_chunk_overlap_not_smaller_than_size():
     assert "chunk_overlap" in response.json()["detail"]
 
 
+def test_metrics_endpoints_return_counters():
+    response = client.get("/metrics")
+    assert response.status_code == HTTP_OK
+    assert "rag_agent_chat_requests" in response.text
+
+    response_json = client.get("/metrics.json")
+    assert response_json.status_code == HTTP_OK
+    assert "chat_requests" in response_json.json()
+
+
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
     monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
 
