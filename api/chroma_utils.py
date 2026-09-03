@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import (
@@ -153,3 +153,75 @@ def delete_doc_from_chroma(file_id: int):
     except Exception:
         logger.exception("Error deleting document with file_id %s from Chroma", file_id)
         return False
+
+
+def get_hybrid_retriever(
+    k: int = 5,
+    file_ids: list[int] | None = None,
+    bm25_weight: float = 0.5,
+    vector_weight: float = 0.5,
+):
+    """Create a hybrid retriever combining BM25 and vector search.
+
+    Imports are lazy because ``langchain.retrievers`` pulls in legacy
+    ``Chain`` classes that are incompatible with Python 3.14 + pydantic.
+    Falls back to pure vector search when BM25/ensemble is unavailable.
+    """
+    vectorstore = get_vectorstore()
+    vector_filter = {"file_id": {"$in": file_ids}} if file_ids else None
+    vector_retriever = vectorstore.as_retriever(
+        search_kwargs={"k": k, **({"filter": vector_filter} if vector_filter else {})}
+    )
+
+    try:
+        from langchain_community.retrievers import BM25Retriever  # noqa: PLC0415
+
+        all_docs = vectorstore.get()
+        if not all_docs.get("documents"):
+            return vector_retriever
+        documents = [
+            Document(page_content=doc, metadata=meta or {})
+            for doc, meta in zip(
+                all_docs["documents"], all_docs.get("metadatas") or [], strict=False
+            )
+        ]
+        if file_ids:
+            documents = [d for d in documents if d.metadata.get("file_id") in file_ids]
+        if not documents:
+            return vector_retriever
+        bm25_retriever = BM25Retriever.from_documents(documents)
+        bm25_retriever.k = k
+    except Exception:
+        logger.exception("BM25 retriever unavailable, falling back to vector search")
+        return vector_retriever
+
+    try:
+        from langchain.retrievers import EnsembleRetriever  # noqa: PLC0415
+
+        return EnsembleRetriever(
+            retrievers=[bm25_retriever, vector_retriever],
+            weights=[bm25_weight, vector_weight],
+        )
+    except Exception:
+        logger.exception("EnsembleRetriever unavailable, falling back to vector search")
+        return vector_retriever
+
+
+def get_filtered_retriever(
+    k: int = 5,
+    file_ids: list[int] | None = None,
+    source_filter: str | None = None,
+):
+    """Create a retriever with metadata filtering."""
+    vectorstore = get_vectorstore()
+    filter_dict: dict[str, Any] = {}
+    if file_ids:
+        filter_dict["file_id"] = {"$in": file_ids}
+    if source_filter:
+        filter_dict["filename"] = {"$eq": source_filter}
+
+    search_kwargs: dict[str, Any] = {"k": k}
+    if filter_dict:
+        search_kwargs["filter"] = filter_dict
+
+    return vectorstore.as_retriever(search_kwargs=search_kwargs)
