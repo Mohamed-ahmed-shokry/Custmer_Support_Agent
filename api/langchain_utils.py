@@ -4,7 +4,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
-from api.chroma_utils import get_vectorstore
+from api.chroma_utils import select_retriever
 from api.settings import settings
 
 output_parser = StrOutputParser()
@@ -84,9 +84,22 @@ qa_prompt = ChatPromptTemplate.from_messages(
 )
 
 
-def get_rag_chain(model="gpt-4o-mini"):
+def get_rag_chain(
+    model="gpt-4o-mini",
+    file_ids: list[int] | None = None,
+    source_filename: str | None = None,
+    use_hybrid: bool | None = None,
+):
     llm = ChatOpenAI(model=model)
-    retriever = get_vectorstore().as_retriever(search_kwargs={"k": settings.retriever_k})
+    hybrid = settings.use_hybrid_retriever if use_hybrid is None else use_hybrid
+    retriever = select_retriever(
+        k=settings.retriever_k,
+        file_ids=file_ids,
+        source_filename=source_filename,
+        use_hybrid=hybrid,
+        bm25_weight=settings.hybrid_bm25_weight,
+        vector_weight=settings.hybrid_vector_weight,
+    )
     history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
