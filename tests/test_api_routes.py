@@ -174,3 +174,46 @@ def test_delete_document_deletes_chroma_and_record(monkeypatch):
 
     assert response.status_code == HTTP_OK
     assert calls == [("chroma", 42), ("db", 42)]
+
+
+def test_chat_stream_returns_sse_events(monkeypatch):
+    class FakeStreamChain:
+        async def astream(self, payload):
+            yield {"answer": "Hello"}
+            yield {"answer": " world"}
+            yield {"context": []}
+
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FakeStreamChain())
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    response = client.post(
+        "/chat/stream",
+        json={"question": "Hello", "model": "gpt-4o-mini"},
+    )
+
+    assert response.status_code == HTTP_OK
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+    content = response.text
+    assert "data: Hello" in content
+    assert "data:  world" in content
+
+
+def test_chat_stream_handles_chain_error(monkeypatch):
+    class FailingStreamChain:
+        async def astream(self, payload):
+            raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FailingStreamChain())
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    response = client.post(
+        "/chat/stream",
+        json={"question": "Hello", "model": "gpt-4o-mini"},
+    )
+
+    assert response.status_code == HTTP_OK
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+    content = response.text
+    assert "event: error" in content
