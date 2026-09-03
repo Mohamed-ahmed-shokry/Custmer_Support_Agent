@@ -10,39 +10,39 @@
 
 ---
 
-## Phase 1: Code Quality & Developer Experience (Week 1)
+## Phase 1: Code Quality & Developer Experience (Week 1) ✅ COMPLETED
 
 ### 1.1 Add linting and formatting
-- [ ] Add `ruff` for fast Python linting
-- [ ] Add `black` for code formatting
-- [ ] Add `mypy` for type checking
-- [ ] Configure pre-commit hooks
-- [ ] Update CI to run linting/type-checking
+- [x] Add `ruff` for fast Python linting
+- [x] Add `black` for code formatting
+- [x] Add `mypy` for type checking
+- [x] Configure pre-commit hooks
+- [x] Update CI to run linting/type-checking
 
 ### 1.2 Improve project structure
-- [ ] Add `pyproject.toml` with modern Python packaging
-- [ ] Move config to `pyproject.toml` (ruff, black, mypy, pytest)
-- [ ] Add `uv` support for faster dependency management
+- [x] Add `pyproject.toml` with modern Python packaging
+- [x] Move config to `pyproject.toml` (ruff, black, mypy, pytest)
+- [x] Add `uv` support for faster dependency management
 
 ### 1.3 Enhance testing
-- [ ] Add integration tests for full RAG pipeline
-- [ ] Add test coverage reporting
-- [ ] Add contract tests for API schemas
+- [x] Add integration tests for full RAG pipeline
+- [x] Add test coverage reporting
+- [x] Add contract tests for API schemas
 
 ---
 
 ## Phase 2: Core Features & Reliability (Week 2)
 
-### 2.1 Streaming responses
-- [ ] Implement streaming chat endpoint (`/chat/stream`)
-- [ ] Update Streamlit UI for streaming display
-- [ ] Add Server-Sent Events (SSE) support
+### 2.1 Streaming responses ✅ COMPLETED
+- [x] Implement streaming chat endpoint (`/chat/stream`)
+- [x] Update Streamlit UI for streaming display
+- [x] Add Server-Sent Events (SSE) support
 
-### 2.2 Document processing improvements
-- [ ] Add configurable chunking strategies (semantic, recursive, markdown-aware)
-- [ ] Extract and store document metadata (author, date, page count)
-- [ ] Add document preview/thumbnails
-- [ ] Support more file types (txt, md, csv)
+### 2.2 Document processing improvements ✅ COMPLETED
+- [x] Add configurable chunking strategies (semantic, recursive, markdown-aware)
+- [x] Extract and store document metadata (author, date, page count)
+- [x] Add document preview/thumbnails
+- [x] Support more file types (txt, md, csv)
 
 ### 2.3 Search & retrieval enhancements
 - [ ] Add hybrid search (BM25 + vector)
