@@ -166,6 +166,31 @@ def health():
     return HealthResponse(status="ok", app=settings.app_name, version=settings.app_version)
 
 
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    checks: dict[str, str] = {}
+    try:
+        get_all_documents()
+        checks["sqlite"] = "ok"
+    except Exception as exc:
+        checks["sqlite"] = f"error: {exc}"
+    try:
+        os.makedirs(settings.chroma_persist_dir, exist_ok=True)
+        checks["chroma_dir"] = "ok"
+    except Exception as exc:
+        checks["chroma_dir"] = f"error: {exc}"
+    ready = all(value == "ok" for value in checks.values())
+    status_code = 200 if ready else 503
+    from fastapi.responses import JSONResponse  # noqa: PLC0415 - keep import lazy
+
+    return JSONResponse(status_code=status_code, content={"ready": ready, "checks": checks})
+
+
 @app.get("/metrics")
 def metrics():
     from fastapi.responses import PlainTextResponse  # noqa: PLC0415 - keep import lazy

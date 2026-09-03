@@ -195,6 +195,19 @@ def test_upload_rejects_chunk_overlap_not_smaller_than_size():
     assert "chunk_overlap" in response.json()["detail"]
 
 
+def test_health_probes():
+    live = client.get("/health/live")
+    assert live.status_code == HTTP_OK
+    assert live.json() == {"status": "ok"}
+
+    ready = client.get("/health/ready")
+    assert ready.status_code == HTTP_OK
+    body = ready.json()
+    assert body["ready"] is True
+    assert body["checks"]["sqlite"] == "ok"
+    assert body["checks"]["chroma_dir"] == "ok"
+
+
 def test_metrics_endpoints_return_counters():
     response = client.get("/metrics")
     assert response.status_code == HTTP_OK
