@@ -36,7 +36,9 @@ def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
     ]
     vectorstore = FakeVectorstore()
 
-    monkeypatch.setattr(chroma_utils, "load_and_split_document", lambda file_path: documents)
+    monkeypatch.setattr(
+        chroma_utils, "load_and_split_document", lambda file_path, *args, **kwargs: documents
+    )
     monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
 
     assert (
@@ -60,7 +62,9 @@ def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
 def test_index_document_returns_false_when_document_has_no_chunks(monkeypatch):
     vectorstore = FakeVectorstore()
 
-    monkeypatch.setattr(chroma_utils, "load_and_split_document", lambda file_path: [])
+    monkeypatch.setattr(
+        chroma_utils, "load_and_split_document", lambda file_path, *args, **kwargs: []
+    )
     monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
 
     assert (

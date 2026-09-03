@@ -28,7 +28,7 @@ def test_sanitize_filename_removes_path_segments():
 def test_upload_rejects_unsupported_extension():
     response = client.post(
         "/upload-doc",
-        files={"file": ("notes.txt", b"hello", "text/plain")},
+        files={"file": ("notes.xyz", b"hello", "application/octet-stream")},
     )
 
     assert response.status_code == HTTP_BAD_REQUEST
@@ -49,7 +49,9 @@ def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
     deleted_file_ids = []
 
     monkeypatch.setattr(main, "insert_document_record", lambda filename: 42)
-    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args: False)
+    monkeypatch.setattr(
+        main, "index_document_to_chroma", lambda *args, **kwargs: False
+    )
     monkeypatch.setattr(
         main, "delete_document_record", lambda file_id: deleted_file_ids.append(file_id) or True
     )

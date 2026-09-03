@@ -9,7 +9,12 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from api.chroma_utils import delete_doc_from_chroma, index_document_to_chroma
+from api.chroma_utils import (
+    ChunkingOptions,
+    ChunkingStrategy,
+    delete_doc_from_chroma,
+    index_document_to_chroma,
+)
 from api.db_utils import (
     delete_document_record,
     get_all_documents,
@@ -38,7 +43,7 @@ app = FastAPI(
     version=settings.app_version,
 )
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html", ".md", ".txt", ".csv"}
 
 
 def sanitize_filename(filename: str) -> str:
@@ -190,7 +195,12 @@ FILE_REQUIRED = File(...)
 
 
 @app.post("/upload-doc", response_model=UploadDocumentResponse)
-def upload_and_index_document(file: UploadFile = FILE_REQUIRED):
+def upload_and_index_document(
+    file: UploadFile = FILE_REQUIRED,
+    chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+):
     safe_filename = sanitize_filename(file.filename or "")
     file_extension = os.path.splitext(safe_filename)[1].lower()
 
@@ -203,6 +213,10 @@ def upload_and_index_document(file: UploadFile = FILE_REQUIRED):
             status_code=400, detail=f"Unsupported file type. Allowed types are: {allowed}"
         )
 
+    options = ChunkingOptions(
+        strategy=chunking_strategy, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+    )
+
     temp_file_path = None
 
     try:
@@ -214,7 +228,12 @@ def upload_and_index_document(file: UploadFile = FILE_REQUIRED):
             raise HTTPException(status_code=400, detail="Uploaded file cannot be empty.")
 
         file_id = insert_document_record(safe_filename)
-        success = index_document_to_chroma(temp_file_path, file_id, safe_filename)
+        success = index_document_to_chroma(
+            temp_file_path,
+            file_id,
+            safe_filename,
+            options=options,
+        )
 
         if success:
             return UploadDocumentResponse(

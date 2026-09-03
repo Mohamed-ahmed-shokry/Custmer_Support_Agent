@@ -1,12 +1,24 @@
 import logging
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, UnstructuredHTMLLoader
+from langchain_community.document_loaders import (
+    Docx2txtLoader,
+    PyPDFLoader,
+    TextLoader,
+    UnstructuredHTMLLoader,
+    UnstructuredMarkdownLoader,
+)
+from langchain_community.document_loaders.csv_loader import CSVLoader
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import (
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
 
 from api.settings import settings
 
@@ -14,9 +26,41 @@ if TYPE_CHECKING:
     from langchain_community.document_loaders.base import BaseLoader
 
 logger = logging.getLogger(__name__)
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000, chunk_overlap=200, length_function=len
-)
+
+
+class ChunkingStrategy(StrEnum):
+    RECURSIVE = "recursive"
+    MARKDOWN = "markdown"
+
+
+_DEFAULT_CHUNK_SIZE = 1000
+_DEFAULT_CHUNK_OVERLAP = 200
+
+
+@dataclass
+class ChunkingOptions:
+    strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE
+    chunk_size: int = _DEFAULT_CHUNK_SIZE
+    chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP
+
+
+def _get_text_splitter(options: ChunkingOptions):
+    if options.strategy == ChunkingStrategy.MARKDOWN:
+        return MarkdownHeaderTextSplitter(
+            headers_to_split_on=[
+                ("#", "Header 1"),
+                ("##", "Header 2"),
+                ("###", "Header 3"),
+            ]
+        )
+    return RecursiveCharacterTextSplitter(
+        chunk_size=options.chunk_size,
+        chunk_overlap=options.chunk_overlap,
+        length_function=len,
+    )
+
+
+text_splitter = _get_text_splitter(ChunkingOptions())
 
 
 def get_vectorstore() -> Chroma:
@@ -29,7 +73,13 @@ def get_vectorstore() -> Chroma:
     return get_vectorstore._vectorstore  # type: ignore[attr-defined, no-any-return]
 
 
-def load_and_split_document(file_path: str) -> list[Document]:
+def load_and_split_document(
+    file_path: str,
+    options: ChunkingOptions | None = None,
+) -> list[Document]:
+    if options is None:
+        options = ChunkingOptions()
+
     loader: BaseLoader
     if file_path.endswith(".pdf"):
         loader = PyPDFLoader(file_path)
@@ -37,20 +87,35 @@ def load_and_split_document(file_path: str) -> list[Document]:
         loader = Docx2txtLoader(file_path)
     elif file_path.endswith(".html"):
         loader = UnstructuredHTMLLoader(file_path)
+    elif file_path.endswith(".md"):
+        loader = UnstructuredMarkdownLoader(file_path)
+    elif file_path.endswith(".txt"):
+        loader = TextLoader(file_path, encoding="utf-8")
+    elif file_path.endswith(".csv"):
+        loader = CSVLoader(file_path)
     else:
         raise ValueError(f"Unsupported file type: {file_path}")
 
     documents = loader.load()
-    return text_splitter.split_documents(documents)
+    splitter = _get_text_splitter(options)
+    return splitter.split_documents(documents)  # type: ignore[no-any-return]
 
 
 def build_chroma_document_ids(file_id: int, chunk_count: int) -> list[str]:
     return [f"{file_id}:{index}" for index in range(chunk_count)]
 
 
-def index_document_to_chroma(file_path: str, file_id: int, filename: str | None = None) -> bool:
+def index_document_to_chroma(
+    file_path: str,
+    file_id: int,
+    filename: str | None = None,
+    options: ChunkingOptions | None = None,
+) -> bool:
+    if options is None:
+        options = ChunkingOptions()
+
     try:
-        splits = load_and_split_document(file_path)
+        splits = load_and_split_document(file_path, options)
         if not splits:
             logger.warning("Document %s produced no chunks for indexing", file_path)
             return False
