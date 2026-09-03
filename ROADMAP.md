@@ -137,8 +137,9 @@
 - [ ] Staging/production environments
 - [ ] Database migrations
 
-### 6.3 Documentation
-- [ ] API reference (OpenAPI/Swagger)
+### 6.3 Documentation (PARTIAL)
+- [x] API reference (`docs/API.md`; OpenAPI/Swagger auto-served at `/docs`)
+- [x] Architecture notes (`docs/ARCHITECTURE.md`)
+- [x] Contribution guide (`docs/CONTRIBUTING.md`)
 - [ ] Architecture decision records (ADRs)
-- [ ] Contribution guide
 - [ ] Runbooks
