@@ -77,11 +77,21 @@ def build_sources(documents) -> list[SourceInfo]:
     return sources
 
 
-def get_rag_chain_for_model(model: str):
+def get_rag_chain_for_model(
+    model: str,
+    file_ids: list[int] | None = None,
+    source_filename: str | None = None,
+    use_hybrid: bool | None = None,
+):
     # ruff: noqa: PLC0415 - lazy import required for Python 3.14 compatibility
     from api.langchain_utils import get_rag_chain
 
-    return get_rag_chain(model)
+    return get_rag_chain(
+        model,
+        file_ids=file_ids,
+        source_filename=source_filename,
+        use_hybrid=use_hybrid,
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -102,7 +112,12 @@ def chat(query_input: QueryInput):
         session_id = str(uuid.uuid4())
 
     chat_history = get_chat_history(session_id)
-    rag_chain = get_rag_chain_for_model(query_input.model.value)
+    rag_chain = get_rag_chain_for_model(
+        query_input.model.value,
+        file_ids=query_input.file_ids,
+        source_filename=query_input.source_filename,
+        use_hybrid=query_input.use_hybrid,
+    )
     try:
         result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
     except Exception as exc:
@@ -128,13 +143,18 @@ def chat(query_input: QueryInput):
 
 
 async def _stream_rag_response(
-    question: str, chat_history: list, model: str, session_id: str
+    query_input: QueryInput, chat_history: list, session_id: str
 ) -> AsyncGenerator[str, None]:
     """Stream RAG chain response as SSE events."""
-    rag_chain = get_rag_chain_for_model(model)
+    rag_chain = get_rag_chain_for_model(
+        query_input.model.value,
+        file_ids=query_input.file_ids,
+        source_filename=query_input.source_filename,
+        use_hybrid=query_input.use_hybrid,
+    )
     try:
         async for chunk in rag_chain.astream(
-            {"input": question, "chat_history": chat_history}
+            {"input": query_input.question, "chat_history": chat_history}
         ):
             if "answer" in chunk:
                 yield f"data: {chunk['answer']}\n\n"
@@ -166,9 +186,7 @@ async def chat_stream(query_input: QueryInput):
 
     async def event_generator():
         full_answer = ""
-        async for event in _stream_rag_response(
-            query_input.question, chat_history, query_input.model.value, session_id
-        ):
+        async for event in _stream_rag_response(query_input, chat_history, session_id):
             if event.startswith("data: "):
                 full_answer += event[6:].strip()
             yield event

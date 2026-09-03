@@ -86,7 +86,7 @@ def test_chat_returns_sources(monkeypatch):
             }
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FakeChain())
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeChain())
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     response = client.post(
@@ -106,7 +106,9 @@ def test_chat_returns_502_when_rag_chain_fails(monkeypatch):
             raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FailingChain())
+    monkeypatch.setattr(
+        main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FailingChain()
+    )
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     response = client.post(
@@ -126,7 +128,9 @@ def test_chat_returns_502_when_rag_response_is_invalid(monkeypatch):
             return {"context": []}
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: InvalidChain())
+    monkeypatch.setattr(
+        main, "get_rag_chain_for_model", lambda model, *args, **kwargs: InvalidChain()
+    )
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     response = client.post(
@@ -136,6 +140,39 @@ def test_chat_returns_502_when_rag_response_is_invalid(monkeypatch):
 
     assert response.status_code == HTTP_BAD_GATEWAY
     assert response.json()["detail"] == "The retrieval pipeline returned an invalid response."
+
+
+def test_chat_forwards_retrieval_filters(monkeypatch):
+    captured = {}
+
+    class FakeChain:
+        def invoke(self, payload):
+            return {"answer": "Filtered answer.", "context": []}
+
+    def fake_get_chain(model, *args, **kwargs):
+        captured.update(kwargs)
+        captured["model"] = model
+        return FakeChain()
+
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", fake_get_chain)
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    response = client.post(
+        "/chat",
+        json={
+            "question": "Filter test?",
+            "model": "gpt-4o-mini",
+            "file_ids": [7],
+            "source_filename": "tenant-handbook.pdf",
+            "use_hybrid": True,
+        },
+    )
+
+    assert response.status_code == HTTP_OK
+    assert captured["file_ids"] == [7]
+    assert captured["source_filename"] == "tenant-handbook.pdf"
+    assert captured["use_hybrid"] is True
 
 
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
@@ -186,7 +223,9 @@ def test_chat_stream_returns_sse_events(monkeypatch):
             yield {"context": []}
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FakeStreamChain())
+    monkeypatch.setattr(
+        main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeStreamChain()
+    )
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     response = client.post(
@@ -207,7 +246,9 @@ def test_chat_stream_handles_chain_error(monkeypatch):
             raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model: FailingStreamChain())
+    monkeypatch.setattr(
+        main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FailingStreamChain()
+    )
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     response = client.post(
