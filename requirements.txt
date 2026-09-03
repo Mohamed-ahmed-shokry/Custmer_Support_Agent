@@ -1,3 +1,4 @@
+# Core dependencies
 fastapi
 langchain>=0.3.27,<1.0
 langchain-openai>=0.3.35,<1.0
@@ -12,4 +13,11 @@ requests
 streamlit
 python-dotenv
 uvicorn
+
+# Development dependencies
 pytest
+pytest-cov
+ruff
+black
+mypy
+pre-commit

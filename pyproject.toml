@@ -1,0 +1,181 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "customer-support-rag-agent"
+version = "0.2.0"
+description = "A local-first customer support assistant for real estate and property management workflows"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "langchain>=0.3.27,<1.0",
+    "langchain-openai>=0.3.35,<1.0",
+    "langchain-core>=0.3.78,<1.0",
+    "langchain-community>=0.3.31,<1.0",
+    "langchain-text-splitters>=0.3.11,<1.0",
+    "docx2txt",
+    "pypdf",
+    "langchain-chroma>=0.2.6,<1.0",
+    "python-multipart",
+    "requests",
+    "streamlit",
+    "python-dotenv",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "black",
+    "mypy",
+    "pre-commit",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["api", "app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "T20", # flake8-print
+    "PL",  # pylint
+]
+ignore = [
+    "S101",  # assert statements in tests
+    "T201",  # print statements in non-test code (for logging)
+]
+per-file-ignores = { "tests/*" = ["S101", "T201"], "main.ipynb" = ["ALL"] }
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+exclude = '''
+/(
+  \.git
+  | \.venv
+  | \.pytest_cache
+  | chroma_db
+  | __pycache__
+  | main\.ipynb
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+strict_optional = true
+show_error_codes = true
+pretty = true
+namespace_packages = true
+explicit_package_bases = true
+files = ["api", "app"]
+exclude = ["main.ipynb"]
+
+[[tool.mypy.overrides]]
+module = "langchain.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_core.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_community.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_openai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_chroma.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_text_splitters.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fastapi.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "streamlit.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "requests.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sqlite3"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers --strict-config"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:chromadb.telemetry.opentelemetry.*",
+]
+
+[tool.coverage.run]
+source = ["api", "app"]
+omit = ["tests/*", "main.ipynb"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+precision = 2
+
+[tool.pre-commit-hooks]
+hooks = [
+    {id = "ruff", args = ["check", "--fix"]},
+    {id = "ruff-format", args = ["format"]},
+    {id = "black"},
+    {id = "mypy"},
+]
