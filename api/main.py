@@ -36,7 +36,38 @@ from api.pydantic_models import (
 )
 from api.settings import settings
 
-logging.basicConfig(filename="app.log", level=logging.INFO)
+
+class JsonLogFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        import json
+
+        payload = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload)
+
+
+def configure_logging() -> None:
+    level = getattr(logging, settings.log_level, logging.INFO)
+    handler = logging.FileHandler("app.log")
+    if settings.log_format == "json":
+        handler.setFormatter(JsonLogFormatter())
+    else:
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(level)
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.app_name,
