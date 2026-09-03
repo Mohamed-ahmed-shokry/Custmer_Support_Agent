@@ -29,12 +29,23 @@ class QueryInput(BaseModel):
     question: NonEmptyString
     session_id: str | None = Field(default=None)
     model: ModelName = Field(default_factory=lambda: model_from_value(settings.default_model))
+    file_ids: list[PositiveInt] | None = Field(default=None, max_length=50)
+    source_filename: str | None = Field(default=None, max_length=255)
+    use_hybrid: bool | None = Field(default=None)
 
     @field_validator("question", mode="before")
     @classmethod
     def strip_question(cls, v: str) -> str:
         if isinstance(v, str):
             return v.strip()
+        return v
+
+    @field_validator("source_filename", mode="before")
+    @classmethod
+    def strip_source_filename(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or None
         return v
 
 
