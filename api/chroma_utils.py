@@ -225,3 +225,24 @@ def get_filtered_retriever(
         search_kwargs["filter"] = filter_dict
 
     return vectorstore.as_retriever(search_kwargs=search_kwargs)
+
+
+def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
+    k: int = 5,
+    file_ids: list[int] | None = None,
+    source_filename: str | None = None,
+    use_hybrid: bool = False,
+    bm25_weight: float = 0.5,
+    vector_weight: float = 0.5,
+):
+    """Pick vector / filtered / hybrid retriever based on request flags."""
+    if use_hybrid:
+        return get_hybrid_retriever(
+            k=k,
+            file_ids=file_ids,
+            bm25_weight=bm25_weight,
+            vector_weight=vector_weight,
+        )
+    if file_ids or source_filename:
+        return get_filtered_retriever(k=k, file_ids=file_ids, source_filter=source_filename)
+    return get_vectorstore().as_retriever(search_kwargs={"k": k})
