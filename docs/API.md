@@ -4,13 +4,22 @@ Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
 All responses carry an `X-Request-ID` header (echoed if the client sends one).
 
+## Security (opt-in)
+
+- When `API_KEY` is set, send `X-API-Key` on every request except
+  `/health*`, `/metrics*`, and `/docs`/`/openapi.json`/`/redoc`.
+  Missing/invalid key → `401`.
+- When `RATE_LIMIT_PER_MIN` is positive, each client IP gets that many
+  non-exempt requests per sliding 60-second window → `429` when exceeded.
+
 ## Health & observability
 
 - `GET /health` → `{status, app, version}`.
 - `GET /health/live` → `{"status": "ok"}` (Kubernetes liveness).
 - `GET /health/ready` → `{"ready": bool, "checks": {"sqlite": ..., "chroma_dir": ...}}`
   with HTTP 200 when ready, 503 otherwise (Kubernetes readiness).
-- `GET /metrics` → Prometheus-text counters (`rag_agent_*`).
+- `GET /metrics` → Prometheus-text counters (`rag_agent_*`) including
+  `latency_avg_seconds_{chat,stream,upload,other}`.
 - `GET /metrics.json` → same counters as JSON plus `uptime_seconds`.
 
 ## Chat
