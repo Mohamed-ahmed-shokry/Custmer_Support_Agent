@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from api import main, observability, security
+from api.observability import estimate_tokens
 from api.settings import settings
 from fastapi.testclient import TestClient
 
@@ -315,6 +316,28 @@ def test_session_history_rejects_blank_session_id():
     response = client.get("/sessions/%20/history")
 
     assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_chat_records_estimated_tokens(monkeypatch):
+    class FakeChain:
+        def invoke(self, payload):
+            return {"answer": "Use the tenant portal.", "context": []}
+
+    observability.reset()
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeChain())
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    question = "How do I request maintenance?"
+    response = client.post(
+        "/chat",
+        json={"question": question, "model": "gpt-4o-mini"},
+    )
+
+    assert response.status_code == HTTP_OK
+    metrics = client.get("/metrics.json").json()
+    assert metrics["prompt_tokens_est"] == estimate_tokens(question)
+    assert metrics["completion_tokens_est"] == estimate_tokens("Use the tenant portal.")
 
 
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):

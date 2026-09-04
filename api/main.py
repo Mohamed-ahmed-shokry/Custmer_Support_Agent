@@ -25,7 +25,13 @@ from api.db_utils import (
     insert_application_logs,
     insert_document_record,
 )
-from api.observability import increment, record_latency, render_prometheus, snapshot
+from api.observability import (
+    estimate_tokens,
+    increment,
+    record_latency,
+    render_prometheus,
+    snapshot,
+)
 from api.pii import redact_pii
 from api.pydantic_models import (
     ChatMessage,
@@ -273,6 +279,8 @@ def chat(query_input: QueryInput):
     sources = build_sources(result.get("context"))
 
     insert_application_logs(session_id, query_input.question, answer, query_input.model.value)
+    increment("prompt_tokens_est", estimate_tokens(query_input.question))
+    increment("completion_tokens_est", estimate_tokens(answer))
     logger.info("Session ID: %s, AI Response: %s", session_id, redact_pii(answer))
     return QueryResponse(
         answer=answer, session_id=session_id, model=query_input.model, sources=sources
@@ -334,6 +342,8 @@ async def chat_stream(query_input: QueryInput):
             insert_application_logs(
                 session_id, query_input.question, full_answer, query_input.model.value
             )
+            increment("prompt_tokens_est", estimate_tokens(query_input.question))
+            increment("completion_tokens_est", estimate_tokens(full_answer))
             logger.info(
                 "Stream Session ID: %s, AI Response: %s", session_id, redact_pii(full_answer)
             )

@@ -14,8 +14,17 @@ _counters: dict[str, int] = {
     "uploads": 0,
     "upload_errors": 0,
     "deletes": 0,
+    "prompt_tokens_est": 0,
+    "completion_tokens_est": 0,
 }
 _latency: dict[str, dict[str, float]] = {}
+
+CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars/token). Not a billing figure."""
+    return max(1, len(text) // CHARS_PER_TOKEN)
 
 
 def increment(counter: str, amount: int = 1) -> int:
