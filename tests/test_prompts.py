@@ -12,6 +12,9 @@ PROMPT_SOURCE = (
     Path(__file__).resolve().parent.parent / "api" / "langchain_utils.py"
 ).read_text(encoding="utf-8")
 
+# Unescape Python string literals so assertions match the rendered prompt.
+PROMPT_TEXT = PROMPT_SOURCE.replace("\\'", "'").replace('\\"', '"')
+
 FALLBACK_MESSAGE = "I'm sorry, I couldn't find the information you're looking for"
 CONTACT_EMAIL = "louisaghali@ghalirealty.com"
 
@@ -21,7 +24,7 @@ def test_prompt_requires_grounded_answers():
 
 
 def test_prompt_defines_unavailable_information_fallback():
-    assert FALLBACK_MESSAGE in PROMPT_SOURCE
+    assert FALLBACK_MESSAGE in PROMPT_TEXT
 
 
 def test_prompt_includes_support_contact_details():
