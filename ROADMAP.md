@@ -76,9 +76,10 @@
 - [x] Correlation IDs for request tracing (X-Request-ID middleware)
 - [x] Log levels via LOG_LEVEL (root logger)
 
-### 3.2 Metrics & tracing (PARTIAL)
+### 3.2 Metrics & tracing (IN PROGRESS)
 - [x] Add lightweight `/metrics` + `/metrics.json` (in-memory counters)
 - [x] Add per-route latency averages (no new deps)
+- [ ] Surface backend metrics in the Streamlit sidebar
 - [ ] Integrate OpenTelemetry (deferred: needs py3.11/3.12 verification)
 - [ ] Add LangSmith/LangFuse integration (already env-supported)
 - [ ] Dashboard for latency, token usage, error rates
@@ -96,9 +97,10 @@
 - [ ] JWT token support (deferred: needs new dep + key management)
 - [ ] Role-based access control (deferred: needs identity model)
 
-### 4.2 Rate limiting & quotas (opt-in, no new deps) ✅ COMPLETED (scoped)
+### 4.2 Rate limiting & quotas (opt-in, no new deps) (IN PROGRESS)
 - [x] Per-IP sliding-window rate limiting (`RATE_LIMIT_PER_MIN`, 0 = off)
-- [ ] Token usage quotas (deferred: needs tokenizer + metering)
+- [ ] Approximate token-usage metering (char-based estimate in metrics)
+- [ ] Token usage quotas (deferred: needs tokenizer + per-key budgets)
 - [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
 ### 4.3 Data protection (PARTIAL)
@@ -119,10 +121,10 @@
 - [ ] Multi-step reasoning
 - [ ] Autonomous document analysis
 
-### 5.3 Evaluation framework (PARTIAL)
+### 5.3 Evaluation framework (IN PROGRESS)
 - [x] Manual retrieval eval script + golden dataset (`docs/eval/`, needs `OPENAI_API_KEY`)
+- [ ] Prompt regression tests (fallback + contact + groundedness invariants)
 - [ ] Automated RAG evaluation in CI (deferred: needs API credits + fixtures)
-- [ ] Regression testing for prompts (deferred: needs eval baseline)
 
 ### 5.4 UI/UX improvements (PARTIAL)
 - [x] Conversation history sidebar (past sessions via `GET /sessions` + history)
@@ -140,10 +142,10 @@
 - [x] Docker Compose for local dev
 - [x] Generic Kubernetes manifests (deployment + service + PVC, live/ready probes)
 
-### 6.2 CI/CD
-- [ ] Automated releases
-- [ ] Staging/production environments
-- [ ] Database migrations
+### 6.2 CI/CD (IN PROGRESS)
+- [ ] Tag-triggered release workflow (tests + GitHub release)
+- [ ] Staging/production environments (deferred: needs hosting target)
+- [ ] Database migrations (deferred: schema is IF NOT EXISTS; needs change driver)
 
 ### 6.3 Documentation (PARTIAL)
 - [x] API reference (`docs/API.md`; OpenAPI/Swagger auto-served at `/docs`)
