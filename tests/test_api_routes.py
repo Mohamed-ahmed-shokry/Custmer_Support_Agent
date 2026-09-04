@@ -282,6 +282,22 @@ def test_metrics_endpoints_return_counters():
     assert "chat_requests" in response_json.json()
 
 
+def test_list_sessions_returns_summaries(monkeypatch):
+    sessions = [
+        {
+            "session_id": "session-1",
+            "message_count": 2,
+            "last_active": "2026-09-04T00:00:00",
+        }
+    ]
+    monkeypatch.setattr(main, "get_all_sessions", lambda: sessions)
+
+    response = client.get("/sessions")
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == sessions
+
+
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
     monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
 

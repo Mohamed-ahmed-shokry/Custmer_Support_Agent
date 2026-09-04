@@ -70,6 +70,12 @@ class DocumentInfo(BaseModel):
     upload_timestamp: datetime
 
 
+class SessionInfo(BaseModel):
+    session_id: str
+    message_count: int
+    last_active: datetime
+
+
 class DeleteFileRequest(BaseModel):
     file_id: PositiveInt
 

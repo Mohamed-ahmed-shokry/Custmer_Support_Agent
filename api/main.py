@@ -19,6 +19,7 @@ from api.chroma_utils import (
 from api.db_utils import (
     delete_document_record,
     get_all_documents,
+    get_all_sessions,
     get_chat_history,
     get_document_record,
     insert_application_logs,
@@ -33,6 +34,7 @@ from api.pydantic_models import (
     HealthResponse,
     QueryInput,
     QueryResponse,
+    SessionInfo,
     SourceInfo,
     UploadDocumentResponse,
 )
@@ -416,6 +418,11 @@ def upload_and_index_document(
 @app.get("/list-docs", response_model=list[DocumentInfo])
 def list_documents():
     return get_all_documents()
+
+
+@app.get("/sessions", response_model=list[SessionInfo])
+def list_sessions():
+    return get_all_sessions()
 
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)
