@@ -1,0 +1,15 @@
+.git/
+.gitignore
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.env
+*.log
+*.db
+chroma_db/
+temp_*
+main.ipynb
+docs/*.pdf
+docs/*.docx
