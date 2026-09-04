@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from api import main
+from api import main, observability
 from fastapi.testclient import TestClient
 
 client = TestClient(main.app)
@@ -206,6 +206,14 @@ def test_health_probes():
     assert body["ready"] is True
     assert body["checks"]["sqlite"] == "ok"
     assert body["checks"]["chroma_dir"] == "ok"
+
+
+def test_latency_metrics_recorded():
+    observability.reset()
+    client.get("/health")
+    body = client.get("/metrics.json").json()
+    assert body["latency_count_other"] >= 1
+    assert body["latency_avg_seconds_other"] >= 0.0
 
 
 def test_metrics_endpoints_return_counters():

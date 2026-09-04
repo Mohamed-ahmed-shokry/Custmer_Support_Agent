@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -23,7 +24,7 @@ from api.db_utils import (
     insert_application_logs,
     insert_document_record,
 )
-from api.observability import increment, render_prometheus, snapshot
+from api.observability import increment, record_latency, render_prometheus, snapshot
 from api.pydantic_models import (
     DeleteDocumentResponse,
     DeleteFileRequest,
@@ -78,11 +79,23 @@ app = FastAPI(
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html", ".md", ".txt", ".csv"}
 
 
+def _latency_group(path: str) -> str:
+    if path == "/chat":
+        return "chat"
+    if path == "/chat/stream":
+        return "stream"
+    if path == "/upload-doc":
+        return "upload"
+    return "other"
+
+
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
+    started = time.perf_counter()
     response = await call_next(request)
+    record_latency(_latency_group(request.url.path), time.perf_counter() - started)
     response.headers["X-Request-ID"] = request_id
     return response
 
