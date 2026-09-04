@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-agent-api
+  labels:
+    app: rag-agent-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rag-agent-api
+  template:
+    metadata:
+      labels:
+        app: rag-agent-api
+    spec:
+      containers:
+        - name: api
+          image: rag-agent:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: CHROMA_PERSIST_DIR
+              value: /data/chroma_db
+            - name: SQLITE_DB_PATH
+              value: /data/rag_app.db
+            - name: LOG_FORMAT
+              value: json
+          envFrom:
+            - secretRef:
+                name: rag-agent-secrets
+                optional: true
+          volumeMounts:
+            - name: rag-data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+      volumes:
+        - name: rag-data
+          persistentVolumeClaim:
+            claimName: rag-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-agent-api
+  labels:
+    app: rag-agent-api
+spec:
+  selector:
+    app: rag-agent-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rag-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
