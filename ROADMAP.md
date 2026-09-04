@@ -1,20 +1,22 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.4.0-dev, 2026-09-04)
-- FastAPI backend: chat, streaming chat (SSE), upload/list/delete, metrics
-  with per-route latency averages, live/ready probes; retrieval filters
-  (file_ids, source_filename, use_hybrid)
-- Streamlit frontend with streaming toggle, chat interface, document management
+## Current State (v0.5.0-dev, 2026-09-04)
+- FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
+  + history, metrics with per-route latency averages, live/ready probes;
+  retrieval filters (file_ids, source_filename, use_hybrid)
+- Streamlit frontend with streaming toggle, chat interface, document
+  management, and past-sessions switcher
 - SQLite for session history and document metadata
 - Chroma vector store with OpenAI embeddings; configurable chunking
   (recursive/markdown) and file types: pdf, docx, html, md, txt, csv;
   indexing retries with exponential backoff
 - Resilience: X-Request-ID middleware, chunk-param validation, upload cap
 - Security (opt-in): API_KEY auth, per-IP sliding-window rate limiting
+- Data protection: PII redaction in file logs
 - Observability: LOG_LEVEL / LOG_FORMAT=json, in-memory metrics, probes
-- Containerization: multi-stage Dockerfile + compose stack
-- Docs: API reference, architecture, contributing, ADR-001, runbook
-- 51 tests passing; ruff + black + mypy clean
+- Containerization: multi-stage Dockerfile, compose stack, k8s manifests
+- Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
+- 59 tests passing; ruff + mypy clean (CI gates)
 
 ---
 
@@ -99,8 +101,8 @@
 - [ ] Token usage quotas (deferred: needs tokenizer + metering)
 - [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
-### 4.3 Data protection (IN PROGRESS)
-- [ ] PII redaction in file logs (emails, phones, SSN-like patterns)
+### 4.3 Data protection (PARTIAL)
+- [x] PII redaction in file logs (emails, phones, SSN-like patterns)
 - [ ] Encryption at rest for SQLite/Chroma (deferred: needs key management)
 - [ ] Secure secret management (`.env` gitignored + secret scan in CI ✅)
 
@@ -117,14 +119,14 @@
 - [ ] Multi-step reasoning
 - [ ] Autonomous document analysis
 
-### 5.3 Evaluation framework (IN PROGRESS)
-- [ ] Manual retrieval eval script + golden dataset (`docs/eval/`, needs `OPENAI_API_KEY`)
+### 5.3 Evaluation framework (PARTIAL)
+- [x] Manual retrieval eval script + golden dataset (`docs/eval/`, needs `OPENAI_API_KEY`)
 - [ ] Automated RAG evaluation in CI (deferred: needs API credits + fixtures)
 - [ ] Regression testing for prompts (deferred: needs eval baseline)
 
-### 5.4 UI/UX improvements (IN PROGRESS)
-- [ ] Conversation history sidebar (past sessions via `GET /sessions`)
-- [ ] Accept md/txt/csv in the Streamlit uploader (backend already supports them)
+### 5.4 UI/UX improvements (PARTIAL)
+- [x] Conversation history sidebar (past sessions via `GET /sessions` + history)
+- [x] Accept md/txt/csv in the Streamlit uploader (backend already supports them)
 - [ ] Document annotation/highlighting (deferred)
 - [ ] Dark mode (deferred: Streamlit theming)
 - [ ] Mobile responsive design (deferred)
@@ -133,10 +135,10 @@
 
 ## Phase 6: DevOps & Deployment (Ongoing)
 
-### 6.1 Containerization (IN PROGRESS)
+### 6.1 Containerization ✅ COMPLETED (scoped)
 - [x] Multi-stage Dockerfile
 - [x] Docker Compose for local dev
-- [ ] Generic Kubernetes manifests (deployment + service with live/ready probes)
+- [x] Generic Kubernetes manifests (deployment + service + PVC, live/ready probes)
 
 ### 6.2 CI/CD
 - [ ] Automated releases
