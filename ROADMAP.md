@@ -1,11 +1,12 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.5.0-dev, 2026-09-04)
+## Current State (v0.5.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
-  + history, metrics with per-route latency averages, live/ready probes;
-  retrieval filters (file_ids, source_filename, use_hybrid)
+  + history, metrics with per-route latency averages and approximate token
+  usage, live/ready probes; retrieval filters (file_ids, source_filename,
+  use_hybrid)
 - Streamlit frontend with streaming toggle, chat interface, document
-  management, and past-sessions switcher
+  management, past-sessions switcher, and backend metrics panel
 - SQLite for session history and document metadata
 - Chroma vector store with OpenAI embeddings; configurable chunking
   (recursive/markdown) and file types: pdf, docx, html, md, txt, csv;
@@ -15,8 +16,9 @@
 - Data protection: PII redaction in file logs
 - Observability: LOG_LEVEL / LOG_FORMAT=json, in-memory metrics, probes
 - Containerization: multi-stage Dockerfile, compose stack, k8s manifests
+- Releases: tag-triggered workflow (verify + GitHub release)
 - Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
-- 59 tests passing; ruff + mypy clean (CI gates)
+- 65 tests passing; ruff + mypy clean (CI gates)
 
 ---
 
@@ -76,10 +78,11 @@
 - [x] Correlation IDs for request tracing (X-Request-ID middleware)
 - [x] Log levels via LOG_LEVEL (root logger)
 
-### 3.2 Metrics & tracing (IN PROGRESS)
+### 3.2 Metrics & tracing (PARTIAL)
 - [x] Add lightweight `/metrics` + `/metrics.json` (in-memory counters)
 - [x] Add per-route latency averages (no new deps)
-- [ ] Surface backend metrics in the Streamlit sidebar
+- [x] Surface backend metrics in the Streamlit sidebar
+- [x] Approximate token-usage counters (char-based estimate)
 - [ ] Integrate OpenTelemetry (deferred: needs py3.11/3.12 verification)
 - [ ] Add LangSmith/LangFuse integration (already env-supported)
 - [ ] Dashboard for latency, token usage, error rates
@@ -97,9 +100,9 @@
 - [ ] JWT token support (deferred: needs new dep + key management)
 - [ ] Role-based access control (deferred: needs identity model)
 
-### 4.2 Rate limiting & quotas (opt-in, no new deps) (IN PROGRESS)
+### 4.2 Rate limiting & quotas (opt-in, no new deps) (PARTIAL)
 - [x] Per-IP sliding-window rate limiting (`RATE_LIMIT_PER_MIN`, 0 = off)
-- [ ] Approximate token-usage metering (char-based estimate in metrics)
+- [x] Approximate token-usage metering (char-based estimate in metrics)
 - [ ] Token usage quotas (deferred: needs tokenizer + per-key budgets)
 - [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
@@ -121,9 +124,9 @@
 - [ ] Multi-step reasoning
 - [ ] Autonomous document analysis
 
-### 5.3 Evaluation framework (IN PROGRESS)
+### 5.3 Evaluation framework (PARTIAL)
 - [x] Manual retrieval eval script + golden dataset (`docs/eval/`, needs `OPENAI_API_KEY`)
-- [ ] Prompt regression tests (fallback + contact + groundedness invariants)
+- [x] Prompt regression tests (fallback + contact + groundedness invariants)
 - [ ] Automated RAG evaluation in CI (deferred: needs API credits + fixtures)
 
 ### 5.4 UI/UX improvements (PARTIAL)
@@ -142,8 +145,8 @@
 - [x] Docker Compose for local dev
 - [x] Generic Kubernetes manifests (deployment + service + PVC, live/ready probes)
 
-### 6.2 CI/CD (IN PROGRESS)
-- [ ] Tag-triggered release workflow (tests + GitHub release)
+### 6.2 CI/CD (PARTIAL)
+- [x] Tag-triggered release workflow (tests + GitHub release)
 - [ ] Staging/production environments (deferred: needs hosting target)
 - [ ] Database migrations (deferred: schema is IF NOT EXISTS; needs change driver)
 
