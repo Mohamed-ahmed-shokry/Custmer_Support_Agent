@@ -1,16 +1,20 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.3.0, 2026-09-04)
-- FastAPI backend: chat, streaming chat (SSE), upload/list/delete, metrics,
-  live/ready probes; retrieval filters (file_ids, source_filename, use_hybrid)
+## Current State (v0.4.0-dev, 2026-09-04)
+- FastAPI backend: chat, streaming chat (SSE), upload/list/delete, metrics
+  with per-route latency averages, live/ready probes; retrieval filters
+  (file_ids, source_filename, use_hybrid)
 - Streamlit frontend with streaming toggle, chat interface, document management
 - SQLite for session history and document metadata
 - Chroma vector store with OpenAI embeddings; configurable chunking
   (recursive/markdown) and file types: pdf, docx, html, md, txt, csv;
   indexing retries with exponential backoff
 - Resilience: X-Request-ID middleware, chunk-param validation, upload cap
+- Security (opt-in): API_KEY auth, per-IP sliding-window rate limiting
 - Observability: LOG_LEVEL / LOG_FORMAT=json, in-memory metrics, probes
-- 41 tests passing; ruff + black + mypy clean
+- Containerization: multi-stage Dockerfile + compose stack
+- Docs: API reference, architecture, contributing, ADR-001, runbook
+- 51 tests passing; ruff + black + mypy clean
 
 ---
 
@@ -70,9 +74,9 @@
 - [x] Correlation IDs for request tracing (X-Request-ID middleware)
 - [x] Log levels via LOG_LEVEL (root logger)
 
-### 3.2 Metrics & tracing (IN PROGRESS)
+### 3.2 Metrics & tracing (PARTIAL)
 - [x] Add lightweight `/metrics` + `/metrics.json` (in-memory counters)
-- [ ] Add per-route latency averages (no new deps)
+- [x] Add per-route latency averages (no new deps)
 - [ ] Integrate OpenTelemetry (deferred: needs py3.11/3.12 verification)
 - [ ] Add LangSmith/LangFuse integration (already env-supported)
 - [ ] Dashboard for latency, token usage, error rates
@@ -85,13 +89,13 @@
 
 ## Phase 4: Security & Production Hardening (Week 4, IN PROGRESS)
 
-### 4.1 Authentication & Authorization (opt-in, no new deps)
-- [ ] Optional API-key auth (`API_KEY` env; `X-API-Key` on chat/upload/delete)
+### 4.1 Authentication & Authorization (opt-in, no new deps) ✅ COMPLETED (scoped)
+- [x] Optional API-key auth (`API_KEY` env; `X-API-Key` on chat/upload/delete)
 - [ ] JWT token support (deferred: needs new dep + key management)
 - [ ] Role-based access control (deferred: needs identity model)
 
-### 4.2 Rate limiting & quotas (opt-in, no new deps)
-- [ ] Per-IP sliding-window rate limiting (`RATE_LIMIT_PER_MIN`, 0 = off)
+### 4.2 Rate limiting & quotas (opt-in, no new deps) ✅ COMPLETED (scoped)
+- [x] Per-IP sliding-window rate limiting (`RATE_LIMIT_PER_MIN`, 0 = off)
 - [ ] Token usage quotas (deferred: needs tokenizer + metering)
 - [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
@@ -128,9 +132,9 @@
 
 ## Phase 6: DevOps & Deployment (Ongoing)
 
-### 6.1 Containerization (IN PROGRESS)
-- [ ] Multi-stage Dockerfile
-- [ ] Docker Compose for local dev
+### 6.1 Containerization (PARTIAL)
+- [x] Multi-stage Dockerfile
+- [x] Docker Compose for local dev
 - [ ] Kubernetes manifests (deferred: needs cluster target details)
 
 ### 6.2 CI/CD
@@ -142,5 +146,5 @@
 - [x] API reference (`docs/API.md`; OpenAPI/Swagger auto-served at `/docs`)
 - [x] Architecture notes (`docs/ARCHITECTURE.md`)
 - [x] Contribution guide (`docs/CONTRIBUTING.md`)
-- [ ] Architecture decision records (ADRs)
-- [ ] Runbooks
+- [x] Architecture decision records (`docs/adr/001-lazy-langchain-imports.md`)
+- [x] Runbooks (`docs/RUNBOOK.md`)
