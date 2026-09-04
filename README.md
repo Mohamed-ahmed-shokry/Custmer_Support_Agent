@@ -13,7 +13,8 @@ A local-first customer support assistant for real estate and property management
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
   validation and a configurable upload size cap.
 - Source-aware answers with document metadata returned by the API.
-- Streamlit document upload, listing, deletion, and chat controls.
+- Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher.
+- File logs redact emails, phone numbers, and SSN-like patterns.
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
   `/metrics` (Prometheus text) and `/metrics.json` with per-route latency
@@ -119,9 +120,22 @@ The API serves on `http://localhost:8000` and the UI on
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `GET /list-docs`, `POST /delete-doc` — document metadata management.
+- `GET /sessions`, `GET /sessions/{id}/history` — past conversations.
 
 Full details: `docs/API.md`. Architecture notes: `docs/ARCHITECTURE.md`.
 Contributor workflow: `docs/CONTRIBUTING.md`. Roadmap: `ROADMAP.md`.
+Operations: `docs/RUNBOOK.md`. Kubernetes: `k8s/deployment.yaml`.
+
+## Manual retrieval eval
+
+Upload the `docs/` corpus, then run:
+
+```powershell
+python scripts/eval_retrieval.py
+```
+
+It checks each `docs/eval/golden.json` question against the live vector
+store (needs `OPENAI_API_KEY`; not run in CI).
 
 ## Testing
 
