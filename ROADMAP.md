@@ -70,8 +70,9 @@
 - [x] Correlation IDs for request tracing (X-Request-ID middleware)
 - [x] Log levels via LOG_LEVEL (root logger)
 
-### 3.2 Metrics & tracing (PARTIAL)
+### 3.2 Metrics & tracing (IN PROGRESS)
 - [x] Add lightweight `/metrics` + `/metrics.json` (in-memory counters)
+- [ ] Add per-route latency averages (no new deps)
 - [ ] Integrate OpenTelemetry (deferred: needs py3.11/3.12 verification)
 - [ ] Add LangSmith/LangFuse integration (already env-supported)
 - [ ] Dashboard for latency, token usage, error rates
@@ -82,17 +83,17 @@
 
 ---
 
-## Phase 4: Security & Production Hardening (Week 4)
+## Phase 4: Security & Production Hardening (Week 4, IN PROGRESS)
 
-### 4.1 Authentication & Authorization
-- [ ] Add API key authentication
-- [ ] Add JWT token support
-- [ ] Role-based access control (admin, user)
+### 4.1 Authentication & Authorization (opt-in, no new deps)
+- [ ] Optional API-key auth (`API_KEY` env; `X-API-Key` on chat/upload/delete)
+- [ ] JWT token support (deferred: needs new dep + key management)
+- [ ] Role-based access control (deferred: needs identity model)
 
-### 4.2 Rate limiting & quotas
-- [ ] Per-user/IP rate limiting
-- [ ] Token usage quotas
-- [ ] Request size limits
+### 4.2 Rate limiting & quotas (opt-in, no new deps)
+- [ ] Per-IP sliding-window rate limiting (`RATE_LIMIT_PER_MIN`, 0 = off)
+- [ ] Token usage quotas (deferred: needs tokenizer + metering)
+- [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
 ### 4.3 Data protection
 - [ ] PII detection/redaction in logs
@@ -127,10 +128,10 @@
 
 ## Phase 6: DevOps & Deployment (Ongoing)
 
-### 6.1 Containerization
+### 6.1 Containerization (IN PROGRESS)
 - [ ] Multi-stage Dockerfile
 - [ ] Docker Compose for local dev
-- [ ] Kubernetes manifests
+- [ ] Kubernetes manifests (deferred: needs cluster target details)
 
 ### 6.2 CI/CD
 - [ ] Automated releases
