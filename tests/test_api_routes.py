@@ -1,16 +1,19 @@
 from types import SimpleNamespace
 
-from api import main, observability
+from api import main, observability, security
+from api.settings import settings
 from fastapi.testclient import TestClient
 
 client = TestClient(main.app)
 
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
-HTTP_INTERNAL_ERROR = 500
-HTTP_BAD_GATEWAY = 502
+HTTP_UNAUTHORIZED = 401
 HTTP_NOT_FOUND = 404
 HTTP_UNPROCESSABLE_ENTITY = 422
+HTTP_TOO_MANY_REQUESTS = 429
+HTTP_INTERNAL_ERROR = 500
+HTTP_BAD_GATEWAY = 502
 
 
 def test_health_route():
@@ -193,6 +196,59 @@ def test_upload_rejects_chunk_overlap_not_smaller_than_size():
 
     assert response.status_code == HTTP_BAD_REQUEST
     assert "chunk_overlap" in response.json()["detail"]
+
+
+def test_chat_rejects_missing_api_key_when_configured(monkeypatch):
+    security.reset()
+    monkeypatch.setattr(settings, "api_key", "secret")
+
+    response = client.post(
+        "/chat",
+        json={"question": "Hello", "model": "gpt-4o-mini"},
+    )
+
+    assert response.status_code == HTTP_UNAUTHORIZED
+    assert response.headers["X-Request-ID"]
+    monkeypatch.setattr(settings, "api_key", "")
+
+
+def test_health_stays_public_when_api_key_configured(monkeypatch):
+    monkeypatch.setattr(settings, "api_key", "secret")
+
+    response = client.get("/health")
+
+    assert response.status_code == HTTP_OK
+    monkeypatch.setattr(settings, "api_key", "")
+
+
+def test_chat_rate_limit_blocks_after_quota(monkeypatch):
+    class FakeChain:
+        def invoke(self, payload):
+            return {"answer": "OK", "context": []}
+
+    security.reset()
+    monkeypatch.setattr(settings, "rate_limit_per_min", 2)
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(
+        main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeChain()
+    )
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    try:
+        for _ in range(2):
+            response = client.post(
+                "/chat",
+                json={"question": "Hello", "model": "gpt-4o-mini"},
+            )
+            assert response.status_code == HTTP_OK
+        limited = client.post(
+            "/chat",
+            json={"question": "Hello", "model": "gpt-4o-mini"},
+        )
+        assert limited.status_code == HTTP_TOO_MANY_REQUESTS
+    finally:
+        monkeypatch.setattr(settings, "rate_limit_per_min", 0)
+        security.reset()
 
 
 def test_health_probes():

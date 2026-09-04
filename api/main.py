@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.chroma_utils import (
     ChunkingOptions,
@@ -35,6 +35,7 @@ from api.pydantic_models import (
     SourceInfo,
     UploadDocumentResponse,
 )
+from api.security import check_api_key, check_rate_limit, is_public_path
 from api.settings import settings
 
 
@@ -93,6 +94,20 @@ def _latency_group(path: str) -> str:
 async def add_request_id(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
+    if not is_public_path(request.url.path):
+        if not check_api_key(request.headers.get("X-API-Key"), settings.api_key):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing API key."},
+                headers={"X-Request-ID": request_id},
+            )
+        client_ip = request.client.host if request.client else "unknown"
+        if not check_rate_limit(client_ip, settings.rate_limit_per_min):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Try again later."},
+                headers={"X-Request-ID": request_id},
+            )
     started = time.perf_counter()
     response = await call_next(request)
     record_latency(_latency_group(request.url.path), time.perf_counter() - started)
