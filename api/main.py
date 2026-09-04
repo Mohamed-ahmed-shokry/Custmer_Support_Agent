@@ -25,6 +25,7 @@ from api.db_utils import (
     insert_document_record,
 )
 from api.observability import increment, record_latency, render_prometheus, snapshot
+from api.pii import redact_pii
 from api.pydantic_models import (
     DeleteDocumentResponse,
     DeleteFileRequest,
@@ -238,7 +239,7 @@ def chat(query_input: QueryInput):
     logger.info(
         "Session ID: %s, User Query: %s, Model: %s",
         session_id,
-        query_input.question,
+        redact_pii(query_input.question),
         query_input.model.value,
     )
     if not session_id:
@@ -271,7 +272,7 @@ def chat(query_input: QueryInput):
     sources = build_sources(result.get("context"))
 
     insert_application_logs(session_id, query_input.question, answer, query_input.model.value)
-    logger.info("Session ID: %s, AI Response: %s", session_id, answer)
+    logger.info("Session ID: %s, AI Response: %s", session_id, redact_pii(answer))
     return QueryResponse(
         answer=answer, session_id=session_id, model=query_input.model, sources=sources
     )
@@ -312,7 +313,7 @@ async def chat_stream(query_input: QueryInput):
     logger.info(
         "Stream Session ID: %s, User Query: %s, Model: %s",
         session_id,
-        query_input.question,
+        redact_pii(query_input.question),
         query_input.model.value,
     )
     if not session_id:
@@ -332,7 +333,9 @@ async def chat_stream(query_input: QueryInput):
             insert_application_logs(
                 session_id, query_input.question, full_answer, query_input.model.value
             )
-            logger.info("Stream Session ID: %s, AI Response: %s", session_id, full_answer)
+            logger.info(
+                "Stream Session ID: %s, AI Response: %s", session_id, redact_pii(full_answer)
+            )
 
     return StreamingResponse(
         event_generator(),
