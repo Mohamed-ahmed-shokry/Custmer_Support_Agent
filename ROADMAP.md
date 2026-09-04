@@ -99,10 +99,10 @@
 - [ ] Token usage quotas (deferred: needs tokenizer + metering)
 - [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
-### 4.3 Data protection
-- [ ] PII detection/redaction in logs
-- [ ] Encryption at rest for SQLite/Chroma
-- [ ] Secure secret management
+### 4.3 Data protection (IN PROGRESS)
+- [ ] PII redaction in file logs (emails, phones, SSN-like patterns)
+- [ ] Encryption at rest for SQLite/Chroma (deferred: needs key management)
+- [ ] Secure secret management (`.env` gitignored + secret scan in CI ✅)
 
 ---
 
@@ -117,25 +117,26 @@
 - [ ] Multi-step reasoning
 - [ ] Autonomous document analysis
 
-### 5.3 Evaluation framework
-- [ ] Automated RAG evaluation (faithfulness, relevance)
-- [ ] Golden dataset management
-- [ ] Regression testing for prompts
+### 5.3 Evaluation framework (IN PROGRESS)
+- [ ] Manual retrieval eval script + golden dataset (`docs/eval/`, needs `OPENAI_API_KEY`)
+- [ ] Automated RAG evaluation in CI (deferred: needs API credits + fixtures)
+- [ ] Regression testing for prompts (deferred: needs eval baseline)
 
-### 5.4 UI/UX improvements
-- [ ] Conversation history sidebar
-- [ ] Document annotation/highlighting
-- [ ] Dark mode
-- [ ] Mobile responsive design
+### 5.4 UI/UX improvements (IN PROGRESS)
+- [ ] Conversation history sidebar (past sessions via `GET /sessions`)
+- [ ] Accept md/txt/csv in the Streamlit uploader (backend already supports them)
+- [ ] Document annotation/highlighting (deferred)
+- [ ] Dark mode (deferred: Streamlit theming)
+- [ ] Mobile responsive design (deferred)
 
 ---
 
 ## Phase 6: DevOps & Deployment (Ongoing)
 
-### 6.1 Containerization (PARTIAL)
+### 6.1 Containerization (IN PROGRESS)
 - [x] Multi-stage Dockerfile
 - [x] Docker Compose for local dev
-- [ ] Kubernetes manifests (deferred: needs cluster target details)
+- [ ] Generic Kubernetes manifests (deployment + service with live/ready probes)
 
 ### 6.2 CI/CD
 - [ ] Automated releases
