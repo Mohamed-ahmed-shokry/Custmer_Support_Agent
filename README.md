@@ -16,7 +16,10 @@ A local-first customer support assistant for real estate and property management
 - Streamlit document upload, listing, deletion, and chat controls.
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
-  `/metrics` (Prometheus text) and `/metrics.json`, `LOG_FORMAT`/`LOG_LEVEL`.
+  `/metrics` (Prometheus text) and `/metrics.json` with per-route latency
+  averages, `LOG_FORMAT`/`LOG_LEVEL`.
+- Opt-in security: `API_KEY` (`X-API-Key` header) and per-IP rate limiting
+  (`RATE_LIMIT_PER_MIN`); health/metrics/docs paths stay public.
 - Safe Git defaults that keep secrets, logs, databases, and vector stores out of commits.
 
 ## Architecture
@@ -76,6 +79,8 @@ Optional:
 - `MAX_UPLOAD_MB` (default `25`)
 - `LOG_FORMAT` (`text` or `json`, default `text`)
 - `LOG_LEVEL` (default `INFO`)
+- `API_KEY` (empty = auth disabled; when set, send `X-API-Key`)
+- `RATE_LIMIT_PER_MIN` (default `0` = off)
 
 ## Run Locally
 
@@ -90,6 +95,18 @@ Start the Streamlit app in another terminal:
 ```powershell
 streamlit run app/streamlit_app.py
 ```
+
+## Run with Docker
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+The API serves on `http://localhost:8000` and the UI on
+`http://localhost:8501`. Data persists in the `rag-data` volume. See
+`docs/RUNBOOK.md` for operations.
+
 ## API quick reference
 
 - `GET /health` — basic liveness with app name/version.
