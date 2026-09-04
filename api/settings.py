@@ -50,6 +50,8 @@ class Settings:
         self.max_upload_mb = get_positive_int_env("MAX_UPLOAD_MB", 25)
         self.log_format = os.getenv("LOG_FORMAT", "text").strip().lower()
         self.log_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+        self.api_key = os.getenv("API_KEY", "")
+        self.rate_limit_per_min = get_positive_int_env("RATE_LIMIT_PER_MIN", 0)
 
 
 settings = Settings()
