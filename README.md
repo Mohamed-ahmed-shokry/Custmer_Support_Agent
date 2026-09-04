@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.3.0)
+# Customer Support RAG Agent (v0.5.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -18,7 +18,10 @@ A local-first customer support assistant for real estate and property management
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
   `/metrics` (Prometheus text) and `/metrics.json` with per-route latency
-  averages, `LOG_FORMAT`/`LOG_LEVEL`.
+  averages and approximate token-usage counters, `LOG_FORMAT`/`LOG_LEVEL`.
+  The Streamlit sidebar shows a backend metrics panel.
+- Releases: pushing a `v*` tag runs the full verification suite and creates
+  a GitHub release.
 - Opt-in security: `API_KEY` (`X-API-Key` header) and per-IP rate limiting
   (`RATE_LIMIT_PER_MIN`); health/metrics/docs paths stay public.
 - Safe Git defaults that keep secrets, logs, databases, and vector stores out of commits.
@@ -113,7 +116,8 @@ The API serves on `http://localhost:8000` and the UI on
 - `GET /health` — basic liveness with app name/version.
 - `GET /health/live` — process liveness probe.
 - `GET /health/ready` — readiness probe (SQLite + Chroma dir checks).
-- `GET /metrics` / `GET /metrics.json` — in-memory request counters.
+- `GET /metrics` / `GET /metrics.json` — in-memory request counters,
+  latency averages, and estimated token usage.
 - `POST /chat` — JSON answer with `sources`.
 - `POST /chat/stream` — SSE stream (`data:` answer chunks,
   `event: sources` metadata, `event: error` on failure).
