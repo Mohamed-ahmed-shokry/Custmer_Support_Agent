@@ -298,6 +298,25 @@ def test_list_sessions_returns_summaries(monkeypatch):
     assert response.json() == sessions
 
 
+def test_session_history_returns_messages(monkeypatch):
+    history = [
+        {"role": "human", "content": "Hi"},
+        {"role": "ai", "content": "Hello!"},
+    ]
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: history)
+
+    response = client.get("/sessions/session-1/history")
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == history
+
+
+def test_session_history_rejects_blank_session_id():
+    response = client.get("/sessions/%20/history")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
     monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
 

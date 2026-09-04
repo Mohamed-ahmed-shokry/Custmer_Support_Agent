@@ -28,6 +28,7 @@ from api.db_utils import (
 from api.observability import increment, record_latency, render_prometheus, snapshot
 from api.pii import redact_pii
 from api.pydantic_models import (
+    ChatMessage,
     DeleteDocumentResponse,
     DeleteFileRequest,
     DocumentInfo,
@@ -423,6 +424,13 @@ def list_documents():
 @app.get("/sessions", response_model=list[SessionInfo])
 def list_sessions():
     return get_all_sessions()
+
+
+@app.get("/sessions/{session_id}/history", response_model=list[ChatMessage])
+def session_history(session_id: str):
+    if not session_id.strip():
+        raise HTTPException(status_code=400, detail="session_id must not be empty.")
+    return [ChatMessage(**message) for message in get_chat_history(session_id)]
 
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)

@@ -76,6 +76,11 @@ class SessionInfo(BaseModel):
     last_active: datetime
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
 class DeleteFileRequest(BaseModel):
     file_id: PositiveInt
 
