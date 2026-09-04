@@ -42,6 +42,12 @@ _SELECT_ALL_DOCS = (
     "ORDER BY upload_timestamp DESC, id DESC"
 )
 
+_SELECT_ALL_SESSIONS = (
+    "SELECT session_id, COUNT(*) AS message_count, "
+    "MAX(created_at) AS last_active FROM application_logs "
+    "GROUP BY session_id ORDER BY last_active DESC"
+)
+
 
 def get_db_connection():
     db_path = Path(DB_NAME)
@@ -117,6 +123,14 @@ def get_all_documents():
         cursor.execute(_SELECT_ALL_DOCS)
         documents = cursor.fetchall()
         return [dict(doc) for doc in documents]
+
+
+def get_all_sessions():
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_SELECT_ALL_SESSIONS)
+        sessions = cursor.fetchall()
+        return [dict(session) for session in sessions]
 
 
 # Initialize the database tables

@@ -30,6 +30,19 @@ def test_chat_history_is_returned_in_insert_order(monkeypatch, tmp_path):
     ]
 
 
+def test_get_all_sessions_returns_counts(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    assert db_utils.get_all_sessions() == []
+
+    db_utils.insert_application_logs("session-1", "Q1", "A1", "gpt-4o-mini")
+    db_utils.insert_application_logs("session-1", "Q2", "A2", "gpt-4o-mini")
+    db_utils.insert_application_logs("session-2", "Q3", "A3", "gpt-4o-mini")
+
+    sessions = {s["session_id"]: s["message_count"] for s in db_utils.get_all_sessions()}
+    assert sessions == {"session-1": 2, "session-2": 1}
+
+
 def test_document_record_lifecycle(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 
