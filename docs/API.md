@@ -41,6 +41,8 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
   retrieval filters. Omit them for plain vector search over all documents.
 - Success → `200` with `{answer, session_id, model, sources[]}`.
 - Retrieval failure → `502`; bad input → `422`.
+- Each chat/stream turn adds approximate token usage (`~4 chars/token`)
+  to the `prompt_tokens_est` / `completion_tokens_est` metrics.
 
 `POST /chat/stream` accepts the same body and returns SSE:
 
