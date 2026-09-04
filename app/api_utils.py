@@ -19,8 +19,7 @@ def extract_error_detail(response):
     detail = payload.get("detail")
     if isinstance(detail, list):
         return "; ".join(
-            item.get("msg", str(item)) if isinstance(item, dict) else str(item)
-            for item in detail
+            item.get("msg", str(item)) if isinstance(item, dict) else str(item) for item in detail
         )
     if detail:
         return str(detail)
@@ -111,6 +110,32 @@ def list_documents():
             return []
     except Exception as e:
         st.error(f"An error occurred while fetching the document list: {str(e)}")
+        return []
+
+
+def list_sessions():
+    try:
+        response = requests.get(f"{API_BASE_URL}/sessions", timeout=30)
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch session list", response)
+            return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching the session list: {str(e)}")
+        return []
+
+
+def get_session_history(session_id):
+    try:
+        response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/history", timeout=30)
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch session history", response)
+            return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching the session history: {str(e)}")
         return []
 
 

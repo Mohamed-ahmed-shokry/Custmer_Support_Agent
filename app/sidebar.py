@@ -2,7 +2,15 @@ import streamlit as st
 from api.pydantic_models import ModelName, model_from_value
 from api.settings import settings
 
-from app.api_utils import API_BASE_URL, delete_document, get_health, list_documents, upload_document
+from app.api_utils import (
+    API_BASE_URL,
+    delete_document,
+    get_health,
+    get_session_history,
+    list_documents,
+    list_sessions,
+    upload_document,
+)
 
 MODEL_OPTIONS = [model.value for model in ModelName]
 
@@ -27,6 +35,31 @@ def _render_reset_chat():
         st.rerun()
 
 
+def _render_session_history():
+    st.sidebar.header("Past Sessions")
+    if st.sidebar.button("Refresh Sessions"):
+        st.session_state.sessions = list_sessions()
+
+    if "sessions" not in st.session_state:
+        st.session_state.sessions = list_sessions()
+
+    sessions = st.session_state.sessions
+    if not sessions:
+        st.sidebar.caption("No past sessions yet.")
+        return
+
+    options = ["(current)"] + [s["session_id"] for s in sessions]
+    selected = st.sidebar.selectbox("Open a session", options=options, key="session_picker")
+    if selected != "(current)" and st.sidebar.button("Load Session"):
+        with st.spinner("Loading session..."):
+            history = get_session_history(selected)
+            st.session_state.session_id = selected
+            st.session_state.messages = [
+                {"role": m["role"], "content": m["content"]} for m in history
+            ]
+            st.rerun()
+
+
 def _render_model_selector():
     st.sidebar.selectbox(
         "Select Model", options=MODEL_OPTIONS, index=get_default_model_index(), key="model"
@@ -35,7 +68,9 @@ def _render_model_selector():
 
 def _render_upload_document():
     st.sidebar.header("Upload Document")
-    uploaded_file = st.sidebar.file_uploader("Choose a file", type=["pdf", "docx", "html"])
+    uploaded_file = st.sidebar.file_uploader(
+        "Choose a file", type=["pdf", "docx", "html", "md", "txt", "csv"]
+    )
     if uploaded_file is not None and st.sidebar.button("Upload"):
         with st.spinner("Uploading..."):
             upload_response = upload_document(uploaded_file)
@@ -71,17 +106,13 @@ def _render_document_list():
     selected_file_id = st.sidebar.selectbox(
         "Select a document to delete",
         options=[doc["id"] for doc in documents],
-        format_func=lambda x: next(
-            doc["filename"] for doc in documents if doc["id"] == x
-        ),
+        format_func=lambda x: next(doc["filename"] for doc in documents if doc["id"] == x),
     )
     if st.sidebar.button("Delete Selected Document"):
         with st.spinner("Deleting..."):
             delete_response = delete_document(selected_file_id)
             if delete_response:
-                st.sidebar.success(
-                    f"Document with ID {selected_file_id} deleted successfully."
-                )
+                st.sidebar.success(f"Document with ID {selected_file_id} deleted successfully.")
                 st.session_state.documents = list_documents()
             else:
                 st.sidebar.error(f"Failed to delete document with ID {selected_file_id}.")
@@ -91,6 +122,7 @@ def display_sidebar():
     st.sidebar.caption(f"API: {API_BASE_URL}")
     _render_health_status()
     _render_reset_chat()
+    _render_session_history()
     _render_model_selector()
     _render_upload_document()
     _render_refresh_documents()
