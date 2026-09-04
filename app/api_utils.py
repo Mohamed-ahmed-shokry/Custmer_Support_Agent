@@ -165,3 +165,13 @@ def get_health():
     except Exception:
         return None
     return None
+
+
+def get_metrics():
+    try:
+        response = requests.get(f"{API_BASE_URL}/metrics.json", timeout=5)
+        if response.status_code == HTTP_OK:
+            return response.json()
+    except Exception:
+        return None
+    return None

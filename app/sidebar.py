@@ -6,6 +6,7 @@ from app.api_utils import (
     API_BASE_URL,
     delete_document,
     get_health,
+    get_metrics,
     get_session_history,
     list_documents,
     list_sessions,
@@ -64,6 +65,34 @@ def _render_model_selector():
     st.sidebar.selectbox(
         "Select Model", options=MODEL_OPTIONS, index=get_default_model_index(), key="model"
     )
+
+
+def _render_ops_metrics():
+    st.sidebar.header("Backend Metrics")
+    metrics = get_metrics()
+    if not metrics:
+        st.sidebar.caption("Metrics unavailable.")
+        return
+
+    requests_total = (
+        metrics.get("chat_requests", 0)
+        + metrics.get("stream_requests", 0)
+        + metrics.get("uploads", 0)
+        + metrics.get("deletes", 0)
+    )
+    errors_total = metrics.get("chat_errors", 0) + metrics.get("upload_errors", 0)
+    st.sidebar.metric("Requests", requests_total)
+    st.sidebar.metric("Errors", errors_total)
+    st.sidebar.metric("Prompt tokens (est.)", metrics.get("prompt_tokens_est", 0))
+    st.sidebar.metric("Completion tokens (est.)", metrics.get("completion_tokens_est", 0))
+
+    with st.sidebar.expander("Latency averages (s)"):
+        latency_keys = sorted(key for key in metrics if key.startswith("latency_avg_seconds_"))
+        if not latency_keys:
+            st.caption("No latency data yet.")
+        for key in latency_keys:
+            group = key.removeprefix("latency_avg_seconds_")
+            st.write(f"{group}: {metrics[key]}")
 
 
 def _render_upload_document():
@@ -127,3 +156,4 @@ def display_sidebar():
     _render_upload_document()
     _render_refresh_documents()
     _render_document_list()
+    _render_ops_metrics()
