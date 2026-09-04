@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "notes": "Manual retrieval eval set. Upload the docs/ corpus through the API first, then run scripts/eval_retrieval.py with OPENAI_API_KEY set. Each case passes when the expected file appears in the top-k retrieved chunks.",
+  "cases": [
+    {
+      "id": "lease-terms",
+      "question": "What are the standard terms of the short term corporate lease?",
+      "expected_filename": "Short term lease  stander for short term corpret lease.pdf",
+      "k": 5
+    },
+    {
+      "id": "management-agreement",
+      "question": "What does the management agreement cover?",
+      "expected_filename": "Management Agreement.pdf",
+      "k": 5
+    },
+    {
+      "id": "ecoharvest",
+      "question": "What is GreenGrow's EcoHarvest system?",
+      "expected_filename": "GreenGrow's EcoHarvest System_ A Revolution in Farming.pdf",
+      "k": 5
+    },
+    {
+      "id": "techwave",
+      "question": "What is the history of TechWave Innovations?",
+      "expected_filename": "Company_ TechWave Innovations.docx",
+      "k": 5
+    }
+  ]
+}
