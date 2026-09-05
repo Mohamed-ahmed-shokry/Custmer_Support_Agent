@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.5.0)
+# Customer Support RAG Agent (v0.6.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -9,7 +9,10 @@ A local-first customer support assistant for real estate and property management
 - Streaming answers over Server-Sent Events (`POST /chat/stream`) with a
   non-streaming fallback (`POST /chat`).
 - Retrieval filters per request: `file_ids`, `source_filename`, `use_hybrid`
-  (BM25 + vector hybrid with graceful vector-only fallback).
+  (BM25 + vector hybrid with graceful vector-only fallback), and
+  `collections` to scope answers to document collections.
+- Document collections group uploads, retrieval, and the UI picker, with
+  automatic migration for pre-v0.6.0 databases.
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
   validation and a configurable upload size cap.
 - Source-aware answers with document metadata returned by the API.
@@ -22,8 +25,9 @@ A local-first customer support assistant for real estate and property management
   The Streamlit sidebar shows a backend metrics panel.
 - Releases: pushing a `v*` tag runs the full verification suite and creates
   a GitHub release.
-- Opt-in security: `API_KEY` (`X-API-Key` header) and per-IP rate limiting
-  (`RATE_LIMIT_PER_MIN`); health/metrics/docs paths stay public.
+- Opt-in security: `API_KEY` (`X-API-Key` header), per-IP rate limiting
+  (`RATE_LIMIT_PER_MIN`), and daily token quotas (`TOKEN_DAILY_BUDGET_EST`);
+  health/metrics/docs paths stay public.
 - Safe Git defaults that keep secrets, logs, databases, and vector stores out of commits.
 
 ## Architecture
@@ -85,6 +89,7 @@ Optional:
 - `LOG_LEVEL` (default `INFO`)
 - `API_KEY` (empty = auth disabled; when set, send `X-API-Key`)
 - `RATE_LIMIT_PER_MIN` (default `0` = off)
+- `TOKEN_DAILY_BUDGET_EST` (default `0` = off)
 
 ## Run Locally
 
@@ -124,6 +129,7 @@ The API serves on `http://localhost:8000` and the UI on
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `GET /list-docs`, `POST /delete-doc` — document metadata management.
+- `GET /collections` — known collection names.
 - `GET /sessions`, `GET /sessions/{id}/history` — past conversations.
 
 Full details: `docs/API.md`. Architecture notes: `docs/ARCHITECTURE.md`.
