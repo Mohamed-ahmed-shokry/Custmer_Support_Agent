@@ -1,3 +1,5 @@
+import sqlite3
+
 from api import db_utils
 
 
@@ -41,6 +43,56 @@ def test_get_all_sessions_returns_counts(monkeypatch, tmp_path):
 
     sessions = {s["session_id"]: s["message_count"] for s in db_utils.get_all_sessions()}
     assert sessions == {"session-1": 2, "session-2": 1}
+
+
+def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    file_id = db_utils.insert_document_record("lease.pdf")
+
+    assert db_utils.get_document_record(file_id)["collection"] == "default"
+
+
+def test_documents_filter_by_collection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_document_record("a.pdf", "clients-acme")
+    db_utils.insert_document_record("b.pdf", "clients-globex")
+    db_utils.insert_document_record("c.pdf", "clients-acme")
+
+    assert [d["filename"] for d in db_utils.get_all_documents("clients-acme")] == [
+        "c.pdf",
+        "a.pdf",
+    ]
+    assert db_utils.get_all_collections() == ["clients-acme", "clients-globex"]
+
+
+def test_normalize_collection_accepts_and_rejects(monkeypatch, tmp_path):
+    assert db_utils.normalize_collection(None) == "default"
+    assert db_utils.normalize_collection("  Clients_Acme-1 ") == "clients_acme-1"
+    for bad in ["has space!", "semi;colon", "a" * 65, "-leading"]:
+        try:
+            db_utils.normalize_collection(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"expected ValueError for {bad!r}")
+
+
+def test_migrate_document_store_adds_collection_column(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE document_store (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "filename TEXT, upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.execute("INSERT INTO document_store (filename) VALUES ('legacy.pdf')")
+    conn.commit()
+    conn.close()
+
+    db_utils.migrate_document_store()
+
+    assert db_utils.get_document_record(1)["collection"] == "default"
 
 
 def test_document_record_lifecycle(monkeypatch, tmp_path):

@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -5,6 +6,20 @@ from pathlib import Path
 from api.settings import settings
 
 DB_NAME = settings.sqlite_db_path
+
+DEFAULT_COLLECTION = "default"
+MAX_COLLECTION_LENGTH = 64
+_COLLECTION_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
+
+
+def normalize_collection(value: str | None) -> str:
+    """Normalize a user-supplied collection name, raising ValueError if invalid."""
+    name = (value or "").strip().lower() or DEFAULT_COLLECTION
+    if len(name) > MAX_COLLECTION_LENGTH or _COLLECTION_RE.fullmatch(name) is None:
+        raise ValueError(
+            "Collection must be 1-64 chars: lowercase letters, numbers, '-' or '_'."
+        )
+    return name
 
 _CREATE_APP_LOGS_TABLE = (
     "CREATE TABLE IF NOT EXISTS application_logs "
@@ -16,7 +31,8 @@ _CREATE_APP_LOGS_TABLE = (
 _CREATE_DOC_STORE_TABLE = (
     "CREATE TABLE IF NOT EXISTS document_store "
     "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
-    "filename TEXT, upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    "filename TEXT, collection TEXT NOT NULL DEFAULT 'default', "
+    "upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
 _INSERT_APP_LOG = (
@@ -29,18 +45,25 @@ _SELECT_CHAT_HISTORY = (
     "WHERE session_id = ? ORDER BY created_at ASC, id ASC"
 )
 
-_INSERT_DOC_RECORD = "INSERT INTO document_store (filename) VALUES (?)"
+_INSERT_DOC_RECORD = "INSERT INTO document_store (filename, collection) VALUES (?, ?)"
 
 _SELECT_DOC_RECORD = (
-    "SELECT id, filename, upload_timestamp FROM document_store WHERE id = ?"
+    "SELECT id, filename, collection, upload_timestamp FROM document_store WHERE id = ?"
 )
 
 _DELETE_DOC_RECORD = "DELETE FROM document_store WHERE id = ?"
 
 _SELECT_ALL_DOCS = (
-    "SELECT id, filename, upload_timestamp FROM document_store "
+    "SELECT id, filename, collection, upload_timestamp FROM document_store "
     "ORDER BY upload_timestamp DESC, id DESC"
 )
+
+_SELECT_DOCS_BY_COLLECTION = (
+    "SELECT id, filename, collection, upload_timestamp FROM document_store "
+    "WHERE collection = ? ORDER BY upload_timestamp DESC, id DESC"
+)
+
+_SELECT_ALL_COLLECTIONS = "SELECT DISTINCT collection FROM document_store ORDER BY collection"
 
 _SELECT_ALL_SESSIONS = (
     "SELECT session_id, COUNT(*) AS message_count, "
@@ -92,10 +115,22 @@ def create_document_store():
         conn.commit()
 
 
-def insert_document_record(filename):
+def migrate_document_store():
+    """Add the collection column to pre-v0.6.0 databases (no-op otherwise)."""
+    with closing(get_db_connection()) as conn:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(document_store)")]
+        if "collection" not in columns:
+            conn.execute(
+                "ALTER TABLE document_store "
+                "ADD COLUMN collection TEXT NOT NULL DEFAULT 'default'"
+            )
+            conn.commit()
+
+
+def insert_document_record(filename, collection=DEFAULT_COLLECTION):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute(_INSERT_DOC_RECORD, (filename,))
+        cursor.execute(_INSERT_DOC_RECORD, (filename, collection))
         file_id = cursor.lastrowid
         conn.commit()
         return file_id
@@ -117,12 +152,22 @@ def delete_document_record(file_id):
         return deleted
 
 
-def get_all_documents():
+def get_all_documents(collection=None):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute(_SELECT_ALL_DOCS)
+        if collection is None:
+            cursor.execute(_SELECT_ALL_DOCS)
+        else:
+            cursor.execute(_SELECT_DOCS_BY_COLLECTION, (collection,))
         documents = cursor.fetchall()
         return [dict(doc) for doc in documents]
+
+
+def get_all_collections():
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_SELECT_ALL_COLLECTIONS)
+        return [row["collection"] for row in cursor.fetchall()]
 
 
 def get_all_sessions():
@@ -136,3 +181,4 @@ def get_all_sessions():
 # Initialize the database tables
 create_application_logs()
 create_document_store()
+migrate_document_store()
