@@ -30,11 +30,13 @@ def show_api_error(action, response):
     st.error(f"{action}. Status {response.status_code}: {extract_error_detail(response)}")
 
 
-def get_api_response(question, session_id, model):
+def get_api_response(question, session_id, model, collections=None):
     headers = {"accept": "application/json", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
     if session_id:
         data["session_id"] = session_id
+    if collections:
+        data["collections"] = collections
 
     try:
         response = requests.post(f"{API_BASE_URL}/chat", headers=headers, json=data, timeout=60)
@@ -48,12 +50,14 @@ def get_api_response(question, session_id, model):
         return None
 
 
-def get_api_stream_response(question, session_id, model):
+def get_api_stream_response(question, session_id, model, collections=None):
     """Get streaming response from the API."""
     headers = {"accept": "text/event-stream", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
     if session_id:
         data["session_id"] = session_id
+    if collections:
+        data["collections"] = collections
 
     try:
         response = requests.post(
@@ -86,10 +90,15 @@ def parse_sse_line(line):
     return event_type, data
 
 
-def upload_document(file):
+def upload_document(file, collection="default"):
     try:
         files = {"file": (file.name, file, file.type)}
-        response = requests.post(f"{API_BASE_URL}/upload-doc", files=files, timeout=120)
+        response = requests.post(
+            f"{API_BASE_URL}/upload-doc",
+            params={"collection": collection},
+            files=files,
+            timeout=120,
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -100,9 +109,23 @@ def upload_document(file):
         return None
 
 
-def list_documents():
+def list_collections():
     try:
-        response = requests.get(f"{API_BASE_URL}/list-docs", timeout=30)
+        response = requests.get(f"{API_BASE_URL}/collections", timeout=30)
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch collection list", response)
+            return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching the collection list: {str(e)}")
+        return []
+
+
+def list_documents(collection=None):
+    try:
+        params = {"collection": collection} if collection else None
+        response = requests.get(f"{API_BASE_URL}/list-docs", params=params, timeout=30)
         if response.status_code == HTTP_OK:
             return response.json()
         else:

@@ -8,6 +8,7 @@ from app.api_utils import (
     get_health,
     get_metrics,
     get_session_history,
+    list_collections,
     list_documents,
     list_sessions,
     upload_document,
@@ -67,6 +68,28 @@ def _render_model_selector():
     )
 
 
+ALL_COLLECTIONS = "All collections"
+
+
+def _render_collection_picker():
+    st.sidebar.header("Collection")
+    if st.sidebar.button("Refresh Collections"):
+        st.session_state.collections = list_collections()
+
+    if "collections" not in st.session_state:
+        st.session_state.collections = list_collections()
+
+    known = st.session_state.collections or ["default"]
+    options = [ALL_COLLECTIONS] + [c for c in known if c != ALL_COLLECTIONS]
+    selected = st.sidebar.selectbox("Active collection", options=options, key="collection_picker")
+    active = None if selected == ALL_COLLECTIONS else selected
+    if st.session_state.get("docs_collection") != active:
+        st.session_state.documents = list_documents(active)
+        st.session_state.docs_collection = active
+    st.session_state.active_collection = active
+    return active
+
+
 def _render_ops_metrics():
     st.sidebar.header("Backend Metrics")
     metrics = get_metrics()
@@ -95,30 +118,35 @@ def _render_ops_metrics():
             st.write(f"{group}: {metrics[key]}")
 
 
-def _render_upload_document():
+def _render_upload_document(active_collection):
     st.sidebar.header("Upload Document")
     uploaded_file = st.sidebar.file_uploader(
         "Choose a file", type=["pdf", "docx", "html", "md", "txt", "csv"]
     )
+    new_collection = st.sidebar.text_input(
+        "New collection (optional)", key="new_collection", placeholder="e.g. clients-acme"
+    )
     if uploaded_file is not None and st.sidebar.button("Upload"):
+        target = (new_collection or "").strip() or active_collection or "default"
         with st.spinner("Uploading..."):
-            upload_response = upload_document(uploaded_file)
+            upload_response = upload_document(uploaded_file, target)
             if upload_response:
                 st.sidebar.success(
                     f"File '{uploaded_file.name}' uploaded successfully with ID "
                     f"{upload_response['file_id']}."
                 )
-                st.session_state.documents = list_documents()
+                st.session_state.collections = list_collections()
+                st.session_state.documents = list_documents(active_collection)
 
 
-def _render_refresh_documents():
+def _render_refresh_documents(active_collection):
     st.sidebar.header("Uploaded Documents")
     if st.sidebar.button("Refresh Document List"):
         with st.spinner("Refreshing..."):
-            st.session_state.documents = list_documents()
+            st.session_state.documents = list_documents(active_collection)
 
     if "documents" not in st.session_state:
-        st.session_state.documents = list_documents()
+        st.session_state.documents = list_documents(active_collection)
 
 
 def _render_document_list():
@@ -128,8 +156,8 @@ def _render_document_list():
 
     for doc in documents:
         st.sidebar.markdown(
-            f"**{doc['filename']}**  \nID: `{doc['id']}`  \nUploaded: "
-            f"`{doc['upload_timestamp']}`"
+            f"**{doc['filename']}**  \nID: `{doc['id']}`  \nCollection: "
+            f"`{doc.get('collection', 'default')}`  \nUploaded: `{doc['upload_timestamp']}`"
         )
 
     selected_file_id = st.sidebar.selectbox(
@@ -142,7 +170,9 @@ def _render_document_list():
             delete_response = delete_document(selected_file_id)
             if delete_response:
                 st.sidebar.success(f"Document with ID {selected_file_id} deleted successfully.")
-                st.session_state.documents = list_documents()
+                st.session_state.documents = list_documents(
+                    st.session_state.get("active_collection")
+                )
             else:
                 st.sidebar.error(f"Failed to delete document with ID {selected_file_id}.")
 
@@ -153,7 +183,8 @@ def display_sidebar():
     _render_reset_chat()
     _render_session_history()
     _render_model_selector()
-    _render_upload_document()
-    _render_refresh_documents()
+    active_collection = _render_collection_picker()
+    _render_upload_document(active_collection)
+    _render_refresh_documents(active_collection)
     _render_document_list()
     _render_ops_metrics()

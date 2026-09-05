@@ -31,9 +31,9 @@ def _render_assistant_message(answer, selected_model, session_id, sources):
                     st.caption(source.get("preview", ""))
 
 
-def _handle_streaming_response(prompt, session_id, selected_model):
+def _handle_streaming_response(prompt, session_id, selected_model, collections=None):
     """Handle streaming response from API."""
-    stream = get_api_stream_response(prompt, session_id, selected_model)
+    stream = get_api_stream_response(prompt, session_id, selected_model, collections)
     if not stream:
         return None, None, None
 
@@ -63,9 +63,9 @@ def _handle_streaming_response(prompt, session_id, selected_model):
     return full_answer, sources, session_id_result
 
 
-def _handle_non_streaming_response(prompt, session_id, selected_model):
+def _handle_non_streaming_response(prompt, session_id, selected_model, collections=None):
     """Handle non-streaming response from API."""
-    response = get_api_response(prompt, session_id, selected_model)
+    response = get_api_response(prompt, session_id, selected_model, collections)
     if not response:
         return None, None, None
 
@@ -89,15 +89,17 @@ def display_chat_interface():
         selected_model = st.session_state.get(
             "model", model_from_value(settings.default_model).value
         )
+        active_collection = st.session_state.get("active_collection")
+        collections = [active_collection] if active_collection else None
 
         with st.spinner("Generating response..."):
             if use_streaming:
                 answer, sources, new_session_id = _handle_streaming_response(
-                    prompt, st.session_state.session_id, selected_model
+                    prompt, st.session_state.session_id, selected_model, collections
                 )
             else:
                 answer, sources, new_session_id = _handle_non_streaming_response(
-                    prompt, st.session_state.session_id, selected_model
+                    prompt, st.session_state.session_id, selected_model, collections
                 )
 
         if answer:
