@@ -1,13 +1,15 @@
-"""Opt-in API security: API-key auth and per-IP rate limiting (no extra deps)."""
+"""Opt-in API security: API-key auth, rate limiting, token quotas (no extra deps)."""
 
 from __future__ import annotations
 
+import datetime
 import threading
 import time
 from collections import deque
 
 _lock = threading.Lock()
 _hits: dict[str, deque[float]] = {}
+_token_usage: dict[tuple[str, str], int] = {}
 
 WINDOW_SECONDS = 60.0
 
@@ -27,9 +29,10 @@ PUBLIC_PATHS = frozenset(
 
 
 def reset() -> None:
-    """Clear all rate-limit state (used by tests)."""
+    """Clear all rate-limit and quota state (used by tests)."""
     with _lock:
         _hits.clear()
+        _token_usage.clear()
 
 
 def is_public_path(path: str) -> bool:
@@ -63,3 +66,30 @@ def check_rate_limit(key: str, limit_per_min: int, now: float | None = None) -> 
             return False
         hits.append(current)
         return True
+
+
+def _today() -> str:
+    return datetime.date.today().isoformat()
+
+
+def check_token_quota(
+    key: str, additional_tokens: int, daily_budget: int, today: str | None = None
+) -> bool:
+    """Return True when `additional_tokens` fits the client's daily budget.
+
+    A non-positive budget disables quota enforcement.
+    """
+    if daily_budget <= 0:
+        return True
+    day = today if today is not None else _today()
+    with _lock:
+        return _token_usage.get((key, day), 0) + additional_tokens <= daily_budget
+
+
+def record_token_usage(key: str, tokens: int, today: str | None = None) -> int:
+    """Add `tokens` to the client's daily usage, returning the new total."""
+    day = today if today is not None else _today()
+    with _lock:
+        total = _token_usage.get((key, day), 0) + tokens
+        _token_usage[(key, day)] = total
+        return total

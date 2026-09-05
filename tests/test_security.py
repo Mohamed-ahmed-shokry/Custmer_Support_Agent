@@ -33,6 +33,25 @@ def test_check_rate_limit_window_slides():
     assert security.check_rate_limit("client-c", 1, now=161.0) is True
 
 
+def test_token_quota_disabled_when_non_positive():
+    assert security.check_token_quota("ip", 10_000, 0) is True
+
+
+def test_token_quota_enforces_daily_budget():
+    security.reset()
+    used_tokens = 60
+    daily_budget = 100
+    assert security.check_token_quota("ip", used_tokens, daily_budget, today="2026-09-04")
+    assert (
+        security.record_token_usage("ip", used_tokens, today="2026-09-04") == used_tokens
+    )
+    assert security.check_token_quota("ip", 40, daily_budget, today="2026-09-04")
+    assert not security.check_token_quota("ip", 41, daily_budget, today="2026-09-04")
+    # Usage resets on a new day and is tracked per client.
+    assert security.check_token_quota("ip", 100, 100, today="2026-09-05") is True
+    assert security.check_token_quota("other", 100, 100, today="2026-09-04") is True
+
+
 def test_public_paths_cover_probes_metrics_and_docs():
     for path in (
         "/health",
