@@ -20,6 +20,18 @@
 - Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
 - 65 tests passing; ruff + mypy clean (CI gates)
 
+## v0.6.0 plan — Document collections (IN PROGRESS)
+
+Big update: user-defined collections scope documents, retrieval, and the UI
+(multi-tenancy stepping stone, no new deps).
+
+- [ ] DB: `collection` column on `document_store` with migration for existing DBs
+- [ ] Chroma: `collection` chunk metadata + filter support
+- [ ] API: `collection` on upload, `collections[]` filter on chat, `?collection=` on list
+- [ ] UI: collection picker scoping upload, chat, and document list
+- [ ] Per-IP daily token quotas (`TOKEN_DAILY_BUDGET_EST`, 0 = off)
+- [ ] Code-quality pass: dead code, import hygiene, warning-free tests
+
 ---
 
 ## Phase 1: Code Quality & Developer Experience (Week 1) ✅ COMPLETED
