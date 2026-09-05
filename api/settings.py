@@ -38,7 +38,7 @@ def get_float_env(name: str, default: float) -> float:
 class Settings:
     def __init__(self):
         self.app_name = "Customer Support RAG Agent"
-        self.app_version = "0.5.0"
+        self.app_version = "0.6.0"
         self.api_base_url = os.getenv("APP_API_BASE_URL", "http://localhost:8000").rstrip("/")
         self.chroma_persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
         self.sqlite_db_path = os.getenv("SQLITE_DB_PATH", "rag_app.db")
