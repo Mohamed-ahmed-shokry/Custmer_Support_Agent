@@ -48,7 +48,13 @@ from api.pydantic_models import (
     SourceInfo,
     UploadDocumentResponse,
 )
-from api.security import check_api_key, check_rate_limit, is_public_path
+from api.security import (
+    check_api_key,
+    check_rate_limit,
+    check_token_quota,
+    is_public_path,
+    record_token_usage,
+)
 from api.settings import settings
 
 
@@ -242,9 +248,19 @@ def metrics_json():
     return snapshot()
 
 
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 @app.post("/chat", response_model=QueryResponse)
-def chat(query_input: QueryInput):
+def chat(query_input: QueryInput, request: Request):
     increment("chat_requests")
+    client_ip = _client_ip(request)
+    question_tokens = estimate_tokens(query_input.question)
+    if not check_token_quota(client_ip, question_tokens, settings.token_daily_budget_est):
+        raise HTTPException(
+            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
+        )
     session_id = query_input.session_id
     logger.info(
         "Session ID: %s, User Query: %s, Model: %s",
@@ -283,8 +299,10 @@ def chat(query_input: QueryInput):
     sources = build_sources(result.get("context"))
 
     insert_application_logs(session_id, query_input.question, answer, query_input.model.value)
-    increment("prompt_tokens_est", estimate_tokens(query_input.question))
-    increment("completion_tokens_est", estimate_tokens(answer))
+    answer_tokens = estimate_tokens(answer)
+    increment("prompt_tokens_est", question_tokens)
+    increment("completion_tokens_est", answer_tokens)
+    record_token_usage(client_ip, question_tokens + answer_tokens)
     logger.info("Session ID: %s, AI Response: %s", session_id, redact_pii(answer))
     return QueryResponse(
         answer=answer, session_id=session_id, model=query_input.model, sources=sources
@@ -319,8 +337,14 @@ async def _stream_rag_response(
 
 
 @app.post("/chat/stream")
-async def chat_stream(query_input: QueryInput):
+async def chat_stream(query_input: QueryInput, request: Request):
     increment("stream_requests")
+    client_ip = _client_ip(request)
+    question_tokens = estimate_tokens(query_input.question)
+    if not check_token_quota(client_ip, question_tokens, settings.token_daily_budget_est):
+        raise HTTPException(
+            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
+        )
     session_id = query_input.session_id
     logger.info(
         "Stream Session ID: %s, User Query: %s, Model: %s",
@@ -345,8 +369,10 @@ async def chat_stream(query_input: QueryInput):
             insert_application_logs(
                 session_id, query_input.question, full_answer, query_input.model.value
             )
-            increment("prompt_tokens_est", estimate_tokens(query_input.question))
-            increment("completion_tokens_est", estimate_tokens(full_answer))
+            answer_tokens = estimate_tokens(full_answer)
+            increment("prompt_tokens_est", question_tokens)
+            increment("completion_tokens_est", answer_tokens)
+            record_token_usage(client_ip, question_tokens + answer_tokens)
             logger.info(
                 "Stream Session ID: %s, AI Response: %s", session_id, redact_pii(full_answer)
             )

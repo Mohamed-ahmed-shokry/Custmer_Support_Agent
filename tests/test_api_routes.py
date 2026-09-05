@@ -324,6 +324,33 @@ def test_chat_rate_limit_blocks_after_quota(monkeypatch):
         security.reset()
 
 
+def test_chat_enforces_daily_token_quota(monkeypatch):
+    class FakeChain:
+        def invoke(self, payload):
+            return {"answer": "Use the tenant portal.", "context": []}
+
+    security.reset()
+    monkeypatch.setattr(settings, "token_daily_budget_est", 10)
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeChain())
+    monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
+
+    try:
+        first = client.post(
+            "/chat",
+            json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
+        )
+        assert first.status_code == HTTP_OK
+        second = client.post(
+            "/chat",
+            json={"question": "How do I request maintenance?", "model": "gpt-4o-mini"},
+        )
+        assert second.status_code == HTTP_TOO_MANY_REQUESTS
+    finally:
+        monkeypatch.setattr(settings, "token_daily_budget_est", 0)
+        security.reset()
+
+
 def test_health_probes():
     live = client.get("/health/live")
     assert live.status_code == HTTP_OK
