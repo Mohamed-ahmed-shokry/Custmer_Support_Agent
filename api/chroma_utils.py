@@ -21,7 +21,7 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
-from api.db_utils import DEFAULT_COLLECTION
+from api.collections import DEFAULT_COLLECTION
 from api.settings import settings
 
 if TYPE_CHECKING:
