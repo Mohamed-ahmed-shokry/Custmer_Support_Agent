@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.5.0, 2026-09-04)
+## Current State (v0.6.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -18,19 +18,26 @@
 - Containerization: multi-stage Dockerfile, compose stack, k8s manifests
 - Releases: tag-triggered workflow (verify + GitHub release)
 - Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
-- 65 tests passing; ruff + mypy clean (CI gates)
+- 83 tests passing; ruff + mypy clean (CI gates)
 
-## v0.6.0 plan — Document collections (IN PROGRESS)
+## v0.7.0 candidates (next)
+
+- Query expansion/rewriting grounded by the golden eval set
+- Cross-encoder reranking (needs new model dependency + eval baseline)
+- Conversation rename/delete in the UI
+- Staging/production environment targets
+
+## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
 (multi-tenancy stepping stone, no new deps).
 
-- [ ] DB: `collection` column on `document_store` with migration for existing DBs
-- [ ] Chroma: `collection` chunk metadata + filter support
-- [ ] API: `collection` on upload, `collections[]` filter on chat, `?collection=` on list
-- [ ] UI: collection picker scoping upload, chat, and document list
-- [ ] Per-IP daily token quotas (`TOKEN_DAILY_BUDGET_EST`, 0 = off)
-- [ ] Code-quality pass: dead code, import hygiene, warning-free tests
+- [x] DB: `collection` column on `document_store` with migration for existing DBs
+- [x] Chroma: `collection` chunk metadata + filter support
+- [x] API: `collection` on upload, `collections[]` filter on chat, `?collection=` on list
+- [x] UI: collection picker scoping upload, chat, and document list
+- [x] Per-IP daily token quotas (`TOKEN_DAILY_BUDGET_EST`, 0 = off)
+- [x] Code-quality pass: dead code, import hygiene, warning-free tests
 
 ---
 
