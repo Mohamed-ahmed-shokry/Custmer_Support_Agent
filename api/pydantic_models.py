@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator
 
+from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.settings import settings
 
 
@@ -32,6 +33,14 @@ class QueryInput(BaseModel):
     file_ids: list[PositiveInt] | None = Field(default=None, max_length=50)
     source_filename: str | None = Field(default=None, max_length=255)
     use_hybrid: bool | None = Field(default=None)
+    collections: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("collections", mode="before")
+    @classmethod
+    def normalize_collections(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        return [normalize_collection(item) for item in v]
 
     @field_validator("question", mode="before")
     @classmethod
@@ -67,6 +76,7 @@ class QueryResponse(BaseModel):
 class DocumentInfo(BaseModel):
     id: int
     filename: str
+    collection: str = DEFAULT_COLLECTION
     upload_timestamp: datetime
 
 

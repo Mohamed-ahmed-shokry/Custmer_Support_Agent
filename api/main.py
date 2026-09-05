@@ -17,8 +17,10 @@ from api.chroma_utils import (
     delete_doc_from_chroma,
     index_document_to_chroma,
 )
+from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     delete_document_record,
+    get_all_collections,
     get_all_documents,
     get_all_sessions,
     get_chat_history,
@@ -184,6 +186,7 @@ def get_rag_chain_for_model(
     file_ids: list[int] | None = None,
     source_filename: str | None = None,
     use_hybrid: bool | None = None,
+    collections: list[str] | None = None,
 ):
     # ruff: noqa: PLC0415 - lazy import required for Python 3.14 compatibility
     from api.langchain_utils import get_rag_chain
@@ -193,6 +196,7 @@ def get_rag_chain_for_model(
         file_ids=file_ids,
         source_filename=source_filename,
         use_hybrid=use_hybrid,
+        collections=collections,
     )
 
 
@@ -257,6 +261,7 @@ def chat(query_input: QueryInput):
         file_ids=query_input.file_ids,
         source_filename=query_input.source_filename,
         use_hybrid=query_input.use_hybrid,
+        collections=query_input.collections,
     )
     try:
         result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
@@ -295,6 +300,7 @@ async def _stream_rag_response(
         file_ids=query_input.file_ids,
         source_filename=query_input.source_filename,
         use_hybrid=query_input.use_hybrid,
+        collections=query_input.collections,
     )
     try:
         async for chunk in rag_chain.astream(
@@ -365,6 +371,7 @@ def upload_and_index_document(
     chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE,
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
+    collection: str = DEFAULT_COLLECTION,
 ):
     safe_filename = sanitize_filename(file.filename or "")
     file_extension = os.path.splitext(safe_filename)[1].lower()
@@ -379,6 +386,10 @@ def upload_and_index_document(
         )
 
     validate_chunk_params(chunk_size, chunk_overlap)
+    try:
+        collection_name = normalize_collection(collection)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     options = ChunkingOptions(
         strategy=chunking_strategy, chunk_size=chunk_size, chunk_overlap=chunk_overlap
@@ -395,12 +406,13 @@ def upload_and_index_document(
             raise HTTPException(status_code=400, detail="Uploaded file cannot be empty.")
         validate_upload_size(os.path.getsize(temp_file_path))
 
-        file_id = insert_document_record(safe_filename)
+        file_id = insert_document_record(safe_filename, collection_name)
         success = index_document_to_chroma(
             temp_file_path,
             file_id,
             safe_filename,
             options=options,
+            collection=collection_name,
         )
 
         if success:
@@ -422,8 +434,18 @@ def upload_and_index_document(
 
 
 @app.get("/list-docs", response_model=list[DocumentInfo])
-def list_documents():
-    return get_all_documents()
+def list_documents(collection: str | None = None):
+    if collection is None:
+        return get_all_documents()
+    try:
+        return get_all_documents(normalize_collection(collection))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/collections", response_model=list[str])
+def list_collections():
+    return get_all_collections()
 
 
 @app.get("/sessions", response_model=list[SessionInfo])

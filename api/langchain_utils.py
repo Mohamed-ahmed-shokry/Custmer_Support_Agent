@@ -85,6 +85,7 @@ def get_rag_chain(
     file_ids: list[int] | None = None,
     source_filename: str | None = None,
     use_hybrid: bool | None = None,
+    collections: list[str] | None = None,
 ):
     llm = ChatOpenAI(model=model)
     hybrid = settings.use_hybrid_retriever if use_hybrid is None else use_hybrid
@@ -95,6 +96,7 @@ def get_rag_chain(
         use_hybrid=hybrid,
         bm25_weight=settings.hybrid_bm25_weight,
         vector_weight=settings.hybrid_vector_weight,
+        collections=collections,
     )
     history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)

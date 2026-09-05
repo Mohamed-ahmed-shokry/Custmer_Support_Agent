@@ -52,7 +52,7 @@ def test_upload_rejects_empty_supported_file():
 def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
     deleted_file_ids = []
 
-    monkeypatch.setattr(main, "insert_document_record", lambda filename: 42)
+    monkeypatch.setattr(main, "insert_document_record", lambda filename, *args, **kwargs: 42)
     monkeypatch.setattr(
         main, "index_document_to_chroma", lambda *args, **kwargs: False
     )
@@ -67,6 +67,76 @@ def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
 
     assert response.status_code == HTTP_INTERNAL_ERROR
     assert deleted_file_ids == [42]
+
+
+def test_upload_stores_normalized_collection(monkeypatch):
+    recorded = {}
+
+    def fake_insert(filename, collection="default"):
+        recorded["collection"] = collection
+        return 7
+
+    monkeypatch.setattr(main, "insert_document_record", fake_insert)
+    monkeypatch.setattr(
+        main, "index_document_to_chroma", lambda *args, **kwargs: recorded.update(kwargs) or True
+    )
+
+    response = client.post(
+        "/upload-doc?collection=Clients-Acme",
+        files={"file": ("lease.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_OK
+    assert recorded["collection"] == "clients-acme"
+    assert recorded["options"] is not None
+
+
+def test_upload_rejects_invalid_collection():
+    response = client.post(
+        "/upload-doc?collection=bad%20name!",
+        files={"file": ("lease.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert "Collection" in response.json()["detail"]
+
+
+def test_list_docs_filters_by_collection(monkeypatch):
+    seen = {}
+
+    def fake_list(collection=None):
+        seen["collection"] = collection
+        return [
+            {
+                "id": 1,
+                "filename": "a.pdf",
+                "collection": collection or "default",
+                "upload_timestamp": "2026-09-04T00:00:00",
+            }
+        ]
+
+    monkeypatch.setattr(main, "get_all_documents", fake_list)
+
+    response = client.get("/list-docs?collection=clients-acme")
+
+    assert response.status_code == HTTP_OK
+    assert seen["collection"] == "clients-acme"
+    assert response.json()[0]["collection"] == "clients-acme"
+
+
+def test_list_docs_rejects_invalid_collection():
+    response = client.get("/list-docs?collection=bad%20name!")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_list_collections(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["acme", "default"])
+
+    response = client.get("/collections")
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == ["acme", "default"]
 
 
 def test_chat_returns_sources(monkeypatch):
@@ -170,6 +240,7 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
             "file_ids": [7],
             "source_filename": "tenant-handbook.pdf",
             "use_hybrid": True,
+            "collections": ["Clients-Acme"],
         },
     )
 
@@ -177,6 +248,7 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
     assert captured["file_ids"] == [7]
     assert captured["source_filename"] == "tenant-handbook.pdf"
     assert captured["use_hybrid"] is True
+    assert captured["collections"] == ["clients-acme"]
 
 
 def test_upload_rejects_invalid_chunk_params():

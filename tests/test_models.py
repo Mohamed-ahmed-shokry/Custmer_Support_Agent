@@ -34,6 +34,17 @@ def test_query_input_uses_configured_default_model(monkeypatch):
     assert QueryInput(question="How do I request maintenance?").model == ModelName.GPT4_O
 
 
+def test_query_input_normalizes_collections():
+    query = QueryInput(question="Hi?", collections=["Clients-Acme", "  DEFAULT  "])
+
+    assert query.collections == ["clients-acme", "default"]
+
+
+def test_query_input_rejects_invalid_collection():
+    with pytest.raises(ValidationError):
+        QueryInput(question="Hi?", collections=["bad name!"])
+
+
 def test_query_response_accepts_sources():
     response = QueryResponse(
         answer="Answer",
