@@ -1,4 +1,4 @@
-# API Reference (v0.3.0)
+# API Reference (v0.6.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -11,6 +11,9 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
   Missing/invalid key → `401`.
 - When `RATE_LIMIT_PER_MIN` is positive, each client IP gets that many
   non-exempt requests per sliding 60-second window → `429` when exceeded.
+- When `TOKEN_DAILY_BUDGET_EST` is positive, each client IP gets that many
+  estimated tokens per day across chat/stream turns → `429` when the next
+  turn would exceed it. Estimates are char-based, not billing figures.
 
 ## Health & observability
 
@@ -33,12 +36,14 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
   "model": "gpt-4o-mini",
   "file_ids": [7],
   "source_filename": "tenant-handbook.pdf",
-  "use_hybrid": true
+  "use_hybrid": true,
+  "collections": ["clients-acme"]
 }
 ```
 
-- `file_ids` (max 50), `source_filename`, and `use_hybrid` are optional
-  retrieval filters. Omit them for plain vector search over all documents.
+- `file_ids` (max 50), `source_filename`, `use_hybrid`, and `collections`
+  (max 20) are optional retrieval filters. Omit them for plain vector search
+  over all documents.
 - Success → `200` with `{answer, session_id, model, sources[]}`.
 - Retrieval failure → `502`; bad input → `422`.
 - Each chat/stream turn adds approximate token usage (`~4 chars/token`)
@@ -57,10 +62,16 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 - `chunking_strategy`: `recursive` (default) or `markdown`.
 - `chunk_size`: 100–4000 (default 1000).
 - `chunk_overlap`: must be `>= 0` and `< chunk_size` (default 200).
+- `collection`: target collection (default `default`; invalid names → `400`).
 - Supported types: `.pdf`, `.docx`, `.html`, `.md`, `.txt`, `.csv`.
 - Size cap: `MAX_UPLOAD_MB` (default 25 MB) → `413` when exceeded.
 
-`GET /list-docs` → array of `{id, filename, upload_timestamp}`.
+Collection names are lowercase letters, numbers, `-`/`_` (max 64 chars).
+
+`GET /list-docs` → array of `{id, filename, collection, upload_timestamp}`;
+filter with `?collection=<name>`.
+
+`GET /collections` → sorted array of known collection names.
 
 `POST /delete-doc` with `{"file_id": 42}` removes Chroma chunks and the
 SQLite record (`404` when unknown).
