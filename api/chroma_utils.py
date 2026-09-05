@@ -61,9 +61,6 @@ def _get_text_splitter(options: ChunkingOptions):
     )
 
 
-text_splitter = _get_text_splitter(ChunkingOptions())
-
-
 def get_vectorstore() -> Chroma:
     if not hasattr(get_vectorstore, "_vectorstore"):
         embedding_function = OpenAIEmbeddings()

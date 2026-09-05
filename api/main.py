@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shutil
@@ -51,8 +52,6 @@ from api.settings import settings
 
 class JsonLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        import json
-
         payload = {
             "time": self.formatTime(record, self.datefmt),
             "level": record.levelname,
@@ -306,8 +305,6 @@ async def _stream_rag_response(
             elif "context" in chunk:
                 sources = build_sources(chunk["context"])
                 if sources:
-                    import json
-
                     source_data = json.dumps([s.model_dump() for s in sources])
                     yield f"event: sources\ndata: {source_data}\n\n"
     except Exception:

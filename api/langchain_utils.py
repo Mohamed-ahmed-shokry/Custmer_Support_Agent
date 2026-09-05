@@ -1,14 +1,10 @@
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
 from api.chroma_utils import select_retriever
 from api.settings import settings
-
-output_parser = StrOutputParser()
-
 
 # Set up prompts and chains
 contextualize_q_system_prompt = """

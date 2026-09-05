@@ -409,6 +409,9 @@ def test_chat_stream_handles_chain_error(monkeypatch):
     class FailingStreamChain:
         async def astream(self, payload):
             raise RuntimeError("provider unavailable")
+            # Unreachable yield keeps this a true async generator so the
+            # failure surfaces mid-iteration like a real chain error.
+            yield {}  # pragma: no cover
 
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
     monkeypatch.setattr(
