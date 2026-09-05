@@ -21,6 +21,7 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
+from api.db_utils import DEFAULT_COLLECTION
 from api.settings import settings
 
 if TYPE_CHECKING:
@@ -108,6 +109,7 @@ def index_document_to_chroma(
     file_id: int,
     filename: str | None = None,
     options: ChunkingOptions | None = None,
+    collection: str = DEFAULT_COLLECTION,
 ) -> bool:
     if options is None:
         options = ChunkingOptions()
@@ -124,6 +126,7 @@ def index_document_to_chroma(
             split.metadata["file_id"] = file_id
             split.metadata["filename"] = source_name
             split.metadata["chunk_index"] = index
+            split.metadata["collection"] = collection
 
         document_ids = build_chroma_document_ids(file_id, len(splits))
         _add_documents_with_retry(get_vectorstore(), splits, document_ids, file_path)
@@ -178,11 +181,35 @@ def delete_doc_from_chroma(file_id: int):
         return False
 
 
+def _metadata_filter(
+    file_ids: list[int] | None = None,
+    collections: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Build a Chroma ``where`` filter from optional scoping flags."""
+    filter_dict: dict[str, Any] = {}
+    if file_ids:
+        filter_dict["file_id"] = {"$in": file_ids}
+    if collections:
+        filter_dict["collection"] = {"$in": collections}
+    return filter_dict or None
+
+
+def _matches_scope(
+    metadata: dict[str, Any],
+    file_ids: list[int] | None,
+    collections: list[str] | None,
+) -> bool:
+    if file_ids and metadata.get("file_id") not in file_ids:
+        return False
+    return not (collections and metadata.get("collection") not in collections)
+
+
 def get_hybrid_retriever(
     k: int = 5,
     file_ids: list[int] | None = None,
     bm25_weight: float = 0.5,
     vector_weight: float = 0.5,
+    collections: list[str] | None = None,
 ):
     """Create a hybrid retriever combining BM25 and vector search.
 
@@ -191,7 +218,7 @@ def get_hybrid_retriever(
     Falls back to pure vector search when BM25/ensemble is unavailable.
     """
     vectorstore = get_vectorstore()
-    vector_filter = {"file_id": {"$in": file_ids}} if file_ids else None
+    vector_filter = _metadata_filter(file_ids, collections)
     vector_retriever = vectorstore.as_retriever(
         search_kwargs={"k": k, **({"filter": vector_filter} if vector_filter else {})}
     )
@@ -208,8 +235,9 @@ def get_hybrid_retriever(
                 all_docs["documents"], all_docs.get("metadatas") or [], strict=False
             )
         ]
-        if file_ids:
-            documents = [d for d in documents if d.metadata.get("file_id") in file_ids]
+        documents = [
+            d for d in documents if _matches_scope(d.metadata, file_ids, collections)
+        ]
         if not documents:
             return vector_retriever
         bm25_retriever = BM25Retriever.from_documents(documents)
@@ -234,12 +262,11 @@ def get_filtered_retriever(
     k: int = 5,
     file_ids: list[int] | None = None,
     source_filter: str | None = None,
+    collections: list[str] | None = None,
 ):
     """Create a retriever with metadata filtering."""
     vectorstore = get_vectorstore()
-    filter_dict: dict[str, Any] = {}
-    if file_ids:
-        filter_dict["file_id"] = {"$in": file_ids}
+    filter_dict = _metadata_filter(file_ids, collections) or {}
     if source_filter:
         filter_dict["filename"] = {"$eq": source_filter}
 
@@ -257,6 +284,7 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
     use_hybrid: bool = False,
     bm25_weight: float = 0.5,
     vector_weight: float = 0.5,
+    collections: list[str] | None = None,
 ):
     """Pick vector / filtered / hybrid retriever based on request flags."""
     if use_hybrid:
@@ -265,7 +293,10 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
             file_ids=file_ids,
             bm25_weight=bm25_weight,
             vector_weight=vector_weight,
+            collections=collections,
         )
-    if file_ids or source_filename:
-        return get_filtered_retriever(k=k, file_ids=file_ids, source_filter=source_filename)
+    if file_ids or source_filename or collections:
+        return get_filtered_retriever(
+            k=k, file_ids=file_ids, source_filter=source_filename, collections=collections
+        )
     return get_vectorstore().as_retriever(search_kwargs={"k": k})

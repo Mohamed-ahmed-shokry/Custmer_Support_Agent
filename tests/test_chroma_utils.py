@@ -20,6 +20,10 @@ class FakeVectorstore:
     def delete(self, ids):
         self.deleted_ids = ids
 
+    def as_retriever(self, search_kwargs=None):
+        self.search_kwargs = search_kwargs
+        return ("retriever", search_kwargs)
+
 
 def test_build_chroma_document_ids_uses_file_id_and_chunk_index():
     assert chroma_utils.build_chroma_document_ids(file_id=42, chunk_count=3) == [
@@ -50,12 +54,64 @@ def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
         "file_id": 42,
         "filename": "lease.pdf",
         "chunk_index": 0,
+        "collection": "default",
     }
     assert vectorstore.added_documents[1].metadata == {
         "page": 2,
         "file_id": 42,
         "filename": "lease.pdf",
         "chunk_index": 1,
+        "collection": "default",
+    }
+
+
+def test_index_document_stamps_custom_collection(monkeypatch):
+    documents = [Document(page_content="Chunk", metadata={})]
+    vectorstore = FakeVectorstore()
+
+    monkeypatch.setattr(
+        chroma_utils, "load_and_split_document", lambda file_path, *args, **kwargs: documents
+    )
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    assert (
+        chroma_utils.index_document_to_chroma(
+            "upload.pdf", file_id=42, filename="lease.pdf", collection="clients-acme"
+        )
+        is True
+    )
+    assert vectorstore.added_documents[0].metadata["collection"] == "clients-acme"
+
+
+def test_metadata_filter_combines_scopes():
+    assert chroma_utils._metadata_filter() is None
+    assert chroma_utils._metadata_filter([7], ["acme"]) == {
+        "file_id": {"$in": [7]},
+        "collection": {"$in": ["acme"]},
+    }
+
+
+def test_matches_scope_filters_by_collection():
+    assert (
+        chroma_utils._matches_scope({"file_id": 7, "collection": "acme"}, [7], ["acme"])
+        is True
+    )
+    assert (
+        chroma_utils._matches_scope({"file_id": 7, "collection": "other"}, [7], ["acme"])
+        is False
+    )
+    assert chroma_utils._matches_scope({"file_id": 7}, None, None) is True
+
+
+def test_filtered_retriever_forwards_collection_filter(monkeypatch):
+    vectorstore = FakeVectorstore()
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    chroma_utils.get_filtered_retriever(k=5, file_ids=[7], collections=["acme"])
+
+    assert vectorstore.search_kwargs == {
+        "k": 5,
+        "filter": {"file_id": {"$in": [7]}, "collection": {"$in": ["acme"]}},
     }
 
 
