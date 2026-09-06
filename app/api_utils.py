@@ -149,6 +149,19 @@ def list_sessions():
         return []
 
 
+def delete_session(session_id):
+    try:
+        response = requests.delete(f"{API_BASE_URL}/sessions/{session_id}", timeout=30)
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to delete session", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while deleting the session: {str(e)}")
+        return None
+
+
 def get_session_history(session_id):
     try:
         response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/history", timeout=30)
@@ -193,6 +206,16 @@ def get_health():
 def get_metrics():
     try:
         response = requests.get(f"{API_BASE_URL}/metrics.json", timeout=5)
+        if response.status_code == HTTP_OK:
+            return response.json()
+    except Exception:
+        return None
+    return None
+
+
+def get_quota():
+    try:
+        response = requests.get(f"{API_BASE_URL}/quota", timeout=5)
         if response.status_code == HTTP_OK:
             return response.json()
     except Exception:

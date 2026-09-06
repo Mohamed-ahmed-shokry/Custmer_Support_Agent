@@ -5,8 +5,10 @@ from api.settings import settings
 from app.api_utils import (
     API_BASE_URL,
     delete_document,
+    delete_session,
     get_health,
     get_metrics,
+    get_quota,
     get_session_history,
     list_collections,
     list_documents,
@@ -50,9 +52,21 @@ def _render_session_history():
         st.sidebar.caption("No past sessions yet.")
         return
 
+    labels = {"(current)": "(current)"}
+    for session in sessions:
+        preview = session.get("preview") or session["session_id"][:8]
+        labels[session["session_id"]] = f"{preview} ({session['message_count']} msgs)"
     options = ["(current)"] + [s["session_id"] for s in sessions]
-    selected = st.sidebar.selectbox("Open a session", options=options, key="session_picker")
-    if selected != "(current)" and st.sidebar.button("Load Session"):
+    selected = st.sidebar.selectbox(
+        "Open a session",
+        options=options,
+        format_func=lambda session_id: labels.get(session_id, session_id),
+        key="session_picker",
+    )
+    if selected == "(current)":
+        return
+    load_col, delete_col = st.sidebar.columns(2)
+    if load_col.button("Load Session"):
         with st.spinner("Loading session..."):
             history = get_session_history(selected)
             st.session_state.session_id = selected
@@ -60,6 +74,15 @@ def _render_session_history():
                 {"role": m["role"], "content": m["content"]} for m in history
             ]
             st.rerun()
+    if delete_col.button("Delete"):
+        with st.spinner("Deleting session..."):
+            if delete_session(selected):
+                st.sidebar.success("Session deleted.")
+                st.session_state.sessions = list_sessions()
+                if st.session_state.session_id == selected:
+                    st.session_state.session_id = None
+                    st.session_state.messages = []
+                st.rerun()
 
 
 def _render_model_selector():
@@ -108,6 +131,14 @@ def _render_ops_metrics():
     st.sidebar.metric("Errors", errors_total)
     st.sidebar.metric("Prompt tokens (est.)", metrics.get("prompt_tokens_est", 0))
     st.sidebar.metric("Completion tokens (est.)", metrics.get("completion_tokens_est", 0))
+
+    quota = get_quota()
+    if quota and not quota.get("unlimited", True):
+        st.sidebar.metric(
+            "Daily token quota left (est.)",
+            quota.get("remaining", 0),
+            delta=None,
+        )
 
     with st.sidebar.expander("Latency averages (s)"):
         latency_keys = sorted(key for key in metrics if key.startswith("latency_avg_seconds_"))
