@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.6.0)
+# Customer Support RAG Agent (v0.7.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -16,7 +16,7 @@ A local-first customer support assistant for real estate and property management
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
   validation and a configurable upload size cap.
 - Source-aware answers with document metadata returned by the API.
-- Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher.
+- Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher with previews, session deletion, and quota display.
 - File logs redact emails, phone numbers, and SSN-like patterns.
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
@@ -130,7 +130,8 @@ The API serves on `http://localhost:8000` and the UI on
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `GET /list-docs`, `POST /delete-doc` — document metadata management.
 - `GET /collections` — known collection names.
-- `GET /sessions`, `GET /sessions/{id}/history` — past conversations.
+- `GET /sessions`, `GET /sessions/{id}/history`, `DELETE /sessions/{id}` — past conversations.
+- `GET /quota` — daily token budget usage for the caller.
 
 Full details: `docs/API.md`. Architecture notes: `docs/ARCHITECTURE.md`.
 Contributor workflow: `docs/CONTRIBUTING.md`. Roadmap: `ROADMAP.md`.
