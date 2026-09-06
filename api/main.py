@@ -46,6 +46,7 @@ from api.pydantic_models import (
     HealthResponse,
     QueryInput,
     QueryResponse,
+    QuotaInfo,
     SessionInfo,
     SourceInfo,
     UploadDocumentResponse,
@@ -54,6 +55,7 @@ from api.security import (
     check_api_key,
     check_rate_limit,
     check_token_quota,
+    get_token_usage,
     is_public_path,
     record_token_usage,
 )
@@ -248,6 +250,17 @@ def metrics():
 @app.get("/metrics.json")
 def metrics_json():
     return snapshot()
+
+
+@app.get("/quota", response_model=QuotaInfo)
+def quota(request: Request):
+    budget = settings.token_daily_budget_est
+    if budget <= 0:
+        return QuotaInfo(budget=0, used=0, remaining=None, unlimited=True)
+    used = get_token_usage(_client_ip(request))
+    return QuotaInfo(
+        budget=budget, used=used, remaining=max(0, budget - used), unlimited=False
+    )
 
 
 def _client_ip(request: Request) -> str:

@@ -93,3 +93,10 @@ def record_token_usage(key: str, tokens: int, today: str | None = None) -> int:
         total = _token_usage.get((key, day), 0) + tokens
         _token_usage[(key, day)] = total
         return total
+
+
+def get_token_usage(key: str, today: str | None = None) -> int:
+    """Return the client's recorded token usage for the day."""
+    day = today if today is not None else _today()
+    with _lock:
+        return _token_usage.get((key, day), 0)

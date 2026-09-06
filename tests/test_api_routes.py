@@ -351,6 +351,25 @@ def test_chat_enforces_daily_token_quota(monkeypatch):
         security.reset()
 
 
+def test_quota_reports_unlimited_when_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "token_daily_budget_est", 0)
+
+    response = client.get("/quota")
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == {"budget": 0, "used": 0, "remaining": None, "unlimited": True}
+
+
+def test_quota_reports_usage_against_budget(monkeypatch):
+    monkeypatch.setattr(settings, "token_daily_budget_est", 100)
+    monkeypatch.setattr(main, "get_token_usage", lambda key, today=None: 30)
+
+    response = client.get("/quota")
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == {"budget": 100, "used": 30, "remaining": 70, "unlimited": False}
+
+
 def test_health_probes():
     live = client.get("/health/live")
     assert live.status_code == HTTP_OK

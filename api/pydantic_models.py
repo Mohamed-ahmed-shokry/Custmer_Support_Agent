@@ -91,6 +91,13 @@ class DeleteSessionResponse(BaseModel):
     message: str
 
 
+class QuotaInfo(BaseModel):
+    budget: int
+    used: int
+    remaining: int | None
+    unlimited: bool
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str
