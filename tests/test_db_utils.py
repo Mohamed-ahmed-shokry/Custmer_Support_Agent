@@ -45,6 +45,29 @@ def test_get_all_sessions_returns_counts(monkeypatch, tmp_path):
     assert sessions == {"session-1": 2, "session-2": 1}
 
 
+def test_get_all_sessions_includes_first_question_preview(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("session-1", "First question here", "A1", "gpt-4o-mini")
+    db_utils.insert_application_logs("session-1", "Second question", "A2", "gpt-4o-mini")
+    long_question = "Q" * 200
+    db_utils.insert_application_logs("session-2", long_question, "A3", "gpt-4o-mini")
+
+    previews = {s["session_id"]: s["preview"] for s in db_utils.get_all_sessions()}
+    assert previews["session-1"] == "First question here"
+    assert previews["session-2"] == "Q" * 79 + "…"
+
+
+def test_delete_session_removes_history(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("session-1", "Q1", "A1", "gpt-4o-mini")
+
+    assert db_utils.delete_session("session-1") is True
+    assert db_utils.delete_session("session-1") is False
+    assert db_utils.get_chat_history("session-1") == []
+
+
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 

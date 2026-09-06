@@ -54,10 +54,16 @@ _SELECT_DOCS_BY_COLLECTION = (
 _SELECT_ALL_COLLECTIONS = "SELECT DISTINCT collection FROM document_store ORDER BY collection"
 
 _SELECT_ALL_SESSIONS = (
-    "SELECT session_id, COUNT(*) AS message_count, "
-    "MAX(created_at) AS last_active FROM application_logs "
-    "GROUP BY session_id ORDER BY last_active DESC"
+    "SELECT l1.session_id, COUNT(*) AS message_count, "
+    "MAX(l1.created_at) AS last_active, "
+    "(SELECT l2.user_query FROM application_logs l2 "
+    "WHERE l2.session_id = l1.session_id ORDER BY l2.id ASC LIMIT 1) AS preview "
+    "FROM application_logs l1 GROUP BY l1.session_id ORDER BY last_active DESC"
 )
+
+_DELETE_SESSION = "DELETE FROM application_logs WHERE session_id = ?"
+
+PREVIEW_MAX_LENGTH = 80
 
 
 def get_db_connection():
@@ -158,12 +164,32 @@ def get_all_collections():
         return [row["collection"] for row in cursor.fetchall()]
 
 
+def _truncate_preview(preview: str | None) -> str:
+    if not preview:
+        return ""
+    preview = preview.strip()
+    if len(preview) <= PREVIEW_MAX_LENGTH:
+        return preview
+    return preview[: PREVIEW_MAX_LENGTH - 1].rstrip() + "…"
+
+
 def get_all_sessions():
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
         cursor.execute(_SELECT_ALL_SESSIONS)
         sessions = cursor.fetchall()
-        return [dict(session) for session in sessions]
+        return [
+            {**dict(session), "preview": _truncate_preview(session["preview"])}
+            for session in sessions
+        ]
+
+
+def delete_session(session_id):
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_DELETE_SESSION, (session_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
 
 
 # Initialize the database tables
