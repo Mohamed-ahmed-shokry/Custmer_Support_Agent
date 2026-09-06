@@ -84,6 +84,11 @@ class SessionInfo(BaseModel):
     session_id: str
     message_count: int
     last_active: datetime
+    preview: str = ""
+
+
+class DeleteSessionResponse(BaseModel):
+    message: str
 
 
 class ChatMessage(BaseModel):

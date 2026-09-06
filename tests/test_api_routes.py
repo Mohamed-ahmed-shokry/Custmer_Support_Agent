@@ -388,6 +388,7 @@ def test_list_sessions_returns_summaries(monkeypatch):
             "session_id": "session-1",
             "message_count": 2,
             "last_active": "2026-09-04T00:00:00",
+            "preview": "How do I request maintenance?",
         }
     ]
     monkeypatch.setattr(main, "get_all_sessions", lambda: sessions)
@@ -413,6 +414,29 @@ def test_session_history_returns_messages(monkeypatch):
 
 def test_session_history_rejects_blank_session_id():
     response = client.get("/sessions/%20/history")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_delete_session_removes_it(monkeypatch):
+    monkeypatch.setattr(main, "delete_session", lambda session_id: True)
+
+    response = client.delete("/sessions/session-1")
+
+    assert response.status_code == HTTP_OK
+    assert "session-1" in response.json()["message"]
+
+
+def test_delete_session_returns_404_when_unknown(monkeypatch):
+    monkeypatch.setattr(main, "delete_session", lambda session_id: False)
+
+    response = client.delete("/sessions/missing")
+
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_delete_session_rejects_blank_session_id():
+    response = client.delete("/sessions/%20")
 
     assert response.status_code == HTTP_BAD_REQUEST
 

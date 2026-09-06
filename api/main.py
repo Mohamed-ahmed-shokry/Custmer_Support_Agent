@@ -20,6 +20,7 @@ from api.chroma_utils import (
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     delete_document_record,
+    delete_session,
     get_all_collections,
     get_all_documents,
     get_all_sessions,
@@ -40,6 +41,7 @@ from api.pydantic_models import (
     ChatMessage,
     DeleteDocumentResponse,
     DeleteFileRequest,
+    DeleteSessionResponse,
     DocumentInfo,
     HealthResponse,
     QueryInput,
@@ -484,6 +486,17 @@ def session_history(session_id: str):
     if not session_id.strip():
         raise HTTPException(status_code=400, detail="session_id must not be empty.")
     return [ChatMessage(**message) for message in get_chat_history(session_id)]
+
+
+@app.delete("/sessions/{session_id}", response_model=DeleteSessionResponse)
+def delete_session_route(session_id: str):
+    if not session_id.strip():
+        raise HTTPException(status_code=400, detail="session_id must not be empty.")
+    if not delete_session(session_id):
+        raise HTTPException(
+            status_code=404, detail=f"Session {session_id} was not found."
+        )
+    return DeleteSessionResponse(message=f"Session {session_id} deleted.")
 
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)
