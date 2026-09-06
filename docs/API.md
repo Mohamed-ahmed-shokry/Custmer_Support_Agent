@@ -78,8 +78,16 @@ SQLite record (`404` when unknown).
 
 ## Sessions
 
-- `GET /sessions` → array of `{session_id, message_count, last_active}`
-  ordered by most recent activity.
+- `GET /sessions` → array of `{session_id, message_count, last_active,
+  preview}` ordered by most recent activity (`preview` is the truncated
+  first question).
 - `GET /sessions/{session_id}/history` → array of `{role, content}` pairs
   for that session (`400` for a blank id). The Streamlit sidebar uses these
   to list and reload past conversations.
+- `DELETE /sessions/{session_id}` → removes the session history
+  (`400` for a blank id, `404` when unknown).
+
+## Quotas
+
+- `GET /quota` → `{budget, used, remaining, unlimited}` for the caller IP
+  against `TOKEN_DAILY_BUDGET_EST` (`remaining` is `null` when unlimited).
