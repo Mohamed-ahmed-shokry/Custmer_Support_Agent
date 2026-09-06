@@ -20,11 +20,19 @@
 - Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
 - 83 tests passing; ruff + mypy clean (CI gates)
 
-## v0.7.0 candidates (next)
+## v0.7.0 plan — Conversation management (IN PROGRESS)
+
+Finish the sessions story and make quotas visible (no new deps).
+
+- [ ] Session previews (first question) in `GET /sessions`
+- [ ] `DELETE /sessions/{id}` endpoint + UI delete button
+- [ ] `GET /quota` visibility endpoint (budget/used/remaining for caller IP)
+- [ ] UI: preview labels in picker, delete + quota display
+
+## v0.8.0 candidates (next)
 
 - Query expansion/rewriting grounded by the golden eval set
 - Cross-encoder reranking (needs new model dependency + eval baseline)
-- Conversation rename/delete in the UI
 - Staging/production environment targets
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
