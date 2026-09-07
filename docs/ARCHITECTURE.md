@@ -1,8 +1,8 @@
-# Architecture (v0.6.0)
+# Architecture (v0.8.0)
 
 ```text
 Streamlit UI --HTTP--> FastAPI API --invoke--> LangChain RAG chain
-     |                      |                       |-- retriever: vector / filtered / hybrid (BM25+vector)
+     |                      |                       |-- retriever: vector / filtered / hybrid / expanded
      |                      |                       |-- chat model: OpenAI (gpt-4o / gpt-4o-mini)
      |                      |-- SQLite (sessions, document records + collections)
      |                      |-- Chroma (persisted vector chunks + metadata)
@@ -12,7 +12,7 @@ Streamlit UI --HTTP--> FastAPI API --invoke--> LangChain RAG chain
 ## Request flow (chat)
 
 1. Client posts `QueryInput` (question + optional `file_ids`,
-   `source_filename`, `use_hybrid`, `collections`).
+   `source_filename`, `use_hybrid`, `collections`, `expand_query`).
 2. `X-Request-ID` middleware tags the request/response and enforces opt-in
    API-key auth plus per-IP rate limits.
 3. The daily token quota is pre-checked against the question estimate.
@@ -35,6 +35,12 @@ SSE events; the full answer is persisted after the stream completes.
   with `EnsembleRetriever`. BM25/ensemble imports are lazy because legacy
   `langchain.retrievers` modules break under Python 3.14 + pydantic; any
   failure falls back to vector search and is logged.
+- **Expanded (opt-in):** the question is rewritten into reformulations by the
+  chat model (`api/expansion.py`), each variant runs vector search with the
+  active filters, and hits merge via reciprocal-rank fusion
+  (`1 / (60 + rank)`). Takes precedence over hybrid; expansion failures fall
+  back to the original question. Measure recall changes with
+  `scripts/eval_retrieval.py` before enabling `USE_QUERY_EXPANSION` globally.
 
 ## Collections
 
