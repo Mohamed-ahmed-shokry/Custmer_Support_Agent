@@ -37,13 +37,17 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
   "file_ids": [7],
   "source_filename": "tenant-handbook.pdf",
   "use_hybrid": true,
-  "collections": ["clients-acme"]
+  "collections": ["clients-acme"],
+  "expand_query": true
 }
 ```
 
-- `file_ids` (max 50), `source_filename`, `use_hybrid`, and `collections`
-  (max 20) are optional retrieval filters. Omit them for plain vector search
-  over all documents.
+- `file_ids` (max 50), `source_filename`, `use_hybrid`, `collections`
+  (max 20), and `expand_query` are optional retrieval controls. Omit them
+  for plain vector search over all documents.
+- `expand_query` fans the question out into LLM reformulations and fuses the
+  per-variant vector hits with reciprocal-rank fusion (takes precedence over
+  `use_hybrid`; filters still apply to every variant).
 - Success → `200` with `{answer, session_id, model, sources[]}`.
 - Retrieval failure → `502`; bad input → `422`.
 - Each chat/stream turn adds approximate token usage (`~4 chars/token`)
