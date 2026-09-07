@@ -30,9 +30,18 @@ Finish the sessions story and make quotas visible (no new deps).
 - [x] `GET /quota` visibility endpoint (budget/used/remaining for caller IP)
 - [x] UI: preview labels in picker, delete + quota display
 
-## v0.8.0 candidates (next)
+## v0.8.0 plan — Retrieval quality via query expansion (IN PROGRESS)
 
-- Query expansion/rewriting grounded by the golden eval set
+Opt-in multi-query fan-out with reciprocal-rank fusion, no new deps
+(`langchain_core` + `langchain_openai` only — 3.14-safe).
+
+- [ ] `api/expansion.py`: LLM reformulations + RRF merge + expanded retriever
+- [ ] `expand_query` flag on chat (per-request) and `USE_QUERY_EXPANSION` default
+- [ ] Streamlit "expand query" toggle
+- [ ] Eval guidance for measuring expansion against the golden set
+
+## v0.9.0 candidates (next)
+
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
 
