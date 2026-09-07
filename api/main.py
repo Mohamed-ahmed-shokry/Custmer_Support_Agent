@@ -191,12 +191,13 @@ def build_sources(documents) -> list[SourceInfo]:
     return sources
 
 
-def get_rag_chain_for_model(
+def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     model: str,
     file_ids: list[int] | None = None,
     source_filename: str | None = None,
     use_hybrid: bool | None = None,
     collections: list[str] | None = None,
+    expand_query: bool | None = None,
 ):
     # ruff: noqa: PLC0415 - lazy import required for Python 3.14 compatibility
     from api.langchain_utils import get_rag_chain
@@ -207,6 +208,7 @@ def get_rag_chain_for_model(
         source_filename=source_filename,
         use_hybrid=use_hybrid,
         collections=collections,
+        expand_query=expand_query,
     )
 
 
@@ -293,6 +295,7 @@ def chat(query_input: QueryInput, request: Request):
         source_filename=query_input.source_filename,
         use_hybrid=query_input.use_hybrid,
         collections=query_input.collections,
+        expand_query=query_input.expand_query,
     )
     try:
         result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
@@ -334,6 +337,7 @@ async def _stream_rag_response(
         source_filename=query_input.source_filename,
         use_hybrid=query_input.use_hybrid,
         collections=query_input.collections,
+        expand_query=query_input.expand_query,
     )
     try:
         async for chunk in rag_chain.astream(

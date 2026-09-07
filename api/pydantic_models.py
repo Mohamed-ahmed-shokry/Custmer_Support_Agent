@@ -34,6 +34,7 @@ class QueryInput(BaseModel):
     source_filename: str | None = Field(default=None, max_length=255)
     use_hybrid: bool | None = Field(default=None)
     collections: list[str] | None = Field(default=None, max_length=20)
+    expand_query: bool | None = Field(default=None)
 
     @field_validator("collections", mode="before")
     @classmethod

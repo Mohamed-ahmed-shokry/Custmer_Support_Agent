@@ -1,5 +1,8 @@
 from api import chroma_utils
+from api.expansion import ExpandedVectorRetriever
 from langchain_core.documents import Document
+
+EXPECTED_RETRIEVER_K = 5
 
 
 class FakeVectorstore:
@@ -113,6 +116,18 @@ def test_filtered_retriever_forwards_collection_filter(monkeypatch):
         "k": 5,
         "filter": {"file_id": {"$in": [7]}, "collection": {"$in": ["acme"]}},
     }
+
+
+def test_select_retriever_prefers_expansion(monkeypatch):
+    vectorstore = FakeVectorstore()
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    retriever = chroma_utils.select_retriever(
+        k=EXPECTED_RETRIEVER_K, file_ids=[7], use_hybrid=True, expand_query=True
+    )
+
+    assert isinstance(retriever, ExpandedVectorRetriever)
+    assert retriever.k == EXPECTED_RETRIEVER_K
 
 
 def test_index_document_returns_false_when_document_has_no_chunks(monkeypatch):

@@ -285,8 +285,29 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
     bm25_weight: float = 0.5,
     vector_weight: float = 0.5,
     collections: list[str] | None = None,
+    expand_query: bool = False,
+    llm=None,
+    expansion_count: int = 3,
 ):
-    """Pick vector / filtered / hybrid retriever based on request flags."""
+    """Pick vector / filtered / hybrid / expanded retriever based on request flags.
+
+    Query expansion takes precedence over hybrid search: it fans the question
+    out into reformulations and fuses the vector hits with reciprocal-rank
+    fusion (filters still apply to every variant).
+    """
+    if expand_query:
+        from api.expansion import ExpandedVectorRetriever  # noqa: PLC0415 - lazy, see ADR-001
+
+        filter_dict = _metadata_filter(file_ids, collections) or {}
+        if source_filename:
+            filter_dict["filename"] = {"$eq": source_filename}
+        return ExpandedVectorRetriever(
+            vectorstore=get_vectorstore(),
+            k=k,
+            llm=llm,
+            expansion_count=expansion_count,
+            search_kwargs={"filter": filter_dict} if filter_dict else None,
+        )
     if use_hybrid:
         return get_hybrid_retriever(
             k=k,

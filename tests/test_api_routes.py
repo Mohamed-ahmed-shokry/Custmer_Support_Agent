@@ -241,6 +241,7 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
             "source_filename": "tenant-handbook.pdf",
             "use_hybrid": True,
             "collections": ["Clients-Acme"],
+            "expand_query": True,
         },
     )
 
@@ -249,6 +250,7 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
     assert captured["source_filename"] == "tenant-handbook.pdf"
     assert captured["use_hybrid"] is True
     assert captured["collections"] == ["clients-acme"]
+    assert captured["expand_query"] is True
 
 
 def test_upload_rejects_invalid_chunk_params():

@@ -45,6 +45,8 @@ class Settings:
         self.default_model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
         self.retriever_k = get_positive_int_env("RETRIEVER_K", 5)
         self.use_hybrid_retriever = get_bool_env("USE_HYBRID_RETRIEVER", False)
+        self.use_query_expansion = get_bool_env("USE_QUERY_EXPANSION", False)
+        self.expansion_count = get_positive_int_env("EXPANSION_COUNT", 3)
         self.hybrid_bm25_weight = get_float_env("HYBRID_BM25_WEIGHT", 0.5)
         self.hybrid_vector_weight = get_float_env("HYBRID_VECTOR_WEIGHT", 0.5)
         self.max_upload_mb = get_positive_int_env("MAX_UPLOAD_MB", 25)
