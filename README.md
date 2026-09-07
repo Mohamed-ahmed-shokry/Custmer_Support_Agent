@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.7.0)
+# Customer Support RAG Agent (v0.8.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -11,6 +11,9 @@ A local-first customer support assistant for real estate and property management
 - Retrieval filters per request: `file_ids`, `source_filename`, `use_hybrid`
   (BM25 + vector hybrid with graceful vector-only fallback), and
   `collections` to scope answers to document collections.
+- Opt-in query expansion (`expand_query`): LLM reformulations fused with
+  reciprocal-rank fusion; enable via the sidebar toggle or
+  `USE_QUERY_EXPANSION`.
 - Document collections group uploads, retrieval, and the UI picker, with
   automatic migration for pre-v0.6.0 databases.
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
@@ -84,6 +87,8 @@ Optional:
 - `RETRIEVER_K`
 - `USE_HYBRID_RETRIEVER` (default `false`)
 - `HYBRID_BM25_WEIGHT` / `HYBRID_VECTOR_WEIGHT` (default `0.5` each)
+- `USE_QUERY_EXPANSION` (default `false`)
+- `EXPANSION_COUNT` (default `3`)
 - `MAX_UPLOAD_MB` (default `25`)
 - `LOG_FORMAT` (`text` or `json`, default `text`)
 - `LOG_LEVEL` (default `INFO`)
