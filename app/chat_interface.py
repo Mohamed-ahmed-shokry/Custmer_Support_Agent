@@ -31,9 +31,11 @@ def _render_assistant_message(answer, selected_model, session_id, sources):
                     st.caption(source.get("preview", ""))
 
 
-def _handle_streaming_response(prompt, session_id, selected_model, collections=None):
+def _handle_streaming_response(
+    prompt, session_id, selected_model, collections=None, expand_query=None
+):
     """Handle streaming response from API."""
-    stream = get_api_stream_response(prompt, session_id, selected_model, collections)
+    stream = get_api_stream_response(prompt, session_id, selected_model, collections, expand_query)
     if not stream:
         return None, None, None
 
@@ -63,9 +65,11 @@ def _handle_streaming_response(prompt, session_id, selected_model, collections=N
     return full_answer, sources, session_id_result
 
 
-def _handle_non_streaming_response(prompt, session_id, selected_model, collections=None):
+def _handle_non_streaming_response(
+    prompt, session_id, selected_model, collections=None, expand_query=None
+):
     """Handle non-streaming response from API."""
-    response = get_api_response(prompt, session_id, selected_model, collections)
+    response = get_api_response(prompt, session_id, selected_model, collections, expand_query)
     if not response:
         return None, None, None
 
@@ -75,6 +79,7 @@ def _handle_non_streaming_response(prompt, session_id, selected_model, collectio
 def display_chat_interface():
     # Streaming toggle
     use_streaming = st.sidebar.checkbox("Use Streaming", value=True, key="use_streaming")
+    expand_query = st.sidebar.checkbox("Expand query", value=False, key="expand_query")
 
     # Chat interface
     for message in st.session_state.messages:
@@ -95,11 +100,19 @@ def display_chat_interface():
         with st.spinner("Generating response..."):
             if use_streaming:
                 answer, sources, new_session_id = _handle_streaming_response(
-                    prompt, st.session_state.session_id, selected_model, collections
+                    prompt,
+                    st.session_state.session_id,
+                    selected_model,
+                    collections,
+                    expand_query,
                 )
             else:
                 answer, sources, new_session_id = _handle_non_streaming_response(
-                    prompt, st.session_state.session_id, selected_model, collections
+                    prompt,
+                    st.session_state.session_id,
+                    selected_model,
+                    collections,
+                    expand_query,
                 )
 
         if answer:
