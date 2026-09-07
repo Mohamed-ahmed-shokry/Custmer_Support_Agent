@@ -16,10 +16,10 @@ test:
 	$(PYTEST)
 
 lint:
-	$(PYTHON) -m ruff check api/ app/ tests/
+	$(PYTHON) -m ruff check api/ app/ tests/ scripts/
 
 typecheck:
-	$(PYTHON) -m mypy api/ app/
+	$(PYTHON) -m mypy api/ app/ scripts/
 
 verify: lint typecheck test
 
