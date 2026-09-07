@@ -498,17 +498,21 @@ def list_sessions():
     return get_all_sessions()
 
 
-@app.get("/sessions/{session_id}/history", response_model=list[ChatMessage])
-def session_history(session_id: str):
+def _require_session_id(session_id: str) -> str:
     if not session_id.strip():
         raise HTTPException(status_code=400, detail="session_id must not be empty.")
+    return session_id
+
+
+@app.get("/sessions/{session_id}/history", response_model=list[ChatMessage])
+def session_history(session_id: str):
+    _require_session_id(session_id)
     return [ChatMessage(**message) for message in get_chat_history(session_id)]
 
 
 @app.delete("/sessions/{session_id}", response_model=DeleteSessionResponse)
 def delete_session_route(session_id: str):
-    if not session_id.strip():
-        raise HTTPException(status_code=400, detail="session_id must not be empty.")
+    _require_session_id(session_id)
     if not delete_session(session_id):
         raise HTTPException(
             status_code=404, detail=f"Session {session_id} was not found."
