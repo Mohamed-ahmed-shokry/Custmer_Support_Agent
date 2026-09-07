@@ -19,8 +19,8 @@ Copy-Item .env.example .env
 
 ```powershell
 python -m pytest
-python -m ruff check api/ app/ tests/
-python -m mypy api/ app/
+python -m ruff check api/ app/ tests/ scripts/
+python -m mypy api/ app/ scripts/
 ```
 
 - `ruff --fix` and `black` are fine for formatting, but re-run tests after.
