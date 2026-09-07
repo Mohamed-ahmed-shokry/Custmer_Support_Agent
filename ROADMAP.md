@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.7.0, 2026-09-04)
+## Current State (v0.8.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -19,7 +19,8 @@
 - Releases: tag-triggered workflow (verify + GitHub release)
 - Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
 - Sessions support previews, deletion, and quota visibility in API + UI
-- 90 tests passing; ruff + mypy clean (CI gates)
+- Opt-in query expansion with RRF fusion across API, chain, and UI
+- 95 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -30,15 +31,15 @@ Finish the sessions story and make quotas visible (no new deps).
 - [x] `GET /quota` visibility endpoint (budget/used/remaining for caller IP)
 - [x] UI: preview labels in picker, delete + quota display
 
-## v0.8.0 plan — Retrieval quality via query expansion (IN PROGRESS)
+## v0.8.0 plan — Retrieval quality via query expansion ✅ COMPLETED
 
 Opt-in multi-query fan-out with reciprocal-rank fusion, no new deps
 (`langchain_core` + `langchain_openai` only — 3.14-safe).
 
-- [ ] `api/expansion.py`: LLM reformulations + RRF merge + expanded retriever
-- [ ] `expand_query` flag on chat (per-request) and `USE_QUERY_EXPANSION` default
-- [ ] Streamlit "expand query" toggle
-- [ ] Eval guidance for measuring expansion against the golden set
+- [x] `api/expansion.py`: LLM reformulations + RRF merge + expanded retriever
+- [x] `expand_query` flag on chat (per-request) and `USE_QUERY_EXPANSION` default
+- [x] Streamlit "expand query" toggle
+- [x] Eval guidance for measuring expansion against the golden set
 
 ## v0.9.0 candidates (next)
 
