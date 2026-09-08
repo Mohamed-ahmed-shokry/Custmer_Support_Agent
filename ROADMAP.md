@@ -51,7 +51,15 @@ Make expansion measurable and conversations nameable (no new deps).
 - [x] Session labels: `session_labels` table, `PATCH /sessions/{id}`, UI rename
 - [x] Dark-mode Streamlit theme
 
-## v0.10.0 candidates (next)
+## v0.10.0 plan — Export, rerank & prod parity (IN PROGRESS)
+
+Portability plus dependency-free relevance tuning (no new deps).
+
+- [ ] Session export: `GET /sessions/{id}/export` (markdown) + UI download
+- [ ] Lexical rerank retriever (term-overlap signal, wraps any retriever)
+- [ ] `docker-compose.prod.yml` override + deployment docs
+
+## v0.11.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
