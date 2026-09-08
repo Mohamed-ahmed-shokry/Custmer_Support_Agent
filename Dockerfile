@@ -16,6 +16,7 @@ COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.
 COPY --from=deps /usr/local/bin /usr/local/bin
 COPY api/ ./api/
 COPY app/ ./app/
+COPY .streamlit/ ./.streamlit/
 COPY docs/CORPUS.md ./docs/CORPUS.md
 COPY pyproject.toml pytest.ini ./
 EXPOSE 8000
