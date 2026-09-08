@@ -166,6 +166,21 @@ def delete_session(session_id):
         return None
 
 
+def rename_session(session_id, label):
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/sessions/{session_id}", json={"label": label}, timeout=30
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to rename session", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while renaming the session: {str(e)}")
+        return None
+
+
 def get_session_history(session_id):
     try:
         response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/history", timeout=30)

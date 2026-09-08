@@ -13,6 +13,7 @@ from app.api_utils import (
     list_collections,
     list_documents,
     list_sessions,
+    rename_session,
     upload_document,
 )
 
@@ -54,8 +55,8 @@ def _render_session_history():
 
     labels = {"(current)": "(current)"}
     for session in sessions:
-        preview = session.get("preview") or session["session_id"][:8]
-        labels[session["session_id"]] = f"{preview} ({session['message_count']} msgs)"
+        title = session.get("label") or session.get("preview") or session["session_id"][:8]
+        labels[session["session_id"]] = f"{title} ({session['message_count']} msgs)"
     options = ["(current)"] + [s["session_id"] for s in sessions]
     selected = st.sidebar.selectbox(
         "Open a session",
@@ -65,7 +66,13 @@ def _render_session_history():
     )
     if selected == "(current)":
         return
-    load_col, delete_col = st.sidebar.columns(2)
+    new_label = st.sidebar.text_input("Rename session", key="rename_session", max_chars=80)
+    rename_col, load_col, delete_col = st.sidebar.columns(3)
+    if rename_col.button("Rename") and new_label.strip():
+        with st.spinner("Renaming session..."):
+            if rename_session(selected, new_label.strip()):
+                st.session_state.sessions = list_sessions()
+                st.rerun()
     if load_col.button("Load Session"):
         with st.spinner("Loading session..."):
             history = get_session_history(selected)
