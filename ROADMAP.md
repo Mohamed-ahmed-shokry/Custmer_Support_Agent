@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.8.0, 2026-09-04)
+## Current State (v0.9.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -20,7 +20,9 @@
 - Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
 - Sessions support previews, deletion, and quota visibility in API + UI
 - Opt-in query expansion with RRF fusion across API, chain, and UI
-- 95 tests passing; ruff + mypy clean (CI gates)
+- Eval `--compare` mode plus unit-tested harness; session labels with
+  rename/delete across API and UI; dark-mode theme
+- 104 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -41,13 +43,13 @@ Opt-in multi-query fan-out with reciprocal-rank fusion, no new deps
 - [x] Streamlit "expand query" toggle
 - [x] Eval guidance for measuring expansion against the golden set
 
-## v0.9.0 plan — Eval comparison + session labels (IN PROGRESS)
+## v0.9.0 plan — Eval comparison + session labels ✅ COMPLETED
 
 Make expansion measurable and conversations nameable (no new deps).
 
-- [ ] Eval `--compare` mode: baseline vs expansion recall per golden case
-- [ ] Session labels: `session_labels` table, `PATCH /sessions/{id}`, UI rename
-- [ ] Dark-mode Streamlit theme
+- [x] Eval `--compare` mode: baseline vs expansion recall per golden case
+- [x] Session labels: `session_labels` table, `PATCH /sessions/{id}`, UI rename
+- [x] Dark-mode Streamlit theme
 
 ## v0.10.0 candidates (next)
 
