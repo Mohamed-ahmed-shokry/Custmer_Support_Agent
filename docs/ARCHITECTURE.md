@@ -40,7 +40,12 @@ SSE events; the full answer is persisted after the stream completes.
   active filters, and hits merge via reciprocal-rank fusion
   (`1 / (60 + rank)`). Takes precedence over hybrid; expansion failures fall
   back to the original question. Measure recall changes with
-  `scripts/eval_retrieval.py` before enabling `USE_QUERY_EXPANSION` globally.
+  `scripts/eval_retrieval.py --compare` before enabling `USE_QUERY_EXPANSION`
+  globally.
+- **Reranked (opt-in):** any retriever above can be wrapped so it fetches 3x
+  candidates that `api/rerank.py` reorders by lexical term-overlap signal
+  and trims back to `k`. Dependency-free baseline (not a cross-encoder);
+  enable per request (`rerank`) or globally (`USE_RERANK`).
 
 ## Collections
 
