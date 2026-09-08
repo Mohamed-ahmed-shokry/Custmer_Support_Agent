@@ -6,6 +6,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -507,10 +508,51 @@ def _require_session_id(session_id: str) -> str:
     return session_id
 
 
+ROLE_HEADINGS = {"human": "User", "ai": "Assistant"}
+
+
+def render_session_markdown(session_id: str, label: str | None, messages: list[dict]) -> str:
+    """Render a conversation as a markdown transcript."""
+    title = label or session_id
+    lines = [
+        f"# Conversation: {title}",
+        "",
+        f"- Session: `{session_id}`",
+        f"- Exported: {datetime.now(UTC).isoformat(timespec='seconds')}",
+        "",
+    ]
+    for message in messages:
+        lines.append(f"## {ROLE_HEADINGS.get(message['role'], message['role'])}")
+        lines.append("")
+        lines.append(message["content"])
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 @app.get("/sessions/{session_id}/history", response_model=list[ChatMessage])
 def session_history(session_id: str):
     _require_session_id(session_id)
     return [ChatMessage(**message) for message in get_chat_history(session_id)]
+
+
+@app.get("/sessions/{session_id}/export")
+def export_session(session_id: str):
+    from fastapi.responses import PlainTextResponse  # noqa: PLC0415 - keep import lazy
+
+    _require_session_id(session_id)
+    history = get_chat_history(session_id)
+    if not history:
+        raise HTTPException(
+            status_code=404, detail=f"Session {session_id} was not found."
+        )
+    summaries = [s for s in get_all_sessions() if s["session_id"] == session_id]
+    label = summaries[0].get("label") if summaries else None
+    markdown = render_session_markdown(session_id, label, history)
+    return PlainTextResponse(
+        markdown,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{session_id}.md"'},
+    )
 
 
 @app.delete("/sessions/{session_id}", response_model=DeleteSessionResponse)

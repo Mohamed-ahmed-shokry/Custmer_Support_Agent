@@ -463,6 +463,51 @@ def test_delete_session_rejects_blank_session_id():
     assert response.status_code == HTTP_BAD_REQUEST
 
 
+def test_export_session_returns_markdown_transcript(monkeypatch):
+    history = [
+        {"role": "human", "content": "When is rent due?"},
+        {"role": "ai", "content": "On the first."},
+    ]
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: history)
+    monkeypatch.setattr(
+        main,
+        "get_all_sessions",
+        lambda: [
+            {
+                "session_id": "session-1",
+                "message_count": 2,
+                "last_active": "2026-09-04T00:00:00",
+                "preview": "When is rent due?",
+                "label": "Rent questions",
+            }
+        ],
+    )
+
+    response = client.get("/sessions/session-1/export")
+
+    assert response.status_code == HTTP_OK
+    assert response.headers["content-type"].startswith("text/markdown")
+    body = response.text
+    assert "# Conversation: Rent questions" in body
+    assert "## User" in body
+    assert "When is rent due?" in body
+    assert "## Assistant" in body
+
+
+def test_export_session_returns_404_when_unknown(monkeypatch):
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+
+    response = client.get("/sessions/missing/export")
+
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_export_session_rejects_blank_session_id():
+    response = client.get("/sessions/%20/export")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
 def test_rename_session_returns_updated_summary(monkeypatch):
     summary = {
         "session_id": "session-1",
