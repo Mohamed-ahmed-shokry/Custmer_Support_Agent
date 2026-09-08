@@ -6,6 +6,7 @@ from app.api_utils import (
     API_BASE_URL,
     delete_document,
     delete_session,
+    export_session,
     get_health,
     get_metrics,
     get_quota,
@@ -89,7 +90,29 @@ def _render_session_history():
                 if st.session_state.session_id == selected:
                     st.session_state.session_id = None
                     st.session_state.messages = []
+                st.session_state.pop("export_text", None)
+                st.session_state.pop("export_session_id", None)
                 st.rerun()
+    _render_session_export(selected)
+
+
+def _render_session_export(selected):
+    if st.sidebar.button("Prepare Export"):
+        with st.spinner("Preparing export..."):
+            text = export_session(selected)
+            if text is not None:
+                st.session_state.export_text = text
+                st.session_state.export_session_id = selected
+    if st.session_state.get("export_session_id") == selected and st.session_state.get(
+        "export_text"
+    ):
+        st.sidebar.download_button(
+            "Download (.md)",
+            data=st.session_state.export_text,
+            file_name=f"{selected}.md",
+            mime="text/markdown",
+            key="download_export",
+        )
 
 
 def _render_model_selector():
