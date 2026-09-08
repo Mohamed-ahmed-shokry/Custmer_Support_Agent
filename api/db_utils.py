@@ -23,6 +23,13 @@ _CREATE_DOC_STORE_TABLE = (
     "upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
+_CREATE_SESSION_LABELS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS session_labels "
+    "(session_id TEXT PRIMARY KEY, label TEXT NOT NULL)"
+)
+
+MAX_SESSION_LABEL_LENGTH = 80
+
 _INSERT_APP_LOG = (
     "INSERT INTO application_logs (session_id, user_query, gpt_response, model) "
     "VALUES (?, ?, ?, ?)"
@@ -57,11 +64,30 @@ _SELECT_ALL_SESSIONS = (
     "SELECT l1.session_id, COUNT(*) AS message_count, "
     "MAX(l1.created_at) AS last_active, "
     "(SELECT l2.user_query FROM application_logs l2 "
-    "WHERE l2.session_id = l1.session_id ORDER BY l2.id ASC LIMIT 1) AS preview "
+    "WHERE l2.session_id = l1.session_id ORDER BY l2.id ASC LIMIT 1) AS preview, "
+    "(SELECT label FROM session_labels WHERE session_id = l1.session_id) AS label "
     "FROM application_logs l1 GROUP BY l1.session_id ORDER BY last_active DESC"
 )
 
 _DELETE_SESSION = "DELETE FROM application_logs WHERE session_id = ?"
+_DELETE_SESSION_LABEL = "DELETE FROM session_labels WHERE session_id = ?"
+_UPSERT_SESSION_LABEL = (
+    "INSERT INTO session_labels (session_id, label) VALUES (?, ?) "
+    "ON CONFLICT(session_id) DO UPDATE SET label = excluded.label"
+)
+_SESSION_HAS_LOGS = "SELECT 1 FROM application_logs WHERE session_id = ? LIMIT 1"
+
+
+def normalize_session_label(value: str | None) -> str:
+    """Validate a session label, raising ValueError if blank or too long."""
+    label = (value or "").strip()
+    if not label:
+        raise ValueError("Session label must not be blank.")
+    if len(label) > MAX_SESSION_LABEL_LENGTH:
+        raise ValueError(
+            f"Session label must be at most {MAX_SESSION_LABEL_LENGTH} characters."
+        )
+    return label
 
 PREVIEW_MAX_LENGTH = 80
 
@@ -188,11 +214,30 @@ def delete_session(session_id):
     with closing(get_db_connection()) as conn:
         cursor = conn.execute(_DELETE_SESSION, (session_id,))
         deleted = cursor.rowcount > 0
+        conn.execute(_DELETE_SESSION_LABEL, (session_id,))
         conn.commit()
         return deleted
+
+
+def create_session_labels():
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_SESSION_LABELS_TABLE)
+        conn.commit()
+
+
+def rename_session(session_id, label):
+    """Label a session that has chat history; returns False when unknown."""
+    with closing(get_db_connection()) as conn:
+        exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
+        if not exists:
+            return False
+        conn.execute(_UPSERT_SESSION_LABEL, (session_id, label))
+        conn.commit()
+        return True
 
 
 # Initialize the database tables
 create_application_logs()
 create_document_store()
 migrate_document_store()
+create_session_labels()

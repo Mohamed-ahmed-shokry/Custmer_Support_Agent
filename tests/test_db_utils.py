@@ -8,6 +8,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
     db_utils.create_application_logs()
     db_utils.create_document_store()
+    db_utils.create_session_labels()
     return db_path
 
 
@@ -66,6 +67,38 @@ def test_delete_session_removes_history(monkeypatch, tmp_path):
     assert db_utils.delete_session("session-1") is True
     assert db_utils.delete_session("session-1") is False
     assert db_utils.get_chat_history("session-1") == []
+
+
+def test_rename_session_labels_known_session(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("session-1", "Q1", "A1", "gpt-4o-mini")
+
+    assert db_utils.rename_session("session-1", "Lease questions") is True
+    assert db_utils.rename_session("missing", "Other") is False
+
+    labels = {s["session_id"]: s["label"] for s in db_utils.get_all_sessions()}
+    assert labels == {"session-1": "Lease questions"}
+
+
+def test_rename_session_rejects_bad_labels():
+    for bad in [None, "", "   ", "x" * 81]:
+        try:
+            db_utils.normalize_session_label(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"expected ValueError for {bad!r}")
+    assert db_utils.normalize_session_label("  Lease Qs  ") == "Lease Qs"
+
+
+def test_delete_session_removes_label(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("session-1", "Q1", "A1", "gpt-4o-mini")
+    db_utils.rename_session("session-1", "Lease questions")
+
+    assert db_utils.delete_session("session-1") is True
+    assert db_utils.get_all_sessions() == []
 
 
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
