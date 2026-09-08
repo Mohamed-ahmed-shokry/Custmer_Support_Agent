@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.9.0, 2026-09-04)
+## Current State (v0.10.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -22,7 +22,9 @@
 - Opt-in query expansion with RRF fusion across API, chain, and UI
 - Eval `--compare` mode plus unit-tested harness; session labels with
   rename/delete across API and UI; dark-mode theme
-- 104 tests passing; ruff + mypy clean (CI gates)
+- Session markdown export across API and UI; lexical rerank composing with
+  all retrievers; production compose overlay
+- 112 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -51,13 +53,13 @@ Make expansion measurable and conversations nameable (no new deps).
 - [x] Session labels: `session_labels` table, `PATCH /sessions/{id}`, UI rename
 - [x] Dark-mode Streamlit theme
 
-## v0.10.0 plan — Export, rerank & prod parity (IN PROGRESS)
+## v0.10.0 plan — Export, rerank & prod parity ✅ COMPLETED
 
 Portability plus dependency-free relevance tuning (no new deps).
 
-- [ ] Session export: `GET /sessions/{id}/export` (markdown) + UI download
-- [ ] Lexical rerank retriever (term-overlap signal, wraps any retriever)
-- [ ] `docker-compose.prod.yml` override + deployment docs
+- [x] Session export: `GET /sessions/{id}/export` (markdown) + UI download
+- [x] Lexical rerank retriever (term-overlap signal, wraps any retriever)
+- [x] `docker-compose.prod.yml` override + deployment docs
 
 ## v0.11.0 candidates (next)
 
