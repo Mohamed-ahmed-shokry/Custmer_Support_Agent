@@ -38,16 +38,20 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
   "source_filename": "tenant-handbook.pdf",
   "use_hybrid": true,
   "collections": ["clients-acme"],
-  "expand_query": true
+  "expand_query": true,
+  "rerank": true
 }
 ```
 
 - `file_ids` (max 50), `source_filename`, `use_hybrid`, `collections`
-  (max 20), and `expand_query` are optional retrieval controls. Omit them
-  for plain vector search over all documents.
+  (max 20), `expand_query`, and `rerank` are optional retrieval controls.
+  Omit them for plain vector search over all documents.
 - `expand_query` fans the question out into LLM reformulations and fuses the
   per-variant vector hits with reciprocal-rank fusion (takes precedence over
   `use_hybrid`; filters still apply to every variant).
+- `rerank` reorders the retrieved candidates with a dependency-free
+  term-overlap signal and trims back to `k` (extra candidates are fetched
+  automatically; composes with filters, hybrid, and expansion).
 - Success → `200` with `{answer, session_id, model, sources[]}`.
 - Retrieval failure → `502`; bad input → `422`.
 - Each chat/stream turn adds approximate token usage (`~4 chars/token`)
@@ -92,6 +96,8 @@ SQLite record (`404` when unknown).
   (1–80 chars; `404` when unknown, `422` for a blank/oversize label).
 - `DELETE /sessions/{session_id}` → removes the session history and label
   (`400` for a blank id, `404` when unknown).
+- `GET /sessions/{session_id}/export` → the conversation as a markdown
+  transcript download (`404` when the session has no history).
 
 ## Quotas
 
