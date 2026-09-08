@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.9.0)
+# Customer Support RAG Agent (v0.10.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -14,6 +14,9 @@ A local-first customer support assistant for real estate and property management
 - Opt-in query expansion (`expand_query`): LLM reformulations fused with
   reciprocal-rank fusion; enable via the sidebar toggle or
   `USE_QUERY_EXPANSION`.
+- Opt-in lexical rerank (`rerank`): term-overlap reordering that composes
+  with filters, hybrid, and expansion; sidebar toggle or `USE_RERANK`.
+- Session export to markdown (`GET /sessions/{id}/export`, UI download).
 - Document collections group uploads, retrieval, and the UI picker, with
   automatic migration for pre-v0.6.0 databases.
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
@@ -89,6 +92,7 @@ Optional:
 - `USE_HYBRID_RETRIEVER` (default `false`)
 - `HYBRID_BM25_WEIGHT` / `HYBRID_VECTOR_WEIGHT` (default `0.5` each)
 - `USE_QUERY_EXPANSION` (default `false`)
+- `USE_RERANK` (default `false`)
 - `EXPANSION_COUNT` (default `3`)
 - `MAX_UPLOAD_MB` (default `25`)
 - `LOG_FORMAT` (`text` or `json`, default `text`)
@@ -120,7 +124,12 @@ docker compose up --build
 
 The API serves on `http://localhost:8000` and the UI on
 `http://localhost:8501`. Data persists in the `rag-data` volume. See
-`docs/RUNBOOK.md` for operations.
+`docs/RUNBOOK.md` for operations. For production-like defaults (2 workers,
+JSON logs, resource limits, restarts), overlay the prod file:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+```
 
 ## API quick reference
 
