@@ -41,6 +41,8 @@
 ## Session management
 
 - List past conversations with `GET /sessions` (includes a `preview` of the
-  first question); reload one with `GET /sessions/{id}/history`.
+  first question and an optional `label`); reload one with
+  `GET /sessions/{id}/history`.
+- Rename one with `PATCH /sessions/{id}` (`{"label": "..."}`, 1–80 chars).
 - Remove one with `DELETE /sessions/{id}` (also available in the Streamlit
   sidebar). Deletion only clears chat history, never documents.
