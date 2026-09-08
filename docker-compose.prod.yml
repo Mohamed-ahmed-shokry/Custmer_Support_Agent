@@ -1,0 +1,19 @@
+# Production overlay: no dev reload, hardened runtime defaults.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+services:
+  api:
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    environment:
+      LOG_FORMAT: json
+      LOG_LEVEL: INFO
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  ui:
+    restart: unless-stopped
