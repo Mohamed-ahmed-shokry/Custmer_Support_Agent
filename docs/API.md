@@ -83,12 +83,14 @@ SQLite record (`404` when unknown).
 ## Sessions
 
 - `GET /sessions` → array of `{session_id, message_count, last_active,
-  preview}` ordered by most recent activity (`preview` is the truncated
-  first question).
+  preview, label}` ordered by most recent activity (`preview` is the
+  truncated first question).
 - `GET /sessions/{session_id}/history` → array of `{role, content}` pairs
   for that session (`400` for a blank id). The Streamlit sidebar uses these
   to list and reload past conversations.
-- `DELETE /sessions/{session_id}` → removes the session history
+- `PATCH /sessions/{session_id}` with `{"label": "..."}` → renames a session
+  (1–80 chars; `404` when unknown, `422` for a blank/oversize label).
+- `DELETE /sessions/{session_id}` → removes the session history and label
   (`400` for a blank id, `404` when unknown).
 
 ## Quotas
