@@ -41,7 +41,15 @@ Opt-in multi-query fan-out with reciprocal-rank fusion, no new deps
 - [x] Streamlit "expand query" toggle
 - [x] Eval guidance for measuring expansion against the golden set
 
-## v0.9.0 candidates (next)
+## v0.9.0 plan — Eval comparison + session labels (IN PROGRESS)
+
+Make expansion measurable and conversations nameable (no new deps).
+
+- [ ] Eval `--compare` mode: baseline vs expansion recall per golden case
+- [ ] Session labels: `session_labels` table, `PATCH /sessions/{id}`, UI rename
+- [ ] Dark-mode Streamlit theme
+
+## v0.10.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
