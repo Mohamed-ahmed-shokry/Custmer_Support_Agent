@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.8.0)
+# Customer Support RAG Agent (v0.9.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -19,7 +19,8 @@ A local-first customer support assistant for real estate and property management
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
   validation and a configurable upload size cap.
 - Source-aware answers with document metadata returned by the API.
-- Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher with previews, session deletion, and quota display.
+- Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher with previews, rename, session deletion, and quota display.
+- Dark-mode UI theme (`.streamlit/config.toml`, shipped in the image).
 - File logs redact emails, phone numbers, and SSN-like patterns.
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
@@ -151,12 +152,17 @@ python scripts/eval_retrieval.py
 ```
 
 It checks each `docs/eval/golden.json` question against the live vector
-store (needs `OPENAI_API_KEY`; not run in CI).
+store (needs `OPENAI_API_KEY`; not run in CI). Compare expansion against
+the baseline with:
+
+```powershell
+python scripts/eval_retrieval.py --compare
+```
 
 ## Testing
 
 ```powershell
 python -m pytest
-python -m ruff check api/ app/ tests/
-python -m mypy api/ app/
+python -m ruff check api/ app/ tests/ scripts/
+python -m mypy api/ app/ scripts/
 ```
