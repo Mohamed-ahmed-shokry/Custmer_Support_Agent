@@ -31,11 +31,13 @@ def _render_assistant_message(answer, selected_model, session_id, sources):
                     st.caption(source.get("preview", ""))
 
 
-def _handle_streaming_response(
-    prompt, session_id, selected_model, collections=None, expand_query=None
+def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request options
+    prompt, session_id, selected_model, collections=None, expand_query=None, rerank=None
 ):
     """Handle streaming response from API."""
-    stream = get_api_stream_response(prompt, session_id, selected_model, collections, expand_query)
+    stream = get_api_stream_response(
+        prompt, session_id, selected_model, collections, expand_query, rerank
+    )
     if not stream:
         return None, None, None
 
@@ -65,11 +67,13 @@ def _handle_streaming_response(
     return full_answer, sources, session_id_result
 
 
-def _handle_non_streaming_response(
-    prompt, session_id, selected_model, collections=None, expand_query=None
+def _handle_non_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request options
+    prompt, session_id, selected_model, collections=None, expand_query=None, rerank=None
 ):
     """Handle non-streaming response from API."""
-    response = get_api_response(prompt, session_id, selected_model, collections, expand_query)
+    response = get_api_response(
+        prompt, session_id, selected_model, collections, expand_query, rerank
+    )
     if not response:
         return None, None, None
 
@@ -80,6 +84,7 @@ def display_chat_interface():
     # Streaming toggle
     use_streaming = st.sidebar.checkbox("Use Streaming", value=True, key="use_streaming")
     expand_query = st.sidebar.checkbox("Expand query", value=False, key="expand_query")
+    rerank = st.sidebar.checkbox("Rerank results", value=False, key="rerank")
 
     # Chat interface
     for message in st.session_state.messages:
@@ -105,6 +110,7 @@ def display_chat_interface():
                     selected_model,
                     collections,
                     expand_query,
+                    rerank,
                 )
             else:
                 answer, sources, new_session_id = _handle_non_streaming_response(
@@ -113,6 +119,7 @@ def display_chat_interface():
                     selected_model,
                     collections,
                     expand_query,
+                    rerank,
                 )
 
         if answer:

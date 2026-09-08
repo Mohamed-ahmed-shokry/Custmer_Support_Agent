@@ -30,7 +30,9 @@ def show_api_error(action, response):
     st.error(f"{action}. Status {response.status_code}: {extract_error_detail(response)}")
 
 
-def get_api_response(question, session_id, model, collections=None, expand_query=None):
+def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
+    question, session_id, model, collections=None, expand_query=None, rerank=None
+):
     headers = {"accept": "application/json", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
     if session_id:
@@ -39,6 +41,8 @@ def get_api_response(question, session_id, model, collections=None, expand_query
         data["collections"] = collections
     if expand_query is not None:
         data["expand_query"] = expand_query
+    if rerank is not None:
+        data["rerank"] = rerank
 
     try:
         response = requests.post(f"{API_BASE_URL}/chat", headers=headers, json=data, timeout=60)
@@ -52,7 +56,9 @@ def get_api_response(question, session_id, model, collections=None, expand_query
         return None
 
 
-def get_api_stream_response(question, session_id, model, collections=None, expand_query=None):
+def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request options
+    question, session_id, model, collections=None, expand_query=None, rerank=None
+):
     """Get streaming response from the API."""
     headers = {"accept": "text/event-stream", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
@@ -62,6 +68,8 @@ def get_api_stream_response(question, session_id, model, collections=None, expan
         data["collections"] = collections
     if expand_query is not None:
         data["expand_query"] = expand_query
+    if rerank is not None:
+        data["rerank"] = rerank
 
     try:
         response = requests.post(
