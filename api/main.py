@@ -28,6 +28,8 @@ from api.db_utils import (
     get_document_record,
     insert_application_logs,
     insert_document_record,
+    normalize_session_label,
+    rename_session,
 )
 from api.observability import (
     estimate_tokens,
@@ -47,6 +49,7 @@ from api.pydantic_models import (
     QueryInput,
     QueryResponse,
     QuotaInfo,
+    RenameSessionRequest,
     SessionInfo,
     SourceInfo,
     UploadDocumentResponse,
@@ -518,6 +521,21 @@ def delete_session_route(session_id: str):
             status_code=404, detail=f"Session {session_id} was not found."
         )
     return DeleteSessionResponse(message=f"Session {session_id} deleted.")
+
+
+@app.patch("/sessions/{session_id}", response_model=SessionInfo)
+def rename_session_route(session_id: str, request: RenameSessionRequest):
+    _require_session_id(session_id)
+    try:
+        label = normalize_session_label(request.label)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not rename_session(session_id, label):
+        raise HTTPException(
+            status_code=404, detail=f"Session {session_id} was not found."
+        )
+    summaries = [s for s in get_all_sessions() if s["session_id"] == session_id]
+    return SessionInfo(**summaries[0])
 
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)

@@ -86,6 +86,18 @@ class SessionInfo(BaseModel):
     message_count: int
     last_active: datetime
     preview: str = ""
+    label: str | None = None
+
+
+class RenameSessionRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def strip_label(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 class DeleteSessionResponse(BaseModel):
