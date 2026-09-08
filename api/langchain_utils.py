@@ -87,10 +87,12 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     use_hybrid: bool | None = None,
     collections: list[str] | None = None,
     expand_query: bool | None = None,
+    rerank: bool | None = None,
 ):
     llm = ChatOpenAI(model=model)
     hybrid = settings.use_hybrid_retriever if use_hybrid is None else use_hybrid
     expand = settings.use_query_expansion if expand_query is None else expand_query
+    rerank_flag = settings.use_rerank if rerank is None else rerank
     retriever = select_retriever(
         k=settings.retriever_k,
         file_ids=file_ids,
@@ -102,6 +104,7 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
         expand_query=expand,
         llm=llm,
         expansion_count=settings.expansion_count,
+        rerank=rerank_flag,
     )
     history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)

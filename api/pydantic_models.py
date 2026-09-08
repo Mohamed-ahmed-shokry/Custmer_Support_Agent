@@ -35,6 +35,7 @@ class QueryInput(BaseModel):
     use_hybrid: bool | None = Field(default=None)
     collections: list[str] | None = Field(default=None, max_length=20)
     expand_query: bool | None = Field(default=None)
+    rerank: bool | None = Field(default=None)
 
     @field_validator("collections", mode="before")
     @classmethod

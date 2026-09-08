@@ -242,6 +242,7 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
             "use_hybrid": True,
             "collections": ["Clients-Acme"],
             "expand_query": True,
+            "rerank": True,
         },
     )
 
@@ -251,6 +252,7 @@ def test_chat_forwards_retrieval_filters(monkeypatch):
     assert captured["use_hybrid"] is True
     assert captured["collections"] == ["clients-acme"]
     assert captured["expand_query"] is True
+    assert captured["rerank"] is True
 
 
 def test_upload_rejects_invalid_chunk_params():

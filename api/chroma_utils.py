@@ -37,6 +37,7 @@ class ChunkingStrategy(StrEnum):
 
 _DEFAULT_CHUNK_SIZE = 1000
 _DEFAULT_CHUNK_OVERLAP = 200
+RERANK_CANDIDATE_MULTIPLIER = 3
 
 
 @dataclass
@@ -288,36 +289,50 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
     expand_query: bool = False,
     llm=None,
     expansion_count: int = 3,
+    rerank: bool = False,
 ):
     """Pick vector / filtered / hybrid / expanded retriever based on request flags.
 
     Query expansion takes precedence over hybrid search: it fans the question
     out into reformulations and fuses the vector hits with reciprocal-rank
-    fusion (filters still apply to every variant).
+    fusion (filters still apply to every variant). When ``rerank`` is set,
+    the chosen retriever fetches extra candidates that are reordered by a
+    lexical-overlap signal and trimmed back to ``k``.
     """
+    fetch_k = k * RERANK_CANDIDATE_MULTIPLIER if rerank else k
+    base: Any
     if expand_query:
         from api.expansion import ExpandedVectorRetriever  # noqa: PLC0415 - lazy, see ADR-001
 
         filter_dict = _metadata_filter(file_ids, collections) or {}
         if source_filename:
             filter_dict["filename"] = {"$eq": source_filename}
-        return ExpandedVectorRetriever(
+        base = ExpandedVectorRetriever(
             vectorstore=get_vectorstore(),
-            k=k,
+            k=fetch_k,
             llm=llm,
             expansion_count=expansion_count,
             search_kwargs={"filter": filter_dict} if filter_dict else None,
         )
-    if use_hybrid:
-        return get_hybrid_retriever(
-            k=k,
+    elif use_hybrid:
+        base = get_hybrid_retriever(
+            k=fetch_k,
             file_ids=file_ids,
             bm25_weight=bm25_weight,
             vector_weight=vector_weight,
             collections=collections,
         )
-    if file_ids or source_filename or collections:
-        return get_filtered_retriever(
-            k=k, file_ids=file_ids, source_filter=source_filename, collections=collections
+    elif file_ids or source_filename or collections:
+        base = get_filtered_retriever(
+            k=fetch_k,
+            file_ids=file_ids,
+            source_filter=source_filename,
+            collections=collections,
         )
-    return get_vectorstore().as_retriever(search_kwargs={"k": k})
+    else:
+        base = get_vectorstore().as_retriever(search_kwargs={"k": fetch_k})
+    if not rerank:
+        return base
+    from api.rerank import RerankingRetriever  # noqa: PLC0415 - lazy, see ADR-001
+
+    return RerankingRetriever(base=base, top_n=k)

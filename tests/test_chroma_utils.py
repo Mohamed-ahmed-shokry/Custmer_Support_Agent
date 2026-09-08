@@ -1,5 +1,6 @@
 from api import chroma_utils
 from api.expansion import ExpandedVectorRetriever
+from api.rerank import RerankingRetriever
 from langchain_core.documents import Document
 
 EXPECTED_RETRIEVER_K = 5
@@ -115,6 +116,19 @@ def test_filtered_retriever_forwards_collection_filter(monkeypatch):
     assert vectorstore.search_kwargs == {
         "k": 5,
         "filter": {"file_id": {"$in": [7]}, "collection": {"$in": ["acme"]}},
+    }
+
+
+def test_select_retriever_wraps_base_with_rerank(monkeypatch):
+    vectorstore = FakeVectorstore()
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    retriever = chroma_utils.select_retriever(k=EXPECTED_RETRIEVER_K, rerank=True)
+
+    assert isinstance(retriever, RerankingRetriever)
+    assert retriever.top_n == EXPECTED_RETRIEVER_K
+    assert vectorstore.search_kwargs == {
+        "k": EXPECTED_RETRIEVER_K * chroma_utils.RERANK_CANDIDATE_MULTIPLIER
     }
 
 

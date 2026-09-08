@@ -202,6 +202,7 @@ def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval opti
     use_hybrid: bool | None = None,
     collections: list[str] | None = None,
     expand_query: bool | None = None,
+    rerank: bool | None = None,
 ):
     # ruff: noqa: PLC0415 - lazy import required for Python 3.14 compatibility
     from api.langchain_utils import get_rag_chain
@@ -213,6 +214,7 @@ def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval opti
         use_hybrid=use_hybrid,
         collections=collections,
         expand_query=expand_query,
+        rerank=rerank,
     )
 
 
@@ -300,6 +302,7 @@ def chat(query_input: QueryInput, request: Request):
         use_hybrid=query_input.use_hybrid,
         collections=query_input.collections,
         expand_query=query_input.expand_query,
+        rerank=query_input.rerank,
     )
     try:
         result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
@@ -342,6 +345,7 @@ async def _stream_rag_response(
         use_hybrid=query_input.use_hybrid,
         collections=query_input.collections,
         expand_query=query_input.expand_query,
+        rerank=query_input.rerank,
     )
     try:
         async for chunk in rag_chain.astream(
