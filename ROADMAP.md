@@ -61,7 +61,15 @@ Portability plus dependency-free relevance tuning (no new deps).
 - [x] Lexical rerank retriever (term-overlap signal, wraps any retriever)
 - [x] `docker-compose.prod.yml` override + deployment docs
 
-## v0.11.0 candidates (next)
+## v0.11.0 plan — Inspection & lifecycle (IN PROGRESS)
+
+See and manage what's inside retrieval (no new deps).
+
+- [ ] `POST /search`: inspect ranked chunks without spending chat tokens
+- [ ] `DELETE /collections/{name}`: remove a whole collection (API + UI)
+- [ ] Deployment guide (`docs/DEPLOYMENT.md`)
+
+## v0.12.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
