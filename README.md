@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.10.0)
+# Customer Support RAG Agent (v0.11.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -18,7 +18,10 @@ A local-first customer support assistant for real estate and property management
   with filters, hybrid, and expansion; sidebar toggle or `USE_RERANK`.
 - Session export to markdown (`GET /sessions/{id}/export`, UI download).
 - Document collections group uploads, retrieval, and the UI picker, with
-  automatic migration for pre-v0.6.0 databases.
+  automatic migration for pre-v0.6.0 databases; whole collections can be
+  removed (`DELETE /collections/{name}`, `default` protected).
+- Retrieval inspection without chat cost (`POST /search` returns ranked
+  chunks with metadata).
 - Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
   validation and a configurable upload size cap.
 - Source-aware answers with document metadata returned by the API.
@@ -144,13 +147,15 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `GET /list-docs`, `POST /delete-doc` — document metadata management.
-- `GET /collections` — known collection names.
+- `GET /collections`, `DELETE /collections/{name}` — collection lifecycle.
+- `POST /search` — ranked retrieval hits without chat cost.
 - `GET /sessions`, `GET /sessions/{id}/history`, `DELETE /sessions/{id}` — past conversations.
 - `GET /quota` — daily token budget usage for the caller.
 
 Full details: `docs/API.md`. Architecture notes: `docs/ARCHITECTURE.md`.
 Contributor workflow: `docs/CONTRIBUTING.md`. Roadmap: `ROADMAP.md`.
-Operations: `docs/RUNBOOK.md`. Kubernetes: `k8s/deployment.yaml`.
+Operations: `docs/RUNBOOK.md`. Deployment: `docs/DEPLOYMENT.md`.
+Kubernetes: `k8s/deployment.yaml`.
 
 ## Manual retrieval eval
 
