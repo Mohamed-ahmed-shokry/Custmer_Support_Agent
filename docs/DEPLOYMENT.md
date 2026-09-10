@@ -3,10 +3,22 @@
 ## Pre-flight checklist
 
 - Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
-- For any multi-user exposure, also set `API_KEY` and
-  `RATE_LIMIT_PER_MIN` (see `docs/API.md`).
+- For any multi-user exposure, also set `API_KEY`,
+  `RATE_LIMIT_PER_MIN`, and `TOKEN_DAILY_BUDGET_EST` (see `docs/API.md`).
 - Confirm persistent storage for `/data` (`CHROMA_PERSIST_DIR` and
   `SQLITE_DB_PATH` both live there in containers).
+
+## Environments
+
+| Concern | Local | Staging | Production |
+|---|---|---|---|
+| Compose files | `docker-compose.yml` | `docker-compose.yml` | `docker-compose.yml` + `docker-compose.prod.yml` |
+| API workers | 1 (reload) | 1 | 2 |
+| Log format | `text` | `json` | `json` |
+| Auth | off | `API_KEY` on | `API_KEY` on |
+| Rate limit / quotas | off | on, generous | on, tuned from `/metrics.json` |
+| Ingress | localhost | private network | TLS reverse proxy only |
+| Backups | none | volume snapshots | volume snapshots + tested restore |
 
 ## Docker Compose (development)
 
