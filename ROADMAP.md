@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.11.0, 2026-09-04)
+## Current State (v0.12.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -26,7 +26,8 @@
   all retrievers; production compose overlay
 - Retrieval inspection (`POST /search`), collection deletion (API + UI),
   deployment guide
-- 123 tests passing; ruff + mypy clean (CI gates)
+- Upload dedup via content hash, bounded history window, shared preview helper
+- 126 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -71,14 +72,14 @@ See and manage what's inside retrieval (no new deps).
 - [x] `DELETE /collections/{name}`: remove a whole collection (API + UI)
 - [x] Deployment guide (`docs/DEPLOYMENT.md`)
 
-## v0.12.0 plan — Efficiency & robustness (IN PROGRESS)
+## v0.12.0 plan — Efficiency & robustness ✅ COMPLETED
 
 Cut waste and bound growth (no new deps).
 
-- [ ] Upload dedup via SHA-256 (`409` on exact duplicates)
-- [ ] History window cap (`MAX_HISTORY_TURNS`, bounds prompt growth)
-- [ ] Shared preview helper (remove duplicated truncation)
-- [ ] Deployment environments matrix (local / staging / production)
+- [x] Upload dedup via SHA-256 (`409` on exact duplicates)
+- [x] History window cap (`MAX_HISTORY_TURNS`, bounds prompt growth)
+- [x] Shared preview helper (remove duplicated truncation)
+- [x] Deployment environments matrix (local / staging / production)
 
 ## v0.13.0 candidates (next)
 
