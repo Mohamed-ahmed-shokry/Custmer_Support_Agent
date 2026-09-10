@@ -20,7 +20,7 @@ _CREATE_DOC_STORE_TABLE = (
     "CREATE TABLE IF NOT EXISTS document_store "
     "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
     "filename TEXT, collection TEXT NOT NULL DEFAULT 'default', "
-    "upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    "sha256 TEXT, upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
 _CREATE_SESSION_LABELS_TABLE = (
@@ -40,7 +40,11 @@ _SELECT_CHAT_HISTORY = (
     "WHERE session_id = ? ORDER BY created_at ASC, id ASC"
 )
 
-_INSERT_DOC_RECORD = "INSERT INTO document_store (filename, collection) VALUES (?, ?)"
+_INSERT_DOC_RECORD = "INSERT INTO document_store (filename, collection, sha256) VALUES (?, ?, ?)"
+_SELECT_DOC_BY_HASH = (
+    "SELECT id, filename, collection, upload_timestamp FROM document_store "
+    "WHERE sha256 = ? ORDER BY id ASC LIMIT 1"
+)
 
 _SELECT_DOC_RECORD = (
     "SELECT id, filename, collection, upload_timestamp FROM document_store WHERE id = ?"
@@ -137,7 +141,7 @@ def create_document_store():
 
 
 def migrate_document_store():
-    """Add the collection column to pre-v0.6.0 databases (no-op otherwise)."""
+    """Add newer columns to pre-existing databases (no-op otherwise)."""
     with closing(get_db_connection()) as conn:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(document_store)")]
         if "collection" not in columns:
@@ -145,16 +149,27 @@ def migrate_document_store():
                 "ALTER TABLE document_store "
                 "ADD COLUMN collection TEXT NOT NULL DEFAULT 'default'"
             )
-            conn.commit()
+        if "sha256" not in columns:
+            conn.execute("ALTER TABLE document_store ADD COLUMN sha256 TEXT")
+        conn.commit()
 
 
-def insert_document_record(filename, collection=DEFAULT_COLLECTION):
+def insert_document_record(filename, collection=DEFAULT_COLLECTION, sha256=None):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute(_INSERT_DOC_RECORD, (filename, collection))
+        cursor.execute(_INSERT_DOC_RECORD, (filename, collection, sha256))
         file_id = cursor.lastrowid
         conn.commit()
         return file_id
+
+
+def get_document_by_hash(sha256):
+    """Return the earliest document with identical content, if any."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_SELECT_DOC_BY_HASH, (sha256,))
+        document = cursor.fetchone()
+        return dict(document) if document else None
 
 
 def get_document_record(file_id):

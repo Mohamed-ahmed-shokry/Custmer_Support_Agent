@@ -164,6 +164,18 @@ def test_migrate_document_store_adds_collection_column(monkeypatch, tmp_path):
     assert db_utils.get_document_record(1)["collection"] == "default"
 
 
+def test_document_lookup_by_hash(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    assert db_utils.get_document_by_hash("abc123") is None
+
+    file_id = db_utils.insert_document_record("lease.pdf", "default", "abc123")
+
+    match = db_utils.get_document_by_hash("abc123")
+    assert match["id"] == file_id
+    assert match["filename"] == "lease.pdf"
+
+
 def test_document_record_lifecycle(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 
