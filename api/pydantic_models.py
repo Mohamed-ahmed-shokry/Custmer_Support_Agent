@@ -60,6 +60,53 @@ class QueryInput(BaseModel):
         return v
 
 
+class SearchInput(BaseModel):
+    question: NonEmptyString
+    k: int = Field(default_factory=lambda: settings.retriever_k, ge=1, le=50)
+    file_ids: list[PositiveInt] | None = Field(default=None, max_length=50)
+    source_filename: str | None = Field(default=None, max_length=255)
+    use_hybrid: bool | None = Field(default=None)
+    collections: list[str] | None = Field(default=None, max_length=20)
+    expand_query: bool | None = Field(default=None)
+    rerank: bool | None = Field(default=None)
+
+    @field_validator("collections", mode="before")
+    @classmethod
+    def normalize_collections(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        return [normalize_collection(item) for item in v]
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def strip_question(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator("source_filename", mode="before")
+    @classmethod
+    def strip_source_filename(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or None
+        return v
+
+
+class SearchHit(BaseModel):
+    rank: int
+    preview: str
+    file_id: int | None = None
+    filename: str | None = None
+    page: int | None = None
+    chunk_index: int | None = None
+    collection: str | None = None
+
+
+class SearchResponse(BaseModel):
+    hits: list[SearchHit] = Field(default_factory=list)
+
+
 class SourceInfo(BaseModel):
     file_id: int | None = None
     filename: str | None = None

@@ -15,6 +15,7 @@ HTTP_UNPROCESSABLE_ENTITY = 422
 HTTP_TOO_MANY_REQUESTS = 429
 HTTP_INTERNAL_ERROR = 500
 HTTP_BAD_GATEWAY = 502
+EXPECTED_RETRIEVER_K = 5
 
 
 def test_health_route():
@@ -561,6 +562,70 @@ def test_chat_records_estimated_tokens(monkeypatch):
     metrics = client.get("/metrics.json").json()
     assert metrics["prompt_tokens_est"] == estimate_tokens(question)
     assert metrics["completion_tokens_est"] == estimate_tokens("Use the tenant portal.")
+
+
+def test_search_returns_ranked_hits(monkeypatch):
+    class FakeRetriever:
+        def invoke(self, question):
+            return [
+                SimpleNamespace(
+                    page_content="  Maintenance portal details.  ",
+                    metadata={
+                        "file_id": 7,
+                        "filename": "tenant-handbook.pdf",
+                        "page": 3,
+                        "chunk_index": 2,
+                        "collection": "default",
+                    },
+                )
+            ]
+
+    captured = {}
+
+    def fake_select(**kwargs):
+        captured.update(kwargs)
+        return FakeRetriever()
+
+    monkeypatch.setattr(main, "select_retriever", fake_select)
+
+    response = client.post(
+        "/search",
+        json={
+            "question": "How do I request maintenance?",
+            "k": 5,
+            "collections": ["Default"],
+            "rerank": True,
+        },
+    )
+
+    assert response.status_code == HTTP_OK
+    assert captured["k"] == EXPECTED_RETRIEVER_K
+    assert captured["collections"] == ["default"]
+    assert captured["rerank"] is True
+    body = response.json()
+    assert body["hits"][0]["rank"] == 1
+    assert body["hits"][0]["preview"] == "Maintenance portal details."
+    assert body["hits"][0]["filename"] == "tenant-handbook.pdf"
+
+
+def test_search_rejects_empty_question():
+    response = client.post("/search", json={"question": "   "})
+
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_search_returns_502_when_retrieval_fails(monkeypatch):
+    class FailingRetriever:
+        def invoke(self, question):
+            raise RuntimeError("vector store down")
+
+    monkeypatch.setattr(
+        main, "select_retriever", lambda **kwargs: FailingRetriever()
+    )
+
+    response = client.post("/search", json={"question": "Hello"})
+
+    assert response.status_code == HTTP_BAD_GATEWAY
 
 
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):

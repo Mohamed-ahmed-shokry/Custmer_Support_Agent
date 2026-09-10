@@ -11,6 +11,7 @@ _counters: dict[str, int] = {
     "chat_requests": 0,
     "chat_errors": 0,
     "stream_requests": 0,
+    "search_requests": 0,
     "uploads": 0,
     "upload_errors": 0,
     "deletes": 0,

@@ -17,6 +17,7 @@ from api.chroma_utils import (
     ChunkingStrategy,
     delete_doc_from_chroma,
     index_document_to_chroma,
+    select_retriever,
 )
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
@@ -51,6 +52,9 @@ from api.pydantic_models import (
     QueryResponse,
     QuotaInfo,
     RenameSessionRequest,
+    SearchHit,
+    SearchInput,
+    SearchResponse,
     SessionInfo,
     SourceInfo,
     UploadDocumentResponse,
@@ -332,6 +336,67 @@ def chat(query_input: QueryInput, request: Request):
     return QueryResponse(
         answer=answer, session_id=session_id, model=query_input.model, sources=sources
     )
+
+
+def build_search_hits(documents) -> list[SearchHit]:
+    hits = []
+    for rank, document in enumerate(documents or [], start=1):
+        metadata = document.metadata or {}
+        hits.append(
+            SearchHit(
+                rank=rank,
+                preview=document.page_content[:280].strip(),
+                file_id=metadata.get("file_id"),
+                filename=metadata.get("filename") or metadata.get("source"),
+                page=metadata.get("page"),
+                chunk_index=metadata.get("chunk_index"),
+                collection=metadata.get("collection"),
+            )
+        )
+    return hits
+
+
+@app.post("/search", response_model=SearchResponse)
+def search(search_input: SearchInput, request: Request):
+    increment("search_requests")
+    client_ip = _client_ip(request)
+    question_tokens = estimate_tokens(search_input.question)
+    if not check_token_quota(client_ip, question_tokens, settings.token_daily_budget_est):
+        raise HTTPException(
+            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
+        )
+    use_hybrid = search_input.use_hybrid
+    if use_hybrid is None:
+        use_hybrid = settings.use_hybrid_retriever
+    expand = search_input.expand_query
+    if expand is None:
+        expand = settings.use_query_expansion
+    rerank = search_input.rerank
+    if rerank is None:
+        rerank = settings.use_rerank
+    retriever = select_retriever(
+        k=search_input.k,
+        file_ids=search_input.file_ids,
+        source_filename=search_input.source_filename,
+        use_hybrid=use_hybrid,
+        bm25_weight=settings.hybrid_bm25_weight,
+        vector_weight=settings.hybrid_vector_weight,
+        collections=search_input.collections,
+        expand_query=expand,
+        llm=None,
+        expansion_count=settings.expansion_count,
+        rerank=rerank,
+    )
+    try:
+        documents = retriever.invoke(search_input.question)
+    except Exception as exc:
+        logger.exception("Retrieval failed for search")
+        raise HTTPException(
+            status_code=502, detail="Failed to retrieve documents for the query."
+        ) from exc
+    increment("prompt_tokens_est", question_tokens)
+    record_token_usage(client_ip, question_tokens)
+    return SearchResponse(hits=build_search_hits(documents))
 
 
 async def _stream_rag_response(
