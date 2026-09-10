@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
+    delete_collection_from_chroma,
     delete_doc_from_chroma,
     index_document_to_chroma,
     select_retriever,
@@ -22,6 +23,7 @@ from api.chroma_utils import (
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     delete_document_record,
+    delete_documents_by_collection,
     delete_session,
     get_all_collections,
     get_all_documents,
@@ -564,6 +566,40 @@ def list_documents(collection: str | None = None):
 @app.get("/collections", response_model=list[str])
 def list_collections():
     return get_all_collections()
+
+
+@app.delete("/collections/{collection}", response_model=DeleteDocumentResponse)
+def delete_collection(collection: str):
+    try:
+        collection_name = normalize_collection(collection)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if collection_name == DEFAULT_COLLECTION:
+        raise HTTPException(
+            status_code=400,
+            detail="The default collection cannot be deleted; delete documents individually.",
+        )
+
+    chroma_chunks = delete_collection_from_chroma(collection_name)
+    if chroma_chunks < 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete collection {collection_name} from Chroma.",
+        )
+
+    db_documents = delete_documents_by_collection(collection_name)
+    if chroma_chunks == 0 and db_documents == 0:
+        raise HTTPException(
+            status_code=404, detail=f"Collection {collection_name} was not found."
+        )
+
+    increment("deletes")
+    return DeleteDocumentResponse(
+        message=(
+            f"Deleted collection {collection_name}: "
+            f"{db_documents} document(s), {chroma_chunks} chunk(s)."
+        )
+    )
 
 
 @app.get("/sessions", response_model=list[SessionInfo])

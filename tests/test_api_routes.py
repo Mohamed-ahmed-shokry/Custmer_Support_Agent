@@ -140,6 +140,46 @@ def test_list_collections(monkeypatch):
     assert response.json() == ["acme", "default"]
 
 
+def test_delete_collection_removes_chunks_and_records(monkeypatch):
+    monkeypatch.setattr(main, "delete_collection_from_chroma", lambda collection: 3)
+    monkeypatch.setattr(main, "delete_documents_by_collection", lambda collection: 2)
+
+    response = client.delete("/collections/acme")
+
+    assert response.status_code == HTTP_OK
+    assert "acme" in response.json()["message"]
+
+
+def test_delete_collection_rejects_default_collection():
+    response = client.delete("/collections/default")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_delete_collection_rejects_invalid_name():
+    response = client.delete("/collections/bad%20name!")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_delete_collection_returns_404_when_empty(monkeypatch):
+    monkeypatch.setattr(main, "delete_collection_from_chroma", lambda collection: 0)
+    monkeypatch.setattr(main, "delete_documents_by_collection", lambda collection: 0)
+
+    response = client.delete("/collections/acme")
+
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_delete_collection_returns_500_when_chroma_fails(monkeypatch):
+    monkeypatch.setattr(main, "delete_collection_from_chroma", lambda collection: -1)
+    monkeypatch.setattr(main, "delete_documents_by_collection", lambda collection: 2)
+
+    response = client.delete("/collections/acme")
+
+    assert response.status_code == HTTP_INTERNAL_ERROR
+
+
 def test_chat_returns_sources(monkeypatch):
     class FakeChain:
         def invoke(self, payload):
