@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.10.0, 2026-09-04)
+## Current State (v0.11.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -24,7 +24,9 @@
   rename/delete across API and UI; dark-mode theme
 - Session markdown export across API and UI; lexical rerank composing with
   all retrievers; production compose overlay
-- 112 tests passing; ruff + mypy clean (CI gates)
+- Retrieval inspection (`POST /search`), collection deletion (API + UI),
+  deployment guide
+- 123 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -61,13 +63,13 @@ Portability plus dependency-free relevance tuning (no new deps).
 - [x] Lexical rerank retriever (term-overlap signal, wraps any retriever)
 - [x] `docker-compose.prod.yml` override + deployment docs
 
-## v0.11.0 plan — Inspection & lifecycle (IN PROGRESS)
+## v0.11.0 plan — Inspection & lifecycle ✅ COMPLETED
 
 See and manage what's inside retrieval (no new deps).
 
-- [ ] `POST /search`: inspect ranked chunks without spending chat tokens
-- [ ] `DELETE /collections/{name}`: remove a whole collection (API + UI)
-- [ ] Deployment guide (`docs/DEPLOYMENT.md`)
+- [x] `POST /search`: inspect ranked chunks without spending chat tokens
+- [x] `DELETE /collections/{name}`: remove a whole collection (API + UI)
+- [x] Deployment guide (`docs/DEPLOYMENT.md`)
 
 ## v0.12.0 candidates (next)
 
