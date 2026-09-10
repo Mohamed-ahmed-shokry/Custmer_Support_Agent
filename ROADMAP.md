@@ -81,7 +81,16 @@ Cut waste and bound growth (no new deps).
 - [x] Shared preview helper (remove duplicated truncation)
 - [x] Deployment environments matrix (local / staging / production)
 
-## v0.13.0 candidates (next)
+## v0.13.0 plan — Operations & consistency (IN PROGRESS)
+
+Run the library with confidence (no new deps).
+
+- [ ] Library stats endpoint (`GET /stats`) + sidebar totals
+- [ ] Collection rename (`PATCH /collections/{name}`, API + UI)
+- [ ] Staging compose overlay + environment docs
+- [ ] Quality: upload staging helper, shared quota pre-check
+
+## v0.14.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
