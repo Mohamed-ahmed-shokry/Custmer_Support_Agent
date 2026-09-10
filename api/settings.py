@@ -44,6 +44,7 @@ class Settings:
         self.sqlite_db_path = os.getenv("SQLITE_DB_PATH", "rag_app.db")
         self.default_model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
         self.retriever_k = get_positive_int_env("RETRIEVER_K", 5)
+        self.max_history_turns = get_positive_int_env("MAX_HISTORY_TURNS", 10)
         self.use_hybrid_retriever = get_bool_env("USE_HYBRID_RETRIEVER", False)
         self.use_query_expansion = get_bool_env("USE_QUERY_EXPANSION", False)
         self.use_rerank = get_bool_env("USE_RERANK", False)

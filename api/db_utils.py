@@ -134,6 +134,13 @@ def get_chat_history(session_id):
         return messages
 
 
+def truncate_history(messages, max_turns):
+    """Keep only the most recent turns (a turn is one human+AI pair)."""
+    if max_turns is None or max_turns <= 0:
+        return messages
+    return messages[-2 * max_turns :]
+
+
 def create_document_store():
     with closing(get_db_connection()) as conn:
         conn.execute(_CREATE_DOC_STORE_TABLE)

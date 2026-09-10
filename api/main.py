@@ -35,6 +35,7 @@ from api.db_utils import (
     insert_document_record,
     normalize_session_label,
     rename_session,
+    truncate_history,
 )
 from api.observability import (
     estimate_tokens,
@@ -301,7 +302,7 @@ def chat(query_input: QueryInput, request: Request):
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    chat_history = get_chat_history(session_id)
+    chat_history = truncate_history(get_chat_history(session_id), settings.max_history_turns)
     rag_chain = get_rag_chain_for_model(
         query_input.model.value,
         file_ids=query_input.file_ids,
@@ -450,7 +451,7 @@ async def chat_stream(query_input: QueryInput, request: Request):
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    chat_history = get_chat_history(session_id)
+    chat_history = truncate_history(get_chat_history(session_id), settings.max_history_turns)
 
     async def event_generator():
         full_answer = ""

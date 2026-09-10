@@ -114,6 +114,16 @@ def test_delete_documents_by_collection(monkeypatch, tmp_path):
     assert [d["filename"] for d in db_utils.get_all_documents()] == ["c.pdf"]
 
 
+def test_truncate_history_keeps_recent_turns():
+    messages = [{"role": "human", "content": f"Q{i}"} for i in range(6)]
+
+    assert db_utils.truncate_history(messages, 2) == messages[-4:]
+    assert db_utils.truncate_history(messages, 10) == messages
+    assert db_utils.truncate_history(messages, 0) == messages
+    assert db_utils.truncate_history(messages, None) == messages
+    assert db_utils.truncate_history([], 2) == []
+
+
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 
