@@ -101,6 +101,19 @@ def test_delete_session_removes_label(monkeypatch, tmp_path):
     assert db_utils.get_all_sessions() == []
 
 
+def test_delete_documents_by_collection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_document_record("a.pdf", "clients-acme")
+    db_utils.insert_document_record("b.pdf", "clients-acme")
+    db_utils.insert_document_record("c.pdf", "default")
+
+    expected_deleted = 2
+    assert db_utils.delete_documents_by_collection("clients-acme") == expected_deleted
+    assert db_utils.delete_documents_by_collection("clients-acme") == 0
+    assert [d["filename"] for d in db_utils.get_all_documents()] == ["c.pdf"]
+
+
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 

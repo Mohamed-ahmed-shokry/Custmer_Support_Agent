@@ -177,6 +177,30 @@ def test_delete_doc_from_chroma_succeeds_when_no_chunks_exist(monkeypatch):
     assert vectorstore.deleted_ids is None
 
 
+def test_delete_collection_from_chroma_returns_chunk_count(monkeypatch):
+    class CollectionVectorstore(FakeVectorstore):
+        def get(self, where):
+            assert where == {"collection": "acme"}
+            return {"ids": self.ids}
+
+    vectorstore = CollectionVectorstore(ids=["1:0", "1:1", "2:0"])
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    expected_chunks = ["1:0", "1:1", "2:0"]
+    assert chroma_utils.delete_collection_from_chroma("acme") == len(expected_chunks)
+    assert vectorstore.deleted_ids == expected_chunks
+
+
+def test_delete_collection_from_chroma_reports_errors(monkeypatch):
+    class ExplodingVectorstore(FakeVectorstore):
+        def get(self, where):
+            raise RuntimeError("vector store down")
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", ExplodingVectorstore)
+
+    assert chroma_utils.delete_collection_from_chroma("acme") == -1
+
+
 def test_index_document_retries_transient_failures(monkeypatch):
     documents = [Document(page_content="Chunk", metadata={})]
 

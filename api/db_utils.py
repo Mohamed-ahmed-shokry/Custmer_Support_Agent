@@ -47,6 +47,7 @@ _SELECT_DOC_RECORD = (
 )
 
 _DELETE_DOC_RECORD = "DELETE FROM document_store WHERE id = ?"
+_DELETE_DOCS_BY_COLLECTION = "DELETE FROM document_store WHERE collection = ?"
 
 _SELECT_ALL_DOCS = (
     "SELECT id, filename, collection, upload_timestamp FROM document_store "
@@ -168,6 +169,15 @@ def delete_document_record(file_id):
     with closing(get_db_connection()) as conn:
         cursor = conn.execute(_DELETE_DOC_RECORD, (file_id,))
         deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
+
+
+def delete_documents_by_collection(collection):
+    """Delete every document record in a collection, returning the count."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_DELETE_DOCS_BY_COLLECTION, (collection,))
+        deleted = cursor.rowcount
         conn.commit()
         return deleted
 

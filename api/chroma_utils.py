@@ -182,6 +182,25 @@ def delete_doc_from_chroma(file_id: int):
         return False
 
 
+def delete_collection_from_chroma(collection: str) -> int:
+    """Delete every chunk in a collection, returning the chunk count (-1 on error)."""
+    try:
+        vectorstore = get_vectorstore()
+        docs = vectorstore.get(where={"collection": collection})
+        document_ids = docs.get("ids", [])
+        chunk_count = len(document_ids)
+        logger.info("Found %s document chunks for collection %s", chunk_count, collection)
+
+        if document_ids:
+            vectorstore.delete(ids=document_ids)
+            logger.info("Deleted all documents in collection %s", collection)
+
+        return chunk_count
+    except Exception:
+        logger.exception("Error deleting collection %s from Chroma", collection)
+        return -1
+
+
 def _metadata_filter(
     file_ids: list[int] | None = None,
     collections: list[str] | None = None,
