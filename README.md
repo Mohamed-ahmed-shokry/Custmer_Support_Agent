@@ -1,11 +1,13 @@
-# Customer Support RAG Agent (v0.11.0)
+# Customer Support RAG Agent (v0.12.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
 ## Features
 
 - Conversational customer support over uploaded PDF, DOCX, HTML, MD, TXT, and CSV documents.
-- Retrieval augmented generation with chat history awareness.
+- Exact-duplicate uploads rejected (`409`) via content hashing.
+- Retrieval augmented generation with bounded chat history awareness
+  (`MAX_HISTORY_TURNS`).
 - Streaming answers over Server-Sent Events (`POST /chat/stream`) with a
   non-streaming fallback (`POST /chat`).
 - Retrieval filters per request: `file_ids`, `source_filename`, `use_hybrid`
@@ -92,6 +94,7 @@ Optional:
 - `SQLITE_DB_PATH`
 - `DEFAULT_MODEL`
 - `RETRIEVER_K`
+- `MAX_HISTORY_TURNS` (default `10`)
 - `USE_HYBRID_RETRIEVER` (default `false`)
 - `HYBRID_BM25_WEIGHT` / `HYBRID_VECTOR_WEIGHT` (default `0.5` each)
 - `USE_QUERY_EXPANSION` (default `false`)
