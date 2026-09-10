@@ -81,6 +81,29 @@ filter with `?collection=<name>`.
 
 `GET /collections` → sorted array of known collection names.
 
+`DELETE /collections/{name}` → removes every document and chunk in the
+collection (the `default` collection is protected → `400`; unknown → `404`;
+Chroma failure → `500`).
+
+## Search
+
+`POST /search` runs the retrieval pipeline without spending chat tokens:
+
+```json
+{
+  "question": "How do I request maintenance?",
+  "k": 5,
+  "collections": ["clients-acme"],
+  "use_hybrid": true,
+  "expand_query": false,
+  "rerank": true
+}
+```
+
+- Accepts the same retrieval controls as `/chat` (`k` is 1–50).
+- Success → `200` with `{hits: [{rank, preview, file_id, filename, page,
+  chunk_index, collection}]}`; retrieval failure → `502`.
+
 `POST /delete-doc` with `{"file_id": 42}` removes Chroma chunks and the
 SQLite record (`404` when unknown).
 
