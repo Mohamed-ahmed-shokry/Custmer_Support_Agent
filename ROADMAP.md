@@ -71,7 +71,16 @@ See and manage what's inside retrieval (no new deps).
 - [x] `DELETE /collections/{name}`: remove a whole collection (API + UI)
 - [x] Deployment guide (`docs/DEPLOYMENT.md`)
 
-## v0.12.0 candidates (next)
+## v0.12.0 plan — Efficiency & robustness (IN PROGRESS)
+
+Cut waste and bound growth (no new deps).
+
+- [ ] Upload dedup via SHA-256 (`409` on exact duplicates)
+- [ ] History window cap (`MAX_HISTORY_TURNS`, bounds prompt growth)
+- [ ] Shared preview helper (remove duplicated truncation)
+- [ ] Deployment environments matrix (local / staging / production)
+
+## v0.13.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
