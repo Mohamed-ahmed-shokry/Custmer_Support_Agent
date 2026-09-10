@@ -56,6 +56,8 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 - Retrieval failure → `502`; bad input → `422`.
 - Each chat/stream turn adds approximate token usage (`~4 chars/token`)
   to the `prompt_tokens_est` / `completion_tokens_est` metrics.
+- Only the most recent `MAX_HISTORY_TURNS` conversation turns are sent for
+  context (default 10); full history stays in SQLite and `/sessions`.
 
 `POST /chat/stream` accepts the same body and returns SSE:
 
@@ -73,6 +75,7 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 - `collection`: target collection (default `default`; invalid names → `400`).
 - Supported types: `.pdf`, `.docx`, `.html`, `.md`, `.txt`, `.csv`.
 - Size cap: `MAX_UPLOAD_MB` (default 25 MB) → `413` when exceeded.
+- Exact-duplicate content is rejected → `409` naming the existing file.
 
 Collection names are lowercase letters, numbers, `-`/`_` (max 64 chars).
 
