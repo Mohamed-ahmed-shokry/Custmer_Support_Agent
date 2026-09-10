@@ -4,6 +4,7 @@ from api.settings import settings
 
 from app.api_utils import (
     API_BASE_URL,
+    delete_collection,
     delete_document,
     delete_session,
     export_session,
@@ -140,6 +141,15 @@ def _render_collection_picker():
         st.session_state.documents = list_documents(active)
         st.session_state.docs_collection = active
     st.session_state.active_collection = active
+    if active and active != "default" and st.sidebar.button(f"Delete collection '{active}'"):
+        with st.spinner("Deleting collection..."):
+            if delete_collection(active):
+                st.sidebar.success(f"Collection '{active}' deleted.")
+                st.session_state.collections = list_collections()
+                st.session_state.documents = list_documents(None)
+                st.session_state.docs_collection = None
+                st.session_state.active_collection = None
+                st.rerun()
     return active
 
 
