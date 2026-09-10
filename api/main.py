@@ -1,7 +1,7 @@
+import hashlib
 import json
 import logging
 import os
-import shutil
 import tempfile
 import time
 import uuid
@@ -29,6 +29,7 @@ from api.db_utils import (
     get_all_documents,
     get_all_sessions,
     get_chat_history,
+    get_document_by_hash,
     get_document_record,
     insert_application_logs,
     insert_document_record,
@@ -518,15 +519,29 @@ def upload_and_index_document(
     temp_file_path = None
 
     try:
+        digest = hashlib.sha256()
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while chunk := file.file.read(1024 * 1024):
+                digest.update(chunk)
+                buffer.write(chunk)
             temp_file_path = buffer.name
+        content_hash = digest.hexdigest()
 
         if os.path.getsize(temp_file_path) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file cannot be empty.")
         validate_upload_size(os.path.getsize(temp_file_path))
 
-        file_id = insert_document_record(safe_filename, collection_name)
+        duplicate = get_document_by_hash(content_hash)
+        if duplicate is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Identical content already indexed as '{duplicate['filename']}' "
+                    f"(file_id {duplicate['id']})."
+                ),
+            )
+
+        file_id = insert_document_record(safe_filename, collection_name, content_hash)
         success = index_document_to_chroma(
             temp_file_path,
             file_id,

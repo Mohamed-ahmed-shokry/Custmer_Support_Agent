@@ -11,6 +11,7 @@ HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
 HTTP_UNAUTHORIZED = 401
 HTTP_NOT_FOUND = 404
+HTTP_CONFLICT = 409
 HTTP_UNPROCESSABLE_ENTITY = 422
 HTTP_TOO_MANY_REQUESTS = 429
 HTTP_INTERNAL_ERROR = 500
@@ -54,6 +55,7 @@ def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
     deleted_file_ids = []
 
     monkeypatch.setattr(main, "insert_document_record", lambda filename, *args, **kwargs: 42)
+    monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
     monkeypatch.setattr(
         main, "index_document_to_chroma", lambda *args, **kwargs: False
     )
@@ -73,11 +75,13 @@ def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
 def test_upload_stores_normalized_collection(monkeypatch):
     recorded = {}
 
-    def fake_insert(filename, collection="default"):
+    def fake_insert(filename, collection="default", sha256=None):
         recorded["collection"] = collection
+        recorded["sha256"] = sha256
         return 7
 
     monkeypatch.setattr(main, "insert_document_record", fake_insert)
+    monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
     monkeypatch.setattr(
         main, "index_document_to_chroma", lambda *args, **kwargs: recorded.update(kwargs) or True
     )
@@ -90,6 +94,26 @@ def test_upload_stores_normalized_collection(monkeypatch):
     assert response.status_code == HTTP_OK
     assert recorded["collection"] == "clients-acme"
     assert recorded["options"] is not None
+    expected_hex_length = 64
+    assert recorded["sha256"] is not None and len(recorded["sha256"]) == expected_hex_length
+
+
+def test_upload_rejects_duplicate_content(monkeypatch):
+    def fail_insert(*args, **kwargs):
+        raise AssertionError("duplicate upload must not create a record")
+
+    monkeypatch.setattr(main, "insert_document_record", fail_insert)
+    monkeypatch.setattr(
+        main, "get_document_by_hash", lambda sha256: {"id": 9, "filename": "orig.pdf"}
+    )
+
+    response = client.post(
+        "/upload-doc",
+        files={"file": ("copy.pdf", b"identical bytes", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_CONFLICT
+    assert "orig.pdf" in response.json()["detail"]
 
 
 def test_upload_rejects_invalid_collection():
