@@ -124,6 +124,30 @@ def test_truncate_history_keeps_recent_turns():
     assert db_utils.truncate_history([], 2) == []
 
 
+def test_get_library_stats_counts_without_loading_rows(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    assert db_utils.get_library_stats() == {
+        "documents": 0,
+        "collections": 0,
+        "sessions": 0,
+        "messages": 0,
+    }
+
+    db_utils.insert_document_record("a.pdf", "acme")
+    db_utils.insert_document_record("b.pdf", "acme")
+    db_utils.insert_application_logs("s1", "Q1", "A1", "gpt-4o-mini")
+    db_utils.insert_application_logs("s1", "Q2", "A2", "gpt-4o-mini")
+    db_utils.insert_application_logs("s2", "Q3", "A3", "gpt-4o-mini")
+
+    assert db_utils.get_library_stats() == {
+        "documents": 2,
+        "collections": 1,
+        "sessions": 2,
+        "messages": 3,
+    }
+
+
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 

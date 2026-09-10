@@ -439,6 +439,16 @@ def test_quota_reports_usage_against_budget(monkeypatch):
     assert response.json() == {"budget": 100, "used": 30, "remaining": 70, "unlimited": False}
 
 
+def test_stats_returns_library_totals(monkeypatch):
+    totals = {"documents": 2, "collections": 1, "sessions": 2, "messages": 3}
+    monkeypatch.setattr(main, "get_library_stats", lambda: totals)
+
+    response = client.get("/stats")
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == totals
+
+
 def test_health_probes():
     live = client.get("/health/live")
     assert live.status_code == HTTP_OK

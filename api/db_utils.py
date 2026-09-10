@@ -222,6 +222,26 @@ def get_all_collections():
         return [row["collection"] for row in cursor.fetchall()]
 
 
+def get_library_stats():
+    """Return library totals without loading any rows."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        documents = cursor.execute("SELECT COUNT(*) FROM document_store").fetchone()[0]
+        collections = cursor.execute(
+            "SELECT COUNT(DISTINCT collection) FROM document_store"
+        ).fetchone()[0]
+        sessions = cursor.execute(
+            "SELECT COUNT(DISTINCT session_id) FROM application_logs"
+        ).fetchone()[0]
+        messages = cursor.execute("SELECT COUNT(*) FROM application_logs").fetchone()[0]
+        return {
+            "documents": documents,
+            "collections": collections,
+            "sessions": sessions,
+            "messages": messages,
+        }
+
+
 def _truncate_preview(preview: str | None) -> str:
     if not preview:
         return ""

@@ -31,6 +31,7 @@ from api.db_utils import (
     get_chat_history,
     get_document_by_hash,
     get_document_record,
+    get_library_stats,
     insert_application_logs,
     insert_document_record,
     normalize_session_label,
@@ -61,6 +62,7 @@ from api.pydantic_models import (
     SearchResponse,
     SessionInfo,
     SourceInfo,
+    StatsResponse,
     UploadDocumentResponse,
 )
 from api.security import (
@@ -268,6 +270,11 @@ def metrics():
     from fastapi.responses import PlainTextResponse  # noqa: PLC0415 - keep import lazy
 
     return PlainTextResponse(render_prometheus(), media_type="text/plain")
+
+
+@app.get("/stats", response_model=StatsResponse)
+def stats():
+    return StatsResponse(**get_library_stats())
 
 
 @app.get("/metrics.json")

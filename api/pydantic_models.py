@@ -159,6 +159,13 @@ class QuotaInfo(BaseModel):
     unlimited: bool
 
 
+class StatsResponse(BaseModel):
+    documents: int
+    collections: int
+    sessions: int
+    messages: int
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str
