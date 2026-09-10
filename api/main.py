@@ -177,6 +177,13 @@ def validate_upload_size(size_bytes: int) -> None:
         )
 
 
+PREVIEW_MAX_CHARS = 280
+
+
+def preview_content(page_content: str | None) -> str:
+    return (page_content or "")[:PREVIEW_MAX_CHARS].strip()
+
+
 def build_sources(documents) -> list[SourceInfo]:
     sources = []
     seen = set()
@@ -197,7 +204,7 @@ def build_sources(documents) -> list[SourceInfo]:
                 filename=metadata.get("filename") or metadata.get("source"),
                 page=metadata.get("page"),
                 chunk_index=metadata.get("chunk_index"),
-                preview=document.page_content[:280].strip(),
+                preview=preview_content(document.page_content),
             )
         )
     return sources
@@ -349,7 +356,7 @@ def build_search_hits(documents) -> list[SearchHit]:
         hits.append(
             SearchHit(
                 rank=rank,
-                preview=document.page_content[:280].strip(),
+                preview=preview_content(document.page_content),
                 file_id=metadata.get("file_id"),
                 filename=metadata.get("filename") or metadata.get("source"),
                 page=metadata.get("page"),
