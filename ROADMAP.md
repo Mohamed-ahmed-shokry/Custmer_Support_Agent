@@ -91,7 +91,15 @@ Run the library with confidence (no new deps).
 - [x] Staging compose overlay + environment docs
 - [x] Quality: upload staging helper, shared quota pre-check
 
-## v0.14.0 candidates (next)
+## v0.14.0 plan — Bulk ops & code health (IN PROGRESS)
+
+Onboard corpora faster with cleaner internals (no new deps).
+
+- [ ] Bulk upload endpoint (`POST /upload-docs`) + multi-file UI
+- [ ] Extract `api/presenters.py` (preview/sources/hits/markdown) with unit tests
+- [ ] `Retry-After` header on rate-limit responses
+
+## v0.15.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
