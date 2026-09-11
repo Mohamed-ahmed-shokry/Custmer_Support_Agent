@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 
 from api import db_utils
 
@@ -58,6 +59,26 @@ def test_get_all_sessions_includes_first_question_preview(monkeypatch, tmp_path)
     previews = {s["session_id"]: s["preview"] for s in db_utils.get_all_sessions()}
     assert previews["session-1"] == "First question here"
     assert previews["session-2"] == "Q" * 79 + "…"
+
+
+def test_prune_sessions_before_cutoff(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("old-session", "Q1", "A1", "gpt-4o-mini")
+    db_utils.insert_application_logs("new-session", "Q2", "A2", "gpt-4o-mini")
+    db_utils.rename_session("old-session", "Old label")
+    db_utils.insert_feedback("old-session", 1)
+    with closing(db_utils.get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE application_logs SET created_at = '2020-01-01 00:00:00' "
+            "WHERE session_id = 'old-session'"
+        )
+        conn.commit()
+
+    assert db_utils.prune_sessions_before("2021-01-01T00:00:00") == 1
+    remaining = [s["session_id"] for s in db_utils.get_all_sessions()]
+    assert remaining == ["new-session"]
+    assert db_utils.prune_sessions_before("2021-01-01T00:00:00") == 0
 
 
 def test_delete_session_removes_history(monkeypatch, tmp_path):

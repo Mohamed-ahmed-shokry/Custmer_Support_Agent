@@ -87,6 +87,11 @@ _SELECT_ALL_SESSIONS = (
 
 _DELETE_SESSION = "DELETE FROM application_logs WHERE session_id = ?"
 _DELETE_SESSION_LABEL = "DELETE FROM session_labels WHERE session_id = ?"
+_DELETE_SESSION_FEEDBACK = "DELETE FROM feedback WHERE session_id = ?"
+_STALE_SESSIONS = (
+    "SELECT session_id FROM application_logs "
+    "GROUP BY session_id HAVING MAX(created_at) < ?"
+)
 _UPSERT_SESSION_LABEL = (
     "INSERT INTO session_labels (session_id, label) VALUES (?, ?) "
     "ON CONFLICT(session_id) DO UPDATE SET label = excluded.label"
@@ -295,8 +300,22 @@ def delete_session(session_id):
         cursor = conn.execute(_DELETE_SESSION, (session_id,))
         deleted = cursor.rowcount > 0
         conn.execute(_DELETE_SESSION_LABEL, (session_id,))
+        conn.execute(_DELETE_SESSION_FEEDBACK, (session_id,))
         conn.commit()
         return deleted
+
+
+def prune_sessions_before(cutoff_iso):
+    """Delete sessions inactive since `cutoff_iso`, returning the count."""
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(_STALE_SESSIONS, (cutoff_iso,)).fetchall()
+        stale_ids = [row["session_id"] for row in rows]
+        for session_id in stale_ids:
+            conn.execute(_DELETE_SESSION, (session_id,))
+            conn.execute(_DELETE_SESSION_LABEL, (session_id,))
+            conn.execute(_DELETE_SESSION_FEEDBACK, (session_id,))
+        conn.commit()
+        return len(stale_ids)
 
 
 def create_session_labels():
