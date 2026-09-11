@@ -109,7 +109,15 @@ Collect answer ratings to ground future eval (no new deps).
 - [x] Streamlit feedback widget under assistant answers
 - [x] Quality: consistent route naming (`*_route` suffix)
 
-## v0.16.0 candidates (next)
+## v0.16.0 plan — Retention & maintenance (IN PROGRESS)
+
+Keep a growing library healthy (no new deps).
+
+- [ ] Feedback totals in `GET /stats`
+- [ ] Session retention prune (`DELETE /sessions?before=...`)
+- [ ] Quality: shared collection/session param normalization
+
+## v0.17.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
