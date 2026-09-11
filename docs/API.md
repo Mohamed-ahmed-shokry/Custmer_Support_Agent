@@ -77,6 +77,16 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 - Size cap: `MAX_UPLOAD_MB` (default 25 MB) → `413` when exceeded.
 - Exact-duplicate content is rejected → `409` naming the existing file.
 
+`POST /upload-docs` accepts up to `MAX_BULK_FILES` files (default 10) with
+the same query params and returns per-file results:
+
+```json
+{"results": [{"filename": "a.pdf", "status": "indexed", "file_id": 7}], "uploaded": 1, "failed": 0}
+```
+
+Each result is `indexed` (with `file_id`) or `error` (with `detail`); the
+endpoint itself returns `200` unless the request is malformed.
+
 Collection names are lowercase letters, numbers, `-`/`_` (max 64 chars).
 
 `GET /list-docs` → array of `{id, filename, collection, upload_timestamp}`;
