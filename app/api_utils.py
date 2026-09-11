@@ -251,6 +251,23 @@ def export_session(session_id):
         return None
 
 
+def submit_feedback(session_id, rating):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/feedback",
+            json={"session_id": session_id, "rating": rating},
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to submit feedback", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while submitting feedback: {str(e)}")
+        return None
+
+
 def get_session_history(session_id):
     try:
         response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/history", timeout=30)

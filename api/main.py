@@ -651,7 +651,7 @@ def rename_collection_route(collection: str, request: RenameCollectionRequest):
 
 
 @app.delete("/collections/{collection}", response_model=DeleteDocumentResponse)
-def delete_collection(collection: str):
+def delete_collection_route(collection: str):
     try:
         collection_name = normalize_collection(collection)
     except ValueError as exc:

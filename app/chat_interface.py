@@ -5,7 +5,12 @@ import streamlit as st
 from api.pydantic_models import model_from_value
 from api.settings import settings
 
-from app.api_utils import get_api_response, get_api_stream_response, parse_sse_line
+from app.api_utils import (
+    get_api_response,
+    get_api_stream_response,
+    parse_sse_line,
+    submit_feedback,
+)
 
 
 def _render_assistant_message(answer, selected_model, session_id, sources):
@@ -29,6 +34,19 @@ def _render_assistant_message(answer, selected_model, session_id, sources):
                         label = f"{label}, page {page}"
                     st.markdown(f"**{label}**")
                     st.caption(source.get("preview", ""))
+        _render_feedback_widget(session_id)
+
+
+def _render_feedback_widget(session_id):
+    """Thumbs rating for a fresh answer; posts once per selection change."""
+    feedback_key = f"feedback_{session_id}_{len(st.session_state.messages)}"
+    rated = st.session_state.setdefault("rated_feedback", {})
+    selection = st.feedback("thumbs", key=feedback_key)
+    if selection is not None and rated.get(feedback_key) != selection:
+        rating = 1 if selection == 0 else -1
+        if submit_feedback(session_id, rating):
+            rated[feedback_key] = selection
+            st.toast("Thanks for the feedback!")
 
 
 def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request options
