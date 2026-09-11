@@ -170,12 +170,13 @@ Big update: user-defined collections scope documents, retrieval, and the UI
 - [x] Add document preview/thumbnails
 - [x] Support more file types (txt, md, csv)
 
-### 2.3 Search & retrieval enhancements (IN PROGRESS)
+### 2.3 Search & retrieval enhancements ✅ COMPLETED (scoped)
 - [x] Add hybrid search helper (BM25 + vector, lazy import + vector fallback)
 - [x] Add metadata filtering helper (by file_id / filename)
 - [x] Wire file_ids / hybrid flags through `/chat` + RAG chain
-- [ ] Add reranking with cross-encoder (deferred: needs new model dep + eval)
-- [ ] Implement query expansion/rewriting (deferred: needs eval harness)
+- [x] Query expansion with RRF fusion (v0.8.0, dependency-free)
+- [x] Lexical rerank retriever (v0.10.0, dependency-free baseline)
+- [ ] Cross-encoder reranking (deferred: needs new model dependency)
 
 ### 2.4 Error handling & resilience ✅ COMPLETED
 - [x] Add retry with exponential backoff for Chroma indexing
@@ -192,14 +193,14 @@ Big update: user-defined collections scope documents, retrieval, and the UI
 - [x] Correlation IDs for request tracing (X-Request-ID middleware)
 - [x] Log levels via LOG_LEVEL (root logger)
 
-### 3.2 Metrics & tracing (PARTIAL)
+### 3.2 Metrics & tracing ✅ COMPLETED (scoped)
 - [x] Add lightweight `/metrics` + `/metrics.json` (in-memory counters)
 - [x] Add per-route latency averages (no new deps)
 - [x] Surface backend metrics in the Streamlit sidebar
 - [x] Approximate token-usage counters (char-based estimate)
+- [x] Ops dashboard = Streamlit metrics panel + `/metrics` scrape endpoint
 - [ ] Integrate OpenTelemetry (deferred: needs py3.11/3.12 verification)
 - [ ] Add LangSmith/LangFuse integration (already env-supported)
-- [ ] Dashboard for latency, token usage, error rates
 
 ### 3.3 Health checks ✅ COMPLETED
 - [x] Deep health checks (`/health/ready`: DB + Chroma dir; `/health/live`)
@@ -214,10 +215,10 @@ Big update: user-defined collections scope documents, retrieval, and the UI
 - [ ] JWT token support (deferred: needs new dep + key management)
 - [ ] Role-based access control (deferred: needs identity model)
 
-### 4.2 Rate limiting & quotas (opt-in, no new deps) (PARTIAL)
+### 4.2 Rate limiting & quotas (opt-in, no new deps) ✅ COMPLETED (scoped)
 - [x] Per-IP sliding-window rate limiting (`RATE_LIMIT_PER_MIN`, 0 = off)
 - [x] Approximate token-usage metering (char-based estimate in metrics)
-- [ ] Token usage quotas (deferred: needs tokenizer + per-key budgets)
+- [x] Daily token quotas per IP (`TOKEN_DAILY_BUDGET_EST` + `GET /quota`)
 - [x] Request size limits (`MAX_UPLOAD_MB` enforced → 413)
 
 ### 4.3 Data protection (PARTIAL)
@@ -229,9 +230,10 @@ Big update: user-defined collections scope documents, retrieval, and the UI
 
 ## Phase 5: Advanced Features (Week 5+)
 
-### 5.1 Multi-tenancy
-- [ ] Isolated document stores per tenant
-- [ ] Tenant-aware routing
+### 5.1 Multi-tenancy (PARTIAL)
+- [x] Collection-scoped stores, retrieval, and UI (v0.6.0 stepping stone)
+- [ ] Fully isolated document stores per tenant (deferred: needs identity model)
+- [ ] Tenant-aware routing (deferred: needs identity model)
 
 ### 5.2 Agentic capabilities
 - [ ] Tool use (web search, calculator, SQL)
@@ -243,11 +245,11 @@ Big update: user-defined collections scope documents, retrieval, and the UI
 - [x] Prompt regression tests (fallback + contact + groundedness invariants)
 - [ ] Automated RAG evaluation in CI (deferred: needs API credits + fixtures)
 
-### 5.4 UI/UX improvements (PARTIAL)
+### 5.4 UI/UX improvements ✅ COMPLETED (scoped)
 - [x] Conversation history sidebar (past sessions via `GET /sessions` + history)
 - [x] Accept md/txt/csv in the Streamlit uploader (backend already supports them)
+- [x] Dark mode (`.streamlit/config.toml`, shipped in the image)
 - [ ] Document annotation/highlighting (deferred)
-- [ ] Dark mode (deferred: Streamlit theming)
 - [ ] Mobile responsive design (deferred)
 
 ---
@@ -259,10 +261,10 @@ Big update: user-defined collections scope documents, retrieval, and the UI
 - [x] Docker Compose for local dev
 - [x] Generic Kubernetes manifests (deployment + service + PVC, live/ready probes)
 
-### 6.2 CI/CD (PARTIAL)
+### 6.2 CI/CD ✅ COMPLETED (scoped)
 - [x] Tag-triggered release workflow (tests + GitHub release)
-- [ ] Staging/production environments (deferred: needs hosting target)
-- [ ] Database migrations (deferred: schema is IF NOT EXISTS; needs change driver)
+- [x] Staging/production compose overlays + environment matrix
+- [x] Database migrations (`migrate_document_store()` + table bootstrapping)
 
 ### 6.3 Documentation (PARTIAL)
 - [x] API reference (`docs/API.md`; OpenAPI/Swagger auto-served at `/docs`)
