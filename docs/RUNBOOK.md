@@ -33,10 +33,14 @@
 
 ## Metrics review
 
-- `GET /metrics.json`: counters plus `latency_avg_seconds_{chat,stream,upload,other}`
-  and `prompt_tokens_est` / `completion_tokens_est`.
+- `GET /metrics.json`: counters plus `latency_avg_seconds_{chat,stream,upload,other}`,
+  `prompt_tokens_est` / `completion_tokens_est`, and `feedback_up` /
+  `feedback_down`.
 - Rising `chat_errors` with 502s → inspect the retrieval pipeline and
   OpenAI status; `upload_errors` → see indexing section above.
+- Falling feedback ratio (`feedback_down` outpacing `feedback_up`) → sample
+  recent sessions, check retrieval hits via `POST /search`, and consider
+  prompt or corpus updates.
 
 ## Session management
 

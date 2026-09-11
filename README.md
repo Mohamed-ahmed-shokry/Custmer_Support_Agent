@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.14.0)
+# Customer Support RAG Agent (v0.15.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -28,13 +28,14 @@ A local-first customer support assistant for real estate and property management
   validation and a configurable upload size cap.
 - Source-aware answers with document metadata returned by the API.
 - Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher with previews, rename, session deletion, and quota display.
+- Answer feedback (thumbs up/down under each answer, stored for future eval).
 - Dark-mode UI theme (`.streamlit/config.toml`, shipped in the image).
 - File logs redact emails, phone numbers, and SSN-like patterns.
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
   `/metrics` (Prometheus text) and `/metrics.json` with per-route latency
-  averages and approximate token-usage counters, `LOG_FORMAT`/`LOG_LEVEL`.
-  The Streamlit sidebar shows a backend metrics panel.
+  averages, approximate token-usage counters, and feedback totals,
+  `LOG_FORMAT`/`LOG_LEVEL`. The Streamlit sidebar shows a backend metrics panel.
 - Releases: pushing a `v*` tag runs the full verification suite and creates
   a GitHub release.
 - Opt-in security: `API_KEY` (`X-API-Key` header), per-IP rate limiting
