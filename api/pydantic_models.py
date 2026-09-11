@@ -148,6 +148,22 @@ class RenameSessionRequest(BaseModel):
         return v
 
 
+class RenameCollectionRequest(BaseModel):
+    collection: str = Field(min_length=1, max_length=64)
+
+    @field_validator("collection", mode="before")
+    @classmethod
+    def normalize_collection_field(cls, v: str) -> str:
+        return normalize_collection(v) if isinstance(v, str) else v
+
+
+class RenameCollectionResponse(BaseModel):
+    message: str
+    collection: str
+    documents: int
+    chunks: int
+
+
 class DeleteSessionResponse(BaseModel):
     message: str
 

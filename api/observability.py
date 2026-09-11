@@ -15,6 +15,7 @@ _counters: dict[str, int] = {
     "uploads": 0,
     "upload_errors": 0,
     "deletes": 0,
+    "renames": 0,
     "prompt_tokens_est": 0,
     "completion_tokens_est": 0,
 }

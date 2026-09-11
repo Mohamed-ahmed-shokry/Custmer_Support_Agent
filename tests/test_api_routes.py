@@ -204,6 +204,51 @@ def test_delete_collection_returns_500_when_chroma_fails(monkeypatch):
     assert response.status_code == HTTP_INTERNAL_ERROR
 
 
+def test_rename_collection_moves_documents_and_chunks(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["acme", "default"])
+    monkeypatch.setattr(main, "rename_collection_in_chroma", lambda old, new: 3)
+    monkeypatch.setattr(main, "rename_collection", lambda old, new: 2)
+
+    response = client.patch("/collections/acme", json={"collection": "Globex"})
+
+    assert response.status_code == HTTP_OK
+    body = response.json()
+    expected_documents = 2
+    expected_chunks = 3
+    assert body["collection"] == "globex"
+    assert body["documents"] == expected_documents
+    assert body["chunks"] == expected_chunks
+
+
+def test_rename_collection_rejects_existing_target(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["acme", "globex"])
+
+    response = client.patch("/collections/acme", json={"collection": "globex"})
+
+    assert response.status_code == HTTP_CONFLICT
+
+
+def test_rename_collection_returns_404_when_empty(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: [])
+    monkeypatch.setattr(main, "rename_collection_in_chroma", lambda old, new: 0)
+    monkeypatch.setattr(main, "rename_collection", lambda old, new: 0)
+
+    response = client.patch("/collections/acme", json={"collection": "globex"})
+
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_rename_collection_rejects_invalid_names():
+    assert (
+        client.patch("/collections/bad%20name!", json={"collection": "globex"}).status_code
+        == HTTP_BAD_REQUEST
+    )
+    assert (
+        client.patch("/collections/acme", json={"collection": "bad name!"}).status_code
+        == HTTP_UNPROCESSABLE_ENTITY
+    )
+
+
 def test_chat_returns_sources(monkeypatch):
     class FakeChain:
         def invoke(self, payload):

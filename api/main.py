@@ -18,6 +18,7 @@ from api.chroma_utils import (
     delete_collection_from_chroma,
     delete_doc_from_chroma,
     index_document_to_chroma,
+    rename_collection_in_chroma,
     select_retriever,
 )
 from api.collections import DEFAULT_COLLECTION, normalize_collection
@@ -35,6 +36,7 @@ from api.db_utils import (
     insert_application_logs,
     insert_document_record,
     normalize_session_label,
+    rename_collection,
     rename_session,
     truncate_history,
 )
@@ -56,6 +58,8 @@ from api.pydantic_models import (
     QueryInput,
     QueryResponse,
     QuotaInfo,
+    RenameCollectionRequest,
+    RenameCollectionResponse,
     RenameSessionRequest,
     SearchHit,
     SearchInput,
@@ -596,6 +600,41 @@ def list_documents(collection: str | None = None):
 @app.get("/collections", response_model=list[str])
 def list_collections():
     return get_all_collections()
+
+
+@app.patch("/collections/{collection}", response_model=RenameCollectionResponse)
+def rename_collection_route(collection: str, request: RenameCollectionRequest):
+    try:
+        source = normalize_collection(collection)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    target = request.collection
+    if target != source and target in get_all_collections():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Collection {target} already exists; delete it first or pick another name.",
+        )
+
+    chunks = rename_collection_in_chroma(source, target)
+    if chunks < 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to rename collection {source} in Chroma.",
+        )
+
+    documents = rename_collection(source, target)
+    if chunks == 0 and documents == 0:
+        raise HTTPException(
+            status_code=404, detail=f"Collection {source} was not found."
+        )
+
+    increment("renames")
+    return RenameCollectionResponse(
+        message=f"Renamed collection {source} to {target}.",
+        collection=target,
+        documents=documents,
+        chunks=chunks,
+    )
 
 
 @app.delete("/collections/{collection}", response_model=DeleteDocumentResponse)
