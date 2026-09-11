@@ -15,6 +15,7 @@ from app.api_utils import (
     list_collections,
     list_documents,
     list_sessions,
+    rename_collection,
     rename_session,
     upload_document,
 )
@@ -141,15 +142,30 @@ def _render_collection_picker():
         st.session_state.documents = list_documents(active)
         st.session_state.docs_collection = active
     st.session_state.active_collection = active
-    if active and active != "default" and st.sidebar.button(f"Delete collection '{active}'"):
-        with st.spinner("Deleting collection..."):
-            if delete_collection(active):
-                st.sidebar.success(f"Collection '{active}' deleted.")
-                st.session_state.collections = list_collections()
-                st.session_state.documents = list_documents(None)
-                st.session_state.docs_collection = None
-                st.session_state.active_collection = None
-                st.rerun()
+    if active and active != "default":
+        new_name = st.sidebar.text_input(
+            "Rename collection", key="rename_collection", placeholder="e.g. clients-globex"
+        )
+        rename_col, delete_col = st.sidebar.columns(2)
+        if rename_col.button("Rename") and new_name.strip():
+            with st.spinner("Renaming collection..."):
+                renamed = rename_collection(active, new_name.strip())
+                if renamed:
+                    st.sidebar.success(f"Renamed to '{renamed['collection']}'.")
+                    st.session_state.collections = list_collections()
+                    st.session_state.documents = list_documents(renamed["collection"])
+                    st.session_state.docs_collection = renamed["collection"]
+                    st.session_state.active_collection = renamed["collection"]
+                    st.rerun()
+        if delete_col.button("Delete"):
+            with st.spinner("Deleting collection..."):
+                if delete_collection(active):
+                    st.sidebar.success(f"Collection '{active}' deleted.")
+                    st.session_state.collections = list_collections()
+                    st.session_state.documents = list_documents(None)
+                    st.session_state.docs_collection = None
+                    st.session_state.active_collection = None
+                    st.rerun()
     return active
 
 

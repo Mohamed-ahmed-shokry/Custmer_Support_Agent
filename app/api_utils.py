@@ -134,6 +134,23 @@ def list_collections():
         return []
 
 
+def rename_collection(collection, new_name):
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/collections/{collection}",
+            json={"collection": new_name},
+            timeout=60,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to rename collection", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while renaming the collection: {str(e)}")
+        return None
+
+
 def delete_collection(collection):
     try:
         response = requests.delete(f"{API_BASE_URL}/collections/{collection}", timeout=60)

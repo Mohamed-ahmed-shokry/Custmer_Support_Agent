@@ -183,6 +183,16 @@ def validate_upload_size(size_bytes: int) -> None:
         )
 
 
+def stage_upload_file(file_obj, suffix: str) -> tuple[str, str]:
+    """Stream an upload to a temp file, returning (path, sha256 hex digest)."""
+    digest = hashlib.sha256()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as buffer:
+        while chunk := file_obj.read(1024 * 1024):
+            digest.update(chunk)
+            buffer.write(chunk)
+        return buffer.name, digest.hexdigest()
+
+
 PREVIEW_MAX_CHARS = 280
 
 
@@ -301,15 +311,19 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _enforce_token_quota(client_ip: str, tokens: int) -> None:
+    if not check_token_quota(client_ip, tokens, settings.token_daily_budget_est):
+        raise HTTPException(
+            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
+        )
+
+
 @app.post("/chat", response_model=QueryResponse)
 def chat(query_input: QueryInput, request: Request):
     increment("chat_requests")
     client_ip = _client_ip(request)
     question_tokens = estimate_tokens(query_input.question)
-    if not check_token_quota(client_ip, question_tokens, settings.token_daily_budget_est):
-        raise HTTPException(
-            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
-        )
+    _enforce_token_quota(client_ip, question_tokens)
     session_id = query_input.session_id
     logger.info(
         "Session ID: %s, User Query: %s, Model: %s",
@@ -383,10 +397,7 @@ def search(search_input: SearchInput, request: Request):
     increment("search_requests")
     client_ip = _client_ip(request)
     question_tokens = estimate_tokens(search_input.question)
-    if not check_token_quota(client_ip, question_tokens, settings.token_daily_budget_est):
-        raise HTTPException(
-            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
-        )
+    _enforce_token_quota(client_ip, question_tokens)
     use_hybrid = search_input.use_hybrid
     if use_hybrid is None:
         use_hybrid = settings.use_hybrid_retriever
@@ -455,10 +466,7 @@ async def chat_stream(query_input: QueryInput, request: Request):
     increment("stream_requests")
     client_ip = _client_ip(request)
     question_tokens = estimate_tokens(query_input.question)
-    if not check_token_quota(client_ip, question_tokens, settings.token_daily_budget_est):
-        raise HTTPException(
-            status_code=429, detail="Daily token budget exceeded. Try again tomorrow."
-        )
+    _enforce_token_quota(client_ip, question_tokens)
     session_id = query_input.session_id
     logger.info(
         "Stream Session ID: %s, User Query: %s, Model: %s",
@@ -538,13 +546,7 @@ def upload_and_index_document(
     temp_file_path = None
 
     try:
-        digest = hashlib.sha256()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as buffer:
-            while chunk := file.file.read(1024 * 1024):
-                digest.update(chunk)
-                buffer.write(chunk)
-            temp_file_path = buffer.name
-        content_hash = digest.hexdigest()
+        temp_file_path, content_hash = stage_upload_file(file.file, file_extension)
 
         if os.path.getsize(temp_file_path) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file cannot be empty.")
