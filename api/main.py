@@ -494,10 +494,7 @@ def ingest_single_file(
         )
 
     validate_chunk_params(chunk_size, chunk_overlap)
-    try:
-        collection_name = normalize_collection(collection)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    collection_name = _normalize_collection_param(collection)
 
     options = ChunkingOptions(
         strategy=chunking_strategy, chunk_size=chunk_size, chunk_overlap=chunk_overlap
@@ -607,10 +604,7 @@ def upload_many_documents(
 def list_documents(collection: str | None = None):
     if collection is None:
         return get_all_documents()
-    try:
-        return get_all_documents(normalize_collection(collection))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return get_all_documents(_normalize_collection_param(collection))
 
 
 @app.get("/collections", response_model=list[str])
@@ -620,10 +614,7 @@ def list_collections():
 
 @app.patch("/collections/{collection}", response_model=RenameCollectionResponse)
 def rename_collection_route(collection: str, request: RenameCollectionRequest):
-    try:
-        source = normalize_collection(collection)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    source = _normalize_collection_param(collection)
     target = request.collection
     if target != source and target in get_all_collections():
         raise HTTPException(
@@ -655,10 +646,7 @@ def rename_collection_route(collection: str, request: RenameCollectionRequest):
 
 @app.delete("/collections/{collection}", response_model=DeleteDocumentResponse)
 def delete_collection_route(collection: str):
-    try:
-        collection_name = normalize_collection(collection)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    collection_name = _normalize_collection_param(collection)
     if collection_name == DEFAULT_COLLECTION:
         raise HTTPException(
             status_code=400,
@@ -698,6 +686,22 @@ def _require_session_id(session_id: str) -> str:
     return session_id
 
 
+def _normalize_collection_param(collection: str) -> str:
+    try:
+        return normalize_collection(collection)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _get_session_summary_or_404(session_id: str):
+    summaries = [s for s in get_all_sessions() if s["session_id"] == session_id]
+    if not summaries:
+        raise HTTPException(
+            status_code=404, detail=f"Session {session_id} was not found."
+        )
+    return summaries[0]
+
+
 @app.get("/sessions/{session_id}/history", response_model=list[ChatMessage])
 def session_history(session_id: str):
     _require_session_id(session_id)
@@ -714,8 +718,7 @@ def export_session(session_id: str):
         raise HTTPException(
             status_code=404, detail=f"Session {session_id} was not found."
         )
-    summaries = [s for s in get_all_sessions() if s["session_id"] == session_id]
-    label = summaries[0].get("label") if summaries else None
+    label = _get_session_summary_or_404(session_id).get("label")
     markdown = render_session_markdown(session_id, label, history)
     return PlainTextResponse(
         markdown,
@@ -771,8 +774,7 @@ def rename_session_route(session_id: str, request: RenameSessionRequest):
         raise HTTPException(
             status_code=404, detail=f"Session {session_id} was not found."
         )
-    summaries = [s for s in get_all_sessions() if s["session_id"] == session_id]
-    return SessionInfo(**summaries[0])
+    return SessionInfo(**_get_session_summary_or_404(session_id))
 
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)
