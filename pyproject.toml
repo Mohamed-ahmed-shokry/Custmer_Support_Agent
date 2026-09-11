@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "customer-support-rag-agent"
-version = "0.2.0"
+version = "0.16.0"
 description = "A local-first customer support assistant for real estate and property management workflows"
 readme = "README.md"
 requires-python = ">=3.11"
