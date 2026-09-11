@@ -28,6 +28,16 @@ _CREATE_SESSION_LABELS_TABLE = (
     "(session_id TEXT PRIMARY KEY, label TEXT NOT NULL)"
 )
 
+_CREATE_FEEDBACK_TABLE = (
+    "CREATE TABLE IF NOT EXISTS feedback "
+    "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "session_id TEXT NOT NULL, rating INTEGER NOT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+_INSERT_FEEDBACK = "INSERT INTO feedback (session_id, rating) VALUES (?, ?)"
+_SELECT_FEEDBACK_COUNT = "SELECT COUNT(*) FROM feedback WHERE rating = ?"
+
 MAX_SESSION_LABEL_LENGTH = 80
 
 _INSERT_APP_LOG = (
@@ -287,6 +297,31 @@ def create_session_labels():
         conn.commit()
 
 
+def create_feedback():
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_FEEDBACK_TABLE)
+        conn.commit()
+
+
+def insert_feedback(session_id, rating):
+    """Record a +1/-1 answer rating; raises ValueError for other ratings."""
+    if rating not in (1, -1):
+        raise ValueError("Rating must be 1 or -1.")
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_INSERT_FEEDBACK, (session_id, rating))
+        feedback_id = cursor.lastrowid
+        conn.commit()
+        return feedback_id
+
+
+def count_feedback(rating):
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_SELECT_FEEDBACK_COUNT, (rating,))
+        return cursor.fetchone()[0]
+
+
 def rename_session(session_id, label):
     """Label a session that has chat history; returns False when unknown."""
     with closing(get_db_connection()) as conn:
@@ -303,3 +338,4 @@ create_application_logs()
 create_document_store()
 migrate_document_store()
 create_session_labels()
+create_feedback()

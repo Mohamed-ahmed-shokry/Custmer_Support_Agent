@@ -9,6 +9,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_application_logs()
     db_utils.create_document_store()
     db_utils.create_session_labels()
+    db_utils.create_feedback()
     return db_path
 
 
@@ -157,6 +158,31 @@ def test_rename_collection_moves_records(monkeypatch, tmp_path):
     assert db_utils.rename_collection("clients-acme", "clients-globex") == 1
     assert db_utils.rename_collection("missing", "other") == 0
     assert db_utils.get_all_collections() == ["clients-globex", "default"]
+
+
+def test_feedback_records_and_counts_ratings(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    assert db_utils.count_feedback(1) == 0
+
+    db_utils.insert_feedback("session-1", 1)
+    db_utils.insert_feedback("session-1", 1)
+    db_utils.insert_feedback("session-2", -1)
+
+    expected_upvotes = 2
+    assert db_utils.count_feedback(1) == expected_upvotes
+    assert db_utils.count_feedback(-1) == 1
+
+
+def test_feedback_rejects_invalid_ratings(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    for bad in [0, 2, -2]:
+        try:
+            db_utils.insert_feedback("session-1", bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"expected ValueError for {bad!r}")
 
 
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
