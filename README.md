@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.12.0)
+# Customer Support RAG Agent (v0.13.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -137,6 +137,13 @@ JSON logs, resource limits, restarts), overlay the prod file:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
 
+For a staging setup (single worker, debug logs, generous rate limit), swap
+in the staging overlay instead:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
+```
+
 ## API quick reference
 
 - `GET /health` — basic liveness with app name/version.
@@ -150,7 +157,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `GET /list-docs`, `POST /delete-doc` — document metadata management.
-- `GET /collections`, `DELETE /collections/{name}` — collection lifecycle.
+- `GET /collections`, `PATCH`/`DELETE /collections/{name}` — collection lifecycle.
+- `GET /stats` — library totals (documents, collections, sessions, messages).
 - `POST /search` — ranked retrieval hits without chat cost.
 - `GET /sessions`, `GET /sessions/{id}/history`, `DELETE /sessions/{id}` — past conversations.
 - `GET /quota` — daily token budget usage for the caller.
