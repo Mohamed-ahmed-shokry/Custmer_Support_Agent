@@ -100,7 +100,15 @@ Onboard corpora faster with cleaner internals (no new deps).
 - [x] Extract `api/presenters.py` (preview/sources/hits/markdown) with unit tests
 - [x] `Retry-After` header on rate-limit responses
 
-## v0.15.0 candidates (next)
+## v0.15.0 plan — Human feedback loop (IN PROGRESS)
+
+Collect answer ratings to ground future eval (no new deps).
+
+- [ ] Feedback store (`POST /feedback`, thumbs up/down + metrics)
+- [ ] Streamlit feedback widget under assistant answers
+- [ ] Quality: consistent route naming (`*_route` suffix)
+
+## v0.16.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets
