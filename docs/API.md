@@ -1,4 +1,4 @@
-# API Reference (v0.6.0)
+# API Reference (v0.15.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -146,3 +146,10 @@ SQLite record (`404` when unknown).
 
 - `GET /quota` → `{budget, used, remaining, unlimited}` for the caller IP
   against `TOKEN_DAILY_BUDGET_EST` (`remaining` is `null` when unlimited).
+
+## Feedback
+
+- `POST /feedback` with `{"session_id": "...", "rating": 1}` records a
+  thumbs up (`1`) or down (`-1`); anything else → `422`. Totals surface as
+  the `feedback_up` / `feedback_down` metrics. The chat UI posts once per
+  widget selection change.
