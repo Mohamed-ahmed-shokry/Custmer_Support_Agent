@@ -41,6 +41,17 @@ The overlay switches the API to 2 uvicorn workers, JSON logs, restart
 policies, and memory/CPU limits. Put a TLS-terminating reverse proxy in
 front and restrict ingress to it.
 
+## Docker Compose (staging overlay)
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
+```
+
+Staging mirrors production shape with debug-friendly settings: a single
+worker, `DEBUG` JSON logs, and a generous `RATE_LIMIT_PER_MIN=120` so load
+and retrieval experiments don't trip the limiters. See the environments
+matrix below for the full local / staging / production comparison.
+
 ## Kubernetes
 
 Apply the generic manifests, then create the secret referenced by the
