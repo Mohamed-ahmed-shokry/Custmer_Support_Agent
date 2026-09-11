@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.12.0, 2026-09-04)
+## Current State (v0.13.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -27,7 +27,8 @@
 - Retrieval inspection (`POST /search`), collection deletion (API + UI),
   deployment guide
 - Upload dedup via content hash, bounded history window, shared preview helper
-- 126 tests passing; ruff + mypy clean (CI gates)
+- Library stats endpoint, collection rename (API + UI), staging overlay
+- 135 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -81,14 +82,14 @@ Cut waste and bound growth (no new deps).
 - [x] Shared preview helper (remove duplicated truncation)
 - [x] Deployment environments matrix (local / staging / production)
 
-## v0.13.0 plan — Operations & consistency (IN PROGRESS)
+## v0.13.0 plan — Operations & consistency ✅ COMPLETED
 
 Run the library with confidence (no new deps).
 
-- [ ] Library stats endpoint (`GET /stats`) + sidebar totals
-- [ ] Collection rename (`PATCH /collections/{name}`, API + UI)
-- [ ] Staging compose overlay + environment docs
-- [ ] Quality: upload staging helper, shared quota pre-check
+- [x] Library stats endpoint (`GET /stats`) + sidebar totals
+- [x] Collection rename (`PATCH /collections/{name}`, API + UI)
+- [x] Staging compose overlay + environment docs
+- [x] Quality: upload staging helper, shared quota pre-check
 
 ## v0.14.0 candidates (next)
 
