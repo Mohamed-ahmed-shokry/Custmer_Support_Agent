@@ -196,6 +196,19 @@ class UploadDocumentResponse(BaseModel):
     file_id: int
 
 
+class BulkUploadItem(BaseModel):
+    filename: str
+    status: str
+    file_id: int | None = None
+    detail: str | None = None
+
+
+class BulkUploadResponse(BaseModel):
+    results: list[BulkUploadItem] = Field(default_factory=list)
+    uploaded: int = 0
+    failed: int = 0
+
+
 class DeleteDocumentResponse(BaseModel):
     message: str
 

@@ -98,6 +98,65 @@ def test_upload_stores_normalized_collection(monkeypatch):
     assert recorded["sha256"] is not None and len(recorded["sha256"]) == expected_hex_length
 
 
+def test_bulk_upload_indexes_each_file(monkeypatch):
+    file_ids = iter([101, 102])
+    monkeypatch.setattr(
+        main, "insert_document_record", lambda filename, *args, **kwargs: next(file_ids)
+    )
+    monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
+    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args, **kwargs: True)
+
+    response = client.post(
+        "/upload-docs",
+        files=[
+            ("files", ("a.pdf", b"%PDF first", "application/pdf")),
+            ("files", ("b.pdf", b"%PDF second", "application/pdf")),
+        ],
+    )
+
+    assert response.status_code == HTTP_OK
+    body = response.json()
+    expected_uploads = 2
+    assert body["uploaded"] == expected_uploads
+    assert body["failed"] == 0
+    assert [item["file_id"] for item in body["results"]] == [101, 102]
+
+
+def test_bulk_upload_reports_per_file_errors(monkeypatch):
+    monkeypatch.setattr(main, "insert_document_record", lambda filename, *args, **kwargs: 42)
+    monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
+    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args, **kwargs: True)
+
+    response = client.post(
+        "/upload-docs",
+        files=[
+            ("files", ("good.pdf", b"%PDF good", "application/pdf")),
+            ("files", ("notes.xyz", b"hello", "application/octet-stream")),
+        ],
+    )
+
+    assert response.status_code == HTTP_OK
+    body = response.json()
+    assert body["uploaded"] == 1
+    assert body["failed"] == 1
+    assert body["results"][0]["status"] == "indexed"
+    assert body["results"][1]["status"] == "error"
+
+
+def test_bulk_upload_rejects_too_many_files(monkeypatch):
+    monkeypatch.setattr(settings, "max_bulk_files", 1)
+
+    response = client.post(
+        "/upload-docs",
+        files=[
+            ("files", ("a.pdf", b"%PDF a", "application/pdf")),
+            ("files", ("b.pdf", b"%PDF b", "application/pdf")),
+        ],
+    )
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
 def test_upload_rejects_duplicate_content(monkeypatch):
     def fail_insert(*args, **kwargs):
         raise AssertionError("duplicate upload must not create a record")

@@ -49,6 +49,8 @@ from api.observability import (
 from api.pii import redact_pii
 from api.presenters import build_search_hits, build_sources, render_session_markdown
 from api.pydantic_models import (
+    BulkUploadItem,
+    BulkUploadResponse,
     ChatMessage,
     DeleteDocumentResponse,
     DeleteFileRequest,
@@ -458,16 +460,17 @@ async def chat_stream(query_input: QueryInput, request: Request):
 
 
 FILE_REQUIRED = File(...)
+FILES_REQUIRED = File(...)
 
 
-@app.post("/upload-doc", response_model=UploadDocumentResponse)
-def upload_and_index_document(
-    file: UploadFile = FILE_REQUIRED,
-    chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE,
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
-    collection: str = DEFAULT_COLLECTION,
-):
+def ingest_single_file(
+    file: UploadFile,
+    chunking_strategy: ChunkingStrategy,
+    chunk_size: int,
+    chunk_overlap: int,
+    collection: str,
+) -> UploadDocumentResponse:
+    """Validate, stage, dedupe, and index one upload (raises HTTPException)."""
     safe_filename = sanitize_filename(file.filename or "")
     file_extension = os.path.splitext(safe_filename)[1].lower()
 
@@ -534,6 +537,60 @@ def upload_and_index_document(
     finally:
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
+
+
+@app.post("/upload-doc", response_model=UploadDocumentResponse)
+def upload_and_index_document(
+    file: UploadFile = FILE_REQUIRED,
+    chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+    collection: str = DEFAULT_COLLECTION,
+):
+    return ingest_single_file(file, chunking_strategy, chunk_size, chunk_overlap, collection)
+
+
+@app.post("/upload-docs", response_model=BulkUploadResponse)
+def upload_many_documents(
+    files: list[UploadFile] = FILES_REQUIRED,
+    chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+    collection: str = DEFAULT_COLLECTION,
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file must be uploaded.")
+    if len(files) > settings.max_bulk_files:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {settings.max_bulk_files} files can be uploaded at once.",
+        )
+
+    results = []
+    for file in files:
+        filename = file.filename or "unnamed"
+        try:
+            response = ingest_single_file(
+                file, chunking_strategy, chunk_size, chunk_overlap, collection
+            )
+            results.append(
+                BulkUploadItem(
+                    filename=filename, status="indexed", file_id=response.file_id
+                )
+            )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+            results.append(
+                BulkUploadItem(filename=filename, status="error", detail=detail)
+            )
+        except Exception:
+            logger.exception("Unexpected error while bulk-uploading %s", filename)
+            results.append(
+                BulkUploadItem(filename=filename, status="error", detail="Unexpected error.")
+            )
+
+    uploaded = sum(1 for item in results if item.status == "indexed")
+    return BulkUploadResponse(results=results, uploaded=uploaded, failed=len(results) - uploaded)
 
 
 @app.get("/list-docs", response_model=list[DocumentInfo])

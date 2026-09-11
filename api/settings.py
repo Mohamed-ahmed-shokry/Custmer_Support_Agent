@@ -52,6 +52,7 @@ class Settings:
         self.hybrid_bm25_weight = get_float_env("HYBRID_BM25_WEIGHT", 0.5)
         self.hybrid_vector_weight = get_float_env("HYBRID_VECTOR_WEIGHT", 0.5)
         self.max_upload_mb = get_positive_int_env("MAX_UPLOAD_MB", 25)
+        self.max_bulk_files = get_positive_int_env("MAX_BULK_FILES", 10)
         self.log_format = os.getenv("LOG_FORMAT", "text").strip().lower()
         self.log_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
         self.api_key = os.getenv("API_KEY", "")
