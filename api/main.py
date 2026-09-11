@@ -6,7 +6,6 @@ import tempfile
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -48,6 +47,7 @@ from api.observability import (
     snapshot,
 )
 from api.pii import redact_pii
+from api.presenters import build_search_hits, build_sources, render_session_markdown
 from api.pydantic_models import (
     ChatMessage,
     DeleteDocumentResponse,
@@ -61,11 +61,9 @@ from api.pydantic_models import (
     RenameCollectionRequest,
     RenameCollectionResponse,
     RenameSessionRequest,
-    SearchHit,
     SearchInput,
     SearchResponse,
     SessionInfo,
-    SourceInfo,
     StatsResponse,
     UploadDocumentResponse,
 )
@@ -191,39 +189,6 @@ def stage_upload_file(file_obj, suffix: str) -> tuple[str, str]:
             digest.update(chunk)
             buffer.write(chunk)
         return buffer.name, digest.hexdigest()
-
-
-PREVIEW_MAX_CHARS = 280
-
-
-def preview_content(page_content: str | None) -> str:
-    return (page_content or "")[:PREVIEW_MAX_CHARS].strip()
-
-
-def build_sources(documents) -> list[SourceInfo]:
-    sources = []
-    seen = set()
-    for document in documents or []:
-        metadata = document.metadata or {}
-        key = (
-            metadata.get("file_id"),
-            metadata.get("filename") or metadata.get("source"),
-            metadata.get("page"),
-            metadata.get("chunk_index"),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        sources.append(
-            SourceInfo(
-                file_id=metadata.get("file_id"),
-                filename=metadata.get("filename") or metadata.get("source"),
-                page=metadata.get("page"),
-                chunk_index=metadata.get("chunk_index"),
-                preview=preview_content(document.page_content),
-            )
-        )
-    return sources
 
 
 def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval options
@@ -372,24 +337,6 @@ def chat(query_input: QueryInput, request: Request):
     return QueryResponse(
         answer=answer, session_id=session_id, model=query_input.model, sources=sources
     )
-
-
-def build_search_hits(documents) -> list[SearchHit]:
-    hits = []
-    for rank, document in enumerate(documents or [], start=1):
-        metadata = document.metadata or {}
-        hits.append(
-            SearchHit(
-                rank=rank,
-                preview=preview_content(document.page_content),
-                file_id=metadata.get("file_id"),
-                filename=metadata.get("filename") or metadata.get("source"),
-                page=metadata.get("page"),
-                chunk_index=metadata.get("chunk_index"),
-                collection=metadata.get("collection"),
-            )
-        )
-    return hits
 
 
 @app.post("/search", response_model=SearchResponse)
@@ -682,27 +629,6 @@ def _require_session_id(session_id: str) -> str:
     if not session_id.strip():
         raise HTTPException(status_code=400, detail="session_id must not be empty.")
     return session_id
-
-
-ROLE_HEADINGS = {"human": "User", "ai": "Assistant"}
-
-
-def render_session_markdown(session_id: str, label: str | None, messages: list[dict]) -> str:
-    """Render a conversation as a markdown transcript."""
-    title = label or session_id
-    lines = [
-        f"# Conversation: {title}",
-        "",
-        f"- Session: `{session_id}`",
-        f"- Exported: {datetime.now(UTC).isoformat(timespec='seconds')}",
-        "",
-    ]
-    for message in messages:
-        lines.append(f"## {ROLE_HEADINGS.get(message['role'], message['role'])}")
-        lines.append("")
-        lines.append(message["content"])
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
 
 
 @app.get("/sessions/{session_id}/history", response_model=list[ChatMessage])
