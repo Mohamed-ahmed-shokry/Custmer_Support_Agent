@@ -52,6 +52,25 @@ def test_token_quota_enforces_daily_budget():
     assert security.check_token_quota("other", 100, 100, today="2026-09-04") is True
 
 
+def test_rate_limit_evicts_expired_client_state():
+    security.reset()
+    assert security.check_rate_limit("gone-quiet", 1, now=100.0) is True
+    # Window fully expires: the next call starts fresh and leaves one entry.
+    assert security.check_rate_limit("gone-quiet", 1, now=200.0) is True
+    assert security.check_rate_limit("gone-quiet", 1, now=200.0) is False
+
+
+def test_token_usage_evicts_previous_days():
+    security.reset()
+    security.record_token_usage("ip", 60, today="2026-09-04")
+
+    carried_tokens = 10
+    security.record_token_usage("ip", carried_tokens, today="2026-09-05")
+
+    assert security.get_token_usage("ip", today="2026-09-04") == 0
+    assert security.get_token_usage("ip", today="2026-09-05") == carried_tokens
+
+
 def test_public_paths_cover_probes_metrics_and_docs():
     for path in (
         "/health",

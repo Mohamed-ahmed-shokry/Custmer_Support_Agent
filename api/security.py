@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import hmac
 import threading
 import time
 from collections import deque
@@ -42,11 +43,14 @@ def is_public_path(path: str) -> bool:
 def check_api_key(provided_key: str | None, configured_key: str) -> bool:
     """Return True when the request is authorized.
 
-    Auth is disabled when no key is configured (empty string).
+    Auth is disabled when no key is configured (empty string). Comparison
+    is constant-time to avoid leaking the key through timing.
     """
     if not configured_key:
         return True
-    return provided_key == configured_key
+    if not provided_key:
+        return False
+    return hmac.compare_digest(provided_key, configured_key)
 
 
 def check_rate_limit(key: str, limit_per_min: int, now: float | None = None) -> bool:
@@ -59,9 +63,16 @@ def check_rate_limit(key: str, limit_per_min: int, now: float | None = None) -> 
     current = time.monotonic() if now is None else now
     cutoff = current - WINDOW_SECONDS
     with _lock:
-        hits = _hits.setdefault(key, deque())
-        while hits and hits[0] <= cutoff:
-            hits.popleft()
+        hits = _hits.get(key)
+        if hits is None:
+            hits = _hits[key] = deque()
+        else:
+            while hits and hits[0] <= cutoff:
+                hits.popleft()
+            if not hits:
+                # Drop fully-expired windows so idle clients don't linger.
+                del _hits[key]
+                hits = _hits[key] = deque()
         if len(hits) >= limit_per_min:
             return False
         hits.append(current)
@@ -70,6 +81,13 @@ def check_rate_limit(key: str, limit_per_min: int, now: float | None = None) -> 
 
 def _today() -> str:
     return datetime.date.today().isoformat()
+
+
+def _evict_old_usage(day: str) -> None:
+    """Drop usage entries from previous days to bound memory growth."""
+    stale = [entry for entry in _token_usage if entry[1] != day]
+    for entry in stale:
+        del _token_usage[entry]
 
 
 def check_token_quota(
@@ -83,6 +101,7 @@ def check_token_quota(
         return True
     day = today if today is not None else _today()
     with _lock:
+        _evict_old_usage(day)
         return _token_usage.get((key, day), 0) + additional_tokens <= daily_budget
 
 
@@ -90,6 +109,7 @@ def record_token_usage(key: str, tokens: int, today: str | None = None) -> int:
     """Add `tokens` to the client's daily usage, returning the new total."""
     day = today if today is not None else _today()
     with _lock:
+        _evict_old_usage(day)
         total = _token_usage.get((key, day), 0) + tokens
         _token_usage[(key, day)] = total
         return total
