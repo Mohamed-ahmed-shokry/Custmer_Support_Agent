@@ -123,6 +123,12 @@ def get_db_connection():
     return conn
 
 
+def ping_db() -> None:
+    """Verify database connectivity with a cheap query (used by readiness)."""
+    with closing(get_db_connection()) as conn:
+        conn.execute("SELECT 1").fetchone()
+
+
 def create_application_logs():
     with closing(get_db_connection()) as conn:
         conn.execute(_CREATE_APP_LOGS_TABLE)

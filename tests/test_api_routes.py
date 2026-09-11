@@ -675,12 +675,23 @@ def test_prune_sessions_requires_before_param():
 
 
 def test_submit_feedback_records_rating(monkeypatch):
+    monkeypatch.setattr(
+        main, "get_chat_history", lambda session_id: [{"role": "human", "content": "Hi"}]
+    )
     monkeypatch.setattr(main, "insert_feedback", lambda session_id, rating: 3)
 
     response = client.post("/feedback", json={"session_id": "session-1", "rating": 1})
 
     assert response.status_code == HTTP_OK
     assert response.json() == {"message": "Feedback recorded.", "feedback_id": 3}
+
+
+def test_submit_feedback_returns_404_for_unknown_session(monkeypatch):
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+
+    response = client.post("/feedback", json={"session_id": "missing", "rating": 1})
+
+    assert response.status_code == HTTP_NOT_FOUND
 
 
 def test_submit_feedback_rejects_invalid_rating():

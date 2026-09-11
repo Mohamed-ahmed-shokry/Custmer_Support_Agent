@@ -37,6 +37,7 @@ from api.db_utils import (
     insert_document_record,
     insert_feedback,
     normalize_session_label,
+    ping_db,
     prune_sessions_before,
     rename_collection,
     rename_session,
@@ -240,7 +241,7 @@ def health_live():
 def health_ready():
     checks: dict[str, str] = {}
     try:
-        get_all_documents()
+        ping_db()
         checks["sqlite"] = "ok"
     except Exception as exc:
         checks["sqlite"] = f"error: {exc}"
@@ -758,6 +759,10 @@ def delete_session_route(session_id: str):
 
 @app.post("/feedback", response_model=FeedbackResponse)
 def submit_feedback(feedback: FeedbackInput):
+    if not get_chat_history(feedback.session_id):
+        raise HTTPException(
+            status_code=404, detail=f"Session {feedback.session_id} was not found."
+        )
     feedback_id = insert_feedback(feedback.session_id, feedback.rating)
     increment("feedback_up" if feedback.rating == 1 else "feedback_down")
     return FeedbackResponse(message="Feedback recorded.", feedback_id=feedback_id)
