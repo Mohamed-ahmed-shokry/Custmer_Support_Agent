@@ -88,6 +88,13 @@ filter with `?collection=<name>`.
 collection (the `default` collection is protected → `400`; unknown → `404`;
 Chroma failure → `500`).
 
+`PATCH /collections/{name}` with `{"collection": "new-name"}` → retags every
+document and chunk (`409` when the target exists, `404` when the source is
+empty, `422` for an invalid name).
+
+`GET /stats` → `{documents, collections, sessions, messages}` library totals
+computed with `COUNT` queries.
+
 ## Search
 
 `POST /search` runs the retrieval pipeline without spending chat tokens:
