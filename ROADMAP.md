@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.13.0, 2026-09-04)
+## Current State (v0.14.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -28,7 +28,8 @@
   deployment guide
 - Upload dedup via content hash, bounded history window, shared preview helper
 - Library stats endpoint, collection rename (API + UI), staging overlay
-- 135 tests passing; ruff + mypy clean (CI gates)
+- Bulk upload endpoint with per-file results, presenters module, Retry-After
+- 143 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -91,13 +92,13 @@ Run the library with confidence (no new deps).
 - [x] Staging compose overlay + environment docs
 - [x] Quality: upload staging helper, shared quota pre-check
 
-## v0.14.0 plan — Bulk ops & code health (IN PROGRESS)
+## v0.14.0 plan — Bulk ops & code health ✅ COMPLETED
 
 Onboard corpora faster with cleaner internals (no new deps).
 
-- [ ] Bulk upload endpoint (`POST /upload-docs`) + multi-file UI
-- [ ] Extract `api/presenters.py` (preview/sources/hits/markdown) with unit tests
-- [ ] `Retry-After` header on rate-limit responses
+- [x] Bulk upload endpoint (`POST /upload-docs`) + multi-file UI
+- [x] Extract `api/presenters.py` (preview/sources/hits/markdown) with unit tests
+- [x] `Retry-After` header on rate-limit responses
 
 ## v0.15.0 candidates (next)
 
