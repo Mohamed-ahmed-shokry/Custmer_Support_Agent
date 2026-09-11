@@ -12,6 +12,7 @@ from app.api_utils import (
     get_metrics,
     get_quota,
     get_session_history,
+    get_stats,
     list_collections,
     list_documents,
     list_sessions,
@@ -175,6 +176,14 @@ def _render_ops_metrics():
     if not metrics:
         st.sidebar.caption("Metrics unavailable.")
         return
+
+    stats = get_stats()
+    if stats:
+        st.sidebar.caption(
+            f"Library: {stats.get('documents', 0)} docs · "
+            f"{stats.get('collections', 0)} collections · "
+            f"{stats.get('sessions', 0)} sessions"
+        )
 
     requests_total = (
         metrics.get("chat_requests", 0)
