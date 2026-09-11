@@ -1,0 +1,20 @@
+# Staging overlay: production-like behavior with debug-friendly settings.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
+services:
+  api:
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment:
+      LOG_FORMAT: json
+      LOG_LEVEL: DEBUG
+      RATE_LIMIT_PER_MIN: 120
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  ui:
+    restart: "no"
