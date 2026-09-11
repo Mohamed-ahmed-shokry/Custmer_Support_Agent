@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.15.0, 2026-09-04)
+## Current State (v0.16.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -30,7 +30,8 @@
 - Library stats endpoint, collection rename (API + UI), staging overlay
 - Bulk upload endpoint with per-file results, presenters module, Retry-After
 - Human feedback loop: ratings store, endpoint, metrics, UI widget
-- 148 tests passing; ruff + mypy clean (CI gates)
+- Session retention pruning, hardened security helpers, ADR-002
+- 155 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -109,13 +110,16 @@ Collect answer ratings to ground future eval (no new deps).
 - [x] Streamlit feedback widget under assistant answers
 - [x] Quality: consistent route naming (`*_route` suffix)
 
-## v0.16.0 plan — Retention & maintenance (IN PROGRESS)
+## v0.16.0 plan — Retention & maintenance ✅ COMPLETED
 
 Keep a growing library healthy (no new deps).
 
-- [ ] Feedback totals in `GET /stats`
-- [ ] Session retention prune (`DELETE /sessions?before=...`)
-- [ ] Quality: shared collection/session param normalization
+- [x] Feedback totals in `GET /stats`
+- [x] Session retention prune (`DELETE /sessions?before=...`)
+- [x] Quality: shared collection/session param normalization
+- [x] Security hardening: constant-time keys, bounded limiter state,
+  feedback orphans removed, lightweight readiness probe
+- [x] ADR-002 (per-process limits) + packaging version sync
 
 ## v0.17.0 candidates (next)
 
