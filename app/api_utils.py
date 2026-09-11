@@ -102,6 +102,25 @@ def parse_sse_line(line):
     return event_type, data
 
 
+def upload_documents(files, collection="default"):
+    try:
+        multipart = [("files", (file.name, file, file.type)) for file in files]
+        response = requests.post(
+            f"{API_BASE_URL}/upload-docs",
+            params={"collection": collection},
+            files=multipart,
+            timeout=300,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to upload files", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while uploading the files: {str(e)}")
+        return None
+
+
 def upload_document(file, collection="default"):
     try:
         files = {"file": (file.name, file, file.type)}

@@ -19,6 +19,7 @@ from app.api_utils import (
     rename_collection,
     rename_session,
     upload_document,
+    upload_documents,
 )
 
 MODEL_OPTIONS = [model.value for model in ModelName]
@@ -216,23 +217,36 @@ def _render_ops_metrics():
 
 def _render_upload_document(active_collection):
     st.sidebar.header("Upload Document")
-    uploaded_file = st.sidebar.file_uploader(
-        "Choose a file", type=["pdf", "docx", "html", "md", "txt", "csv"]
+    uploaded_files = st.sidebar.file_uploader(
+        "Choose file(s)",
+        type=["pdf", "docx", "html", "md", "txt", "csv"],
+        accept_multiple_files=True,
     )
     new_collection = st.sidebar.text_input(
         "New collection (optional)", key="new_collection", placeholder="e.g. clients-acme"
     )
-    if uploaded_file is not None and st.sidebar.button("Upload"):
+    if uploaded_files and st.sidebar.button("Upload"):
         target = (new_collection or "").strip() or active_collection or "default"
         with st.spinner("Uploading..."):
-            upload_response = upload_document(uploaded_file, target)
-            if upload_response:
-                st.sidebar.success(
-                    f"File '{uploaded_file.name}' uploaded successfully with ID "
-                    f"{upload_response['file_id']}."
-                )
-                st.session_state.collections = list_collections()
-                st.session_state.documents = list_documents(active_collection)
+            if len(uploaded_files) == 1:
+                upload_response = upload_document(uploaded_files[0], target)
+                if upload_response:
+                    st.sidebar.success(
+                        f"File '{uploaded_files[0].name}' uploaded successfully with ID "
+                        f"{upload_response['file_id']}."
+                    )
+            else:
+                bulk_response = upload_documents(uploaded_files, target)
+                if bulk_response:
+                    st.sidebar.success(
+                        f"Uploaded {bulk_response['uploaded']} of "
+                        f"{bulk_response['uploaded'] + bulk_response['failed']} files."
+                    )
+                    for item in bulk_response["results"]:
+                        if item["status"] == "error":
+                            st.sidebar.error(f"{item['filename']}: {item['detail']}")
+            st.session_state.collections = list_collections()
+            st.session_state.documents = list_documents(active_collection)
 
 
 def _render_refresh_documents(active_collection):
