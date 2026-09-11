@@ -70,6 +70,7 @@ from api.pydantic_models import (
     UploadDocumentResponse,
 )
 from api.security import (
+    WINDOW_SECONDS,
     check_api_key,
     check_rate_limit,
     check_token_quota,
@@ -143,7 +144,10 @@ async def add_request_id(request: Request, call_next):
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded. Try again later."},
-                headers={"X-Request-ID": request_id},
+                headers={
+                    "X-Request-ID": request_id,
+                    "Retry-After": str(int(WINDOW_SECONDS)),
+                },
             )
     started = time.perf_counter()
     response = await call_next(request)

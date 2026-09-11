@@ -492,6 +492,7 @@ def test_chat_rate_limit_blocks_after_quota(monkeypatch):
             json={"question": "Hello", "model": "gpt-4o-mini"},
         )
         assert limited.status_code == HTTP_TOO_MANY_REQUESTS
+        assert limited.headers["Retry-After"] == "60"
     finally:
         monkeypatch.setattr(settings, "rate_limit_per_min", 0)
         security.reset()
