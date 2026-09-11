@@ -201,6 +201,35 @@ def delete_collection_from_chroma(collection: str) -> int:
         return -1
 
 
+def rename_collection_in_chroma(old: str, new: str) -> int:
+    """Retag every chunk of a collection, returning the chunk count (-1 on error)."""
+    try:
+        vectorstore = get_vectorstore()
+        docs = vectorstore.get(
+            where={"collection": old}, include=["documents", "metadatas"]
+        )
+        document_ids = list(docs.get("ids", []))
+        if not document_ids:
+            return 0
+        texts = docs.get("documents", []) or []
+        metas = docs.get("metadatas", []) or []
+        if len(texts) != len(document_ids) or len(metas) != len(document_ids):
+            logger.error("Incomplete chunk payload while renaming collection %s", old)
+            return -1
+        documents = [
+            Document(page_content=text, metadata={**(meta or {}), "collection": new})
+            for text, meta in zip(texts, metas, strict=True)
+        ]
+        vectorstore.update_documents(ids=document_ids, documents=documents)
+        logger.info(
+            "Renamed %s chunks from collection %s to %s", len(document_ids), old, new
+        )
+        return len(document_ids)
+    except Exception:
+        logger.exception("Error renaming collection %s to %s in Chroma", old, new)
+        return -1
+
+
 def _metadata_filter(
     file_ids: list[int] | None = None,
     collections: list[str] | None = None,

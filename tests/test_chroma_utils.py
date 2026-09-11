@@ -201,6 +201,48 @@ def test_delete_collection_from_chroma_reports_errors(monkeypatch):
     assert chroma_utils.delete_collection_from_chroma("acme") == -1
 
 
+def test_rename_collection_in_chroma_retags_chunks(monkeypatch):
+    class RenamingVectorstore(FakeVectorstore):
+        def __init__(self):
+            super().__init__(ids=["1:0", "1:1"])
+            self.updated = None
+
+        def get(self, where, include=None):
+            assert where == {"collection": "acme"}
+            assert include == ["documents", "metadatas"]
+            return {
+                "ids": self.ids,
+                "documents": ["first chunk", "second chunk"],
+                "metadatas": [
+                    {"file_id": 1, "chunk_index": 0, "collection": "acme"},
+                    {"file_id": 1, "chunk_index": 1, "collection": "acme"},
+                ],
+            }
+
+        def update_documents(self, ids, documents):
+            self.updated = (ids, documents)
+
+    vectorstore = RenamingVectorstore()
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    expected_ids = ["1:0", "1:1"]
+    assert chroma_utils.rename_collection_in_chroma("acme", "globex") == len(expected_ids)
+    ids, documents = vectorstore.updated
+    assert ids == expected_ids
+    assert all(doc.metadata["collection"] == "globex" for doc in documents)
+    assert documents[0].metadata["file_id"] == 1
+
+
+def test_rename_collection_in_chroma_handles_empty_collection(monkeypatch):
+    class EmptyVectorstore(FakeVectorstore):
+        def get(self, where, include=None):
+            return {"ids": [], "documents": [], "metadatas": []}
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", EmptyVectorstore)
+
+    assert chroma_utils.rename_collection_in_chroma("acme", "globex") == 0
+
+
 def test_index_document_retries_transient_failures(monkeypatch):
     documents = [Document(page_content="Chunk", metadata={})]
 

@@ -148,6 +148,17 @@ def test_get_library_stats_counts_without_loading_rows(monkeypatch, tmp_path):
     }
 
 
+def test_rename_collection_moves_records(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_document_record("a.pdf", "clients-acme")
+    db_utils.insert_document_record("b.pdf", "default")
+
+    assert db_utils.rename_collection("clients-acme", "clients-globex") == 1
+    assert db_utils.rename_collection("missing", "other") == 0
+    assert db_utils.get_all_collections() == ["clients-globex", "default"]
+
+
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 

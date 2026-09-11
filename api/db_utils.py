@@ -52,6 +52,7 @@ _SELECT_DOC_RECORD = (
 
 _DELETE_DOC_RECORD = "DELETE FROM document_store WHERE id = ?"
 _DELETE_DOCS_BY_COLLECTION = "DELETE FROM document_store WHERE collection = ?"
+_RENAME_COLLECTION = "UPDATE document_store SET collection = ? WHERE collection = ?"
 
 _SELECT_ALL_DOCS = (
     "SELECT id, filename, collection, upload_timestamp FROM document_store "
@@ -202,6 +203,15 @@ def delete_documents_by_collection(collection):
         deleted = cursor.rowcount
         conn.commit()
         return deleted
+
+
+def rename_collection(old, new):
+    """Move every document record to another collection, returning the count."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_RENAME_COLLECTION, (new, old))
+        renamed = cursor.rowcount
+        conn.commit()
+        return renamed
 
 
 def get_all_documents(collection=None):
