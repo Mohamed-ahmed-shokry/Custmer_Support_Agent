@@ -645,6 +645,27 @@ def test_delete_session_rejects_blank_session_id():
     assert response.status_code == HTTP_BAD_REQUEST
 
 
+def test_submit_feedback_records_rating(monkeypatch):
+    monkeypatch.setattr(main, "insert_feedback", lambda session_id, rating: 3)
+
+    response = client.post("/feedback", json={"session_id": "session-1", "rating": 1})
+
+    assert response.status_code == HTTP_OK
+    assert response.json() == {"message": "Feedback recorded.", "feedback_id": 3}
+
+
+def test_submit_feedback_rejects_invalid_rating():
+    response = client.post("/feedback", json={"session_id": "session-1", "rating": 0})
+
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_submit_feedback_rejects_blank_session_id():
+    response = client.post("/feedback", json={"session_id": "   ", "rating": -1})
+
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
 def test_export_session_returns_markdown_transcript(monkeypatch):
     history = [
         {"role": "human", "content": "When is rent due?"},

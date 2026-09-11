@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator
 
@@ -166,6 +166,23 @@ class RenameCollectionResponse(BaseModel):
 
 class DeleteSessionResponse(BaseModel):
     message: str
+
+
+class FeedbackInput(BaseModel):
+    session_id: NonEmptyString
+    rating: Literal[1, -1]
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def strip_session_id(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+
+class FeedbackResponse(BaseModel):
+    message: str
+    feedback_id: int
 
 
 class QuotaInfo(BaseModel):

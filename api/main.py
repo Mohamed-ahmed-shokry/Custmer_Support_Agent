@@ -34,6 +34,7 @@ from api.db_utils import (
     get_library_stats,
     insert_application_logs,
     insert_document_record,
+    insert_feedback,
     normalize_session_label,
     rename_collection,
     rename_session,
@@ -56,6 +57,8 @@ from api.pydantic_models import (
     DeleteFileRequest,
     DeleteSessionResponse,
     DocumentInfo,
+    FeedbackInput,
+    FeedbackResponse,
     HealthResponse,
     QueryInput,
     QueryResponse,
@@ -726,6 +729,13 @@ def delete_session_route(session_id: str):
             status_code=404, detail=f"Session {session_id} was not found."
         )
     return DeleteSessionResponse(message=f"Session {session_id} deleted.")
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def submit_feedback(feedback: FeedbackInput):
+    feedback_id = insert_feedback(feedback.session_id, feedback.rating)
+    increment("feedback_up" if feedback.rating == 1 else "feedback_down")
+    return FeedbackResponse(message="Feedback recorded.", feedback_id=feedback_id)
 
 
 @app.patch("/sessions/{session_id}", response_model=SessionInfo)
