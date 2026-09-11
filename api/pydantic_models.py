@@ -197,6 +197,8 @@ class StatsResponse(BaseModel):
     collections: int
     sessions: int
     messages: int
+    feedback_up: int = 0
+    feedback_down: int = 0
 
 
 class ChatMessage(BaseModel):

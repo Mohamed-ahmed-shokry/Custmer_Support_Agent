@@ -254,11 +254,19 @@ def get_library_stats():
             "SELECT COUNT(DISTINCT session_id) FROM application_logs"
         ).fetchone()[0]
         messages = cursor.execute("SELECT COUNT(*) FROM application_logs").fetchone()[0]
+        feedback_up = cursor.execute(
+            "SELECT COUNT(*) FROM feedback WHERE rating = 1"
+        ).fetchone()[0]
+        feedback_down = cursor.execute(
+            "SELECT COUNT(*) FROM feedback WHERE rating = -1"
+        ).fetchone()[0]
         return {
             "documents": documents,
             "collections": collections,
             "sessions": sessions,
             "messages": messages,
+            "feedback_up": feedback_up,
+            "feedback_down": feedback_down,
         }
 
 

@@ -545,7 +545,14 @@ def test_quota_reports_usage_against_budget(monkeypatch):
 
 
 def test_stats_returns_library_totals(monkeypatch):
-    totals = {"documents": 2, "collections": 1, "sessions": 2, "messages": 3}
+    totals = {
+        "documents": 2,
+        "collections": 1,
+        "sessions": 2,
+        "messages": 3,
+        "feedback_up": 1,
+        "feedback_down": 0,
+    }
     monkeypatch.setattr(main, "get_library_stats", lambda: totals)
 
     response = client.get("/stats")

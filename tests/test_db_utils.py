@@ -133,6 +133,8 @@ def test_get_library_stats_counts_without_loading_rows(monkeypatch, tmp_path):
         "collections": 0,
         "sessions": 0,
         "messages": 0,
+        "feedback_up": 0,
+        "feedback_down": 0,
     }
 
     db_utils.insert_document_record("a.pdf", "acme")
@@ -140,12 +142,16 @@ def test_get_library_stats_counts_without_loading_rows(monkeypatch, tmp_path):
     db_utils.insert_application_logs("s1", "Q1", "A1", "gpt-4o-mini")
     db_utils.insert_application_logs("s1", "Q2", "A2", "gpt-4o-mini")
     db_utils.insert_application_logs("s2", "Q3", "A3", "gpt-4o-mini")
+    db_utils.insert_feedback("s1", 1)
+    db_utils.insert_feedback("s2", -1)
 
     assert db_utils.get_library_stats() == {
         "documents": 2,
         "collections": 1,
         "sessions": 2,
         "messages": 3,
+        "feedback_up": 1,
+        "feedback_down": 1,
     }
 
 
