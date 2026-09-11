@@ -137,8 +137,10 @@ SQLite record (`404` when unknown).
   to list and reload past conversations.
 - `PATCH /sessions/{session_id}` with `{"label": "..."}` → renames a session
   (1–80 chars; `404` when unknown, `422` for a blank/oversize label).
-- `DELETE /sessions/{session_id}` → removes the session history and label
-  (`400` for a blank id, `404` when unknown).
+- `DELETE /sessions/{session_id}` → removes the session history, label,
+  and feedback (`400` for a blank id, `404` when unknown).
+- `DELETE /sessions?before=<ISO datetime>` → prunes sessions inactive since
+  the cutoff, including labels and feedback (`400` for a bad date).
 - `GET /sessions/{session_id}/export` → the conversation as a markdown
   transcript download (`404` when the session has no history).
 
