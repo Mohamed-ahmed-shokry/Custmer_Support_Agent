@@ -6,6 +6,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -36,6 +37,7 @@ from api.db_utils import (
     insert_document_record,
     insert_feedback,
     normalize_session_label,
+    prune_sessions_before,
     rename_collection,
     rename_session,
     truncate_history,
@@ -60,6 +62,7 @@ from api.pydantic_models import (
     FeedbackInput,
     FeedbackResponse,
     HealthResponse,
+    PruneSessionsResponse,
     QueryInput,
     QueryResponse,
     QuotaInfo,
@@ -718,6 +721,25 @@ def export_session(session_id: str):
         markdown,
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{session_id}.md"'},
+    )
+
+
+@app.delete("/sessions", response_model=PruneSessionsResponse)
+def prune_sessions(before: str):
+    """Delete sessions inactive since `before` (ISO datetime), with labels+feedback."""
+    try:
+        cutoff = datetime.fromisoformat(before)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Query param 'before' must be an ISO datetime."
+        ) from exc
+    if cutoff.tzinfo is not None:
+        cutoff = cutoff.astimezone(UTC).replace(tzinfo=None)
+    cutoff_iso = cutoff.isoformat(sep=" ")
+    deleted = prune_sessions_before(cutoff_iso)
+    return PruneSessionsResponse(
+        message=f"Pruned {deleted} session(s) inactive since {cutoff_iso}.",
+        deleted_sessions=deleted,
     )
 
 

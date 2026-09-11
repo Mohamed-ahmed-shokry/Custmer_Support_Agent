@@ -168,6 +168,11 @@ class DeleteSessionResponse(BaseModel):
     message: str
 
 
+class PruneSessionsResponse(BaseModel):
+    message: str
+    deleted_sessions: int
+
+
 class FeedbackInput(BaseModel):
     session_id: NonEmptyString
     rating: Literal[1, -1]

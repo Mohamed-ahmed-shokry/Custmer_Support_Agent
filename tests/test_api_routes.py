@@ -652,6 +652,28 @@ def test_delete_session_rejects_blank_session_id():
     assert response.status_code == HTTP_BAD_REQUEST
 
 
+def test_prune_sessions_returns_deleted_count(monkeypatch):
+    monkeypatch.setattr(main, "prune_sessions_before", lambda cutoff: 2)
+
+    response = client.delete("/sessions", params={"before": "2021-01-01T00:00:00"})
+
+    assert response.status_code == HTTP_OK
+    expected_deleted = 2
+    assert response.json()["deleted_sessions"] == expected_deleted
+
+
+def test_prune_sessions_rejects_invalid_date():
+    response = client.delete("/sessions", params={"before": "not-a-date"})
+
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_prune_sessions_requires_before_param():
+    response = client.delete("/sessions")
+
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
 def test_submit_feedback_records_rating(monkeypatch):
     monkeypatch.setattr(main, "insert_feedback", lambda session_id, rating: 3)
 
