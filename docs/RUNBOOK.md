@@ -50,3 +50,6 @@
 - Rename one with `PATCH /sessions/{id}` (`{"label": "..."}`, 1–80 chars).
 - Remove one with `DELETE /sessions/{id}` (also available in the Streamlit
   sidebar). Deletion only clears chat history, never documents.
+- Retain selectively: `DELETE /sessions?before=<ISO datetime>` prunes
+  sessions (plus labels and feedback) inactive since the cutoff — schedule
+  it (e.g. cron + `curl`) to bound database growth.
