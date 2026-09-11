@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.13.0)
+# Customer Support RAG Agent (v0.14.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -101,6 +101,7 @@ Optional:
 - `USE_RERANK` (default `false`)
 - `EXPANSION_COUNT` (default `3`)
 - `MAX_UPLOAD_MB` (default `25`)
+- `MAX_BULK_FILES` (default `10`)
 - `LOG_FORMAT` (`text` or `json`, default `text`)
 - `LOG_LEVEL` (default `INFO`)
 - `API_KEY` (empty = auth disabled; when set, send `X-API-Key`)
@@ -156,6 +157,7 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
   `event: sources` metadata, `event: error` on failure).
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
+- `POST /upload-docs` — bulk upload with per-file results.
 - `GET /list-docs`, `POST /delete-doc` — document metadata management.
 - `GET /collections`, `PATCH`/`DELETE /collections/{name}` — collection lifecycle.
 - `GET /stats` — library totals (documents, collections, sessions, messages).
