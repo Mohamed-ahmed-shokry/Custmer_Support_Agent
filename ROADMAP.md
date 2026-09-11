@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.14.0, 2026-09-04)
+## Current State (v0.15.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -29,7 +29,8 @@
 - Upload dedup via content hash, bounded history window, shared preview helper
 - Library stats endpoint, collection rename (API + UI), staging overlay
 - Bulk upload endpoint with per-file results, presenters module, Retry-After
-- 143 tests passing; ruff + mypy clean (CI gates)
+- Human feedback loop: ratings store, endpoint, metrics, UI widget
+- 148 tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -100,13 +101,13 @@ Onboard corpora faster with cleaner internals (no new deps).
 - [x] Extract `api/presenters.py` (preview/sources/hits/markdown) with unit tests
 - [x] `Retry-After` header on rate-limit responses
 
-## v0.15.0 plan — Human feedback loop (IN PROGRESS)
+## v0.15.0 plan — Human feedback loop ✅ COMPLETED
 
 Collect answer ratings to ground future eval (no new deps).
 
-- [ ] Feedback store (`POST /feedback`, thumbs up/down + metrics)
-- [ ] Streamlit feedback widget under assistant answers
-- [ ] Quality: consistent route naming (`*_route` suffix)
+- [x] Feedback store (`POST /feedback`, thumbs up/down + metrics)
+- [x] Streamlit feedback widget under assistant answers
+- [x] Quality: consistent route naming (`*_route` suffix)
 
 ## v0.16.0 candidates (next)
 
