@@ -10,3 +10,8 @@ chroma_db/
 temp_*
 AI agent/
 AI Agent/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/

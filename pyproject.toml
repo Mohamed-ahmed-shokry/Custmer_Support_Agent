@@ -145,10 +145,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --strict-markers --strict-config"
+pythonpath = ["."]
+addopts = "-v --strict-markers --strict-config --cov=api --cov=app --cov-report=term-missing"
 markers = [
     "slow: marks tests as slow",
     "integration: marks tests as integration tests",
@@ -171,6 +169,7 @@ exclude_lines = [
 ]
 show_missing = true
 precision = 2
+fail_under = 80
 
 [tool.pre-commit-hooks]
 hooks = [
