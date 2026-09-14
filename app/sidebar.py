@@ -143,6 +143,7 @@ def _render_collection_picker():
     if st.session_state.get("docs_collection") != active:
         st.session_state.documents = list_documents(active)
         st.session_state.docs_collection = active
+        st.session_state.selected_doc_ids = []
     st.session_state.active_collection = active
     if active and active != "default":
         new_name = st.sidebar.text_input(
@@ -287,6 +288,26 @@ def _render_document_list():
                 st.sidebar.error(f"Failed to delete document with ID {selected_file_id}.")
 
 
+def _render_retrieval_filters():
+    st.sidebar.header("Retrieval Filters")
+    documents = st.session_state.get("documents", [])
+    if not documents:
+        st.session_state.selected_doc_ids = []
+        st.sidebar.caption("No documents in the active collection.")
+        st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
+        return
+    st.sidebar.multiselect(
+        "Restrict to document(s)",
+        options=[doc["id"] for doc in documents],
+        default=[],
+        format_func=lambda doc_id: next(
+            doc["filename"] for doc in documents if doc["id"] == doc_id
+        ),
+        key="selected_doc_ids",
+    )
+    st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
+
+
 def display_sidebar():
     st.sidebar.caption(f"API: {API_BASE_URL}")
     _render_health_status()
@@ -296,5 +317,6 @@ def display_sidebar():
     active_collection = _render_collection_picker()
     _render_upload_document(active_collection)
     _render_refresh_documents(active_collection)
+    _render_retrieval_filters()
     _render_document_list()
     _render_ops_metrics()
