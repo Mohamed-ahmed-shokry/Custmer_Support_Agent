@@ -62,23 +62,27 @@ def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request opt
     full_answer = ""
     sources = []
     session_id_result = session_id
+    pending_event = None
 
     with st.chat_message("assistant"):
         placeholder = st.empty()
         for line in stream:
             event_type, data = parse_sse_line(line)
+            if event_type is not None and data is None:
+                pending_event = event_type
+                continue
             if not data:
                 continue
-
-            if event_type == "message":
-                full_answer += data
-                placeholder.markdown(full_answer + "▌")
-            elif event_type == "sources":
+            if pending_event == "sources":
                 with contextlib.suppress(json.JSONDecodeError):
                     sources = json.loads(data)
-            elif event_type == "error":
+            elif pending_event == "error":
                 st.error(data)
                 return None, None, None
+            else:
+                full_answer += data
+                placeholder.markdown(full_answer + "▌")
+            pending_event = None
 
         placeholder.markdown(full_answer)
 

@@ -85,21 +85,21 @@ def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request option
         return None
 
 
-MIN_SSE_PARTS = 2
-
-
 def parse_sse_line(line):
-    """Parse a Server-Sent Events line."""
-    if not line or not line.startswith("data: "):
+    """Parse one Server-Sent Events line into (event_type, data).
+
+    The API emits answer chunks as ``data: <text>`` and metadata frames as
+    an ``event: <name>`` line immediately followed by a ``data: <json>``
+    line. An ``event`` line yields (event_type, None) so callers can pair
+    it with the next ``data`` line.
+    """
+    if not line:
         return None, None
-    event_type = "message"
     if line.startswith("event: "):
-        parts = line.split("\n")
-        if len(parts) >= MIN_SSE_PARTS:
-            event_type = parts[0][7:]
-            line = parts[1]
-    data = line[6:]  # Remove "data: " prefix
-    return event_type, data
+        return line[7:].strip(), None
+    if line.startswith("data: "):
+        return "message", line[6:]
+    return None, None
 
 
 def upload_documents(files, collection="default"):
