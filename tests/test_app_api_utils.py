@@ -131,6 +131,18 @@ def test_get_api_response_includes_optional_flags(fake_requests):
     }
 
 
+def test_get_api_response_includes_file_and_hybrid_flags(fake_requests):
+    fake_requests.response = FakeResponse(payload={"answer": "hi"})
+
+    api_utils.get_api_response(
+        "q", None, "gpt-4o-mini", file_ids=[3, 7], use_hybrid=True
+    )
+
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs["json"]["file_ids"] == [3, 7]
+    assert kwargs["json"]["use_hybrid"] is True
+
+
 def test_get_api_response_error_shows_error_and_returns_none(fake_requests, fake_st):
     fake_requests.response = FakeResponse(status_code=500, payload={"detail": "boom"})
 
@@ -177,6 +189,16 @@ def test_get_api_stream_response_includes_optional_flags(fake_requests):
         "expand_query": True,
         "rerank": True,
     }
+
+
+def test_get_api_stream_response_includes_file_and_hybrid_flags(fake_requests):
+    fake_requests.response = FakeResponse(stream_lines=["data: a"])
+
+    list(api_utils.get_api_stream_response("q", None, "m", file_ids=[3, 7], use_hybrid=True))
+
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs["json"]["file_ids"] == [3, 7]
+    assert kwargs["json"]["use_hybrid"] is True
 
 
 def test_get_api_stream_response_error_returns_none(fake_requests, fake_st):
