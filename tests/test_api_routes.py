@@ -582,6 +582,20 @@ def test_latency_metrics_recorded():
     assert body["latency_avg_seconds_other"] >= 0.0
 
 
+def test_search_latency_recorded_under_search_group(monkeypatch):
+    observability.reset()
+
+    def fake_select(**kwargs):
+        return SimpleNamespace(invoke=lambda question: [])
+
+    monkeypatch.setattr(main, "select_retriever", fake_select)
+
+    response = client.post("/search", json={"question": "Hello"})
+    assert response.status_code == HTTP_OK
+    body = client.get("/metrics.json").json()
+    assert body["latency_count_search"] >= 1
+
+
 def test_metrics_endpoints_return_counters():
     response = client.get("/metrics")
     assert response.status_code == HTTP_OK
