@@ -135,7 +135,9 @@ def _latency_group(path: str) -> str:
         return "chat"
     if path == "/chat/stream":
         return "stream"
-    if path == "/upload-doc":
+    if path == "/search":
+        return "search"
+    if path in {"/upload-doc", "/upload-docs"}:
         return "upload"
     return "other"
 
