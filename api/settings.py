@@ -55,6 +55,7 @@ class Settings:
         self.max_bulk_files = get_positive_int_env("MAX_BULK_FILES", 10)
         self.log_format = os.getenv("LOG_FORMAT", "text").strip().lower()
         self.log_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+        self.log_path = os.getenv("LOG_PATH", "")
         self.api_key = os.getenv("API_KEY", "")
         self.rate_limit_per_min = get_positive_int_env("RATE_LIMIT_PER_MIN", 0)
         self.token_daily_budget_est = get_positive_int_env("TOKEN_DAILY_BUDGET_EST", 0)

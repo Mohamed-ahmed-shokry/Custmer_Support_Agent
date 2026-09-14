@@ -5,6 +5,13 @@
 - Symptom: chat/indexing calls fail with authentication errors.
 - Fix: copy `.env.example` to `.env`, set `OPENAI_API_KEY`, restart the API.
 
+## Logs go to stderr, JSON when told to
+
+- Logs ship to **stderr** so containers capture them via `docker logs`.
+- `LOG_FORMAT=json` emits one JSON object per line.
+- Set `LOG_PATH=/path/to/app.log` to additionally write to a file (empty
+  default = stderr only).
+
 ## Uploads fail with 413
 
 - Symptom: `File exceeds the N MB upload limit.`

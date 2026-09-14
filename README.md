@@ -30,7 +30,8 @@ A local-first customer support assistant for real estate and property management
 - Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher with previews, rename, session deletion, and quota display.
 - Answer feedback (thumbs up/down under each answer, stored for future eval).
 - Dark-mode UI theme (`.streamlit/config.toml`, shipped in the image).
-- File logs redact emails, phone numbers, and SSN-like patterns.
+- Logs (to stderr, optionally `LOG_PATH`) redact emails, phone numbers, and
+  SSN-like patterns.
 - Local SQLite logging for sessions and document records.
 - Observability: `X-Request-ID` tracing, `/health/live`, `/health/ready`,
   `/metrics` (Prometheus text) and `/metrics.json` with per-route latency

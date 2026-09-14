@@ -101,17 +101,22 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload)
 
 
+def build_log_formatter() -> logging.Formatter:
+    if settings.log_format == "json":
+        return JsonLogFormatter()
+    return logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+
+
 def configure_logging() -> None:
     level = getattr(logging, settings.log_level, logging.INFO)
-    handler = logging.FileHandler("app.log")
-    if settings.log_format == "json":
-        handler.setFormatter(JsonLogFormatter())
-    else:
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     root = logging.getLogger()
     root.handlers.clear()
-    root.addHandler(handler)
+    root.addHandler(logging.StreamHandler())
+    if settings.log_path:
+        root.addHandler(logging.FileHandler(settings.log_path))
     root.setLevel(level)
+    for handler in root.handlers:
+        handler.setFormatter(build_log_formatter())
 
 
 configure_logging()
