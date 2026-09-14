@@ -18,7 +18,7 @@ COPY api/ ./api/
 COPY app/ ./app/
 COPY .streamlit/ ./.streamlit/
 COPY docs/CORPUS.md ./docs/CORPUS.md
-COPY pyproject.toml pytest.ini ./
+COPY pyproject.toml ./
 EXPOSE 8000
 ENV APP_API_BASE_URL=http://localhost:8000 \
     CHROMA_PERSIST_DIR=/data/chroma_db \
