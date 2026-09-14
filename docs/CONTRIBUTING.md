@@ -9,8 +9,13 @@ imports — see `docs/ARCHITECTURE.md`).
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+pre-commit install
 Copy-Item .env.example .env
 ```
+
+`pre-commit install` wires the hooks in `.pre-commit-config.yaml`
+(ruff lint --fix, ruff format check, mypy) to run on every commit; CI runs
+the same commands on every push.
 
 ## Workflow
 
@@ -25,7 +30,8 @@ python -m mypy api/ app/ scripts/
 
 - `python -m pytest` also enforces an 80% coverage floor across `api/` and
   `app/` (configured in `pyproject.toml`).
-- `ruff --fix` and `black` are fine for formatting, but re-run tests after.
+- `ruff` is the sole formatter: `python -m ruff format` (auto-format) and
+  `python -m ruff check --fix`; re-run tests after editing.
 - New behavior needs tests: API routes in `tests/`, and Streamlit client
   behavior in `tests/test_app_ui.py` / `tests/test_app_api_utils.py` (using
   the `FakeStreamlit` helper in `tests/fake_streamlit.py`). Update docs
