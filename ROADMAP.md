@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.16.0, 2026-09-04)
+## Current State (v0.17.0, 2026-09-04)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -31,7 +31,10 @@
 - Bulk upload endpoint with per-file results, presenters module, Retry-After
 - Human feedback loop: ratings store, endpoint, metrics, UI widget
 - Session retention pruning, hardened security helpers, ADR-002
-- 155 tests passing; ruff + mypy clean (CI gates)
+- Client reliability: SSE parsing fixed on the wire format, error/source
+  events surfaced correctly in the UI
+- First unit-test coverage for the Streamlit client (`app/`)
+- 155+ tests passing; ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -121,10 +124,23 @@ Keep a growing library healthy (no new deps).
   feedback orphans removed, lightweight readiness probe
 - [x] ADR-002 (per-process limits) + packaging version sync
 
-## v0.17.0 candidates (next)
+## v0.17.0 plan — Client reliability & test coverage (IN PROGRESS)
+
+The API is ~90% covered but the entire Streamlit client (`app/`) has no
+unit tests and contains a true SSE wiring bug (no new deps).
+
+- [ ] Fix SSE events on the client: parse `event: sources` / `event: error`
+      frames correctly instead of concatenating JSON into the answer
+- [ ] Unit-test `app/api_utils.py` (every endpoint helper: success, error,
+      network-exception, non-JSON payload paths)
+- [ ] Smoke/wiring tests for `app/chat_interface.py` + `app/sidebar.py`
+      against a fake Streamlit
+- [ ] Quality: ignore coverage artifacts in git; coverage config checked in
+
+## v0.18.0 candidates (next)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
-- Staging/production environment targets
+- Staging/production environment targets (dependent on real credentials)
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
