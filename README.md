@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.16.0)
+# Customer Support RAG Agent (v0.17.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -195,3 +195,7 @@ python -m pytest
 python -m ruff check api/ app/ tests/ scripts/
 python -m mypy api/ app/ scripts/
 ```
+
+`pytest` also enforces an 80% coverage floor across `api/` and the
+Streamlit client (`app/`), which is unit-tested via a fake Streamlit helper
+in `tests/`.

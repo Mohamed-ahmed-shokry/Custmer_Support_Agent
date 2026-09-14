@@ -23,9 +23,13 @@ python -m ruff check api/ app/ tests/ scripts/
 python -m mypy api/ app/ scripts/
 ```
 
+- `python -m pytest` also enforces an 80% coverage floor across `api/` and
+  `app/` (configured in `pyproject.toml`).
 - `ruff --fix` and `black` are fine for formatting, but re-run tests after.
-- New API behavior needs tests in `tests/test_api_routes.py` (or a focused
-  module) plus docs updates (`README.md`, `docs/API.md` when endpoints change).
+- New behavior needs tests: API routes in `tests/`, and Streamlit client
+  behavior in `tests/test_app_ui.py` / `tests/test_app_api_utils.py` (using
+  the `FakeStreamlit` helper in `tests/fake_streamlit.py`). Update docs
+  (`README.md`, `docs/API.md`) when endpoints change.
 
 ## Compatibility rules
 
