@@ -141,6 +141,19 @@ class FakeStreamlit:
             return self.values[key]
         return options[index] if options else None
 
+    def multiselect(self, label, options=None, default=None, format_func=None, key=None):
+        self.calls.append(
+            Call(
+                "st",
+                "multiselect",
+                (label,),
+                {"options": options, "format_func": format_func, "default": default, "key": key},
+            )
+        )
+        if key in self.values:
+            return self.values[key]
+        return list(default) if default else []
+
     def text_input(self, label, value="", max_chars=None, key=None, placeholder=None):
         self.calls.append(
             Call(
