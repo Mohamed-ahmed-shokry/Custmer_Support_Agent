@@ -10,6 +10,5 @@ __pycache__/
 *.db
 chroma_db/
 temp_*
-main.ipynb
 docs/*.pdf
 docs/*.docx

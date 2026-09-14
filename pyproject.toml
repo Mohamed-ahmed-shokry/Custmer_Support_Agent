@@ -57,7 +57,7 @@ ignore = [
     "S101",  # assert statements in tests
     "T201",  # print statements in non-test code (for logging)
 ]
-per-file-ignores = { "tests/*" = ["S101", "T201"], "main.ipynb" = ["ALL"] }
+per-file-ignores = { "tests/*" = ["S101", "T201"] }
 
 [tool.ruff.format]
 quote-style = "double"
@@ -78,7 +78,6 @@ pretty = true
 namespace_packages = true
 explicit_package_bases = true
 files = ["api", "app"]
-exclude = ["main.ipynb"]
 
 [[tool.mypy.overrides]]
 module = "langchain.*"
@@ -142,7 +141,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["api", "app"]
-omit = ["tests/*", "main.ipynb"]
+omit = ["tests/*"]
 
 [tool.coverage.report]
 exclude_lines = [
