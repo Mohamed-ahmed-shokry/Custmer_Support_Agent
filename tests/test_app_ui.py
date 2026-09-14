@@ -162,6 +162,77 @@ def test_display_chat_interface_failed_response_keeps_session(monkeypatch):
     assert st.session_state["messages"] == [{"role": "user", "content": "hello"}]
 
 
+@pytest.mark.parametrize("streaming", [True, False])
+def test_display_chat_interface_forwards_doc_filters_and_hybrid(monkeypatch, streaming):
+    st = _session_state(messages=[], session_id="old")
+    st.values["use_streaming"] = streaming
+    st._chat_input_value = "query"
+    st.session_state["selected_doc_ids"] = [3, 7]
+    st.session_state["use_hybrid"] = True
+    monkeypatch.setattr(chat_interface, "st", st)
+
+    handler = "_handle_streaming_response" if streaming else "_handle_non_streaming_response"
+    other = "_handle_non_streaming_response" if streaming else "_handle_streaming_response"
+    captured = {}
+
+    def fake_handler(*args, **kwargs):
+        captured["file_ids"] = args[6]
+        captured["use_hybrid"] = args[7]
+        return ("hi", [], "new-s1")
+
+    monkeypatch.setattr(chat_interface, handler, fake_handler)
+    monkeypatch.setattr(chat_interface, other, lambda *a, **k: None)
+
+    chat_interface.display_chat_interface()
+
+    assert captured == {"file_ids": [3, 7], "use_hybrid": True}
+
+
+def test_handle_streaming_response_forwards_file_ids_and_hybrid(monkeypatch):
+    st = _session_state()
+    monkeypatch.setattr(chat_interface, "st", st)
+    captured = {}
+
+    def fake_stream(*args, **kwargs):
+        captured["args"] = args
+        return iter(["data: hi", ""])
+
+    monkeypatch.setattr(chat_interface, "get_api_stream_response", fake_stream)
+
+    chat_interface._handle_streaming_response(
+        "q", "s1", "m", None, None, None, [3, 7], True
+    )
+
+    assert captured["args"] == (
+        "q",
+        "s1",
+        "m",
+        None,
+        None,
+        None,
+        [3, 7],
+        True,
+    )
+
+
+def test_handle_non_streaming_response_forwards_file_ids_and_hybrid(monkeypatch):
+    st = _session_state()
+    monkeypatch.setattr(chat_interface, "st", st)
+    captured = {}
+
+    def fake_response(*args, **kwargs):
+        captured["args"] = args
+        return {"answer": "hi", "sources": [], "session_id": "s1"}
+
+    monkeypatch.setattr(chat_interface, "get_api_response", fake_response)
+
+    chat_interface._handle_non_streaming_response(
+        "q", "s1", "m", None, None, None, [3, 7], True
+    )
+
+    assert captured["args"] == ("q", "s1", "m", None, None, None, [3, 7], True)
+
+
 # --- sidebar ---------------------------------------------------------------
 
 
@@ -372,6 +443,54 @@ def test_render_document_list_empty_is_noop(monkeypatch):
     sidebar._render_document_list()
 
     assert not any(c.fn in {"selectbox", "button"} for c in st.calls)
+
+
+def test_render_retrieval_filters_with_documents(monkeypatch):
+    st = FakeStreamlit()
+    docs = [
+        {"filename": "a.pdf", "id": 3},
+        {"filename": "b.pdf", "id": 7},
+    ]
+    st.session_state["documents"] = docs
+    monkeypatch.setattr(sidebar, "st", st)
+    st.values["selected_doc_ids"] = [7]
+
+    sidebar._render_retrieval_filters()
+
+    multiselects = [c for c in st.calls if c.fn == "multiselect"]
+    assert len(multiselects) == 1
+    assert multiselects[0].kwargs["options"] == [3, 7]
+    assert multiselects[0].kwargs["key"] == "selected_doc_ids"
+    assert multiselects[0].kwargs["format_func"](7) == "b.pdf"
+    checkboxes = [c for c in st.calls if c.fn == "checkbox"]
+    assert len(checkboxes) == 1
+    assert checkboxes[0].kwargs["key"] == "use_hybrid"
+
+
+def test_render_retrieval_filters_without_documents_resets(monkeypatch):
+    st = FakeStreamlit()
+    st.session_state["documents"] = []
+    st.session_state["selected_doc_ids"] = [3]
+    monkeypatch.setattr(sidebar, "st", st)
+
+    sidebar._render_retrieval_filters()
+
+    assert st.session_state["selected_doc_ids"] == []
+    assert not any(c.fn == "multiselect" for c in st.calls)
+
+
+def test_render_collection_picker_resets_doc_filter_on_scope_change(monkeypatch):
+    st = FakeStreamlit()
+    st.values["collection_picker"] = "rentals"
+    st.session_state["docs_collection"] = "old"
+    st.session_state["selected_doc_ids"] = [3]
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_collections", lambda: ["default", "rentals"])
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+
+    sidebar._render_collection_picker()
+
+    assert st.session_state["selected_doc_ids"] == []
 
 
 def test_render_session_export_download(monkeypatch):
