@@ -31,7 +31,14 @@ def show_api_error(action, response):
 
 
 def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
-    question, session_id, model, collections=None, expand_query=None, rerank=None
+    question,
+    session_id,
+    model,
+    collections=None,
+    expand_query=None,
+    rerank=None,
+    file_ids=None,
+    use_hybrid=None,
 ):
     headers = {"accept": "application/json", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
@@ -39,6 +46,10 @@ def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
         data["session_id"] = session_id
     if collections:
         data["collections"] = collections
+    if file_ids:
+        data["file_ids"] = file_ids
+    if use_hybrid is not None:
+        data["use_hybrid"] = use_hybrid
     if expand_query is not None:
         data["expand_query"] = expand_query
     if rerank is not None:
@@ -57,7 +68,14 @@ def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
 
 
 def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request options
-    question, session_id, model, collections=None, expand_query=None, rerank=None
+    question,
+    session_id,
+    model,
+    collections=None,
+    expand_query=None,
+    rerank=None,
+    file_ids=None,
+    use_hybrid=None,
 ):
     """Get streaming response from the API."""
     headers = {"accept": "text/event-stream", "Content-Type": "application/json"}
@@ -66,6 +84,10 @@ def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request option
         data["session_id"] = session_id
     if collections:
         data["collections"] = collections
+    if file_ids:
+        data["file_ids"] = file_ids
+    if use_hybrid is not None:
+        data["use_hybrid"] = use_hybrid
     if expand_query is not None:
         data["expand_query"] = expand_query
     if rerank is not None:
