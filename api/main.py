@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from api.chroma_utils import (
     ChunkingOptions,
@@ -257,15 +257,11 @@ def health_ready():
         checks["chroma_dir"] = f"error: {exc}"
     ready = all(value == "ok" for value in checks.values())
     status_code = 200 if ready else 503
-    from fastapi.responses import JSONResponse  # noqa: PLC0415 - keep import lazy
-
     return JSONResponse(status_code=status_code, content={"ready": ready, "checks": checks})
 
 
 @app.get("/metrics")
 def metrics():
-    from fastapi.responses import PlainTextResponse  # noqa: PLC0415 - keep import lazy
-
     return PlainTextResponse(render_prometheus(), media_type="text/plain")
 
 
@@ -716,8 +712,6 @@ def session_history(session_id: str):
 
 @app.get("/sessions/{session_id}/export")
 def export_session(session_id: str):
-    from fastapi.responses import PlainTextResponse  # noqa: PLC0415 - keep import lazy
-
     _require_session_id(session_id)
     history = get_chat_history(session_id)
     if not history:
