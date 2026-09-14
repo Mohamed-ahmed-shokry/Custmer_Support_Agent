@@ -50,11 +50,25 @@ def _render_feedback_widget(session_id):
 
 
 def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request options
-    prompt, session_id, selected_model, collections=None, expand_query=None, rerank=None
+    prompt,
+    session_id,
+    selected_model,
+    collections=None,
+    expand_query=None,
+    rerank=None,
+    file_ids=None,
+    use_hybrid=None,
 ):
     """Handle streaming response from API."""
     stream = get_api_stream_response(
-        prompt, session_id, selected_model, collections, expand_query, rerank
+        prompt,
+        session_id,
+        selected_model,
+        collections,
+        expand_query,
+        rerank,
+        file_ids,
+        use_hybrid,
     )
     if not stream:
         return None, None, None
@@ -90,11 +104,25 @@ def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request opt
 
 
 def _handle_non_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request options
-    prompt, session_id, selected_model, collections=None, expand_query=None, rerank=None
+    prompt,
+    session_id,
+    selected_model,
+    collections=None,
+    expand_query=None,
+    rerank=None,
+    file_ids=None,
+    use_hybrid=None,
 ):
     """Handle non-streaming response from API."""
     response = get_api_response(
-        prompt, session_id, selected_model, collections, expand_query, rerank
+        prompt,
+        session_id,
+        selected_model,
+        collections,
+        expand_query,
+        rerank,
+        file_ids,
+        use_hybrid,
     )
     if not response:
         return None, None, None
@@ -123,6 +151,8 @@ def display_chat_interface():
         )
         active_collection = st.session_state.get("active_collection")
         collections = [active_collection] if active_collection else None
+        file_ids = st.session_state.get("selected_doc_ids") or None
+        use_hybrid = bool(st.session_state.get("use_hybrid", False))
 
         with st.spinner("Generating response..."):
             if use_streaming:
@@ -133,6 +163,8 @@ def display_chat_interface():
                     collections,
                     expand_query,
                     rerank,
+                    file_ids,
+                    use_hybrid,
                 )
             else:
                 answer, sources, new_session_id = _handle_non_streaming_response(
@@ -142,6 +174,8 @@ def display_chat_interface():
                     collections,
                     expand_query,
                     rerank,
+                    file_ids,
+                    use_hybrid,
                 )
 
         if answer:
