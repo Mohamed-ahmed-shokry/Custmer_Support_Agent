@@ -1,5 +1,3 @@
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
@@ -8,13 +6,11 @@ from api.settings import settings
 
 # Set up prompts and chains
 contextualize_q_system_prompt = """
-
     "Given a chat history and the latest user question "
     "which might reference context in the chat history, "
     "formulate a standalone question which can be understood "
     "without the chat history. Do NOT answer the question, "
     "just reformulate it if needed and otherwise return it as is."
-
 """
 
 contextualize_q_prompt = ChatPromptTemplate.from_messages(
@@ -89,6 +85,10 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     expand_query: bool | None = None,
     rerank: bool | None = None,
 ):
+    # ruff: noqa: PLC0415 - lazy imports required for Python 3.14 compatibility (ADR-001)
+    from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+    from langchain.chains.combine_documents import create_stuff_documents_chain
+
     llm = ChatOpenAI(model=model)
     hybrid = settings.use_hybrid_retriever if use_hybrid is None else use_hybrid
     expand = settings.use_query_expansion if expand_query is None else expand_query
