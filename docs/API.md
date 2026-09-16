@@ -1,4 +1,4 @@
-# API Reference (v0.18.0)
+# API Reference (v0.19.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 

@@ -245,11 +245,11 @@ def test_default_model_index_matches_settings_default():
 def test_render_health_status_healthy(monkeypatch):
     st = FakeStreamlit()
     monkeypatch.setattr(sidebar, "st", st)
-    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.18.0"})
+    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.19.0"})
 
     sidebar._render_health_status()
 
-    assert st.successes == ["Backend: ok (0.18.0)"]
+    assert st.successes == ["Backend: ok (0.19.0)"]
 
 
 def test_render_health_status_unavailable(monkeypatch):

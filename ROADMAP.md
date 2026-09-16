@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.17.0, 2026-09-04)
+## Current State (v0.19.0, 2026-09-17)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -10,14 +10,14 @@
 - SQLite for session history and document metadata
 - Chroma vector store with OpenAI embeddings; configurable chunking
   (recursive/markdown) and file types: pdf, docx, html, md, txt, csv;
-  indexing retries with exponential backoff
+  indexing retries with exponential backoff; resilient loader fallbacks
 - Resilience: X-Request-ID middleware, chunk-param validation, upload cap
-- Security (opt-in): API_KEY auth, per-IP sliding-window rate limiting
+- Security (opt-in): API_KEY auth across backend and Streamlit client, per-IP sliding-window rate limiting
 - Data protection: PII redaction in file logs
 - Observability: LOG_LEVEL / LOG_FORMAT=json, in-memory metrics, probes
-- Containerization: multi-stage Dockerfile, compose stack, k8s manifests
+- Containerization: multi-stage Dockerfile, compose stack (local/staging/prod), k8s manifests
 - Releases: tag-triggered workflow (verify + GitHub release)
-- Docs: API reference, architecture, contributing, ADR-001, runbook, eval set
+- Docs: API reference, architecture, contributing, ADR-001, ADR-002, runbook, eval set
 - Sessions support previews, deletion, and quota visibility in API + UI
 - Opt-in query expansion with RRF fusion across API, chain, and UI
 - Eval `--compare` mode plus unit-tested harness; session labels with
@@ -33,9 +33,9 @@
 - Session retention pruning, hardened security helpers, ADR-002
 - Client reliability: SSE parsing fixed on the wire format, error/source
   events surfaced correctly in the UI
-- First unit-test coverage for the Streamlit client (`app/`, ~86%), fake
-  Streamlit helper, 80% coverage floor in CI config
-- 243 tests passing; ruff + mypy clean (CI gates)
+- Full client security: X-API-Key forwarding across all 17 Streamlit endpoints
+- Core pipeline test hardening: 100% langchain_utils, 88.63% chroma_utils, 99.52% db_utils, 99.49% sidebar, 100% streamlit_app
+- 287 tests passing; 95.59% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -140,10 +140,29 @@ unit tests and contains a true SSE wiring bug (no new deps).
       in pyproject with an 80% coverage floor (was split across `pytest.ini`)
 - [x] `app/` coverage from 0% → 86%; total suite coverage 88.6%
 
-## v0.18.0 candidates (next)
+## v0.18.0 plan — Production Hardening & Operational Readiness ✅ COMPLETED
+
+- [x] Compose environment overlays: local development, staging, and production configurations
+- [x] Session retention pruning and lightweight readiness probes
+- [x] Security helper consolidation and packaging version synchronization
+
+## v0.19.0 plan — End-to-End Client Security & Core Pipeline Test Hardening ✅ COMPLETED
+
+- [x] Client Security: Propagate `X-API-Key` header across all 17 Streamlit client calls in `app/api_utils.py`
+- [x] Python 3.14 Compatibility: Lazy chain import resolution in `api/langchain_utils.py` per ADR-001
+- [x] Resilient Chroma Loaders: HTML and Markdown document loader fallbacks (`BSHTMLLoader`, `TextLoader`) in `api/chroma_utils.py`
+- [x] Test Coverage Hardening:
+  - Unit tests for `api/langchain_utils.py` (prompts, RAG chain creation, lazy imports: 100%)
+  - Unit tests for `api/chroma_utils.py` (chunking options, loader fallbacks, delete exception handling, retriever options: 88.63%)
+  - Unit tests for `app/sidebar.py` (sessions, collection management, bulk uploads, ops metrics: 99.49%)
+  - Unit tests for `app/streamlit_app.py` (entry point execution and session state initialization: 100%)
+- [x] Quality Gates: 287 tests passing, 95.59% total coverage, ruff & mypy clean
+
+## Next Candidates (v0.20.0+)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets (dependent on real credentials)
+- Automated end-to-end browser tests via Playwright
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

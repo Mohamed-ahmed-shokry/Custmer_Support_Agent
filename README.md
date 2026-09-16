@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.18.0)
+# Customer Support RAG Agent (v0.19.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
