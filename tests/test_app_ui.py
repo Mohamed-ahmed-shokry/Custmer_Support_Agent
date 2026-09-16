@@ -1,4 +1,5 @@
-from pathlib import Path
+import importlib
+import sys
 
 import pytest
 from app import chat_interface, sidebar
@@ -730,24 +731,24 @@ def test_display_sidebar_complete(monkeypatch):
 # --- streamlit_app entry point ----------------------------------------------
 
 
-def test_streamlit_app_initializes_state():
-    source = Path(__file__).resolve().parent.parent.joinpath(
-        "app", "streamlit_app.py"
-    ).read_text(encoding="utf-8")
-    body = "\n".join(
-        line
-        for line in source.splitlines()
-        if not line.startswith(("import streamlit", "from app."))
-    )
+def test_streamlit_app_initializes_state(monkeypatch):
     fake = FakeStreamlit()
-    ns = {
-        "st": fake,
-        "display_sidebar": lambda: None,
-        "display_chat_interface": lambda: None,
-        "__name__": "app.streamlit_app",
-    }
-    exec(compile(body, "app/streamlit_app.py", "exec"), ns)
+    monkeypatch.setitem(sys.modules, "streamlit", fake)
+    sidebar_called = []
+    chat_called = []
+    monkeypatch.setattr(sidebar, "display_sidebar", lambda: sidebar_called.append(True))
+    monkeypatch.setattr(
+        chat_interface, "display_chat_interface", lambda: chat_called.append(True)
+    )
+
+    if "app.streamlit_app" in sys.modules:
+        importlib.reload(sys.modules["app.streamlit_app"])
+    else:
+        importlib.import_module("app.streamlit_app")
 
     assert fake.session_state["messages"] == []
     assert fake.session_state["session_id"] is None
     assert any(c.fn == "set_page_config" for c in fake.calls)
+    assert any(c.fn == "title" for c in fake.calls)
+    assert sidebar_called == [True]
+    assert chat_called == [True]
