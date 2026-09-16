@@ -506,6 +506,227 @@ def test_render_session_export_download(monkeypatch):
     assert downloads[0].kwargs["file_name"] == "s1.md"
 
 
+def test_render_session_history_refresh_and_actions(monkeypatch):
+    st = _session_state()
+    st.buttons["Refresh Sessions"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+    sessions_data = [{"session_id": "s1", "label": "First", "message_count": 2}]
+    monkeypatch.setattr(
+        sidebar, "list_sessions", lambda: (called.append("list"), sessions_data)[1]
+    )
+
+    sidebar._render_session_history()
+    assert "list" in called
+    assert st.session_state["sessions"] == sessions_data
+
+
+def test_render_session_history_rename_flow(monkeypatch):
+    st = _session_state()
+    st.session_state["sessions"] = [{"session_id": "s1", "label": "Old", "message_count": 2}]
+    st.values["session_picker"] = "s1"
+    st.values["rename_session"] = "New Label"
+    st.buttons["Rename"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    renamed = []
+    monkeypatch.setattr(
+        sidebar, "rename_session", lambda sid, lbl: (renamed.append((sid, lbl)), True)[1]
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_sessions",
+        lambda: [{"session_id": "s1", "label": "New Label", "message_count": 2}],
+    )
+
+    sidebar._render_session_history()
+    assert renamed == [("s1", "New Label")]
+    assert st.reruns == 1
+
+
+def test_render_session_history_load_flow(monkeypatch):
+    st = _session_state()
+    st.session_state["sessions"] = [{"session_id": "s1", "label": "Old", "message_count": 1}]
+    st.values["session_picker"] = "s1"
+    st.buttons["Load Session"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar, "get_session_history", lambda sid: [{"role": "human", "content": "hello"}]
+    )
+
+    sidebar._render_session_history()
+    assert st.session_state["session_id"] == "s1"
+    assert st.session_state["messages"] == [{"role": "human", "content": "hello"}]
+    assert st.reruns == 1
+
+
+def test_render_session_history_delete_flow(monkeypatch):
+    st = _session_state(session_id="s1", messages=[{"role": "human", "content": "hi"}])
+    st.session_state["sessions"] = [{"session_id": "s1", "label": "Old", "message_count": 1}]
+    st.session_state["export_text"] = "old text"
+    st.session_state["export_session_id"] = "s1"
+    st.values["session_picker"] = "s1"
+    st.buttons["Delete"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    deleted = []
+    monkeypatch.setattr(sidebar, "delete_session", lambda sid: (deleted.append(sid), True)[1])
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
+
+    sidebar._render_session_history()
+    assert deleted == ["s1"]
+    assert st.session_state["session_id"] is None
+    assert st.session_state["messages"] == []
+    assert "export_text" not in st.session_state
+    assert st.reruns == 1
+
+
+def test_render_session_export_prepare_button(monkeypatch):
+    st = _session_state()
+    st.buttons["Prepare Export"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "export_session", lambda sid: "# Export content")
+
+    sidebar._render_session_export("s1")
+    assert st.session_state["export_text"] == "# Export content"
+    assert st.session_state["export_session_id"] == "s1"
+
+
+def test_render_collection_picker_rename_and_delete(monkeypatch):
+    # Test rename
+    st = FakeStreamlit()
+    st.session_state["collections"] = ["default", "clients-old"]
+    st.values["collection_picker"] = "clients-old"
+    st.values["rename_collection"] = "clients-new"
+    st.buttons["Rename"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar, "rename_collection", lambda old, new: {"collection": new}
+    )
+    monkeypatch.setattr(sidebar, "list_collections", lambda: ["default", "clients-new"])
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+
+    sidebar._render_collection_picker()
+    assert st.session_state["active_collection"] == "clients-new"
+    assert st.reruns == 1
+
+    # Test delete
+    st_del = FakeStreamlit()
+    st_del.session_state["collections"] = ["default", "clients-old"]
+    st_del.values["collection_picker"] = "clients-old"
+    st_del.buttons["Delete"] = True
+    monkeypatch.setattr(sidebar, "st", st_del)
+    monkeypatch.setattr(sidebar, "delete_collection", lambda name: True)
+    monkeypatch.setattr(sidebar, "list_collections", lambda: ["default"])
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+
+    sidebar._render_collection_picker()
+    assert st_del.session_state["active_collection"] is None
+    assert st_del.reruns == 1
+
+
+def test_render_upload_document_bulk_results(monkeypatch):
+    st = FakeStreamlit()
+    f1 = type("F", (), {"name": "doc1.txt"})()
+    f2 = type("F", (), {"name": "doc2.txt"})()
+    st.uploads = [f1, f2]
+    st.buttons["Upload"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    bulk_result = {
+        "uploaded": 1,
+        "failed": 1,
+        "results": [
+            {"filename": "doc1.txt", "status": "ok"},
+            {"filename": "doc2.txt", "status": "error", "detail": "corrupted file"},
+        ],
+    }
+    monkeypatch.setattr(sidebar, "upload_documents", lambda files, target: bulk_result)
+    monkeypatch.setattr(sidebar, "list_collections", lambda: ["default"])
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+
+    sidebar._render_upload_document("default")
+    assert any("Uploaded 1 of 2 files." in s for s in st.successes)
+    assert any("doc2.txt: corrupted file" in e for e in st.errors)
+
+
+def test_render_refresh_documents_button(monkeypatch):
+    st = FakeStreamlit()
+    st.buttons["Refresh Document List"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [{"id": 99, "filename": "x.pdf"}])
+
+    sidebar._render_refresh_documents("default")
+    assert st.session_state["documents"] == [{"id": 99, "filename": "x.pdf"}]
+
+
+def test_render_document_list_delete_error(monkeypatch):
+    st = FakeStreamlit()
+    st.session_state["documents"] = [
+        {"id": 10, "filename": "contract.pdf", "upload_timestamp": "2026-09-01"}
+    ]
+    st.values["Select a document to delete"] = 10
+    st.buttons["Delete Selected Document"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "delete_document", lambda fid: None)
+
+    sidebar._render_document_list()
+    assert any("Failed to delete document with ID 10." in e for e in st.errors)
+
+
+def test_render_ops_metrics_quota_and_latencies(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    metrics = {
+        "chat_requests": 10,
+        "stream_requests": 5,
+        "uploads": 2,
+        "deletes": 1,
+        "chat_errors": 0,
+        "upload_errors": 0,
+        "prompt_tokens_est": 120,
+        "completion_tokens_est": 80,
+        "latency_avg_seconds_chat": 0.45,
+        "latency_avg_seconds_search": 0.12,
+    }
+    monkeypatch.setattr(sidebar, "get_metrics", lambda: metrics)
+    monkeypatch.setattr(
+        sidebar, "get_stats", lambda: {"documents": 5, "collections": 2, "sessions": 3}
+    )
+    expected_remaining = 4500
+    monkeypatch.setattr(
+        sidebar, "get_quota", lambda: {"unlimited": False, "remaining": expected_remaining}
+    )
+
+    sidebar._render_ops_metrics()
+
+    metric_calls = [c for c in st.calls if c.fn == "metric"]
+    labels = [c.args[0] for c in metric_calls]
+    assert "Daily token quota left (est.)" in labels
+    assert any(
+        c.args[1] == expected_remaining
+        for c in metric_calls
+        if c.args[0] == "Daily token quota left (est.)"
+    )
+
+    write_calls = [c for c in st.calls if c.fn == "write"]
+    written_text = [c.args[0] for c in write_calls]
+    assert any("chat: 0.45" in text for text in written_text)
+    assert any("search: 0.12" in text for text in written_text)
+
+
+def test_display_sidebar_complete(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.19.0"})
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
+    monkeypatch.setattr(sidebar, "list_collections", lambda: ["default"])
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+    monkeypatch.setattr(sidebar, "get_metrics", lambda: {"chat_requests": 1})
+    monkeypatch.setattr(sidebar, "get_stats", lambda: None)
+    monkeypatch.setattr(sidebar, "get_quota", lambda: None)
+
+    sidebar.display_sidebar()
+    assert any(c.fn == "caption" for c in st.calls)
+
+
 # --- streamlit_app entry point ----------------------------------------------
 
 
