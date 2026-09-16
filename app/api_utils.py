@@ -7,6 +7,16 @@ API_BASE_URL = settings.api_base_url
 HTTP_OK = 200
 
 
+def _request_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Headers shared by every API call; forwards the API key when configured."""
+    headers = {"accept": "application/json", "Content-Type": "application/json"}
+    if settings.api_key:
+        headers["X-API-Key"] = settings.api_key
+    if extra:
+        headers.update(extra)
+    return headers
+
+
 def extract_error_detail(response):
     try:
         payload = response.json()
@@ -40,7 +50,6 @@ def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
     file_ids=None,
     use_hybrid=None,
 ):
-    headers = {"accept": "application/json", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
     if session_id:
         data["session_id"] = session_id
@@ -56,7 +65,9 @@ def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
         data["rerank"] = rerank
 
     try:
-        response = requests.post(f"{API_BASE_URL}/chat", headers=headers, json=data, timeout=60)
+        response = requests.post(
+            f"{API_BASE_URL}/chat", headers=_request_headers(), json=data, timeout=60
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -78,7 +89,6 @@ def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request option
     use_hybrid=None,
 ):
     """Get streaming response from the API."""
-    headers = {"accept": "text/event-stream", "Content-Type": "application/json"}
     data = {"question": question, "model": model}
     if session_id:
         data["session_id"] = session_id
@@ -95,7 +105,11 @@ def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request option
 
     try:
         response = requests.post(
-            f"{API_BASE_URL}/chat/stream", headers=headers, json=data, timeout=120, stream=True
+            f"{API_BASE_URL}/chat/stream",
+            headers=_request_headers({"accept": "text/event-stream"}),
+            json=data,
+            timeout=120,
+            stream=True,
         )
         if response.status_code == HTTP_OK:
             return response.iter_lines(decode_unicode=True)
@@ -131,6 +145,7 @@ def upload_documents(files, collection="default"):
             f"{API_BASE_URL}/upload-docs",
             params={"collection": collection},
             files=multipart,
+            headers=_request_headers(),
             timeout=300,
         )
         if response.status_code == HTTP_OK:
@@ -150,6 +165,7 @@ def upload_document(file, collection="default"):
             f"{API_BASE_URL}/upload-doc",
             params={"collection": collection},
             files=files,
+            headers=_request_headers(),
             timeout=120,
         )
         if response.status_code == HTTP_OK:
@@ -164,7 +180,9 @@ def upload_document(file, collection="default"):
 
 def list_collections():
     try:
-        response = requests.get(f"{API_BASE_URL}/collections", timeout=30)
+        response = requests.get(
+            f"{API_BASE_URL}/collections", headers=_request_headers(), timeout=30
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -180,6 +198,7 @@ def rename_collection(collection, new_name):
         response = requests.patch(
             f"{API_BASE_URL}/collections/{collection}",
             json={"collection": new_name},
+            headers=_request_headers(),
             timeout=60,
         )
         if response.status_code == HTTP_OK:
@@ -194,7 +213,9 @@ def rename_collection(collection, new_name):
 
 def delete_collection(collection):
     try:
-        response = requests.delete(f"{API_BASE_URL}/collections/{collection}", timeout=60)
+        response = requests.delete(
+            f"{API_BASE_URL}/collections/{collection}", headers=_request_headers(), timeout=60
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -208,7 +229,12 @@ def delete_collection(collection):
 def list_documents(collection=None):
     try:
         params = {"collection": collection} if collection else None
-        response = requests.get(f"{API_BASE_URL}/list-docs", params=params, timeout=30)
+        response = requests.get(
+            f"{API_BASE_URL}/list-docs",
+            params=params,
+            headers=_request_headers(),
+            timeout=30,
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -221,7 +247,9 @@ def list_documents(collection=None):
 
 def list_sessions():
     try:
-        response = requests.get(f"{API_BASE_URL}/sessions", timeout=30)
+        response = requests.get(
+            f"{API_BASE_URL}/sessions", headers=_request_headers(), timeout=30
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -234,7 +262,9 @@ def list_sessions():
 
 def delete_session(session_id):
     try:
-        response = requests.delete(f"{API_BASE_URL}/sessions/{session_id}", timeout=30)
+        response = requests.delete(
+            f"{API_BASE_URL}/sessions/{session_id}", headers=_request_headers(), timeout=30
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -248,7 +278,10 @@ def delete_session(session_id):
 def rename_session(session_id, label):
     try:
         response = requests.patch(
-            f"{API_BASE_URL}/sessions/{session_id}", json={"label": label}, timeout=30
+            f"{API_BASE_URL}/sessions/{session_id}",
+            json={"label": label},
+            headers=_request_headers(),
+            timeout=30,
         )
         if response.status_code == HTTP_OK:
             return response.json()
@@ -262,7 +295,11 @@ def rename_session(session_id, label):
 
 def export_session(session_id):
     try:
-        response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/export", timeout=30)
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/export",
+            headers=_request_headers({"accept": "text/markdown"}),
+            timeout=30,
+        )
         if response.status_code == HTTP_OK:
             return response.text
         else:
@@ -278,6 +315,7 @@ def submit_feedback(session_id, rating):
         response = requests.post(
             f"{API_BASE_URL}/feedback",
             json={"session_id": session_id, "rating": rating},
+            headers=_request_headers(),
             timeout=30,
         )
         if response.status_code == HTTP_OK:
@@ -292,7 +330,11 @@ def submit_feedback(session_id, rating):
 
 def get_session_history(session_id):
     try:
-        response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/history", timeout=30)
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/history",
+            headers=_request_headers(),
+            timeout=30,
+        )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
@@ -304,12 +346,14 @@ def get_session_history(session_id):
 
 
 def delete_document(file_id):
-    headers = {"accept": "application/json", "Content-Type": "application/json"}
     data = {"file_id": file_id}
 
     try:
         response = requests.post(
-            f"{API_BASE_URL}/delete-doc", headers=headers, json=data, timeout=30
+            f"{API_BASE_URL}/delete-doc",
+            headers=_request_headers(),
+            json=data,
+            timeout=30,
         )
         if response.status_code == HTTP_OK:
             return response.json()
@@ -333,7 +377,9 @@ def get_health():
 
 def get_stats():
     try:
-        response = requests.get(f"{API_BASE_URL}/stats", timeout=5)
+        response = requests.get(
+            f"{API_BASE_URL}/stats", headers=_request_headers(), timeout=5
+        )
         if response.status_code == HTTP_OK:
             return response.json()
     except Exception:
@@ -353,7 +399,9 @@ def get_metrics():
 
 def get_quota():
     try:
-        response = requests.get(f"{API_BASE_URL}/quota", timeout=5)
+        response = requests.get(
+            f"{API_BASE_URL}/quota", headers=_request_headers(), timeout=5
+        )
         if response.status_code == HTTP_OK:
             return response.json()
     except Exception:

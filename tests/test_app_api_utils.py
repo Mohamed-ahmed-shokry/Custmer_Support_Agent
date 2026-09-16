@@ -503,3 +503,55 @@ def test_read_only_endpoints_return_none_on_network_error(monkeypatch):
 
     for fn in ("get_health", "get_stats", "get_metrics", "get_quota"):
         assert getattr(api_utils, fn)() is None
+
+
+def test_request_headers_without_api_key(monkeypatch):
+    monkeypatch.setattr(api_utils.settings, "api_key", "")
+    headers = api_utils._request_headers()
+    assert headers == {"accept": "application/json", "Content-Type": "application/json"}
+    assert "X-API-Key" not in headers
+
+
+def test_request_headers_with_api_key_and_extras(monkeypatch):
+    monkeypatch.setattr(api_utils.settings, "api_key", "secret-test-key")
+    headers = api_utils._request_headers({"accept": "text/markdown", "Custom": "value"})
+    assert headers["X-API-Key"] == "secret-test-key"
+    assert headers["accept"] == "text/markdown"
+    assert headers["Content-Type"] == "application/json"
+    assert headers["Custom"] == "value"
+
+
+def test_api_key_forwarded_in_client_requests(monkeypatch, fake_requests):
+    monkeypatch.setattr(api_utils.settings, "api_key", "forward-me")
+    fake_requests.response = FakeResponse(status_code=200, payload={"status": "ok"}, text="ok")
+
+    fake_file = type("F", (), {"name": "doc.txt", "type": "text/plain"})()
+
+    endpoints = [
+        lambda: api_utils.get_api_response("q", "s1", "gpt-4o-mini"),
+        lambda: api_utils.get_api_stream_response("q", "s1", "gpt-4o-mini"),
+        lambda: api_utils.upload_documents([fake_file]),
+        lambda: api_utils.upload_document(fake_file),
+        lambda: api_utils.list_collections(),
+        lambda: api_utils.rename_collection("col", "new-col"),
+        lambda: api_utils.delete_collection("col"),
+        lambda: api_utils.list_documents(),
+        lambda: api_utils.list_sessions(),
+        lambda: api_utils.delete_session("s1"),
+        lambda: api_utils.rename_session("s1", "lbl"),
+        lambda: api_utils.export_session("s1"),
+        lambda: api_utils.submit_feedback("s1", 1),
+        lambda: api_utils.get_session_history("s1"),
+        lambda: api_utils.delete_document("doc-1"),
+        lambda: api_utils.get_stats(),
+        lambda: api_utils.get_quota(),
+    ]
+
+    for call_fn in endpoints:
+        fake_requests.calls.clear()
+        call_fn()
+        assert len(fake_requests.calls) == 1
+        _, _, kwargs = fake_requests.calls[0]
+        assert "headers" in kwargs
+        assert kwargs["headers"].get("X-API-Key") == "forward-me"
+
