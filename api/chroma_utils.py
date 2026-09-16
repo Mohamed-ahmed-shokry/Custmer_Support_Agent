@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import (
+    BSHTMLLoader,
     Docx2txtLoader,
     PyPDFLoader,
     TextLoader,
@@ -86,9 +87,18 @@ def load_and_split_document(
     elif file_path.endswith(".docx"):
         loader = Docx2txtLoader(file_path)
     elif file_path.endswith(".html"):
-        loader = UnstructuredHTMLLoader(file_path)
+        try:
+            loader = BSHTMLLoader(file_path)
+        except Exception:
+            try:
+                loader = UnstructuredHTMLLoader(file_path)
+            except Exception:
+                loader = TextLoader(file_path, encoding="utf-8")
     elif file_path.endswith(".md"):
-        loader = UnstructuredMarkdownLoader(file_path)
+        try:
+            loader = UnstructuredMarkdownLoader(file_path)
+        except Exception:
+            loader = TextLoader(file_path, encoding="utf-8")
     elif file_path.endswith(".txt"):
         loader = TextLoader(file_path, encoding="utf-8")
     elif file_path.endswith(".csv"):

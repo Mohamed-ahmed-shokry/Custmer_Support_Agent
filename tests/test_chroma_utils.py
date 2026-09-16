@@ -1,3 +1,4 @@
+import pytest
 from api import chroma_utils
 from api.expansion import ExpandedVectorRetriever
 from api.rerank import RerankingRetriever
@@ -17,8 +18,8 @@ class FakeVectorstore:
         self.added_documents = documents
         self.added_ids = ids
 
-    def get(self, where):
-        assert where == {"file_id": 42}
+    def get(self, where=None, include=None):
+        self.last_where = where
         return {"ids": self.ids}
 
     def delete(self, ids):
@@ -165,6 +166,7 @@ def test_delete_doc_from_chroma_deletes_found_ids(monkeypatch):
     monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
 
     assert chroma_utils.delete_doc_from_chroma(42) is True
+    assert vectorstore.last_where == {"file_id": 42}
     assert vectorstore.deleted_ids == ["42:0", "42:1"]
 
 
@@ -290,3 +292,110 @@ def test_index_document_returns_false_after_retries_exhausted(monkeypatch):
         chroma_utils.index_document_to_chroma("fail.pdf", file_id=42, filename="fail.pdf")
         is False
     )
+
+
+def test_get_text_splitter_markdown():
+    options = chroma_utils.ChunkingOptions(strategy=chroma_utils.ChunkingStrategy.MARKDOWN)
+    splitter = chroma_utils._get_text_splitter(options)
+    assert isinstance(splitter, chroma_utils.MarkdownHeaderTextSplitter)
+
+
+def test_load_and_split_document_unsupported_type():
+    with pytest.raises(ValueError, match="Unsupported file type"):
+        chroma_utils.load_and_split_document("invalid.xyz")
+
+
+def test_load_and_split_document_text_files(tmp_path):
+    txt_file = tmp_path / "sample.txt"
+    txt_file.write_text("Hello world text file", encoding="utf-8")
+    docs = chroma_utils.load_and_split_document(str(txt_file))
+    assert len(docs) >= 1
+    assert "Hello world" in docs[0].page_content
+
+    csv_file = tmp_path / "sample.csv"
+    csv_file.write_text("col1,col2\nval1,val2\n", encoding="utf-8")
+    csv_docs = chroma_utils.load_and_split_document(str(csv_file))
+    assert len(csv_docs) >= 1
+
+    md_file = tmp_path / "sample.md"
+    md_file.write_text("# Title\nMarkdown content here.", encoding="utf-8")
+    md_docs = chroma_utils.load_and_split_document(str(md_file))
+    assert len(md_docs) >= 1
+
+
+def test_load_and_split_document_mocked_loaders(monkeypatch):
+    loaded_doc = [Document(page_content="mocked content")]
+
+    class MockLoader:
+        def __init__(self, file_path):
+            self.file_path = file_path
+
+        def load(self):
+            return loaded_doc
+
+    monkeypatch.setattr(chroma_utils, "PyPDFLoader", MockLoader)
+    docs_pdf = chroma_utils.load_and_split_document("doc.pdf")
+    assert docs_pdf[0].page_content == "mocked content"
+
+    monkeypatch.setattr(chroma_utils, "Docx2txtLoader", MockLoader)
+    docs_docx = chroma_utils.load_and_split_document("doc.docx")
+    assert docs_docx[0].page_content == "mocked content"
+
+    monkeypatch.setattr(chroma_utils, "UnstructuredHTMLLoader", MockLoader)
+    docs_html = chroma_utils.load_and_split_document("doc.html")
+    assert docs_html[0].page_content == "mocked content"
+
+
+def test_delete_doc_from_chroma_exception(monkeypatch):
+    class ExplodingGetVectorstore(FakeVectorstore):
+        def get(self, where):
+            raise RuntimeError("db error")
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", ExplodingGetVectorstore)
+    assert chroma_utils.delete_doc_from_chroma(42) is False
+
+
+def test_delete_collection_from_chroma_empty_ids(monkeypatch):
+    vectorstore = FakeVectorstore(ids=[])
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+    assert chroma_utils.delete_collection_from_chroma("empty_col") == 0
+    assert vectorstore.deleted_ids is None
+
+
+def test_rename_collection_in_chroma_mismatched_payload_and_exception(monkeypatch):
+    class MismatchedVectorstore(FakeVectorstore):
+        def get(self, where, include=None):
+            return {"ids": ["1:0"], "documents": ["doc1", "doc2"], "metadatas": []}
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", MismatchedVectorstore)
+    assert chroma_utils.rename_collection_in_chroma("col", "new_col") == -1
+
+    class ExplodingUpdateVectorstore(FakeVectorstore):
+        def get(self, where, include=None):
+            raise RuntimeError("update failed")
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", ExplodingUpdateVectorstore)
+    assert chroma_utils.rename_collection_in_chroma("col", "new_col") == -1
+
+
+def test_hybrid_retriever_fallbacks(monkeypatch):
+    class EmptyGetVectorstore(FakeVectorstore):
+        def get(self):
+            return {"documents": []}
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", EmptyGetVectorstore)
+    retriever = chroma_utils.get_hybrid_retriever(k=5)
+    assert retriever == ("retriever", {"k": 5})
+
+
+def test_select_retriever_source_filename_filtering(monkeypatch):
+    vectorstore = FakeVectorstore()
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    chroma_utils.select_retriever(k=5, source_filename="terms.pdf")
+    assert vectorstore.search_kwargs["filter"]["filename"] == {"$eq": "terms.pdf"}
+
+    expanded = chroma_utils.select_retriever(k=5, expand_query=True, source_filename="terms.pdf")
+    assert isinstance(expanded, ExpandedVectorRetriever)
+    assert expanded.search_kwargs["filter"]["filename"] == {"$eq": "terms.pdf"}
+
