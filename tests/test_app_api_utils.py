@@ -543,6 +543,9 @@ def test_api_key_forwarded_in_client_requests(monkeypatch, fake_requests):
         lambda: api_utils.submit_feedback("s1", 1),
         lambda: api_utils.get_session_history("s1"),
         lambda: api_utils.delete_document("doc-1"),
+        lambda: api_utils.get_document_details(1),
+        lambda: api_utils.delete_documents([1]),
+        lambda: api_utils.search_sessions("test"),
         api_utils.get_stats,
         api_utils.get_quota,
     ]
@@ -554,4 +557,47 @@ def test_api_key_forwarded_in_client_requests(monkeypatch, fake_requests):
         _, _, kwargs = fake_requests.calls[0]
         assert "headers" in kwargs
         assert kwargs["headers"].get("X-API-Key") == "forward-me"
+
+
+def test_get_document_details_success_and_failure(monkeypatch, fake_requests, fake_st):
+    file_id = 42
+    fake_payload = {"id": file_id, "filename": "lease.pdf", "chunk_count": 1, "chunks": []}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.get_document_details(file_id)
+    assert result == fake_payload
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_document_details(file_id) is None
+    assert any("not found" in err.lower() or "failed" in err.lower() for err in fake_st.errors)
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_document_details(file_id) is None
+
+
+def test_delete_documents_success_and_failure(monkeypatch, fake_requests, fake_st):
+    file_ids = [42, 43]
+    fake_payload = {"deleted": 2, "failed": 0, "results": []}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.delete_documents(file_ids)
+    assert result == fake_payload
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.delete_documents(file_ids) is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_documents(file_ids) is None
+
+
+def test_search_sessions_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_results = [{"session_id": "s1", "match_count": 1}]
+    fake_requests.response = FakeResponse(
+        status_code=200, payload={"query": "test", "results": fake_results}
+    )
+    assert api_utils.search_sessions("test") == fake_results
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "empty"})
+    assert api_utils.search_sessions("test") == []
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.search_sessions("test") == []
 

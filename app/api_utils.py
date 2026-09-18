@@ -260,6 +260,24 @@ def list_sessions():
         return []
 
 
+def search_sessions(query, limit=20):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/search",
+            params={"q": query, "limit": limit},
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json().get("results", [])
+        else:
+            show_api_error("Failed to search sessions", response)
+            return []
+    except Exception as e:
+        st.error(f"An error occurred while searching sessions: {str(e)}")
+        return []
+
+
 def delete_session(session_id):
     try:
         response = requests.delete(
@@ -362,6 +380,41 @@ def delete_document(file_id):
             return None
     except Exception as e:
         st.error(f"An error occurred while deleting the document: {str(e)}")
+        return None
+
+
+def get_document_details(file_id):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/docs/{file_id}",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch document details", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching document details: {str(e)}")
+        return None
+
+
+def delete_documents(file_ids):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/delete-docs",
+            headers=_request_headers(),
+            json={"file_ids": file_ids},
+            timeout=60,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to delete documents", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while deleting documents: {str(e)}")
         return None
 
 
