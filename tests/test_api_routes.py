@@ -1023,3 +1023,61 @@ def test_get_document_details_not_found(monkeypatch):
     response = client.get("/docs/999")
     assert response.status_code == HTTP_NOT_FOUND
     assert "not found" in response.json()["detail"].lower()
+
+
+def test_delete_many_documents_success(monkeypatch):
+    first_id = 42
+    second_id = 43
+    expected_deleted = 2
+
+    monkeypatch.setattr(
+        main, "get_document_record", lambda fid: {"id": fid, "filename": "doc.pdf"}
+    )
+    monkeypatch.setattr(main, "delete_doc_from_chroma", lambda fid: True)
+    monkeypatch.setattr(main, "delete_document_record", lambda fid: True)
+
+    response = client.post("/delete-docs", json={"file_ids": [first_id, second_id]})
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["deleted"] == expected_deleted
+    assert data["failed"] == 0
+    assert len(data["results"]) == expected_deleted
+    assert all(r["status"] == "deleted" for r in data["results"])
+
+
+def test_delete_many_documents_mixed(monkeypatch):
+    first_id = 42
+    second_id = 43
+    third_id = 44
+    expected_failed = 2
+
+    def fake_get(fid):
+        if fid == second_id:
+            return None
+        return {"id": fid, "filename": f"{fid}.pdf"}
+
+    def fake_chroma(fid):
+        return fid != third_id
+
+    monkeypatch.setattr(main, "get_document_record", fake_get)
+    monkeypatch.setattr(main, "delete_doc_from_chroma", fake_chroma)
+    monkeypatch.setattr(main, "delete_document_record", lambda fid: True)
+
+    response = client.post("/delete-docs", json={"file_ids": [first_id, second_id, third_id]})
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["deleted"] == 1
+    assert data["failed"] == expected_failed
+    status_map = {r["file_id"]: r["status"] for r in data["results"]}
+    assert status_map[first_id] == "deleted"
+    assert status_map[second_id] == "not_found"
+    assert status_map[third_id] == "error"
+
+
+def test_delete_many_documents_validation():
+    response = client.post("/delete-docs", json={"file_ids": []})
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    response = client.post("/delete-docs", json={"file_ids": [0]})
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+

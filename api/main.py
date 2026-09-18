@@ -54,6 +54,9 @@ from api.observability import (
 from api.pii import redact_pii
 from api.presenters import build_search_hits, build_sources, render_session_markdown
 from api.pydantic_models import (
+    BulkDeleteFileRequest,
+    BulkDeleteFileResult,
+    BulkDeleteResponse,
     BulkUploadItem,
     BulkUploadResponse,
     ChatMessage,
@@ -832,4 +835,52 @@ def delete_document(request: DeleteFileRequest):
     increment("deletes")
     return DeleteDocumentResponse(
         message=f"Successfully deleted document with file_id {request.file_id} from the system."
+    )
+
+
+@app.post("/delete-docs", response_model=BulkDeleteResponse)
+def delete_many_documents(request: BulkDeleteFileRequest):
+    results: list[BulkDeleteFileResult] = []
+    for file_id in request.file_ids:
+        if get_document_record(file_id) is None:
+            results.append(
+                BulkDeleteFileResult(
+                    file_id=file_id,
+                    status="not_found",
+                    detail=f"Document with file_id {file_id} was not found.",
+                )
+            )
+            continue
+
+        if not delete_doc_from_chroma(file_id):
+            results.append(
+                BulkDeleteFileResult(
+                    file_id=file_id,
+                    status="error",
+                    detail=f"Failed to delete document with file_id {file_id} from Chroma.",
+                )
+            )
+            continue
+
+        if not delete_document_record(file_id):
+            results.append(
+                BulkDeleteFileResult(
+                    file_id=file_id,
+                    status="error",
+                    detail=(
+                        f"Deleted from Chroma but failed to delete document with file_id "
+                        f"{file_id} from the database."
+                    ),
+                )
+            )
+            continue
+
+        increment("deletes")
+        results.append(BulkDeleteFileResult(file_id=file_id, status="deleted"))
+
+    deleted_count = sum(1 for r in results if r.status == "deleted")
+    return BulkDeleteResponse(
+        results=results,
+        deleted=deleted_count,
+        failed=len(results) - deleted_count,
     )

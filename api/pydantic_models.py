@@ -233,6 +233,22 @@ class DeleteFileRequest(BaseModel):
     file_id: PositiveInt
 
 
+class BulkDeleteFileRequest(BaseModel):
+    file_ids: list[PositiveInt] = Field(min_length=1, max_length=50)
+
+
+class BulkDeleteFileResult(BaseModel):
+    file_id: int
+    status: str
+    detail: str | None = None
+
+
+class BulkDeleteResponse(BaseModel):
+    results: list[BulkDeleteFileResult] = Field(default_factory=list)
+    deleted: int = 0
+    failed: int = 0
+
+
 class UploadDocumentResponse(BaseModel):
     message: str
     file_id: int
