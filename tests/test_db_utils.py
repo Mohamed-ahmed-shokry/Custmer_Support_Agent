@@ -285,3 +285,34 @@ def test_document_record_lifecycle(monkeypatch, tmp_path):
     assert db_utils.delete_document_record(first_id) is True
     assert db_utils.delete_document_record(first_id) is False
     assert db_utils.get_document_record(first_id) is None
+
+
+def test_search_sessions_matches_query_and_response(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs(
+        "session-1", "How do I fix the plumbing?", "Call the plumber.", "gpt-4o-mini"
+    )
+    db_utils.insert_application_logs(
+        "session-1", "What about electrical?", "Call the electrician.", "gpt-4o-mini"
+    )
+    db_utils.insert_application_logs(
+        "session-2", "What are the pool hours?", "The pool is open 9 to 9.", "gpt-4o-mini"
+    )
+    db_utils.rename_session("session-1", "Maintenance Issues")
+
+    results = db_utils.search_sessions("plumbing")
+    assert len(results) == 1
+    assert results[0]["session_id"] == "session-1"
+    assert results[0]["label"] == "Maintenance Issues"
+    assert results[0]["match_count"] == 1
+    assert "How do I fix the plumbing?" in results[0]["matched_queries"]
+
+    results = db_utils.search_sessions("electrician")
+    assert len(results) == 1
+    assert results[0]["session_id"] == "session-1"
+    assert results[0]["match_count"] == 1
+
+    assert db_utils.search_sessions("") == []
+    assert db_utils.search_sessions("   ") == []
+    assert db_utils.search_sessions("nonexistent term") == []

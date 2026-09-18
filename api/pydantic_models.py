@@ -155,6 +155,20 @@ class SessionInfo(BaseModel):
     label: str | None = None
 
 
+class SessionSearchResult(BaseModel):
+    session_id: str
+    label: str | None = None
+    match_count: int
+    preview: str = ""
+    last_active: datetime
+    matched_queries: list[str] = Field(default_factory=list)
+
+
+class SessionSearchResponse(BaseModel):
+    query: str
+    results: list[SessionSearchResult] = Field(default_factory=list)
+
+
 class RenameSessionRequest(BaseModel):
     label: str = Field(min_length=1, max_length=80)
 

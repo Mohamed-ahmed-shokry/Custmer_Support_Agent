@@ -42,6 +42,7 @@ from api.db_utils import (
     prune_sessions_before,
     rename_collection,
     rename_session,
+    search_sessions,
     truncate_history,
 )
 from api.observability import (
@@ -79,6 +80,8 @@ from api.pydantic_models import (
     SearchInput,
     SearchResponse,
     SessionInfo,
+    SessionSearchResponse,
+    SessionSearchResult,
     StatsResponse,
     UploadDocumentResponse,
 )
@@ -708,6 +711,26 @@ def delete_collection_route(collection: str):
 @app.get("/sessions", response_model=list[SessionInfo])
 def list_sessions():
     return get_all_sessions()
+
+
+MAX_SEARCH_LIMIT = 100
+
+
+@app.get("/sessions/search", response_model=SessionSearchResponse)
+def search_sessions_route(q: str, limit: int = 20):
+    cleaned = q.strip()
+    if not cleaned:
+        raise HTTPException(
+            status_code=400, detail="Query parameter 'q' must not be empty."
+        )
+    if limit <= 0 or limit > MAX_SEARCH_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query parameter 'limit' must be between 1 and {MAX_SEARCH_LIMIT}.",
+        )
+    raw_results = search_sessions(cleaned, limit=limit)
+    results = [SessionSearchResult(**r) for r in raw_results]
+    return SessionSearchResponse(query=cleaned, results=results)
 
 
 def _require_session_id(session_id: str) -> str:

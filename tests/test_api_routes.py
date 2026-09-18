@@ -1081,3 +1081,41 @@ def test_delete_many_documents_validation():
     response = client.post("/delete-docs", json={"file_ids": [0]})
     assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
 
+
+def test_search_sessions_route_success(monkeypatch):
+    fake_results = [
+        {
+            "session_id": "session-1",
+            "label": "Maintenance",
+            "match_count": 2,
+            "preview": "How do I fix the plumbing?",
+            "last_active": "2026-09-18 12:00:00",
+            "matched_queries": ["How do I fix the plumbing?"],
+        }
+    ]
+    monkeypatch.setattr(main, "search_sessions", lambda query, limit=20: fake_results)
+
+    response = client.get("/sessions/search?q=plumbing")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["query"] == "plumbing"
+    assert len(data["results"]) == 1
+    assert data["results"][0]["session_id"] == "session-1"
+    expected_matches = 2
+    assert data["results"][0]["match_count"] == expected_matches
+    assert data["results"][0]["matched_queries"] == ["How do I fix the plumbing?"]
+
+
+def test_search_sessions_route_rejects_empty_query():
+    response = client.get("/sessions/search?q=   ")
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert "must not be empty" in response.json()["detail"].lower()
+
+
+def test_search_sessions_route_validates_limit():
+    response = client.get("/sessions/search?q=plumbing&limit=0")
+    assert response.status_code == HTTP_BAD_REQUEST
+
+    response = client.get("/sessions/search?q=plumbing&limit=101")
+    assert response.status_code == HTTP_BAD_REQUEST
+

@@ -85,6 +85,23 @@ _SELECT_ALL_SESSIONS = (
     "FROM application_logs l1 GROUP BY l1.session_id ORDER BY last_active DESC"
 )
 
+_SEARCH_SESSIONS = (
+    "SELECT l1.session_id, COUNT(*) AS match_count, "
+    "MAX(l1.created_at) AS last_active, "
+    "(SELECT l2.user_query FROM application_logs l2 "
+    "WHERE l2.session_id = l1.session_id ORDER BY l2.id ASC LIMIT 1) AS preview, "
+    "(SELECT label FROM session_labels WHERE session_id = l1.session_id) AS label "
+    "FROM application_logs l1 "
+    "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
+    "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
+)
+
+_SELECT_MATCHED_QUERIES = (
+    "SELECT DISTINCT user_query FROM application_logs "
+    "WHERE session_id = ? AND (user_query LIKE ? OR gpt_response LIKE ?) "
+    "ORDER BY id ASC LIMIT 3"
+)
+
 _DELETE_SESSION = "DELETE FROM application_logs WHERE session_id = ?"
 _DELETE_SESSION_LABEL = "DELETE FROM session_labels WHERE session_id = ?"
 _DELETE_SESSION_FEEDBACK = "DELETE FROM feedback WHERE session_id = ?"
@@ -299,6 +316,35 @@ def get_all_sessions():
             {**dict(session), "preview": _truncate_preview(session["preview"])}
             for session in sessions
         ]
+
+
+def search_sessions(query: str, limit: int = 20) -> list[dict]:
+    """Search sessions matching query text in user_query or gpt_response."""
+    cleaned = (query or "").strip()
+    if not cleaned:
+        return []
+    pattern = f"%{cleaned}%"
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_SEARCH_SESSIONS, (pattern, pattern, max(1, limit)))
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            sid = row["session_id"]
+            q_cursor = conn.cursor()
+            q_cursor.execute(_SELECT_MATCHED_QUERIES, (sid, pattern, pattern))
+            matched_queries = [r["user_query"] for r in q_cursor.fetchall() if r["user_query"]]
+            results.append(
+                {
+                    "session_id": sid,
+                    "label": row["label"],
+                    "match_count": row["match_count"],
+                    "preview": _truncate_preview(row["preview"]),
+                    "last_active": row["last_active"],
+                    "matched_queries": matched_queries,
+                }
+            )
+        return results
 
 
 def delete_session(session_id):
