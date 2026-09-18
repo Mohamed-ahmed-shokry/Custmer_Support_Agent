@@ -17,6 +17,7 @@ from api.chroma_utils import (
     ChunkingStrategy,
     delete_collection_from_chroma,
     delete_doc_from_chroma,
+    get_doc_chunks_from_chroma,
     index_document_to_chroma,
     rename_collection_in_chroma,
     select_retriever,
@@ -59,6 +60,8 @@ from api.pydantic_models import (
     DeleteDocumentResponse,
     DeleteFileRequest,
     DeleteSessionResponse,
+    DocumentChunkInfo,
+    DocumentDetailResponse,
     DocumentInfo,
     FeedbackInput,
     FeedbackResponse,
@@ -609,6 +612,26 @@ def list_documents(collection: str | None = None):
     if collection is None:
         return get_all_documents()
     return get_all_documents(_normalize_collection_param(collection))
+
+
+@app.get("/docs/{file_id}", response_model=DocumentDetailResponse)
+def get_document_details(file_id: int):
+    record = get_document_record(file_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404, detail=f"Document with file_id {file_id} was not found."
+        )
+    raw_chunks = get_doc_chunks_from_chroma(file_id)
+    chunks = [DocumentChunkInfo(**chunk) for chunk in raw_chunks]
+    return DocumentDetailResponse(
+        id=record["id"],
+        filename=record["filename"],
+        collection=record.get("collection", DEFAULT_COLLECTION),
+        sha256=record.get("sha256"),
+        upload_timestamp=record.get("upload_timestamp"),
+        chunk_count=len(chunks),
+        chunks=chunks,
+    )
 
 
 @app.get("/collections", response_model=list[str])

@@ -129,6 +129,24 @@ class DocumentInfo(BaseModel):
     upload_timestamp: datetime
 
 
+class DocumentChunkInfo(BaseModel):
+    chunk_id: str
+    chunk_index: int
+    page: int | None = None
+    preview: str
+    content: str
+
+
+class DocumentDetailResponse(BaseModel):
+    id: int
+    filename: str
+    collection: str = DEFAULT_COLLECTION
+    sha256: str | None = None
+    upload_timestamp: datetime | None = None
+    chunk_count: int
+    chunks: list[DocumentChunkInfo] = Field(default_factory=list)
+
+
 class SessionInfo(BaseModel):
     session_id: str
     message_count: int

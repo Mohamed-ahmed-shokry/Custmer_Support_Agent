@@ -23,6 +23,7 @@ from langchain_text_splitters import (
 )
 
 from api.collections import DEFAULT_COLLECTION
+from api.presenters import preview_content
 from api.settings import settings
 
 if TYPE_CHECKING:
@@ -170,6 +171,37 @@ def _add_documents_with_retry(vectorstore, splits, document_ids, file_path: str)
                 time.sleep(INDEX_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
     if last_error is not None:
         raise last_error
+
+
+def get_doc_chunks_from_chroma(file_id: int) -> list[dict[str, Any]]:
+    """Retrieve all chunk records for a document ordered by chunk_index."""
+    try:
+        vectorstore = get_vectorstore()
+        raw = vectorstore.get(
+            where={"file_id": file_id}, include=["documents", "metadatas"]
+        )
+        ids = raw.get("ids") or []
+        contents = raw.get("documents") or []
+        metadatas = raw.get("metadatas") or []
+        chunks = []
+        for cid, content, meta in zip(ids, contents, metadatas, strict=False):
+            meta_dict = meta or {}
+            chunk_index = int(meta_dict.get("chunk_index", 0))
+            text = content or ""
+            chunks.append(
+                {
+                    "chunk_id": str(cid),
+                    "chunk_index": chunk_index,
+                    "page": meta_dict.get("page"),
+                    "content": text,
+                    "preview": preview_content(text),
+                }
+            )
+        chunks.sort(key=lambda c: int(str(c.get("chunk_index", 0))))
+        return chunks
+    except Exception:
+        logger.exception("Error retrieving chunks for file_id %s from Chroma", file_id)
+        return []
 
 
 def delete_doc_from_chroma(file_id: int):

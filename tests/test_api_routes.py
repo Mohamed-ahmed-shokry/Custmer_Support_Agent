@@ -970,3 +970,56 @@ def test_chat_stream_handles_chain_error(monkeypatch):
     assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
     content = response.text
     assert "event: error" in content
+
+
+def test_get_document_details_success(monkeypatch):
+    file_id = 42
+    expected_chunk_count = 2
+    fake_record = {
+        "id": file_id,
+        "filename": "lease.pdf",
+        "collection": "clients-acme",
+        "sha256": "abcdef123456",
+        "upload_timestamp": "2026-09-18 12:00:00",
+    }
+    fake_chunks = [
+        {
+            "chunk_id": "42:0",
+            "chunk_index": 0,
+            "page": 1,
+            "content": "Paragraph one content",
+            "preview": "Paragraph one content",
+        },
+        {
+            "chunk_id": "42:1",
+            "chunk_index": 1,
+            "page": 2,
+            "content": "Paragraph two content",
+            "preview": "Paragraph two content",
+        },
+    ]
+    monkeypatch.setattr(
+        main, "get_document_record", lambda fid: fake_record if fid == file_id else None
+    )
+    monkeypatch.setattr(
+        main, "get_doc_chunks_from_chroma", lambda fid: fake_chunks if fid == file_id else []
+    )
+
+    response = client.get(f"/docs/{file_id}")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["id"] == file_id
+    assert data["filename"] == "lease.pdf"
+    assert data["collection"] == "clients-acme"
+    assert data["sha256"] == "abcdef123456"
+    assert data["chunk_count"] == expected_chunk_count
+    assert len(data["chunks"]) == expected_chunk_count
+    assert data["chunks"][0]["chunk_id"] == "42:0"
+    assert data["chunks"][0]["page"] == 1
+
+
+def test_get_document_details_not_found(monkeypatch):
+    monkeypatch.setattr(main, "get_document_record", lambda fid: None)
+    response = client.get("/docs/999")
+    assert response.status_code == HTTP_NOT_FOUND
+    assert "not found" in response.json()["detail"].lower()

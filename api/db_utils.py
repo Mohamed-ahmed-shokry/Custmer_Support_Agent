@@ -57,7 +57,7 @@ _SELECT_DOC_BY_HASH = (
 )
 
 _SELECT_DOC_RECORD = (
-    "SELECT id, filename, collection, upload_timestamp FROM document_store WHERE id = ?"
+    "SELECT id, filename, collection, sha256, upload_timestamp FROM document_store WHERE id = ?"
 )
 
 _DELETE_DOC_RECORD = "DELETE FROM document_store WHERE id = ?"

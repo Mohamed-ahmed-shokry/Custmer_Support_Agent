@@ -399,3 +399,42 @@ def test_select_retriever_source_filename_filtering(monkeypatch):
     assert isinstance(expanded, ExpandedVectorRetriever)
     assert expanded.search_kwargs["filter"]["filename"] == {"$eq": "terms.pdf"}
 
+
+def test_get_doc_chunks_from_chroma_success(monkeypatch):
+    expected_chunk_count = 2
+    file_id = 42
+
+    class ChunkVectorstore(FakeVectorstore):
+        def get(self, where=None, include=None):
+            return {
+                "ids": ["42:1", "42:0"],
+                "documents": ["Second page chunk", "First page chunk"],
+                "metadatas": [
+                    {"chunk_index": 1, "page": 2, "filename": "doc.pdf"},
+                    {"chunk_index": 0, "page": 1, "filename": "doc.pdf"},
+                ],
+            }
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", ChunkVectorstore)
+    chunks = chroma_utils.get_doc_chunks_from_chroma(file_id)
+    assert len(chunks) == expected_chunk_count
+    assert chunks[0]["chunk_id"] == "42:0"
+    assert chunks[0]["chunk_index"] == 0
+    assert chunks[0]["page"] == 1
+    assert chunks[0]["content"] == "First page chunk"
+    assert chunks[0]["preview"] == "First page chunk"
+    assert chunks[1]["chunk_id"] == "42:1"
+    assert chunks[1]["chunk_index"] == 1
+
+
+def test_get_doc_chunks_from_chroma_error_returns_empty(monkeypatch):
+    file_id = 99
+
+    class ErrorVectorstore:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("Chroma connection error")
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", ErrorVectorstore)
+    assert chroma_utils.get_doc_chunks_from_chroma(file_id) == []
+
+
