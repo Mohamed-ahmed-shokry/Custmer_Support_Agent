@@ -158,7 +158,19 @@ unit tests and contains a true SSE wiring bug (no new deps).
   - Unit tests for `app/streamlit_app.py` (entry point execution and session state initialization: 100%)
 - [x] Quality Gates: 287 tests passing, 95.59% total coverage, ruff & mypy clean
 
-## Next Candidates (v0.20.0+)
+## v0.20.0 plan — Document Inspection, Batch Operations, Session Discovery & Multi-Strategy Eval 🚀 IN PROGRESS
+
+Deliver operational visibility, batch maintenance, conversational history search, and extended retrieval evaluation.
+
+- [ ] Document Inspection: `GET /docs/{file_id}` endpoint + Chroma chunk retrieval (`get_doc_chunks_from_chroma`) exposing chunk count, chunk text, previews, and metadata
+- [ ] Bulk Document Deletion: `POST /delete-docs` endpoint accepting `file_ids` with per-file status reports (`deleted`, `not_found`, `error`)
+- [ ] Session Discovery: `GET /sessions/search?q=...` endpoint + SQLite full-text search across queries and responses (`search_sessions`)
+- [ ] Client Integration: `app/api_utils.py` methods for document inspection, bulk delete, and session search with `X-API-Key` forwarding
+- [ ] Streamlit UI: Document inspector widget, batch document delete mode, and session keyword filter in `app/sidebar.py`
+- [ ] Multi-Strategy Retrieval Eval: Extend `scripts/eval_retrieval.py` with `--hybrid`, `--rerank`, `--collection`, and `--json-output` flags
+- [ ] Test Coverage & Quality Gates: Unit tests for all new endpoints, utilities, and UI widgets; 0 ruff errors, 0 mypy errors, >=90% test coverage
+
+## Next Candidates (v0.21.0+)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets (dependent on real credentials)
