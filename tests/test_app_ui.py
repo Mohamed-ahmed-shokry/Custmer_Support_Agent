@@ -728,6 +728,99 @@ def test_display_sidebar_complete(monkeypatch):
     assert any(c.fn == "caption" for c in st.calls)
 
 
+def test_render_session_history_search_filter(monkeypatch):
+    st = _session_state()
+    st.session_state["sessions"] = [
+        {"session_id": "s1", "label": "Lease", "message_count": 2},
+        {"session_id": "s2", "label": "Maintenance", "message_count": 1},
+    ]
+    st.values["session_search_query"] = "maintenance"
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "search_sessions", lambda q: [{"session_id": "s2"}])
+
+    sidebar._render_session_history()
+    picker_calls = [c for c in st.calls if c.fn == "selectbox" and c.args[0] == "Open a session"]
+    assert len(picker_calls) == 1
+    options = picker_calls[0].kwargs["options"]
+    assert "(current)" in options
+    assert "s2" in options
+    assert "s1" not in options
+
+    st_none = _session_state()
+    st_none.session_state["sessions"] = [
+        {"session_id": "s1", "label": "Lease", "message_count": 2},
+    ]
+    st_none.values["session_search_query"] = "nonexistent"
+    monkeypatch.setattr(sidebar, "st", st_none)
+    monkeypatch.setattr(sidebar, "search_sessions", lambda q: [])
+
+    sidebar._render_session_history()
+    captions = [c.args[0] for c in st_none.calls if c.fn == "caption"]
+    assert "No matching conversations found." in captions
+
+
+def test_render_document_inspector(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+
+    st.session_state["documents"] = []
+    sidebar._render_document_inspector()
+    assert not any(c.fn == "expander" for c in st.calls)
+
+    doc_id = 42
+    st.session_state["documents"] = [{"id": doc_id, "filename": "test.pdf"}]
+    st.values["inspect_doc_id"] = doc_id
+    st.buttons["Load Details"] = True
+    fake_details = {
+        "id": doc_id,
+        "filename": "test.pdf",
+        "chunk_count": 1,
+        "sha256": "1234567890abcdef123456",
+        "chunks": [{"chunk_index": 0, "page": 1, "preview": "Hello chunk preview"}],
+    }
+    monkeypatch.setattr(sidebar, "get_document_details", lambda fid: fake_details)
+
+    sidebar._render_document_inspector()
+    assert st.session_state["inspect_doc_details"] == fake_details
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Total chunks" in m for m in markdowns)
+    texts = [c.args[0] for c in st.calls if c.fn == "text"]
+    assert "Hello chunk preview" in texts
+
+
+def test_render_document_list_bulk_delete(monkeypatch):
+    st = FakeStreamlit()
+    doc_ids = [10, 11]
+    st.session_state["documents"] = [
+        {"id": 10, "filename": "a.pdf", "upload_timestamp": "2026-09-01"},
+        {"id": 11, "filename": "b.pdf", "upload_timestamp": "2026-09-01"},
+    ]
+    st.values["bulk_delete_mode"] = True
+    st.values["bulk_delete_ids"] = doc_ids
+    st.buttons["Delete Selected Documents"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+    expected_deleted = 2
+    monkeypatch.setattr(sidebar, "delete_documents", lambda fids: {"deleted": expected_deleted})
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+
+    sidebar._render_document_list()
+    assert any("Deleted 2 document(s)." in s for s in st.successes)
+    assert st.reruns == 1
+
+    st_fail = FakeStreamlit()
+    st_fail.session_state["documents"] = [
+        {"id": 10, "filename": "a.pdf", "upload_timestamp": "2026-09-01"}
+    ]
+    st_fail.values["bulk_delete_mode"] = True
+    st_fail.values["bulk_delete_ids"] = [10]
+    st_fail.buttons["Delete Selected Documents"] = True
+    monkeypatch.setattr(sidebar, "st", st_fail)
+    monkeypatch.setattr(sidebar, "delete_documents", lambda fids: None)
+
+    sidebar._render_document_list()
+    assert any("Failed to delete documents." in e for e in st_fail.errors)
+
+
 # --- streamlit_app entry point ----------------------------------------------
 
 

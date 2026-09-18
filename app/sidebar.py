@@ -6,8 +6,10 @@ from app.api_utils import (
     API_BASE_URL,
     delete_collection,
     delete_document,
+    delete_documents,
     delete_session,
     export_session,
+    get_document_details,
     get_health,
     get_metrics,
     get_quota,
@@ -18,6 +20,7 @@ from app.api_utils import (
     list_sessions,
     rename_collection,
     rename_session,
+    search_sessions,
     upload_document,
     upload_documents,
 )
@@ -45,33 +48,18 @@ def _render_reset_chat():
         st.rerun()
 
 
-def _render_session_history():
-    st.sidebar.header("Past Sessions")
-    if st.sidebar.button("Refresh Sessions"):
-        st.session_state.sessions = list_sessions()
-
-    if "sessions" not in st.session_state:
-        st.session_state.sessions = list_sessions()
-
-    sessions = st.session_state.sessions
-    if not sessions:
-        st.sidebar.caption("No past sessions yet.")
-        return
-
-    labels = {"(current)": "(current)"}
-    for session in sessions:
-        title = session.get("label") or session.get("preview") or session["session_id"][:8]
-        labels[session["session_id"]] = f"{title} ({session['message_count']} msgs)"
-    options = ["(current)"] + [s["session_id"] for s in sessions]
-    selected = st.sidebar.selectbox(
-        "Open a session",
-        options=options,
-        format_func=lambda session_id: labels.get(session_id, session_id),
-        key="session_picker",
+def _filter_sessions(sessions):
+    search_query = st.sidebar.text_input(
+        "Search conversations", key="session_search_query", placeholder="Filter by keyword..."
     )
-    if selected == "(current)":
-        return
-    new_label = st.sidebar.text_input("Rename session", key="rename_session", max_chars=80)
+    if not search_query.strip():
+        return sessions
+    search_hits = search_sessions(search_query.strip())
+    matching_ids = {h["session_id"] for h in search_hits}
+    return [s for s in sessions if s["session_id"] in matching_ids]
+
+
+def _handle_session_actions(selected, new_label):
     rename_col, load_col, delete_col = st.sidebar.columns(3)
     if rename_col.button("Rename") and new_label.strip():
         with st.spinner("Renaming session..."):
@@ -97,6 +85,41 @@ def _render_session_history():
                 st.session_state.pop("export_text", None)
                 st.session_state.pop("export_session_id", None)
                 st.rerun()
+
+
+def _render_session_history():
+    st.sidebar.header("Past Sessions")
+    if st.sidebar.button("Refresh Sessions"):
+        st.session_state.sessions = list_sessions()
+
+    if "sessions" not in st.session_state:
+        st.session_state.sessions = list_sessions()
+
+    sessions = st.session_state.sessions
+    if not sessions:
+        st.sidebar.caption("No past sessions yet.")
+        return
+
+    sessions = _filter_sessions(sessions)
+    if not sessions:
+        st.sidebar.caption("No matching conversations found.")
+        return
+
+    labels = {"(current)": "(current)"}
+    for session in sessions:
+        title = session.get("label") or session.get("preview") or session["session_id"][:8]
+        labels[session["session_id"]] = f"{title} ({session['message_count']} msgs)"
+    options = ["(current)"] + [s["session_id"] for s in sessions]
+    selected = st.sidebar.selectbox(
+        "Open a session",
+        options=options,
+        format_func=lambda session_id: labels.get(session_id, session_id),
+        key="session_picker",
+    )
+    if selected == "(current)":
+        return
+    new_label = st.sidebar.text_input("Rename session", key="rename_session", max_chars=80)
+    _handle_session_actions(selected, new_label)
     _render_session_export(selected)
 
 
@@ -271,21 +294,70 @@ def _render_document_list():
             f"`{doc.get('collection', 'default')}`  \nUploaded: `{doc['upload_timestamp']}`"
         )
 
-    selected_file_id = st.sidebar.selectbox(
-        "Select a document to delete",
-        options=[doc["id"] for doc in documents],
-        format_func=lambda x: next(doc["filename"] for doc in documents if doc["id"] == x),
+    bulk_delete = st.sidebar.checkbox(
+        "Bulk delete mode", value=False, key="bulk_delete_mode"
     )
-    if st.sidebar.button("Delete Selected Document"):
-        with st.spinner("Deleting..."):
-            delete_response = delete_document(selected_file_id)
-            if delete_response:
-                st.sidebar.success(f"Document with ID {selected_file_id} deleted successfully.")
-                st.session_state.documents = list_documents(
-                    st.session_state.get("active_collection")
-                )
-            else:
-                st.sidebar.error(f"Failed to delete document with ID {selected_file_id}.")
+    if bulk_delete:
+        to_delete = st.sidebar.multiselect(
+            "Select documents to delete",
+            options=[doc["id"] for doc in documents],
+            format_func=lambda x: next(doc["filename"] for doc in documents if doc["id"] == x),
+            key="bulk_delete_ids",
+        )
+        if st.sidebar.button("Delete Selected Documents") and to_delete:
+            with st.spinner("Deleting documents..."):
+                res = delete_documents(to_delete)
+                if res and res.get("deleted", 0) > 0:
+                    st.sidebar.success(f"Deleted {res['deleted']} document(s).")
+                    st.session_state.documents = list_documents(
+                        st.session_state.get("active_collection")
+                    )
+                    st.rerun()
+                else:
+                    st.sidebar.error("Failed to delete documents.")
+    else:
+        selected_file_id = st.sidebar.selectbox(
+            "Select a document to delete",
+            options=[doc["id"] for doc in documents],
+            format_func=lambda x: next(doc["filename"] for doc in documents if doc["id"] == x),
+        )
+        if st.sidebar.button("Delete Selected Document"):
+            with st.spinner("Deleting..."):
+                delete_response = delete_document(selected_file_id)
+                if delete_response:
+                    st.sidebar.success(f"Document with ID {selected_file_id} deleted successfully.")
+                    st.session_state.documents = list_documents(
+                        st.session_state.get("active_collection")
+                    )
+                else:
+                    st.sidebar.error(f"Failed to delete document with ID {selected_file_id}.")
+
+
+def _render_document_inspector():
+    documents = st.session_state.get("documents", [])
+    if not documents:
+        return
+    with st.sidebar.expander("Inspect Document Chunks"):
+        inspect_id = st.selectbox(
+            "Select document to inspect",
+            options=[doc["id"] for doc in documents],
+            format_func=lambda x: next(doc["filename"] for doc in documents if doc["id"] == x),
+            key="inspect_doc_id",
+        )
+        if st.button("Load Details", key="load_doc_details"):
+            with st.spinner("Loading chunks..."):
+                details = get_document_details(inspect_id)
+                st.session_state["inspect_doc_details"] = details
+
+        details = st.session_state.get("inspect_doc_details")
+        if details and details.get("id") == inspect_id:
+            st.markdown(f"**Total chunks:** `{details.get('chunk_count', 0)}`")
+            if details.get("sha256"):
+                st.caption(f"SHA-256: `{details['sha256'][:16]}...`")
+            for chunk in details.get("chunks", [])[:10]:
+                pg = f", p.{chunk['page']}" if chunk.get("page") else ""
+                st.caption(f"Chunk {chunk['chunk_index']}{pg}:")
+                st.text(chunk.get("preview", ""))
 
 
 def _render_retrieval_filters():
@@ -317,6 +389,7 @@ def display_sidebar():
     active_collection = _render_collection_picker()
     _render_upload_document(active_collection)
     _render_refresh_documents(active_collection)
+    _render_document_inspector()
     _render_retrieval_filters()
     _render_document_list()
     _render_ops_metrics()

@@ -104,6 +104,9 @@ class FakeStreamlit:
     def write(self, *args, **kwargs):
         self.calls.append(Call("st", "write", args, kwargs))
 
+    def text(self, *args, **kwargs):
+        self.calls.append(Call("st", "text", args, kwargs))
+
     def header(self, text):
         self.calls.append(Call("st", "header", (text,), {}))
 
@@ -120,8 +123,10 @@ class FakeStreamlit:
         self.reruns += 1
 
     # --- value-returning widgets ------------------------------------------
-    def button(self, label):
-        self.calls.append(Call("st", "button", (label,), {}))
+    def button(self, label, key=None):
+        self.calls.append(Call("st", "button", (label,), {"key": key}))
+        if key and key in self.buttons:
+            return self.buttons[key]
         return self.buttons.get(label, False)
 
     def checkbox(self, label, value=False, key=None):
