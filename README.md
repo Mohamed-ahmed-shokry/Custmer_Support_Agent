@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.19.0)
+# Customer Support RAG Agent (v0.20.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -18,6 +18,13 @@ A local-first customer support assistant for real estate and property management
   `USE_QUERY_EXPANSION`.
 - Opt-in lexical rerank (`rerank`): term-overlap reordering that composes
   with filters, hybrid, and expansion; sidebar toggle or `USE_RERANK`.
+- Document chunk inspection (`GET /docs/{id}`): view chunk count, chunk previews,
+  and metadata in the Streamlit inspector widget.
+- Bulk document deletion (`POST /delete-docs`) with batch selection mode in the UI.
+- Session discovery & keyword search (`GET /sessions/search`) filtering past
+  conversations across questions and responses in the UI.
+- Multi-strategy retrieval evaluation harness (`scripts/eval_retrieval.py`)
+  supporting hybrid, rerank, collection filters, and structured JSON exports.
 - Session export to markdown (`GET /sessions/{id}/export`, UI download).
 - Document collections group uploads, retrieval, and the UI picker, with
   automatic migration for pre-v0.6.0 databases; whole collections can be

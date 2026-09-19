@@ -1,4 +1,4 @@
-# API Reference (v0.19.0)
+# API Reference (v0.20.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -102,6 +102,10 @@ Chroma failure → `500`).
 document and chunk (`409` when the target exists, `404` when the source is
 empty, `422` for an invalid name).
 
+`GET /docs/{file_id}` → `{id, filename, upload_timestamp, collection, sha256, chunk_count, chunks: [{chunk_index, page, preview, metadata}]}` (`404` when unknown). Inspects document metadata and chunk breakdown directly from SQLite and Chroma.
+
+`POST /delete-docs` with `{"file_ids": [1, 2, 3]}` accepts up to 50 document IDs for bulk deletion and returns `{results: [{file_id, status, error}], deleted: int, failed: int}` where status is `deleted`, `not_found`, or `error`.
+
 `GET /stats` → `{documents, collections, sessions, messages}` library totals
 computed with `COUNT` queries.
 
@@ -143,6 +147,8 @@ SQLite record (`404` when unknown).
   the cutoff, including labels and feedback (`400` for a bad date).
 - `GET /sessions/{session_id}/export` → the conversation as a markdown
   transcript download (`404` when the session has no history).
+- `GET /sessions/search?q=<query>&limit=20` → searches SQLite conversation history
+  for matching questions and answers, returning an array of `{session_id, match_count, last_active, preview, label}`.
 
 ## Quotas
 
@@ -155,3 +161,15 @@ SQLite record (`404` when unknown).
   thumbs up (`1`) or down (`-1`); anything else → `422`. Totals surface as
   the `feedback_up` / `feedback_down` metrics. The chat UI posts once per
   widget selection change.
+
+## Evaluation Harness
+
+`scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:
+- `--golden <path>`: path to golden question dataset (default `docs/eval/golden.json`).
+- `--expand`: evaluate with query expansion (LLM reformulations fused via RRF).
+- `--hybrid`: evaluate with hybrid BM25 + dense vector search.
+- `--rerank`: evaluate with term-overlap lexical reranking.
+- `--collection <name>`: scope retrieval evaluation to a specific collection.
+- `--compare`: evaluate baseline vector search vs configured enhanced strategy side-by-side.
+- `--json-output <path>`: write structured evaluation metrics and per-case results to JSON.
+

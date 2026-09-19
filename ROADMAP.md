@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.19.0, 2026-09-17)
+## Current State (v0.20.0, 2026-09-18)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -33,9 +33,12 @@
 - Session retention pruning, hardened security helpers, ADR-002
 - Client reliability: SSE parsing fixed on the wire format, error/source
   events surfaced correctly in the UI
-- Full client security: X-API-Key forwarding across all 17 Streamlit endpoints
-- Core pipeline test hardening: 100% langchain_utils, 88.63% chroma_utils, 99.52% db_utils, 99.49% sidebar, 100% streamlit_app
-- 287 tests passing; 95.59% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- Full client security: X-API-Key forwarding across all Streamlit client endpoints
+- Document inspection: `GET /docs/{file_id}` and Chroma chunk inspector in UI
+- Bulk document deletion: `POST /delete-docs` and batch deletion mode in UI
+- Session discovery: `GET /sessions/search` endpoint and keyword search filter in UI
+- Multi-strategy retrieval eval harness: hybrid, rerank, collection filters, and JSON export
+- 309 tests passing; 95.87% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -158,23 +161,24 @@ unit tests and contains a true SSE wiring bug (no new deps).
   - Unit tests for `app/streamlit_app.py` (entry point execution and session state initialization: 100%)
 - [x] Quality Gates: 287 tests passing, 95.59% total coverage, ruff & mypy clean
 
-## v0.20.0 plan — Document Inspection, Batch Operations, Session Discovery & Multi-Strategy Eval 🚀 IN PROGRESS
+## v0.20.0 plan — Document Inspection, Batch Operations, Session Discovery & Multi-Strategy Eval ✅ COMPLETED
 
 Deliver operational visibility, batch maintenance, conversational history search, and extended retrieval evaluation.
 
-- [ ] Document Inspection: `GET /docs/{file_id}` endpoint + Chroma chunk retrieval (`get_doc_chunks_from_chroma`) exposing chunk count, chunk text, previews, and metadata
-- [ ] Bulk Document Deletion: `POST /delete-docs` endpoint accepting `file_ids` with per-file status reports (`deleted`, `not_found`, `error`)
-- [ ] Session Discovery: `GET /sessions/search?q=...` endpoint + SQLite full-text search across queries and responses (`search_sessions`)
-- [ ] Client Integration: `app/api_utils.py` methods for document inspection, bulk delete, and session search with `X-API-Key` forwarding
-- [ ] Streamlit UI: Document inspector widget, batch document delete mode, and session keyword filter in `app/sidebar.py`
-- [ ] Multi-Strategy Retrieval Eval: Extend `scripts/eval_retrieval.py` with `--hybrid`, `--rerank`, `--collection`, and `--json-output` flags
-- [ ] Test Coverage & Quality Gates: Unit tests for all new endpoints, utilities, and UI widgets; 0 ruff errors, 0 mypy errors, >=90% test coverage
+- [x] Document Inspection: `GET /docs/{file_id}` endpoint + Chroma chunk retrieval (`get_doc_chunks_from_chroma`) exposing chunk count, chunk text, previews, and metadata
+- [x] Bulk Document Deletion: `POST /delete-docs` endpoint accepting `file_ids` with per-file status reports (`deleted`, `not_found`, `error`)
+- [x] Session Discovery: `GET /sessions/search?q=...` endpoint + SQLite search across queries and responses (`search_sessions`)
+- [x] Client Integration: `app/api_utils.py` methods for document inspection, bulk delete, and session search with `X-API-Key` forwarding
+- [x] Streamlit UI: Document inspector widget, batch document delete mode, and session keyword filter in `app/sidebar.py`
+- [x] Multi-Strategy Retrieval Eval: Extend `scripts/eval_retrieval.py` with `--hybrid`, `--rerank`, `--collection`, and `--json-output` flags
+- [x] Test Coverage & Quality Gates: Unit tests for all new endpoints, utilities, and UI widgets; 0 ruff errors, 0 mypy errors, 309 tests passing, 95.87% test coverage
 
 ## Next Candidates (v0.21.0+)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets (dependent on real credentials)
 - Automated end-to-end browser tests via Playwright
+- Document chunk semantic re-chunking and visualization
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

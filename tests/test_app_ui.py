@@ -245,11 +245,11 @@ def test_default_model_index_matches_settings_default():
 def test_render_health_status_healthy(monkeypatch):
     st = FakeStreamlit()
     monkeypatch.setattr(sidebar, "st", st)
-    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.19.0"})
+    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.20.0"})
 
     sidebar._render_health_status()
 
-    assert st.successes == ["Backend: ok (0.19.0)"]
+    assert st.successes == ["Backend: ok (0.20.0)"]
 
 
 def test_render_health_status_unavailable(monkeypatch):
@@ -716,7 +716,7 @@ def test_render_ops_metrics_quota_and_latencies(monkeypatch):
 def test_display_sidebar_complete(monkeypatch):
     st = FakeStreamlit()
     monkeypatch.setattr(sidebar, "st", st)
-    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.19.0"})
+    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.20.0"})
     monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
     monkeypatch.setattr(sidebar, "list_collections", lambda: ["default"])
     monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
