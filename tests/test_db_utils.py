@@ -234,7 +234,72 @@ def test_feedback_rejects_invalid_ratings(monkeypatch, tmp_path):
         raise AssertionError(f"expected ValueError for {bad!r}")
 
 
+def test_feedback_with_comment_and_listing(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_feedback("session-1", 1, "Great answer!")
+    db_utils.insert_feedback("session-1", -1, "Too brief.")
+    db_utils.insert_feedback("session-2", 1, None)
+
+    all_items, total = db_utils.list_feedback()
+    expected_total = 3
+    assert total == expected_total
+    assert len(all_items) == expected_total
+
+    pos_items, pos_total = db_utils.list_feedback(rating=1)
+    expected_pos = 2
+    assert pos_total == expected_pos
+    assert len(pos_items) == expected_pos
+
+    s1_items, s1_total = db_utils.list_feedback(session_id="session-1")
+    assert s1_total == expected_pos
+    assert len(s1_items) == expected_pos
+
+    expected_page1 = 2
+    expected_page2 = 1
+    page1, _ = db_utils.list_feedback(limit=expected_page1, offset=0)
+    assert len(page1) == expected_page1
+    page2, _ = db_utils.list_feedback(limit=expected_page1, offset=expected_page1)
+    assert len(page2) == expected_page2
+
+
+def test_get_session_feedback(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_feedback("session-1", 1, "Helpful")
+    db_utils.insert_feedback("session-2", -1, "Not helpful")
+    db_utils.insert_feedback("session-1", -1, "Wait, incorrect info")
+
+    s1_feedback = db_utils.get_session_feedback("session-1")
+    expected_count = 2
+    assert len(s1_feedback) == expected_count
+    assert s1_feedback[0]["comment"] == "Helpful"
+    assert s1_feedback[1]["comment"] == "Wait, incorrect info"
+
+    assert db_utils.get_session_feedback("missing") == []
+
+
+def test_migrate_feedback_adds_comment_column(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(
+            "CREATE TABLE feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "session_id TEXT NOT NULL, rating INTEGER NOT NULL, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        conn.execute("INSERT INTO feedback (session_id, rating) VALUES ('s1', 1)")
+        conn.commit()
+
+    db_utils.migrate_feedback()
+
+    with closing(db_utils.get_db_connection()) as conn:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(feedback)")]
+        assert "comment" in columns
+
+
 def test_document_record_defaults_to_default_collection(monkeypatch, tmp_path):
+
     initialize_temp_db(monkeypatch, tmp_path)
 
     file_id = db_utils.insert_document_record("lease.pdf")

@@ -32,10 +32,14 @@ _CREATE_FEEDBACK_TABLE = (
     "CREATE TABLE IF NOT EXISTS feedback "
     "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
     "session_id TEXT NOT NULL, rating INTEGER NOT NULL, "
+    "comment TEXT, "
     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
-_INSERT_FEEDBACK = "INSERT INTO feedback (session_id, rating) VALUES (?, ?)"
+_INSERT_FEEDBACK = (
+    "INSERT INTO feedback (session_id, rating, comment) VALUES (?, ?, ?)"
+)
+
 _SELECT_FEEDBACK_COUNT = "SELECT COUNT(*) FROM feedback WHERE rating = ?"
 
 MAX_SESSION_LABEL_LENGTH = 80
@@ -405,16 +409,72 @@ def create_feedback():
         conn.commit()
 
 
-def insert_feedback(session_id, rating):
-    """Record a +1/-1 answer rating; raises ValueError for other ratings."""
+def migrate_feedback():
+    """Add newer columns to feedback table if missing (no-op otherwise)."""
+    with closing(get_db_connection()) as conn:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(feedback)")]
+        if "comment" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN comment TEXT")
+        conn.commit()
+
+
+def insert_feedback(session_id, rating, comment=None):
+    """Record a +1/-1 answer rating with optional comment; raises ValueError for other ratings."""
     if rating not in (1, -1):
         raise ValueError("Rating must be 1 or -1.")
+    clean_comment = comment.strip() if comment and isinstance(comment, str) else None
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute(_INSERT_FEEDBACK, (session_id, rating))
+        cursor.execute(_INSERT_FEEDBACK, (session_id, rating, clean_comment))
         feedback_id = cursor.lastrowid
         conn.commit()
         return feedback_id
+
+
+def list_feedback(
+    rating=None,
+    session_id=None,
+    limit=50,
+    offset=0,
+):
+    """List feedback with optional filters and pagination, returning (items, total)."""
+    query = "SELECT id, session_id, rating, comment, created_at FROM feedback"
+
+    count_query = "SELECT COUNT(*) FROM feedback"
+    clauses = []
+    params = []
+
+    if rating is not None:
+        clauses.append("rating = ?")
+        params.append(rating)
+    if session_id is not None:
+        clauses.append("session_id = ?")
+        params.append(session_id)
+
+    if clauses:
+        where_clause = " WHERE " + " AND ".join(clauses)
+        query += where_clause
+        count_query += where_clause
+
+    query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+    query_params = list(params) + [limit, offset]
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(count_query, params).fetchone()[0]
+        rows = conn.execute(query, query_params).fetchall()
+        items = [dict(row) for row in rows]
+        return items, total
+
+
+def get_session_feedback(session_id):
+    """Return all feedback records for a specific session ordered by created_at."""
+    query = (
+        "SELECT id, session_id, rating, comment, created_at FROM feedback "
+        "WHERE session_id = ? ORDER BY created_at ASC, id ASC"
+    )
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, (session_id,)).fetchall()
+        return [dict(row) for row in rows]
 
 
 def count_feedback(rating):
@@ -441,3 +501,5 @@ create_document_store()
 migrate_document_store()
 create_session_labels()
 create_feedback()
+migrate_feedback()
+
