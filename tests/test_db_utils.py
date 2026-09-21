@@ -10,6 +10,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_application_logs()
     db_utils.create_document_store()
     db_utils.create_session_labels()
+    db_utils.migrate_session_labels()
     db_utils.create_feedback()
     return db_path
 
@@ -403,3 +404,139 @@ def test_search_sessions_matches_query_and_response(monkeypatch, tmp_path):
     assert db_utils.search_sessions("") == []
     assert db_utils.search_sessions("   ") == []
     assert db_utils.search_sessions("nonexistent term") == []
+
+
+def test_normalize_session_status():
+    assert db_utils.normalize_session_status(None) == "active"
+    assert db_utils.normalize_session_status("") == "active"
+    assert db_utils.normalize_session_status("  RESOLVED  ") == "resolved"
+    assert db_utils.normalize_session_status("escalated") == "escalated"
+    assert db_utils.normalize_session_status("closed") == "closed"
+
+    try:
+        db_utils.normalize_session_status("invalid-status")
+        raise AssertionError("Should have raised ValueError")
+    except ValueError as e:
+        assert "Invalid session status" in str(e)
+
+
+def test_normalize_session_tags():
+    assert db_utils.normalize_session_tags(None) == ""
+    assert db_utils.normalize_session_tags("") == ""
+    assert db_utils.normalize_session_tags("  lease, maintenance , lease ") == "lease, maintenance"
+    assert db_utils.normalize_session_tags(["urgent", "billing", "urgent"]) == "billing, urgent"
+
+    try:
+        db_utils.normalize_session_tags(", ".join(f"tag_{i}" for i in range(50)))
+        raise AssertionError("Should have raised ValueError")
+    except ValueError as e:
+        assert "Session tags must be at most" in str(e)
+
+
+def test_update_session_metadata_and_retrieval(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Missing session returns False / None
+    assert db_utils.update_session_metadata("missing-session", label="Test") is False
+    assert db_utils.get_session_metadata("missing-session") is None
+
+    # Known session with logs
+    db_utils.insert_application_logs("session-1", "Hi", "Hello", "gpt-4o-mini")
+
+    # Initial metadata when not set
+    meta = db_utils.get_session_metadata("session-1")
+    assert meta == {"session_id": "session-1", "label": None, "status": "active", "tags": ""}
+
+    # Update metadata incrementally
+    assert (
+        db_utils.update_session_metadata(
+            "session-1", label="Tenant Chat", status="resolved", tags=["billing", "rent"]
+        )
+        is True
+    )
+    meta = db_utils.get_session_metadata("session-1")
+    assert meta is not None
+    assert meta["label"] == "Tenant Chat"
+    assert meta["status"] == "resolved"
+    assert meta["tags"] == "billing, rent"
+
+    # Update only status
+    assert db_utils.update_session_metadata("session-1", status="escalated") is True
+    meta = db_utils.get_session_metadata("session-1")
+    assert meta is not None
+    assert meta["label"] == "Tenant Chat"  # preserved
+    assert meta["status"] == "escalated"
+    assert meta["tags"] == "billing, rent"  # preserved
+
+
+def test_get_all_sessions_status_and_tag_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("s1", "Q1", "A1", "gpt-4o-mini")
+    db_utils.insert_application_logs("s2", "Q2", "A2", "gpt-4o-mini")
+    db_utils.insert_application_logs("s3", "Q3", "A3", "gpt-4o-mini")
+
+    db_utils.update_session_metadata("s1", label="S1", status="resolved", tags="lease,urgent")
+    db_utils.update_session_metadata("s2", label="S2", status="active", tags="maintenance")
+    db_utils.update_session_metadata("s3", label="S3", status="escalated", tags="urgent")
+
+    # All sessions
+    all_sessions = db_utils.get_all_sessions()
+    expected_all_sessions = 3
+    assert len(all_sessions) == expected_all_sessions
+    s1 = next(s for s in all_sessions if s["session_id"] == "s1")
+    assert s1["status"] == "resolved"
+    assert s1["tags"] == "lease, urgent"
+
+    # Filter by status
+    resolved = db_utils.get_all_sessions(status="resolved")
+    assert len(resolved) == 1
+    assert resolved[0]["session_id"] == "s1"
+
+    active = db_utils.get_all_sessions(status="active")
+    assert len(active) == 1
+    assert active[0]["session_id"] == "s2"
+
+    # Filter by tag
+    urgent = db_utils.get_all_sessions(tag="urgent")
+    expected_urgent_count = 2
+    assert len(urgent) == expected_urgent_count
+    assert {s["session_id"] for s in urgent} == {"s1", "s3"}
+
+    # Filter by both status and tag
+    resolved_urgent = db_utils.get_all_sessions(status="resolved", tag="urgent")
+    assert len(resolved_urgent) == 1
+    assert resolved_urgent[0]["session_id"] == "s1"
+
+    # Search sessions also includes status and tags
+    search_res = db_utils.search_sessions("Q1")
+    assert len(search_res) == 1
+    assert search_res[0]["status"] == "resolved"
+    assert search_res[0]["tags"] == "lease, urgent"
+
+
+def test_migrate_session_labels_adds_columns(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+
+    # Create legacy table without status and tags
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(
+            "CREATE TABLE session_labels (session_id TEXT PRIMARY KEY, label TEXT NOT NULL)"
+        )
+        conn.execute("INSERT INTO session_labels (session_id, label) VALUES ('s1', 'Old Session')")
+        conn.commit()
+
+    # Run migration
+    db_utils.migrate_session_labels()
+
+    # Verify columns exist and legacy row has default status and tags
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM session_labels WHERE session_id = 's1'").fetchone()
+        assert row["label"] == "Old Session"
+        assert row["status"] == "active"
+        assert row["tags"] == ""
+
+    # Second migration call is idempotent
+    db_utils.migrate_session_labels()

@@ -25,7 +25,9 @@ _CREATE_DOC_STORE_TABLE = (
 
 _CREATE_SESSION_LABELS_TABLE = (
     "CREATE TABLE IF NOT EXISTS session_labels "
-    "(session_id TEXT PRIMARY KEY, label TEXT NOT NULL)"
+    "(session_id TEXT PRIMARY KEY, label TEXT NOT NULL, "
+    "status TEXT NOT NULL DEFAULT 'active', "
+    "tags TEXT NOT NULL DEFAULT '')"
 )
 
 _CREATE_FEEDBACK_TABLE = (
@@ -43,6 +45,8 @@ _INSERT_FEEDBACK = (
 _SELECT_FEEDBACK_COUNT = "SELECT COUNT(*) FROM feedback WHERE rating = ?"
 
 MAX_SESSION_LABEL_LENGTH = 80
+VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
+MAX_SESSION_TAGS_LENGTH = 200
 
 _INSERT_APP_LOG = (
     "INSERT INTO application_logs (session_id, user_query, gpt_response, model) "
@@ -59,42 +63,48 @@ _SELECT_DOC_BY_HASH = (
     "SELECT id, filename, collection, upload_timestamp FROM document_store "
     "WHERE sha256 = ? ORDER BY id ASC LIMIT 1"
 )
-
-_SELECT_DOC_RECORD = (
-    "SELECT id, filename, collection, sha256, upload_timestamp FROM document_store WHERE id = ?"
+_SELECT_DOC_BY_ID = (
+    "SELECT id, filename, collection, upload_timestamp, sha256 FROM document_store "
+    "WHERE id = ? LIMIT 1"
 )
-
+_SELECT_DOC_RECORD = _SELECT_DOC_BY_ID
 _DELETE_DOC_RECORD = "DELETE FROM document_store WHERE id = ?"
-_DELETE_DOCS_BY_COLLECTION = "DELETE FROM document_store WHERE collection = ?"
-_RENAME_COLLECTION = "UPDATE document_store SET collection = ? WHERE collection = ?"
-
 _SELECT_ALL_DOCS = (
-    "SELECT id, filename, collection, upload_timestamp FROM document_store "
-    "ORDER BY upload_timestamp DESC, id DESC"
+    "SELECT id, filename, collection, upload_timestamp FROM document_store ORDER BY id DESC"
 )
-
 _SELECT_DOCS_BY_COLLECTION = (
     "SELECT id, filename, collection, upload_timestamp FROM document_store "
-    "WHERE collection = ? ORDER BY upload_timestamp DESC, id DESC"
+    "WHERE collection = ? ORDER BY id DESC"
 )
+_RENAME_COLLECTION = "UPDATE document_store SET collection = ? WHERE collection = ?"
+_DELETE_DOCS_BY_COLLECTION = "DELETE FROM document_store WHERE collection = ?"
 
 _SELECT_ALL_COLLECTIONS = "SELECT DISTINCT collection FROM document_store ORDER BY collection"
 
-_SELECT_ALL_SESSIONS = (
+_SELECT_ALL_SESSIONS_BASE = (
     "SELECT l1.session_id, COUNT(*) AS message_count, "
     "MAX(l1.created_at) AS last_active, "
     "(SELECT l2.user_query FROM application_logs l2 "
     "WHERE l2.session_id = l1.session_id ORDER BY l2.id ASC LIMIT 1) AS preview, "
-    "(SELECT label FROM session_labels WHERE session_id = l1.session_id) AS label "
-    "FROM application_logs l1 GROUP BY l1.session_id ORDER BY last_active DESC"
+    "(SELECT label FROM session_labels WHERE session_id = l1.session_id) AS label, "
+    "COALESCE("
+    "(SELECT status FROM session_labels WHERE session_id = l1.session_id), 'active'"
+    ") AS status, "
+    "COALESCE((SELECT tags FROM session_labels WHERE session_id = l1.session_id), '') AS tags "
+    "FROM application_logs l1 GROUP BY l1.session_id"
 )
+_SELECT_ALL_SESSIONS = _SELECT_ALL_SESSIONS_BASE + " ORDER BY last_active DESC"
 
 _SEARCH_SESSIONS = (
     "SELECT l1.session_id, COUNT(*) AS match_count, "
     "MAX(l1.created_at) AS last_active, "
     "(SELECT l2.user_query FROM application_logs l2 "
     "WHERE l2.session_id = l1.session_id ORDER BY l2.id ASC LIMIT 1) AS preview, "
-    "(SELECT label FROM session_labels WHERE session_id = l1.session_id) AS label "
+    "(SELECT label FROM session_labels WHERE session_id = l1.session_id) AS label, "
+    "COALESCE("
+    "(SELECT status FROM session_labels WHERE session_id = l1.session_id), 'active'"
+    ") AS status, "
+    "COALESCE((SELECT tags FROM session_labels WHERE session_id = l1.session_id), '') AS tags "
     "FROM application_logs l1 "
     "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
     "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
@@ -130,6 +140,29 @@ def normalize_session_label(value: str | None) -> str:
             f"Session label must be at most {MAX_SESSION_LABEL_LENGTH} characters."
         )
     return label
+
+
+def normalize_session_status(value: str | None) -> str:
+    status = (value or "active").strip().lower()
+    if status not in VALID_SESSION_STATUSES:
+        raise ValueError(
+            f"Invalid session status '{status}'. Must be one of: {sorted(VALID_SESSION_STATUSES)}."
+        )
+    return status
+
+
+def normalize_session_tags(value: str | list[str] | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        tags_list = [t.strip().lower() for t in value if t and t.strip()]
+        tags_str = ", ".join(sorted(set(tags_list)))
+    else:
+        tags_list = [t.strip().lower() for t in value.split(",") if t and t.strip()]
+        tags_str = ", ".join(sorted(set(tags_list)))
+    if len(tags_str) > MAX_SESSION_TAGS_LENGTH:
+        raise ValueError(f"Session tags must be at most {MAX_SESSION_TAGS_LENGTH} characters.")
+    return tags_str
 
 PREVIEW_MAX_LENGTH = 80
 
@@ -311,15 +344,30 @@ def _truncate_preview(preview: str | None) -> str:
     return preview[: PREVIEW_MAX_LENGTH - 1].rstrip() + "…"
 
 
-def get_all_sessions():
+def get_all_sessions(status: str | None = None, tag: str | None = None):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute(_SELECT_ALL_SESSIONS)
+        query = f"SELECT * FROM ({_SELECT_ALL_SESSIONS_BASE}) ORDER BY last_active DESC"
+        cursor.execute(query)
         sessions = cursor.fetchall()
-        return [
-            {**dict(session), "preview": _truncate_preview(session["preview"])}
-            for session in sessions
-        ]
+        results = []
+        for session in sessions:
+            s_dict = dict(session)
+            if status:
+                clean_status = status.strip().lower()
+                if s_dict.get("status", "active").lower() != clean_status:
+                    continue
+            if tag:
+                clean_tag = tag.strip().lower()
+                raw_tags = s_dict.get("tags", "") or ""
+                row_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+                if clean_tag not in row_tags:
+                    continue
+            if not s_dict.get("label"):
+                s_dict["label"] = None
+            s_dict["preview"] = _truncate_preview(s_dict.get("preview"))
+            results.append(s_dict)
+        return results
 
 
 def search_sessions(query: str, limit: int = 20) -> list[dict]:
@@ -341,7 +389,9 @@ def search_sessions(query: str, limit: int = 20) -> list[dict]:
             results.append(
                 {
                     "session_id": sid,
-                    "label": row["label"],
+                    "label": row["label"] if row["label"] else None,
+                    "status": row["status"] if row["status"] else "active",
+                    "tags": row["tags"] if row["tags"] else "",
                     "match_count": row["match_count"],
                     "preview": _truncate_preview(row["preview"]),
                     "last_active": row["last_active"],
@@ -484,15 +534,87 @@ def count_feedback(rating):
         return cursor.fetchone()[0]
 
 
-def rename_session(session_id, label):
-    """Label a session that has chat history; returns False when unknown."""
+def migrate_session_labels():
+    """Add newer columns (status, tags) to session_labels table if missing."""
+    with closing(get_db_connection()) as conn:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(session_labels)")]
+        if "status" not in columns:
+            conn.execute(
+                "ALTER TABLE session_labels ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+            )
+        if "tags" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+
+def update_session_metadata(
+    session_id: str,
+    label: str | None = None,
+    status: str | None = None,
+    tags: str | list[str] | None = None,
+) -> bool:
+    """Update label, status, and/or tags for an existing session with history."""
+    clean_label = normalize_session_label(label) if label is not None else None
+    clean_status = normalize_session_status(status) if status is not None else None
+    clean_tags = normalize_session_tags(tags) if tags is not None else None
+
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
         if not exists:
             return False
-        conn.execute(_UPSERT_SESSION_LABEL, (session_id, label))
+
+        cur = conn.execute(
+            "SELECT label, status, tags FROM session_labels WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if cur is None:
+            new_label = clean_label or ""
+            new_status = clean_status or "active"
+            new_tags = clean_tags or ""
+            conn.execute(
+                "INSERT INTO session_labels (session_id, label, status, tags) VALUES (?, ?, ?, ?)",
+                (session_id, new_label, new_status, new_tags),
+            )
+        else:
+            new_label = clean_label if clean_label is not None else cur["label"]
+            new_status = clean_status if clean_status is not None else cur["status"]
+            new_tags = clean_tags if clean_tags is not None else cur["tags"]
+            conn.execute(
+                "UPDATE session_labels SET label = ?, status = ?, tags = ? WHERE session_id = ?",
+                (new_label, new_status, new_tags, session_id),
+            )
         conn.commit()
         return True
+
+
+def get_session_metadata(session_id: str) -> dict | None:
+    """Fetch label, status, and tags for a session, or None if session does not exist."""
+    with closing(get_db_connection()) as conn:
+        exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
+        if not exists:
+            return None
+        row = conn.execute(
+            "SELECT label, status, tags FROM session_labels WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            return {
+                "session_id": session_id,
+                "label": None,
+                "status": "active",
+                "tags": "",
+            }
+        return {
+            "session_id": session_id,
+            "label": row["label"] if row["label"] else None,
+            "status": row["status"] if row["status"] else "active",
+            "tags": row["tags"] if row["tags"] else "",
+        }
+
+
+def rename_session(session_id, label):
+    """Label a session that has chat history; returns False when unknown."""
+    return update_session_metadata(session_id, label=label)
 
 
 # Initialize the database tables
@@ -500,6 +622,7 @@ create_application_logs()
 create_document_store()
 migrate_document_store()
 create_session_labels()
+migrate_session_labels()
 create_feedback()
 migrate_feedback()
 

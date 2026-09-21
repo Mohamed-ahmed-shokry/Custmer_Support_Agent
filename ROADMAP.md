@@ -236,7 +236,7 @@ Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, co
 - Browser-based automated UI testing via Playwright.
 
 ### Granular Task Breakdown
-- [ ] Task 1: Session metadata schema migration (`status`, `tags` columns in `session_labels`) and DB functions (`update_session_metadata`, `get_all_sessions` filters) with unit tests
+- [x] Task 1: Session metadata schema migration (`status`, `tags` columns in `session_labels`) and DB functions (`update_session_metadata`, `get_all_sessions` filters) with unit tests
 - [ ] Task 2: Session metadata API routes & Pydantic models (`PATCH /sessions/{session_id}` status/tags, `GET /sessions?status=&tag=`, `SessionInfo`), client helpers, and unit tests
 - [ ] Task 3: Feedback quality & CSAT analytics DB queries (`get_feedback_analytics`) and unit tests
 - [ ] Task 4: Feedback analytics API endpoint `GET /feedback/analytics`, models, client helper `get_feedback_analytics()`, and unit tests
