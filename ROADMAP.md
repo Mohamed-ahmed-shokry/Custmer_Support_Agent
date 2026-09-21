@@ -204,7 +204,7 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 7: Feedback API routes (`POST /feedback` with comment, `GET /feedback`, `GET /sessions/{session_id}/feedback`), models, client methods, and unit tests
 - [x] Task 8: Streamlit UI dynamic config discovery & model/upload limit integration
 - [x] Task 9: Streamlit UI bulk session deletion mode in sidebar
-- [ ] Task 10: Streamlit UI multi-format session export selector
+- [x] Task 10: Streamlit UI multi-format session export selector
 - [ ] Task 11: Streamlit UI feedback review panel with session deep-linking
 - [ ] Task 12: Streamlit UI test suite updates and widget coverage
 - [ ] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0

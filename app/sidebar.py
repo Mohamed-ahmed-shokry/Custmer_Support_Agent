@@ -172,21 +172,52 @@ def _render_session_history():
     _render_session_export(selected)
 
 
+EXPORT_FORMAT_META = {
+    "markdown": {"ext": ".md", "mime": "text/markdown", "label": "Markdown (.md)"},
+    "json": {"ext": ".json", "mime": "application/json", "label": "JSON (.json)"},
+    "csv": {"ext": ".csv", "mime": "text/csv", "label": "CSV (.csv)"},
+}
+
+
+def get_export_formats(config=None):
+    if config and config.get("supported_export_formats"):
+        return list(config["supported_export_formats"])
+    return list(EXPORT_FORMAT_META.keys())
+
+
 def _render_session_export(selected):
+    config = st.session_state.get("config")
+    formats = get_export_formats(config)
+    selected_format = st.sidebar.selectbox(
+        "Export format",
+        options=formats,
+        format_func=lambda fmt: EXPORT_FORMAT_META.get(fmt, {}).get("label", fmt),
+        key="export_format_selector",
+    )
     if st.sidebar.button("Prepare Export"):
         with st.spinner("Preparing export..."):
-            text = export_session(selected)
+            try:
+                text = export_session(selected, format=selected_format)
+            except TypeError:
+                text = export_session(selected)
             if text is not None:
                 st.session_state.export_text = text
                 st.session_state.export_session_id = selected
+                st.session_state.export_format = selected_format
     if st.session_state.get("export_session_id") == selected and st.session_state.get(
         "export_text"
     ):
+        active_fmt = st.session_state.get("export_format", "markdown")
+        meta = EXPORT_FORMAT_META.get(
+            active_fmt, {"ext": ".md", "mime": "text/markdown", "label": "Markdown"}
+        )
+        ext = meta["ext"]
+        mime = meta["mime"]
         st.sidebar.download_button(
-            "Download (.md)",
+            f"Download ({ext})",
             data=st.session_state.export_text,
-            file_name=f"{selected}.md",
-            mime="text/markdown",
+            file_name=f"{selected}{ext}",
+            mime=mime,
             key="download_export",
         )
 

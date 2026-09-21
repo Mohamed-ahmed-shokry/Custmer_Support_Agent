@@ -987,3 +987,54 @@ def test_render_session_history_bulk_delete_failure(monkeypatch):
     sidebar._render_session_history()
 
     assert any("Failed to delete sessions." in e for e in st.errors)
+
+
+def test_get_export_formats():
+    assert sidebar.get_export_formats(None) == ["markdown", "json", "csv"]
+    conf = {"supported_export_formats": ["markdown", "json"]}
+    assert sidebar.get_export_formats(conf) == ["markdown", "json"]
+
+
+def test_render_session_export_json_and_csv(monkeypatch):
+    # Test JSON export
+    st_json = FakeStreamlit(
+        values={"export_format_selector": "json"},
+        buttons={"Prepare Export": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st_json)
+    called_args = []
+    monkeypatch.setattr(
+        sidebar,
+        "export_session",
+        lambda sid, format="markdown": called_args.append((sid, format)) or '{"session_id": "s1"}',
+    )
+
+    sidebar._render_session_export("s1")
+
+    assert called_args == [("s1", "json")]
+    assert st_json.session_state["export_text"] == '{"session_id": "s1"}'
+    assert st_json.session_state["export_format"] == "json"
+    download = next(c for c in st_json.calls if c.fn == "download_button")
+    assert download.kwargs["file_name"] == "s1.json"
+    assert download.kwargs["mime"] == "application/json"
+
+    # Test CSV export
+    st_csv = FakeStreamlit(
+        values={"export_format_selector": "csv"},
+        buttons={"Prepare Export": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st_csv)
+    called_csv = []
+    monkeypatch.setattr(
+        sidebar,
+        "export_session",
+        lambda sid, format="markdown": called_csv.append((sid, format)) or "role,content\n",
+    )
+
+    sidebar._render_session_export("s1")
+
+    assert called_csv == [("s1", "csv")]
+    assert st_csv.session_state["export_format"] == "csv"
+    download_csv = next(c for c in st_csv.calls if c.fn == "download_button")
+    assert download_csv.kwargs["file_name"] == "s1.csv"
+    assert download_csv.kwargs["mime"] == "text/csv"
