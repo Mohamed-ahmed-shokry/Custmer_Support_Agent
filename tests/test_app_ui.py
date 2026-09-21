@@ -845,3 +845,96 @@ def test_streamlit_app_initializes_state(monkeypatch):
     assert any(c.fn == "title" for c in fake.calls)
     assert sidebar_called == [True]
     assert chat_called == [True]
+
+
+# --- config discovery & limit integration ----------------------------------
+
+
+def test_init_config_fetches_and_caches(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+
+    fake_conf = {"supported_models": ["m1", "m2"], "default_model": "m2"}
+    monkeypatch.setattr(sidebar, "get_config", lambda: called.append(1) or fake_conf)
+
+    assert sidebar._init_config() == fake_conf
+    assert st.session_state.config == fake_conf
+    # Second call should use cache
+    assert sidebar._init_config() == fake_conf
+    assert len(called) == 1
+
+
+def test_get_model_options_and_default_index():
+    # Without config
+    assert sidebar.get_model_options(None) == sidebar.MODEL_OPTIONS
+    default_idx = sidebar.get_default_model_index()
+    assert sidebar.MODEL_OPTIONS[default_idx] == "gpt-4o-mini"
+
+    # With config
+    conf = {"supported_models": ["custom-1", "custom-2"], "default_model": "custom-2"}
+    opts = sidebar.get_model_options(conf)
+    assert opts == ["custom-1", "custom-2"]
+    assert sidebar.get_default_model_index(opts, conf) == 1
+
+    # With unknown default model fallback
+    conf_unknown = {"supported_models": ["a", "b"], "default_model": "c"}
+    assert sidebar.get_default_model_index(["a", "b"], conf_unknown) == 0
+
+
+def test_render_model_selector_uses_config(monkeypatch):
+    st = FakeStreamlit()
+    st.session_state.config = {
+        "supported_models": ["model-a", "model-b"],
+        "default_model": "model-b",
+    }
+    monkeypatch.setattr(sidebar, "st", st)
+    sidebar._render_model_selector()
+
+    call = next(c for c in st.calls if c.fn == "selectbox" and c.args[0] == "Select Model")
+    assert call.kwargs["options"] == ["model-a", "model-b"]
+    assert call.kwargs["index"] == 1
+
+
+def test_render_upload_document_enforces_max_bulk_limit(monkeypatch):
+    st = FakeStreamlit(
+        uploads=[
+            type("F", (), {"name": f"f{i}.txt", "read": lambda: b"x"})()
+            for i in range(5)
+        ],
+        buttons={"Upload": True},
+    )
+    st.session_state.config = {
+        "max_upload_size_bytes": 10485760,
+        "max_bulk_upload_files": 3,
+    }
+    monkeypatch.setattr(sidebar, "st", st)
+    upload_mock = []
+    monkeypatch.setattr(sidebar, "upload_documents", lambda *a: upload_mock.append(a))
+
+    sidebar._render_upload_document("default")
+
+    assert upload_mock == []
+    assert any("Cannot upload more than 3 files" in err for err in st.errors)
+
+
+def test_display_sidebar_initializes_config(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "_render_health_status", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_reset_chat", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_session_history", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_model_selector", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_collection_picker", lambda: "default")
+    monkeypatch.setattr(sidebar, "_render_upload_document", lambda c: None)
+    monkeypatch.setattr(sidebar, "_render_refresh_documents", lambda c: None)
+    monkeypatch.setattr(sidebar, "_render_document_inspector", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_retrieval_filters", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_document_list", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_ops_metrics", lambda: None)
+
+    conf = {"version": "0.21.0"}
+    monkeypatch.setattr(sidebar, "get_config", lambda: conf)
+
+    sidebar.display_sidebar()
+    assert st.session_state.config == conf

@@ -9,6 +9,7 @@ from app.api_utils import (
     delete_documents,
     delete_session,
     export_session,
+    get_config,
     get_document_details,
     get_health,
     get_metrics,
@@ -28,9 +29,28 @@ from app.api_utils import (
 MODEL_OPTIONS = [model.value for model in ModelName]
 
 
-def get_default_model_index():
-    default_model = model_from_value(settings.default_model).value
-    return MODEL_OPTIONS.index(default_model)
+def _init_config():
+    if "config" not in st.session_state or st.session_state.config is None:
+        st.session_state.config = get_config()
+    return st.session_state.config
+
+
+def get_model_options(config=None):
+    if config and config.get("supported_models"):
+        return list(config["supported_models"])
+    return MODEL_OPTIONS
+
+
+def get_default_model_index(options=None, config=None):
+    if options is None:
+        options = MODEL_OPTIONS
+    if config and config.get("default_model"):
+        default_model = config["default_model"]
+    else:
+        default_model = model_from_value(settings.default_model).value
+    if default_model in options:
+        return options.index(default_model)
+    return 0
 
 
 def _render_health_status():
@@ -143,8 +163,11 @@ def _render_session_export(selected):
 
 
 def _render_model_selector():
+    config = st.session_state.get("config")
+    options = get_model_options(config)
+    default_idx = get_default_model_index(options, config)
     st.sidebar.selectbox(
-        "Select Model", options=MODEL_OPTIONS, index=get_default_model_index(), key="model"
+        "Select Model", options=options, index=default_idx, key="model"
     )
 
 
@@ -241,6 +264,17 @@ def _render_ops_metrics():
 
 def _render_upload_document(active_collection):
     st.sidebar.header("Upload Document")
+    config = st.session_state.get("config")
+    if config and "max_upload_size_bytes" in config:
+        max_mb = config["max_upload_size_bytes"] // (1024 * 1024)
+    else:
+        max_mb = settings.max_upload_mb
+    max_files = (
+        config.get("max_bulk_upload_files", settings.max_bulk_files)
+        if config
+        else settings.max_bulk_files
+    )
+    st.sidebar.caption(f"Max {max_mb} MB per file · Up to {max_files} files per batch")
     uploaded_files = st.sidebar.file_uploader(
         "Choose file(s)",
         type=["pdf", "docx", "html", "md", "txt", "csv"],
@@ -250,6 +284,9 @@ def _render_upload_document(active_collection):
         "New collection (optional)", key="new_collection", placeholder="e.g. clients-acme"
     )
     if uploaded_files and st.sidebar.button("Upload"):
+        if len(uploaded_files) > max_files:
+            st.sidebar.error(f"Cannot upload more than {max_files} files at once.")
+            return
         target = (new_collection or "").strip() or active_collection or "default"
         with st.spinner("Uploading..."):
             if len(uploaded_files) == 1:
@@ -381,6 +418,7 @@ def _render_retrieval_filters():
 
 
 def display_sidebar():
+    _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
     _render_health_status()
     _render_reset_chat()
