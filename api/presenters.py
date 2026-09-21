@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -79,3 +82,39 @@ def render_session_markdown(session_id: str, label: str | None, messages: list[d
         lines.append(message["content"])
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def render_session_json(session_id: str, label: str | None, messages: list[dict]) -> str:
+    """Render a conversation as structured JSON."""
+    data = {
+        "session_id": session_id,
+        "label": label,
+        "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "messages": [
+            {
+                "role": message.get("role", ""),
+                "content": message.get("content", ""),
+            }
+            for message in messages
+        ],
+    }
+    return json.dumps(data, indent=2) + "\n"
+
+
+def render_session_csv(session_id: str, label: str | None, messages: list[dict]) -> str:
+    """Render a conversation as CSV rows."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["session_id", "label", "turn", "role", "content"])
+    for idx, message in enumerate(messages, start=1):
+        writer.writerow(
+            [
+                session_id,
+                label or "",
+                idx,
+                message.get("role", ""),
+                message.get("content", ""),
+            ]
+        )
+    return output.getvalue()
+

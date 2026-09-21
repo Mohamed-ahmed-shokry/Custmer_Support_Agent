@@ -1,16 +1,23 @@
 """Unit tests for response presenters (pure functions, no I/O)."""
 
+import csv
+import io
+import json
 from types import SimpleNamespace
+
 
 from api.presenters import (
     build_search_hits,
     build_sources,
     preview_content,
+    render_session_csv,
+    render_session_json,
     render_session_markdown,
 )
 
 
 def _doc(content, **metadata):
+
     return SimpleNamespace(page_content=content, metadata=dict(metadata))
 
 
@@ -76,3 +83,36 @@ def test_render_session_markdown_falls_back_to_session_id():
     markdown = render_session_markdown("session-9", None, [])
 
     assert markdown.startswith("# Conversation: session-9\n")
+
+
+def test_render_session_json():
+    messages = [
+        {"role": "human", "content": "When is rent due?"},
+        {"role": "ai", "content": "On the first."},
+    ]
+    raw_json = render_session_json("session-1", "Lease questions", messages)
+    data = json.loads(raw_json)
+
+    expected_count = 2
+    assert data["session_id"] == "session-1"
+    assert data["label"] == "Lease questions"
+    assert "exported_at" in data
+    assert len(data["messages"]) == expected_count
+    assert data["messages"][0] == {"role": "human", "content": "When is rent due?"}
+    assert data["messages"][1] == {"role": "ai", "content": "On the first."}
+
+
+
+def test_render_session_csv():
+    messages = [
+        {"role": "human", "content": "Line 1\nLine 2"},
+        {"role": "ai", "content": "Comma, here."},
+    ]
+    raw_csv = render_session_csv("session-2", "Label", messages)
+    reader = list(csv.reader(io.StringIO(raw_csv)))
+
+    assert reader[0] == ["session_id", "label", "turn", "role", "content"]
+    assert reader[1] == ["session-2", "Label", "1", "human", "Line 1\nLine 2"]
+    assert reader[2] == ["session-2", "Label", "2", "ai", "Comma, here."]
+
+
