@@ -213,7 +213,43 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 12: Streamlit UI test suite updates and widget coverage
 - [x] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
 
-## Next Candidates (v0.22.0+)
+## v0.22.0 plan — Session Lifecycle Management, Quality Analytics, Collection Insights & Retrieval Confidence Scoring 🚀 IN PROGRESS
+
+Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, collection-level operational insights, and retrieval confidence score visibility with thresholding.
+
+### Scope & Objectives
+- **Session Lifecycle & Categorization**: Support conversation lifecycle states (`active`, `resolved`, `escalated`, `closed`) and custom tags in SQLite (`session_labels` table migration), API routes (`PATCH /sessions/{session_id}` accepting status and tags, `GET /sessions` with `status` and `tag` query filters), and Streamlit UI controls.
+- **Operational Quality & CSAT Analytics**: Aggregate feedback metrics into structured analytics (`GET /feedback/analytics`), returning satisfaction rate (`%`), positive/negative distribution, comment count, and ratings over time, surfaced in an interactive analytics card in the Streamlit UI.
+- **Collection Metadata & Insights**: Provide detailed statistics per collection (`GET /collections/details`), including document count, chunk count, file format distribution, total size, and last updated timestamps, surfaced in the Streamlit collection picker widget.
+- **Retrieval Confidence Scoring & Thresholding**: Enhance `POST /search` and presenters to expose relevance confidence scores (0.0 to 1.0) and accept an optional `score_threshold` filter to weed out low-confidence context; display similarity scores in the chunk inspector and search results.
+- **Streamlit UI Integration**:
+  - Session status picker (Active / Resolved / Escalated / Closed) and tags manager in sidebar.
+  - Session status filter in past conversations list.
+  - Quality Analytics card in sidebar with satisfaction rate (%) and rating counts.
+  - Collection stats summary under active collection picker.
+  - Relevance score badges in document chunk inspector and search results.
+- **Quality Gates**: Zero ruff/mypy errors, >=95% test coverage, comprehensive unit tests.
+
+### Explicit Exclusions (Deferred to v0.23.0+)
+- Cross-encoder reranker models requiring new heavy ML dependencies.
+- Multi-tenant user authentication and RBAC permissions.
+- Browser-based automated UI testing via Playwright.
+
+### Granular Task Breakdown
+- [ ] Task 1: Session metadata schema migration (`status`, `tags` columns in `session_labels`) and DB functions (`update_session_metadata`, `get_all_sessions` filters) with unit tests
+- [ ] Task 2: Session metadata API routes & Pydantic models (`PATCH /sessions/{session_id}` status/tags, `GET /sessions?status=&tag=`, `SessionInfo`), client helpers, and unit tests
+- [ ] Task 3: Feedback quality & CSAT analytics DB queries (`get_feedback_analytics`) and unit tests
+- [ ] Task 4: Feedback analytics API endpoint `GET /feedback/analytics`, models, client helper `get_feedback_analytics()`, and unit tests
+- [ ] Task 5: Collection details & storage statistics DB query (`get_collections_details`) and unit tests
+- [ ] Task 6: Collection details API endpoint `GET /collections/details`, models, client helper `get_collections_details()`, and unit tests
+- [ ] Task 7: Retrieval confidence scoring and `score_threshold` in `POST /search`, presenter score support, Pydantic models, and unit tests
+- [ ] Task 8: Streamlit UI session lifecycle integration (status dropdown, tagging, status filtering in past sessions) and unit tests
+- [ ] Task 9: Streamlit UI collection insights summary widget and unit tests
+- [ ] Task 10: Streamlit UI feedback analytics cards (satisfaction rate, rating distribution) and unit tests
+- [ ] Task 11: Streamlit UI retrieval confidence score badges in chunk inspector with unit tests
+- [ ] Task 12: Documentation updates (`docs/API.md`, `README.md`), version bump to 0.22.0, and `ROADMAP.md` updates
+
+## Next Candidates (v0.23.0+)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets (dependent on real credentials)
