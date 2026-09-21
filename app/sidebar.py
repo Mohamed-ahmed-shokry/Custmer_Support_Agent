@@ -8,6 +8,7 @@ from app.api_utils import (
     delete_document,
     delete_documents,
     delete_session,
+    delete_sessions,
     export_session,
     get_config,
     get_document_details,
@@ -129,6 +130,34 @@ def _render_session_history():
     for session in sessions:
         title = session.get("label") or session.get("preview") or session["session_id"][:8]
         labels[session["session_id"]] = f"{title} ({session['message_count']} msgs)"
+
+    bulk_delete = st.sidebar.checkbox(
+        "Bulk delete sessions", value=False, key="bulk_delete_sessions_mode"
+    )
+    if bulk_delete:
+        to_delete = st.sidebar.multiselect(
+            "Select sessions to delete",
+            options=[s["session_id"] for s in sessions],
+            format_func=lambda sid: labels.get(sid, sid),
+            key="bulk_delete_session_ids",
+        )
+        if st.sidebar.button("Delete Selected Sessions") and to_delete:
+            with st.spinner("Deleting sessions..."):
+                res = delete_sessions(to_delete)
+                if res and res.get("deleted", 0) > 0:
+                    st.sidebar.success(f"Deleted {res['deleted']} session(s).")
+                    st.session_state.sessions = list_sessions()
+                    if st.session_state.session_id in to_delete:
+                        st.session_state.session_id = None
+                        st.session_state.messages = []
+                    if st.session_state.get("export_session_id") in to_delete:
+                        st.session_state.pop("export_text", None)
+                        st.session_state.pop("export_session_id", None)
+                    st.rerun()
+                else:
+                    st.sidebar.error("Failed to delete sessions.")
+        return
+
     options = ["(current)"] + [s["session_id"] for s in sessions]
     selected = st.sidebar.selectbox(
         "Open a session",

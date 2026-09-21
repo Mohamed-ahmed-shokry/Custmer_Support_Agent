@@ -938,3 +938,52 @@ def test_display_sidebar_initializes_config(monkeypatch):
 
     sidebar.display_sidebar()
     assert st.session_state.config == conf
+
+
+def test_render_session_history_bulk_delete_success(monkeypatch):
+    sessions = [
+        {"session_id": "s1", "label": "Session 1", "message_count": 2},
+        {"session_id": "s2", "label": "Session 2", "message_count": 4},
+    ]
+    st = FakeStreamlit(
+        values={"bulk_delete_sessions_mode": True, "bulk_delete_session_ids": ["s1"]},
+        buttons={"Delete Selected Sessions": True},
+    )
+    st.session_state.sessions = list(sessions)
+    st.session_state.session_id = "s1"
+    st.session_state.messages = [{"role": "user", "content": "hello"}]
+    st.session_state.export_session_id = "s1"
+    st.session_state.export_text = "some export"
+    monkeypatch.setattr(sidebar, "st", st)
+
+    deleted_args = []
+    monkeypatch.setattr(
+        sidebar,
+        "delete_sessions",
+        lambda ids: deleted_args.append(ids) or {"deleted": len(ids), "failed": 0, "results": []},
+    )
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [sessions[1]])
+
+    sidebar._render_session_history()
+
+    assert deleted_args == [["s1"]]
+    assert any("Deleted 1 session(s)." in s for s in st.successes)
+    assert st.session_state.session_id is None
+    assert st.session_state.messages == []
+    assert "export_session_id" not in st.session_state
+    assert st.reruns == 1
+
+
+def test_render_session_history_bulk_delete_failure(monkeypatch):
+    sessions = [{"session_id": "s1", "label": "Session 1", "message_count": 2}]
+    st = FakeStreamlit(
+        values={"bulk_delete_sessions_mode": True, "bulk_delete_session_ids": ["s1"]},
+        buttons={"Delete Selected Sessions": True},
+    )
+    st.session_state.sessions = list(sessions)
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "delete_sessions", lambda ids: None)
+
+    sidebar._render_session_history()
+
+    assert any("Failed to delete sessions." in e for e in st.errors)
