@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.20.0, 2026-09-18)
+## Current State (v0.21.0, 2026-09-21)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -38,6 +38,10 @@
 - Bulk document deletion: `POST /delete-docs` and batch deletion mode in UI
 - Session discovery: `GET /sessions/search` endpoint and keyword search filter in UI
 - Multi-strategy retrieval eval harness: hybrid, rerank, collection filters, and JSON export
+- Dynamic runtime config discovery: `GET /config` endpoint and UI model/upload limit discovery
+- Bulk session deletion: `POST /delete-sessions` with cascade deletion and UI batch delete mode
+- Multi-format session export: Markdown, JSON, CSV export presenters, API endpoint, and UI download selector
+- Feedback quality review: feedback comments schema & migration, `GET /feedback` with filters/pagination, `GET /sessions/{session_id}/feedback`, and UI feedback review panel with session deep-linking
 - 309 tests passing; 95.87% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
@@ -173,7 +177,7 @@ Deliver operational visibility, batch maintenance, conversational history search
 - [x] Multi-Strategy Retrieval Eval: Extend `scripts/eval_retrieval.py` with `--hybrid`, `--rerank`, `--collection`, and `--json-output` flags
 - [x] Test Coverage & Quality Gates: Unit tests for all new endpoints, utilities, and UI widgets; 0 ruff errors, 0 mypy errors, 309 tests passing, 95.87% test coverage
 
-## v0.21.0 plan — Feedback Quality Review, Bulk Session Management, Multi-Format Conversation Export & Dynamic Config Discovery 🚀 IN PROGRESS
+## v0.21.0 plan — Feedback Quality Review, Bulk Session Management, Multi-Format Conversation Export & Dynamic Config Discovery ✅ COMPLETED
 
 Deliver a closed-loop feedback review system, bulk session operations, flexible conversation exports (Markdown/JSON/CSV), and dynamic runtime configuration discovery.
 
@@ -207,7 +211,7 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 10: Streamlit UI multi-format session export selector
 - [x] Task 11: Streamlit UI feedback review panel with session deep-linking
 - [x] Task 12: Streamlit UI test suite updates and widget coverage
-- [ ] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
+- [x] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
 
 ## Next Candidates (v0.22.0+)
 

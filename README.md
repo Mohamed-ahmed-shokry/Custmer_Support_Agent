@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.20.0)
+# Customer Support RAG Agent (v0.21.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -21,11 +21,14 @@ A local-first customer support assistant for real estate and property management
 - Document chunk inspection (`GET /docs/{id}`): view chunk count, chunk previews,
   and metadata in the Streamlit inspector widget.
 - Bulk document deletion (`POST /delete-docs`) with batch selection mode in the UI.
+- Bulk session deletion (`POST /delete-sessions`) with cascading removal of chat history and feedback, plus batch deletion mode in the UI sidebar.
+- Multi-format conversation export (`GET /sessions/{id}/export?format=markdown|json|csv`) with instant UI downloads as Markdown (`.md`), JSON (`.json`), or CSV (`.csv`).
+- Feedback review panel & commenting: `POST /feedback` records optional user comments; `GET /feedback` and `GET /sessions/{id}/feedback` power an administrative sidebar panel with rating filters and session deep-linking.
+- Dynamic runtime configuration discovery (`GET /config`) allowing frontends to automatically discover supported models, export formats, and upload limits.
 - Session discovery & keyword search (`GET /sessions/search`) filtering past
   conversations across questions and responses in the UI.
 - Multi-strategy retrieval evaluation harness (`scripts/eval_retrieval.py`)
   supporting hybrid, rerank, collection filters, and structured JSON exports.
-- Session export to markdown (`GET /sessions/{id}/export`, UI download).
 - Document collections group uploads, retrieval, and the UI picker, with
   automatic migration for pre-v0.6.0 databases; whole collections can be
   removed (`DELETE /collections/{name}`, `default` protected).
@@ -167,11 +170,17 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `POST /upload-docs` — bulk upload with per-file results.
-- `GET /list-docs`, `POST /delete-doc` — document metadata management.
+- `GET /list-docs`, `POST /delete-doc`, `POST /delete-docs` — document metadata management.
 - `GET /collections`, `PATCH`/`DELETE /collections/{name}` — collection lifecycle.
+- `GET /config` — dynamic runtime configuration discovery (models, export formats, upload limits).
 - `GET /stats` — library totals (documents, collections, sessions, messages).
 - `POST /search` — ranked retrieval hits without chat cost.
 - `GET /sessions`, `GET /sessions/{id}/history`, `DELETE /sessions/{id}` — past conversations.
+- `POST /delete-sessions` — bulk session deletion with cascading history & feedback cleanup.
+- `GET /sessions/{id}/export` — export conversation history (Markdown, JSON, or CSV).
+- `GET /sessions/search` — search past conversations by keyword.
+- `POST /feedback` — submit answer ratings (thumbs up/down) with optional text comments.
+- `GET /feedback`, `GET /sessions/{id}/feedback` — list and filter feedback records.
 - `DELETE /sessions?before=<ISO datetime>` — prune inactive sessions.
 - `GET /quota` — daily token budget usage for the caller.
 

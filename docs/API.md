@@ -1,4 +1,4 @@
-# API Reference (v0.20.0)
+# API Reference (v0.21.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -7,7 +7,7 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 ## Security (opt-in)
 
 - When `API_KEY` is set, send `X-API-Key` on every request except
-  `/health*`, `/metrics*`, and `/docs`/`/openapi.json`/`/redoc`.
+  `/health*`, `/metrics*`, `/config`, and `/docs`/`/openapi.json`/`/redoc`.
   Missing/invalid key → `401`.
 - When `RATE_LIMIT_PER_MIN` is positive, each client IP gets that many
   non-exempt requests per sliding 60-second window → `429` when exceeded.
@@ -24,6 +24,10 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 - `GET /metrics` → Prometheus-text counters (`rag_agent_*`) including
   `latency_avg_seconds_{chat,stream,upload,other}`.
 - `GET /metrics.json` → same counters as JSON plus `uptime_seconds`.
+
+## Configuration
+
+- `GET /config` → `{supported_models, default_model, supported_export_formats, max_upload_size_bytes, max_bulk_upload_files, version}`. Dynamic runtime discovery endpoint allowing clients and frontends to align models, export formats, and upload limits.
 
 ## Chat
 
@@ -143,10 +147,10 @@ SQLite record (`404` when unknown).
   (1–80 chars; `404` when unknown, `422` for a blank/oversize label).
 - `DELETE /sessions/{session_id}` → removes the session history, label,
   and feedback (`400` for a blank id, `404` when unknown).
+- `POST /delete-sessions` with `{"session_ids": ["s1", "s2"]}` (up to 50 sessions) deletes multiple sessions with cascading removal of chat history and feedback, returning `{results: [{session_id, status, error}], deleted: int, failed: int}`.
 - `DELETE /sessions?before=<ISO datetime>` → prunes sessions inactive since
   the cutoff, including labels and feedback (`400` for a bad date).
-- `GET /sessions/{session_id}/export` → the conversation as a markdown
-  transcript download (`404` when the session has no history).
+- `GET /sessions/{session_id}/export?format=markdown|json|csv` → exports the conversation transcript in the requested format (`text/markdown`, `application/json`, or `text/csv`). Default format is `markdown`. Invalid format → `400`. `404` when the session has no history.
 - `GET /sessions/search?q=<query>&limit=20` → searches SQLite conversation history
   for matching questions and answers, returning an array of `{session_id, match_count, last_active, preview, label}`.
 
@@ -157,10 +161,14 @@ SQLite record (`404` when unknown).
 
 ## Feedback
 
-- `POST /feedback` with `{"session_id": "...", "rating": 1}` records a
-  thumbs up (`1`) or down (`-1`); anything else → `422`. Totals surface as
-  the `feedback_up` / `feedback_down` metrics. The chat UI posts once per
-  widget selection change.
+- `POST /feedback` with `{"session_id": "...", "rating": 1, "comment": "Optional notes"}` records a
+  thumbs up (`1`) or down (`-1`) with an optional comment (max 1000 characters); invalid rating → `422`.
+  Returns `{"message": "Feedback recorded.", "feedback_id": <int>}`. Totals surface as
+  the `feedback_up` / `feedback_down` metrics.
+- `GET /feedback?rating=1|-1&session_id=...&limit=50&offset=0` → `{items: [{id, session_id, rating, comment, created_at}], total, limit, offset}`.
+  Returns paginated feedback records with optional filtering by rating and session ID (`limit` 1–100).
+- `GET /sessions/{session_id}/feedback` → array of `{id, session_id, rating, comment, created_at}` feedback
+  entries recorded for the specified session (`404` when session is unknown).
 
 ## Evaluation Harness
 
