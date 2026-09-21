@@ -1159,6 +1159,42 @@ def test_search_returns_502_when_retrieval_fails(monkeypatch):
     assert response.status_code == HTTP_BAD_GATEWAY
 
 
+def test_search_with_score_threshold_filters_hits(monkeypatch):
+    class ScoredRetriever:
+        def invoke(self, question):
+            return [
+                SimpleNamespace(
+                    page_content="High confidence chunk",
+                    metadata={"file_id": 1, "filename": "high.pdf", "score": 0.85},
+                ),
+                SimpleNamespace(
+                    page_content="Low confidence chunk",
+                    metadata={"file_id": 2, "filename": "low.pdf", "score": 0.25},
+                ),
+            ]
+
+    monkeypatch.setattr(main, "select_retriever", lambda **kwargs: ScoredRetriever())
+
+    response = client.post(
+        "/search",
+        json={"question": "Test query", "score_threshold": 0.5},
+    )
+    assert response.status_code == HTTP_OK
+    hits = response.json()["hits"]
+    expected_hits = 1
+    assert len(hits) == expected_hits
+    assert hits[0]["filename"] == "high.pdf"
+    expected_score = 0.85
+    assert hits[0]["score"] == expected_score
+
+    # Validation: score_threshold must be between 0.0 and 1.0
+    res_neg = client.post("/search", json={"question": "Test", "score_threshold": -0.1})
+    assert res_neg.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    res_large = client.post("/search", json={"question": "Test", "score_threshold": 1.1})
+    assert res_large.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
 def test_delete_document_returns_404_for_unknown_document(monkeypatch):
     monkeypatch.setattr(main, "get_document_record", lambda file_id: None)
 

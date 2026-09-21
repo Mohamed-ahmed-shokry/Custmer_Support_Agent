@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from api.presenters import (
     build_search_hits,
     build_sources,
+    extract_document_score,
     preview_content,
     render_session_csv,
     render_session_json,
@@ -24,6 +25,72 @@ def test_preview_content_truncates_and_strips():
     assert preview_content("  hello  ") == "hello"
     assert preview_content(None) == ""
     assert preview_content("x" * 300) == "x" * 280
+
+
+def test_extract_document_score_sources():
+    doc1 = SimpleNamespace(page_content="c", metadata={"score": 0.87654})
+    expected_score_1 = 0.8765
+    assert extract_document_score(doc1) == expected_score_1
+
+    doc2 = SimpleNamespace(page_content="c", metadata={"relevance_score": 0.95})
+    expected_score_2 = 0.95
+    assert extract_document_score(doc2) == expected_score_2
+
+    doc3 = SimpleNamespace(page_content="c", score=0.72, metadata={})
+    expected_score_3 = 0.72
+    assert extract_document_score(doc3) == expected_score_3
+
+    doc4 = SimpleNamespace(page_content="c", metadata={"score": "invalid"})
+    assert extract_document_score(doc4) is None
+
+    doc5 = SimpleNamespace(page_content="c", metadata={})
+    assert extract_document_score(doc5) is None
+
+
+def test_build_search_hits_with_score_and_threshold():
+    score_high = 0.92
+    score_low = 0.35
+    doc1 = SimpleNamespace(
+        page_content="High match",
+        metadata={"file_id": 1, "score": score_high, "collection": "docs"},
+    )
+    doc2 = SimpleNamespace(
+        page_content="Low match",
+        metadata={"file_id": 2, "score": score_low, "collection": "docs"},
+    )
+    doc3 = SimpleNamespace(
+        page_content="Unscored match", metadata={"file_id": 3, "collection": "docs"}
+    )
+
+    # Without threshold: all 3 returned
+    hits = build_search_hits([doc1, doc2, doc3])
+    expected_all_hits = 3
+    assert len(hits) == expected_all_hits
+    assert hits[0].score == score_high
+    assert hits[1].score == score_low
+    assert hits[2].score is None
+
+    # With threshold 0.5: doc2 (0.35) filtered out, doc1 kept, unscored doc3 kept
+    threshold = 0.5
+    filtered_hits = build_search_hits([doc1, doc2, doc3], score_threshold=threshold)
+    expected_filtered = 2
+    expected_second_rank = 2
+    assert len(filtered_hits) == expected_filtered
+    assert filtered_hits[0].preview == "High match"
+    assert filtered_hits[0].rank == 1
+    assert filtered_hits[1].preview == "Unscored match"
+    assert filtered_hits[1].rank == expected_second_rank
+
+
+def test_build_sources_includes_score():
+    expected_source_score = 0.88
+    doc = SimpleNamespace(
+        page_content="Sample",
+        metadata={"file_id": 1, "filename": "doc.pdf", "score": expected_source_score},
+    )
+    sources = build_sources([doc])
+    assert len(sources) == 1
+    assert sources[0].score == expected_source_score
 
 
 def test_build_sources_dedupes_chunks():

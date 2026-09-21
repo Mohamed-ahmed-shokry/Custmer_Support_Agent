@@ -442,8 +442,8 @@ def search(search_input: SearchInput, request: Request):
             status_code=502, detail="Failed to retrieve documents for the query."
         ) from exc
     increment("prompt_tokens_est", question_tokens)
-    record_token_usage(client_ip, question_tokens)
-    return SearchResponse(hits=build_search_hits(documents))
+    hits = build_search_hits(documents, score_threshold=search_input.score_threshold)
+    return SearchResponse(hits=hits)
 
 
 async def _stream_rag_response(

@@ -28,11 +28,26 @@ def _base_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_document_score(document: Any) -> float | None:
+    """Extract and round similarity/relevance score from a document or its metadata."""
+    score = getattr(document, "score", None)
+    if score is None and hasattr(document, "metadata") and isinstance(document.metadata, dict):
+        score = document.metadata.get("score")
+        if score is None:
+            score = document.metadata.get("relevance_score")
+    if score is not None:
+        try:
+            return round(float(score), 4)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def build_sources(documents) -> list[SourceInfo]:
     sources = []
     seen = set()
     for document in documents or []:
-        metadata = document.metadata or {}
+        metadata = getattr(document, "metadata", {}) or {}
         key = (
             metadata.get("file_id"),
             metadata.get("filename") or metadata.get("source"),
@@ -42,27 +57,37 @@ def build_sources(documents) -> list[SourceInfo]:
         if key in seen:
             continue
         seen.add(key)
+        score = extract_document_score(document)
         sources.append(
             SourceInfo(
                 **_base_metadata(metadata),
-                preview=preview_content(document.page_content),
+                preview=preview_content(getattr(document, "page_content", "")),
+                score=score,
             )
         )
     return sources
 
 
-def build_search_hits(documents) -> list[SearchHit]:
+def build_search_hits(
+    documents, score_threshold: float | None = None
+) -> list[SearchHit]:
     hits = []
-    for rank, document in enumerate(documents or [], start=1):
-        metadata = document.metadata or {}
+    rank = 1
+    for document in documents or []:
+        metadata = getattr(document, "metadata", {}) or {}
+        score = extract_document_score(document)
+        if score_threshold is not None and score is not None and score < score_threshold:
+            continue
         hits.append(
             SearchHit(
                 rank=rank,
-                preview=preview_content(document.page_content),
+                preview=preview_content(getattr(document, "page_content", "")),
                 collection=metadata.get("collection"),
+                score=score,
                 **_base_metadata(metadata),
             )
         )
+        rank += 1
     return hits
 
 

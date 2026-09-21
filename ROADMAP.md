@@ -242,7 +242,7 @@ Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, co
 - [x] Task 4: Feedback analytics API endpoint `GET /feedback/analytics`, models, client helper `get_feedback_analytics()`, and unit tests
 - [x] Task 5: Collection details & storage statistics DB query (`get_collections_details`) and unit tests
 - [x] Task 6: Collection details API endpoint `GET /collections/details`, models, client helper `get_collections_details()`, and unit tests
-- [ ] Task 7: Retrieval confidence scoring and `score_threshold` in `POST /search`, presenter score support, Pydantic models, and unit tests
+- [x] Task 7: Retrieval confidence scoring and `score_threshold` in `POST /search`, presenter score support, Pydantic models, and unit tests
 - [ ] Task 8: Streamlit UI session lifecycle integration (status dropdown, tagging, status filtering in past sessions) and unit tests
 - [ ] Task 9: Streamlit UI collection insights summary widget and unit tests
 - [ ] Task 10: Streamlit UI feedback analytics cards (satisfaction rate, rating distribution) and unit tests
