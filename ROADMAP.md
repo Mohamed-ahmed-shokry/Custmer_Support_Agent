@@ -177,16 +177,37 @@ Deliver operational visibility, batch maintenance, conversational history search
 
 Deliver a closed-loop feedback review system, bulk session operations, flexible conversation exports (Markdown/JSON/CSV), and dynamic runtime configuration discovery.
 
-- [ ] Dynamic Config Discovery: `GET /config` public endpoint and client method `get_config()` exposing non-sensitive runtime parameters (models, upload limits, retrieval defaults, security flags)
-- [ ] Bulk Session Deletion: `POST /delete-sessions` endpoint + SQLite cascade deletion (`delete_sessions`) with per-session status reports (`deleted`, `not_found`, `error`) and client helper `delete_sessions`
-- [ ] Multi-Format Conversation Export: `GET /sessions/{session_id}/export?format=markdown|json|csv` supporting structured JSON and CSV downloads alongside Markdown, with presenter helpers `render_session_json` and `render_session_csv`
-- [ ] Feedback Comments & Quality Review: SQLite migration for `feedback.comment`, `POST /feedback` with optional comments, `GET /feedback` with rating/session filtering and pagination, `GET /sessions/{session_id}/feedback`, and client methods
-- [ ] Streamlit UI Integration:
-  - Dynamic runtime configuration loading for upload size limits and model defaults
-  - Bulk session deletion mode in `app/sidebar.py`
-  - Multi-format session export selector (Markdown / JSON / CSV)
-  - Feedback review panel to inspect rated sessions, read user comments, and load associated conversations
-- [ ] Test Coverage & Quality Gates: Unit tests for all new endpoints, SQLite functions, presenters, client methods, and UI components; 0 ruff errors, 0 mypy errors, >=95% test coverage
+### Scope & Objectives
+- **Dynamic Config Discovery**: Enable clients to inspect non-sensitive runtime parameters dynamically (`GET /config`) without hardcoded assumptions.
+- **Bulk Session Deletion**: Enable batch session deletion (`POST /delete-sessions`) with SQLite cascade deletion across logs, labels, and feedback, returning per-session status reports.
+- **Multi-Format Conversation Export**: Extend `GET /sessions/{session_id}/export?format=markdown|json|csv` with structured JSON and CSV presenters alongside Markdown.
+- **Feedback Comments & Quality Review**: Upgrade feedback table with `comment` column, support comments on submission, add `GET /feedback` with filters/pagination, and `GET /sessions/{session_id}/feedback`.
+- **Streamlit UI Integration**:
+  - Dynamic runtime configuration loading for upload limits and model defaults.
+  - Bulk session deletion mode in sidebar.
+  - Multi-format session export selector (Markdown / JSON / CSV).
+  - Feedback review panel with rating filtering, comments display, and session deep-linking.
+- **Quality Gates**: Zero ruff/mypy errors, >=95% test coverage, comprehensive unit tests.
+
+### Explicit Exclusions (Deferred to v0.22.0+)
+- Cross-encoder reranker models requiring new heavy dependencies.
+- Browser-based automated UI testing via Playwright.
+- User authentication and role-based multi-tenant access control.
+
+### Granular Task Breakdown
+- [ ] Task 1: Dynamic Config Discovery endpoint `GET /config`, client `get_config()`, and unit tests
+- [ ] Task 2: Bulk Session Deletion SQLite function `delete_sessions` with cascade deletion, unit tests
+- [ ] Task 3: Bulk Session Deletion endpoint `POST /delete-sessions`, models, client helper, and unit tests
+- [ ] Task 4: Multi-format session export presenters (`render_session_json`, `render_session_csv`) and unit tests
+- [ ] Task 5: Multi-format export endpoint `GET /sessions/{session_id}/export?format=...`, client helper, and unit tests
+- [ ] Task 6: Feedback schema migration (`comment` column), `insert_feedback` update, `list_feedback`, and `get_session_feedback` queries with unit tests
+- [ ] Task 7: Feedback API routes (`POST /feedback` with comment, `GET /feedback`, `GET /sessions/{session_id}/feedback`), models, client methods, and unit tests
+- [ ] Task 8: Streamlit UI dynamic config discovery & model/upload limit integration
+- [ ] Task 9: Streamlit UI bulk session deletion mode in sidebar
+- [ ] Task 10: Streamlit UI multi-format session export selector
+- [ ] Task 11: Streamlit UI feedback review panel with session deep-linking
+- [ ] Task 12: Streamlit UI test suite updates and widget coverage
+- [ ] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
 
 ## Next Candidates (v0.22.0+)
 
