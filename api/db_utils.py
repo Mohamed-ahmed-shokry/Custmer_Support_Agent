@@ -357,6 +357,29 @@ def delete_session(session_id):
         return deleted
 
 
+def delete_sessions(session_ids: list[str]) -> dict[str, str]:
+    """Delete multiple sessions cascade; returns map of session_id to status."""
+    results: dict[str, str] = {}
+
+    with closing(get_db_connection()) as conn:
+        for session_id in session_ids:
+            cursor = conn.execute(_DELETE_SESSION, (session_id,))
+            if cursor.rowcount > 0:
+                conn.execute(_DELETE_SESSION_LABEL, (session_id,))
+                conn.execute(_DELETE_SESSION_FEEDBACK, (session_id,))
+                results[session_id] = "deleted"
+            else:
+                label_cursor = conn.execute(_DELETE_SESSION_LABEL, (session_id,))
+                feedback_cursor = conn.execute(_DELETE_SESSION_FEEDBACK, (session_id,))
+                if label_cursor.rowcount > 0 or feedback_cursor.rowcount > 0:
+                    results[session_id] = "deleted"
+                else:
+                    results[session_id] = "not_found"
+        conn.commit()
+    return results
+
+
+
 def prune_sessions_before(cutoff_iso):
     """Delete sessions inactive since `cutoff_iso`, returning the count."""
     with closing(get_db_connection()) as conn:

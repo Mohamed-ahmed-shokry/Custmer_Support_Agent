@@ -123,7 +123,29 @@ def test_delete_session_removes_label(monkeypatch, tmp_path):
     assert db_utils.get_all_sessions() == []
 
 
+def test_delete_sessions_cascade_and_reports(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("session-1", "Q1", "A1", "gpt-4o-mini")
+    db_utils.rename_session("session-1", "Lease questions")
+    db_utils.insert_feedback("session-1", 1)
+
+    db_utils.insert_application_logs("session-2", "Q2", "A2", "gpt-4o-mini")
+
+    reports = db_utils.delete_sessions(["session-1", "session-2", "session-missing"])
+    assert reports == {
+        "session-1": "deleted",
+        "session-2": "deleted",
+        "session-missing": "not_found",
+    }
+    assert db_utils.get_chat_history("session-1") == []
+    assert db_utils.get_chat_history("session-2") == []
+    assert db_utils.get_all_sessions() == []
+    assert db_utils.count_feedback(1) == 0
+
+
 def test_delete_documents_by_collection(monkeypatch, tmp_path):
+
     initialize_temp_db(monkeypatch, tmp_path)
 
     db_utils.insert_document_record("a.pdf", "clients-acme")
