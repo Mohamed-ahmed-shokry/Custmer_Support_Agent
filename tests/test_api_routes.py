@@ -1132,3 +1132,52 @@ def test_search_sessions_route_validates_limit():
     response = client.get("/sessions/search?q=plumbing&limit=101")
     assert response.status_code == HTTP_BAD_REQUEST
 
+
+def test_delete_many_sessions_success(monkeypatch):
+    expected_count = 2
+    monkeypatch.setattr(main, "delete_sessions", lambda sids: dict.fromkeys(sids, "deleted"))
+    response = client.post("/delete-sessions", json={"session_ids": ["s1", "s2"]})
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["deleted"] == expected_count
+    assert data["failed"] == 0
+    assert len(data["results"]) == expected_count
+    assert all(r["status"] == "deleted" for r in data["results"])
+
+
+def test_delete_many_sessions_mixed(monkeypatch):
+    expected_deleted = 1
+    expected_failed = 2
+    monkeypatch.setattr(
+        main,
+        "delete_sessions",
+        lambda sids: {"s1": "deleted", "s2": "not_found", "s3": "error"},
+    )
+    response = client.post("/delete-sessions", json={"session_ids": ["s1", "s2", "s3"]})
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["deleted"] == expected_deleted
+    assert data["failed"] == expected_failed
+    status_map = {r["session_id"]: r["status"] for r in data["results"]}
+    assert status_map == {"s1": "deleted", "s2": "not_found", "s3": "error"}
+
+
+
+def test_delete_many_sessions_validation():
+    response = client.post("/delete-sessions", json={"session_ids": []})
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    response = client.post("/delete-sessions", json={"session_ids": ["   "]})
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_delete_many_sessions_server_error(monkeypatch):
+    def boom(sids):
+        raise RuntimeError("database locked")
+
+    monkeypatch.setattr(main, "delete_sessions", boom)
+    response = client.post("/delete-sessions", json={"session_ids": ["s1"]})
+    assert response.status_code == HTTP_INTERNAL_ERROR
+    assert "Failed to delete sessions" in response.json()["detail"]
+
+

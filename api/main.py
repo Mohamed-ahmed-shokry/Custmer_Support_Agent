@@ -27,6 +27,7 @@ from api.db_utils import (
     delete_document_record,
     delete_documents_by_collection,
     delete_session,
+    delete_sessions,
     get_all_collections,
     get_all_documents,
     get_all_sessions,
@@ -58,6 +59,9 @@ from api.pydantic_models import (
     BulkDeleteFileRequest,
     BulkDeleteFileResult,
     BulkDeleteResponse,
+    BulkDeleteSessionRequest,
+    BulkDeleteSessionResponse,
+    BulkDeleteSessionResult,
     BulkUploadItem,
     BulkUploadResponse,
     ChatMessage,
@@ -826,6 +830,48 @@ def delete_session_route(session_id: str):
             status_code=404, detail=f"Session {session_id} was not found."
         )
     return DeleteSessionResponse(message=f"Session {session_id} deleted.")
+
+
+@app.post("/delete-sessions", response_model=BulkDeleteSessionResponse)
+def delete_many_sessions(request: BulkDeleteSessionRequest):
+    results: list[BulkDeleteSessionResult] = []
+    try:
+        status_map = delete_sessions(request.session_ids)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete sessions: {str(exc)}",
+        ) from exc
+
+    for session_id in request.session_ids:
+        status = status_map.get(session_id, "not_found")
+        if status == "deleted":
+            increment("deletes")
+            results.append(BulkDeleteSessionResult(session_id=session_id, status="deleted"))
+        elif status == "not_found":
+            results.append(
+                BulkDeleteSessionResult(
+                    session_id=session_id,
+                    status="not_found",
+                    detail=f"Session {session_id} was not found.",
+                )
+            )
+        else:
+            results.append(
+                BulkDeleteSessionResult(
+                    session_id=session_id,
+                    status="error",
+                    detail=f"Failed to delete session {session_id}.",
+                )
+            )
+
+    deleted_count = sum(1 for r in results if r.status == "deleted")
+    return BulkDeleteSessionResponse(
+        results=results,
+        deleted=deleted_count,
+        failed=len(results) - deleted_count,
+    )
+
 
 
 @app.post("/feedback", response_model=FeedbackResponse)

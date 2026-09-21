@@ -614,3 +614,18 @@ def test_get_config_success_and_failure(monkeypatch, fake_requests):
     assert api_utils.get_config() is None
 
 
+def test_delete_sessions_success_and_failure(monkeypatch, fake_requests, fake_st):
+    session_ids = ["s1", "s2"]
+    fake_payload = {"deleted": 2, "failed": 0, "results": []}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.delete_sessions(session_ids)
+    assert result == fake_payload
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.delete_sessions(session_ids) is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_sessions(session_ids) is None
+
+
+

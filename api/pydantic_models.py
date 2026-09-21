@@ -263,6 +263,31 @@ class BulkDeleteResponse(BaseModel):
     failed: int = 0
 
 
+class BulkDeleteSessionRequest(BaseModel):
+    session_ids: list[NonEmptyString] = Field(min_length=1, max_length=50)
+
+    @field_validator("session_ids")
+    @classmethod
+    def validate_session_ids(cls, v: list[str]) -> list[str]:
+        cleaned = [s.strip() for s in v if isinstance(s, str) and s.strip()]
+        if not cleaned:
+            raise ValueError("session_ids must contain at least one non-empty session ID.")
+        return cleaned
+
+
+class BulkDeleteSessionResult(BaseModel):
+    session_id: str
+    status: str
+    detail: str | None = None
+
+
+class BulkDeleteSessionResponse(BaseModel):
+    results: list[BulkDeleteSessionResult] = Field(default_factory=list)
+    deleted: int = 0
+    failed: int = 0
+
+
+
 class UploadDocumentResponse(BaseModel):
     message: str
     file_id: int

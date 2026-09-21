@@ -418,6 +418,25 @@ def delete_documents(file_ids):
         return None
 
 
+def delete_sessions(session_ids):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/delete-sessions",
+            headers=_request_headers(),
+            json={"session_ids": session_ids},
+            timeout=60,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to delete sessions", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while deleting sessions: {str(e)}")
+        return None
+
+
+
 def get_health():
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=5)
