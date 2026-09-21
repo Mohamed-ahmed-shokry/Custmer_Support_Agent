@@ -224,6 +224,17 @@ def delete_doc_from_chroma(file_id: int):
         return False
 
 
+def get_collection_chunk_count(collection: str) -> int:
+    """Return the number of document chunks stored in Chroma for this collection."""
+    try:
+        vectorstore = get_vectorstore()
+        docs = vectorstore.get(where={"collection": collection})
+        return len(docs.get("ids", []))
+    except Exception:
+        logger.exception("Error counting chunks for collection %s in Chroma", collection)
+        return 0
+
+
 def delete_collection_from_chroma(collection: str) -> int:
     """Delete every chunk in a collection, returning the chunk count (-1 on error)."""
     try:

@@ -245,6 +245,23 @@ def test_rename_collection_in_chroma_handles_empty_collection(monkeypatch):
     assert chroma_utils.rename_collection_in_chroma("acme", "globex") == 0
 
 
+def test_get_collection_chunk_count(monkeypatch):
+    class FakeCountVectorstore:
+        def get(self, where):
+            if where.get("collection") == "populated":
+                return {"ids": ["chunk1", "chunk2", "chunk3"]}
+            if where.get("collection") == "error":
+                raise RuntimeError("Chroma error")
+            return {"ids": []}
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", FakeCountVectorstore)
+
+    expected_count = 3
+    assert chroma_utils.get_collection_chunk_count("populated") == expected_count
+    assert chroma_utils.get_collection_chunk_count("empty") == 0
+    assert chroma_utils.get_collection_chunk_count("error") == 0
+
+
 def test_index_document_retries_transient_failures(monkeypatch):
     documents = [Document(page_content="Chunk", metadata={})]
 

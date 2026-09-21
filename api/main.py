@@ -17,6 +17,7 @@ from api.chroma_utils import (
     ChunkingStrategy,
     delete_collection_from_chroma,
     delete_doc_from_chroma,
+    get_collection_chunk_count,
     get_doc_chunks_from_chroma,
     index_document_to_chroma,
     rename_collection_in_chroma,
@@ -33,6 +34,7 @@ from api.db_utils import (
     get_all_documents,
     get_all_sessions,
     get_chat_history,
+    get_collections_details,
     get_document_by_hash,
     get_document_record,
     get_feedback_analytics,
@@ -76,6 +78,7 @@ from api.pydantic_models import (
     BulkUploadItem,
     BulkUploadResponse,
     ChatMessage,
+    CollectionDetailResponse,
     ConfigResponse,
     DeleteDocumentResponse,
     DeleteFileRequest,
@@ -682,6 +685,26 @@ def get_document_details(file_id: int):
 @app.get("/collections", response_model=list[str])
 def list_collections():
     return get_all_collections()
+
+
+@app.get("/collections/details", response_model=list[CollectionDetailResponse])
+def get_collections_details_route():
+    details = get_collections_details()
+    results = []
+    for item in details:
+        col = item["collection"]
+        chunk_count = get_collection_chunk_count(col)
+        results.append(
+            CollectionDetailResponse(
+                collection=col,
+                document_count=item["document_count"],
+                chunk_count=chunk_count,
+                file_formats=item["file_formats"],
+                earliest_upload=item["earliest_upload"],
+                latest_upload=item["latest_upload"],
+            )
+        )
+    return results
 
 
 @app.patch("/collections/{collection}", response_model=RenameCollectionResponse)

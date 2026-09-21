@@ -277,6 +277,30 @@ def test_list_collections_network_error_returns_empty(monkeypatch, fake_st):
     assert api_utils.list_collections() == []
 
 
+def test_get_collections_details_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_payload = [
+        {
+            "collection": "default",
+            "document_count": 3,
+            "chunk_count": 9,
+            "file_formats": {"pdf": 3},
+            "earliest_upload": "2026-09-01 00:00:00",
+            "latest_upload": "2026-09-02 00:00:00",
+        }
+    ]
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.get_collections_details()
+    assert result == fake_payload
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/collections/details")
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.get_collections_details() == []
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_collections_details() == []
+
+
 def test_rename_collection_success(fake_requests):
     fake_requests.response = FakeResponse(payload={"collection": "new"})
 

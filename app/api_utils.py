@@ -193,6 +193,23 @@ def list_collections():
         return []
 
 
+def get_collections_details():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/collections/details",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch collections details", response)
+            return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching collections details: {str(e)}")
+        return []
+
+
 def rename_collection(collection, new_name):
     try:
         response = requests.patch(

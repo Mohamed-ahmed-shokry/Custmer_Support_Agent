@@ -147,6 +147,15 @@ class DocumentDetailResponse(BaseModel):
     chunks: list[DocumentChunkInfo] = Field(default_factory=list)
 
 
+class CollectionDetailResponse(BaseModel):
+    collection: str
+    document_count: int
+    chunk_count: int = 0
+    file_formats: dict[str, int] = Field(default_factory=dict)
+    earliest_upload: str | None = None
+    latest_upload: str | None = None
+
+
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
 MAX_SESSION_LABEL_LENGTH = 80
 MAX_SESSION_TAGS_LENGTH = 200

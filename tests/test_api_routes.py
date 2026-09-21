@@ -237,6 +237,32 @@ def test_list_collections(monkeypatch):
     assert response.json() == ["acme", "default"]
 
 
+def test_get_collections_details_route(monkeypatch):
+    mock_details = [
+        {
+            "collection": "legal",
+            "document_count": 2,
+            "file_formats": {"pdf": 2},
+            "earliest_upload": "2026-09-01 10:00:00",
+            "latest_upload": "2026-09-02 12:00:00",
+        }
+    ]
+    monkeypatch.setattr(main, "get_collections_details", lambda: mock_details)
+    monkeypatch.setattr(main, "get_collection_chunk_count", lambda col: 6)
+
+    response = client.get("/collections/details")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    expected_collections = 1
+    expected_docs = 2
+    expected_chunks = 6
+    assert len(data) == expected_collections
+    assert data[0]["collection"] == "legal"
+    assert data[0]["document_count"] == expected_docs
+    assert data[0]["chunk_count"] == expected_chunks
+    assert data[0]["file_formats"] == {"pdf": 2}
+
+
 def test_delete_collection_removes_chunks_and_records(monkeypatch):
     monkeypatch.setattr(main, "delete_collection_from_chroma", lambda collection: 3)
     monkeypatch.setattr(main, "delete_documents_by_collection", lambda collection: 2)
