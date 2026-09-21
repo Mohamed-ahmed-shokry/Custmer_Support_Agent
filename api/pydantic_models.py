@@ -208,6 +208,7 @@ class PruneSessionsResponse(BaseModel):
 class FeedbackInput(BaseModel):
     session_id: NonEmptyString
     rating: Literal[1, -1]
+    comment: str | None = None
 
     @field_validator("session_id", mode="before")
     @classmethod
@@ -216,10 +217,34 @@ class FeedbackInput(BaseModel):
             return v.strip()
         return v
 
+    @field_validator("comment", mode="before")
+    @classmethod
+    def strip_comment(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            cleaned = v.strip()
+            return cleaned if cleaned else None
+        return None
+
 
 class FeedbackResponse(BaseModel):
     message: str
     feedback_id: int
+
+
+class FeedbackItem(BaseModel):
+    id: int
+    session_id: str
+    rating: int
+    comment: str | None = None
+    created_at: str
+
+
+class FeedbackListResponse(BaseModel):
+    items: list[FeedbackItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
 
 
 class QuotaInfo(BaseModel):

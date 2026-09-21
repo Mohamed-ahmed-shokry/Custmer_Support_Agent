@@ -330,11 +330,14 @@ def export_session(session_id, format="markdown"):
 
 
 
-def submit_feedback(session_id, rating):
+def submit_feedback(session_id, rating, comment=None):
+    payload = {"session_id": session_id, "rating": rating}
+    if comment:
+        payload["comment"] = comment
     try:
         response = requests.post(
             f"{API_BASE_URL}/feedback",
-            json={"session_id": session_id, "rating": rating},
+            json=payload,
             headers=_request_headers(),
             timeout=30,
         )
@@ -346,6 +349,47 @@ def submit_feedback(session_id, rating):
     except Exception as e:
         st.error(f"An error occurred while submitting feedback: {str(e)}")
         return None
+
+
+def list_feedback(rating=None, session_id=None, limit=50, offset=0):
+    params = {"limit": limit, "offset": offset}
+    if rating is not None:
+        params["rating"] = rating
+    if session_id is not None:
+        params["session_id"] = session_id
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback",
+            params=params,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch feedback", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching feedback: {str(e)}")
+        return None
+
+
+def get_session_feedback(session_id):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/feedback",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch session feedback", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching session feedback: {str(e)}")
+        return None
+
 
 
 def get_session_history(session_id):

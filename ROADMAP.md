@@ -201,7 +201,7 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 4: Multi-format session export presenters (`render_session_json`, `render_session_csv`) and unit tests
 - [x] Task 5: Multi-format export endpoint `GET /sessions/{session_id}/export?format=...`, client helper, and unit tests
 - [x] Task 6: Feedback schema migration (`comment` column), `insert_feedback` update, `list_feedback`, and `get_session_feedback` queries with unit tests
-- [ ] Task 7: Feedback API routes (`POST /feedback` with comment, `GET /feedback`, `GET /sessions/{session_id}/feedback`), models, client methods, and unit tests
+- [x] Task 7: Feedback API routes (`POST /feedback` with comment, `GET /feedback`, `GET /sessions/{session_id}/feedback`), models, client methods, and unit tests
 - [ ] Task 8: Streamlit UI dynamic config discovery & model/upload limit integration
 - [ ] Task 9: Streamlit UI bulk session deletion mode in sidebar
 - [ ] Task 10: Streamlit UI multi-format session export selector

@@ -637,4 +637,51 @@ def test_delete_sessions_success_and_failure(monkeypatch, fake_requests, fake_st
     assert api_utils.delete_sessions(session_ids) is None
 
 
+def test_submit_feedback_with_comment_passes_payload(fake_requests):
+    fake_requests.response = FakeResponse(payload={"feedback_id": 9})
+    result = api_utils.submit_feedback("s1", -1, comment="Needs improvement")
+    assert result == {"feedback_id": 9}
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/feedback")
+    assert kwargs["json"] == {
+        "session_id": "s1",
+        "rating": -1,
+        "comment": "Needs improvement",
+    }
+
+
+def test_list_feedback_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_payload = {"items": [{"id": 1}], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.list_feedback(rating=1, session_id="s1")
+    assert result == fake_payload
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs["params"] == {
+        "limit": 50,
+        "offset": 0,
+        "rating": 1,
+        "session_id": "s1",
+    }
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.list_feedback() is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_feedback() is None
+
+
+def test_get_session_feedback_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_payload = [{"id": 1, "session_id": "s1", "rating": 1}]
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.get_session_feedback("s1")
+    assert result == fake_payload
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_session_feedback("s1") is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_session_feedback("s1") is None
+
+
+
 

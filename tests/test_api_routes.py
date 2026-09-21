@@ -706,12 +706,40 @@ def test_submit_feedback_records_rating(monkeypatch):
     monkeypatch.setattr(
         main, "get_chat_history", lambda session_id: [{"role": "human", "content": "Hi"}]
     )
-    monkeypatch.setattr(main, "insert_feedback", lambda session_id, rating: 3)
+    monkeypatch.setattr(
+        main, "insert_feedback", lambda session_id, rating, comment=None: 3
+    )
 
     response = client.post("/feedback", json={"session_id": "session-1", "rating": 1})
 
     assert response.status_code == HTTP_OK
     assert response.json() == {"message": "Feedback recorded.", "feedback_id": 3}
+
+
+def test_submit_feedback_with_comment(monkeypatch):
+    recorded = {}
+    monkeypatch.setattr(
+        main, "get_chat_history", lambda session_id: [{"role": "human", "content": "Hi"}]
+    )
+
+    def fake_insert(session_id, rating, comment=None):
+        recorded["session_id"] = session_id
+        recorded["rating"] = rating
+        recorded["comment"] = comment
+        return 42
+
+    monkeypatch.setattr(main, "insert_feedback", fake_insert)
+    response = client.post(
+        "/feedback",
+        json={"session_id": "session-1", "rating": -1, "comment": "Needs more detail"},
+    )
+    assert response.status_code == HTTP_OK
+    assert response.json() == {"message": "Feedback recorded.", "feedback_id": 42}
+    assert recorded == {
+        "session_id": "session-1",
+        "rating": -1,
+        "comment": "Needs more detail",
+    }
 
 
 def test_submit_feedback_returns_404_for_unknown_session(monkeypatch):
@@ -732,6 +760,71 @@ def test_submit_feedback_rejects_blank_session_id():
     response = client.post("/feedback", json={"session_id": "   ", "rating": -1})
 
     assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_list_feedback_route(monkeypatch):
+    fake_items = [
+        {
+            "id": 1,
+            "session_id": "s1",
+            "rating": 1,
+            "comment": "Nice",
+            "created_at": "2026-09-21 00:00:00",
+        }
+    ]
+    monkeypatch.setattr(
+        main,
+        "list_feedback",
+        lambda rating=None, session_id=None, limit=50, offset=0: (fake_items, 1),
+    )
+    response = client.get("/feedback?rating=1&session_id=s1&limit=10&offset=0")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["comment"] == "Nice"
+
+
+def test_list_feedback_route_validation():
+    response = client.get("/feedback?rating=0")
+    assert response.status_code == HTTP_BAD_REQUEST
+
+    response = client.get("/feedback?limit=0")
+    assert response.status_code == HTTP_BAD_REQUEST
+
+    response = client.get("/feedback?limit=101")
+    assert response.status_code == HTTP_BAD_REQUEST
+
+    response = client.get("/feedback?offset=-1")
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_get_session_feedback_route(monkeypatch):
+    fake_items = [
+        {
+            "id": 1,
+            "session_id": "s1",
+            "rating": 1,
+            "comment": "Nice",
+            "created_at": "2026-09-21 00:00:00",
+        }
+    ]
+    monkeypatch.setattr(
+        main, "get_chat_history", lambda session_id: [{"role": "human", "content": "Hi"}]
+    )
+    monkeypatch.setattr(main, "get_session_feedback", lambda session_id: fake_items)
+    response = client.get("/sessions/s1/feedback")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == 1
+
+
+def test_get_session_feedback_route_not_found(monkeypatch):
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
+    response = client.get("/sessions/missing/feedback")
+    assert response.status_code == HTTP_NOT_FOUND
+
 
 
 def test_export_session_returns_markdown_transcript(monkeypatch):

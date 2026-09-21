@@ -35,9 +35,11 @@ from api.db_utils import (
     get_document_by_hash,
     get_document_record,
     get_library_stats,
+    get_session_feedback,
     insert_application_logs,
     insert_document_record,
     insert_feedback,
+    list_feedback,
     normalize_session_label,
     ping_db,
     prune_sessions_before,
@@ -79,6 +81,8 @@ from api.pydantic_models import (
     DocumentDetailResponse,
     DocumentInfo,
     FeedbackInput,
+    FeedbackItem,
+    FeedbackListResponse,
     FeedbackResponse,
     HealthResponse,
     PruneSessionsResponse,
@@ -905,9 +909,50 @@ def submit_feedback(feedback: FeedbackInput):
         raise HTTPException(
             status_code=404, detail=f"Session {feedback.session_id} was not found."
         )
-    feedback_id = insert_feedback(feedback.session_id, feedback.rating)
+    feedback_id = insert_feedback(feedback.session_id, feedback.rating, feedback.comment)
     increment("feedback_up" if feedback.rating == 1 else "feedback_down")
     return FeedbackResponse(message="Feedback recorded.", feedback_id=feedback_id)
+
+
+MAX_FEEDBACK_LIMIT = 100
+
+
+@app.get("/feedback", response_model=FeedbackListResponse)
+def list_feedback_route(
+    rating: int | None = None,
+    session_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    if rating is not None and rating not in (1, -1):
+        raise HTTPException(status_code=400, detail="Query param 'rating' must be 1 or -1.")
+    if limit <= 0 or limit > MAX_FEEDBACK_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query param 'limit' must be between 1 and {MAX_FEEDBACK_LIMIT}.",
+        )
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Query param 'offset' must be non-negative.")
+
+    items, total = list_feedback(rating=rating, session_id=session_id, limit=limit, offset=offset)
+    return FeedbackListResponse(
+        items=[FeedbackItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/sessions/{session_id}/feedback", response_model=list[FeedbackItem])
+def get_session_feedback_route(session_id: str):
+    _require_session_id(session_id)
+    if not get_chat_history(session_id):
+        raise HTTPException(
+            status_code=404, detail=f"Session {session_id} was not found."
+        )
+    items = get_session_feedback(session_id)
+    return [FeedbackItem(**item) for item in items]
+
 
 
 @app.patch("/sessions/{session_id}", response_model=SessionInfo)
