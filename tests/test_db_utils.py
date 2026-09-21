@@ -540,3 +540,41 @@ def test_migrate_session_labels_adds_columns(monkeypatch, tmp_path):
 
     # Second migration call is idempotent
     db_utils.migrate_session_labels()
+
+
+def test_get_feedback_analytics_empty_and_populated(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Empty table
+    empty_analytics = db_utils.get_feedback_analytics()
+    assert empty_analytics["total_feedback"] == 0
+    assert empty_analytics["positive_feedback"] == 0
+    assert empty_analytics["negative_feedback"] == 0
+    assert empty_analytics["satisfaction_rate"] == 0.0
+    assert empty_analytics["total_comments"] == 0
+    assert empty_analytics["comment_rate"] == 0.0
+    assert empty_analytics["recent_comments"] == []
+
+    # Insert ratings with and without comments
+    db_utils.insert_feedback("s1", rating=1, comment="Great answer!")
+    db_utils.insert_feedback("s2", rating=1, comment=None)
+    db_utils.insert_feedback("s3", rating=1, comment="Very helpful.")
+    db_utils.insert_feedback("s4", rating=-1, comment="Incorrect response.")
+
+    analytics = db_utils.get_feedback_analytics(recent_comments_limit=2)
+    expected_total = 4
+    expected_pos = 3
+    expected_neg = 1
+    expected_comments = 3
+    expected_satisfaction = 75.0
+    expected_comment_rate = 75.0
+    expected_recent_count = 2
+
+    assert analytics["total_feedback"] == expected_total
+    assert analytics["positive_feedback"] == expected_pos
+    assert analytics["negative_feedback"] == expected_neg
+    assert analytics["satisfaction_rate"] == expected_satisfaction
+    assert analytics["total_comments"] == expected_comments
+    assert analytics["comment_rate"] == expected_comment_rate
+    assert len(analytics["recent_comments"]) == expected_recent_count
+    assert analytics["recent_comments"][0]["comment"] == "Incorrect response."

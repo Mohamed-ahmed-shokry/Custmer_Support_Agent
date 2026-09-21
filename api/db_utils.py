@@ -534,6 +534,46 @@ def count_feedback(rating):
         return cursor.fetchone()[0]
 
 
+def get_feedback_analytics(recent_comments_limit: int = 5) -> dict:
+    """Aggregate customer satisfaction (CSAT) and feedback metrics."""
+    with closing(get_db_connection()) as conn:
+        stats_query = (
+            "SELECT "
+            "COUNT(*) AS total_feedback, "
+            "COALESCE(SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END), 0) AS positive_feedback, "
+            "COALESCE(SUM(CASE WHEN rating = -1 THEN 1 ELSE 0 END), 0) AS negative_feedback, "
+            "COALESCE(SUM(CASE WHEN comment IS NOT NULL AND trim(comment) != '' "
+            "THEN 1 ELSE 0 END), 0) AS total_comments "
+            "FROM feedback"
+        )
+        row = conn.execute(stats_query).fetchone()
+        total = row["total_feedback"] if row else 0
+        positive = row["positive_feedback"] if row else 0
+        negative = row["negative_feedback"] if row else 0
+        comments_count = row["total_comments"] if row else 0
+
+        satisfaction_rate = round((positive / total * 100), 1) if total > 0 else 0.0
+        comment_rate = round((comments_count / total * 100), 1) if total > 0 else 0.0
+
+        comments_query = (
+            "SELECT id, session_id, rating, comment, created_at FROM feedback "
+            "WHERE comment IS NOT NULL AND trim(comment) != '' "
+            "ORDER BY created_at DESC, id DESC LIMIT ?"
+        )
+        comment_rows = conn.execute(comments_query, (recent_comments_limit,)).fetchall()
+        recent_comments = [dict(r) for r in comment_rows]
+
+        return {
+            "total_feedback": total,
+            "positive_feedback": positive,
+            "negative_feedback": negative,
+            "satisfaction_rate": satisfaction_rate,
+            "total_comments": comments_count,
+            "comment_rate": comment_rate,
+            "recent_comments": recent_comments,
+        }
+
+
 def migrate_session_labels():
     """Add newer columns (status, tags) to session_labels table if missing."""
     with closing(get_db_connection()) as conn:
