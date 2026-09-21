@@ -601,3 +601,16 @@ def test_search_sessions_success_and_failure(monkeypatch, fake_requests, fake_st
     monkeypatch.setattr(api_utils, "requests", BoomRequests())
     assert api_utils.search_sessions("test") == []
 
+
+def test_get_config_success_and_failure(monkeypatch, fake_requests):
+    fake_payload = {"app_name": "Test App", "default_model": "gpt-4o-mini"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    assert api_utils.get_config() == fake_payload
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.get_config() is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_config() is None
+
+

@@ -460,3 +460,16 @@ def get_quota():
     except Exception:
         return None
     return None
+
+
+def get_config():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/config", headers=_request_headers(), timeout=5
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+    except Exception:
+        return None
+    return None
+

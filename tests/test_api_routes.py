@@ -26,6 +26,19 @@ def test_health_route():
     assert response.json()["status"] == "ok"
 
 
+def test_get_config_route():
+    response = client.get("/config")
+
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["app_name"] == settings.app_name
+    assert data["app_version"] == settings.app_version
+    assert data["default_model"] == settings.default_model
+    assert data["retriever_k"] == settings.retriever_k
+    assert "supported_chunking_strategies" in data
+
+
+
 def test_sanitize_filename_removes_path_segments():
     assert main.sanitize_filename("../unsafe.pdf") == "unsafe.pdf"
     assert main.sanitize_filename(r"C:\temp\unsafe.pdf") == "unsafe.pdf"

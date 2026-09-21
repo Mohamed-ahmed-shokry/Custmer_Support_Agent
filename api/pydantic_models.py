@@ -289,3 +289,23 @@ class HealthResponse(BaseModel):
     status: str
     app: str
     version: str
+
+
+class ConfigResponse(BaseModel):
+    app_name: str
+    app_version: str
+    default_model: str
+    retriever_k: int
+    max_history_turns: int
+    max_upload_mb: int
+    max_bulk_files: int
+    use_hybrid_retriever: bool
+    use_query_expansion: bool
+    use_rerank: bool
+    api_key_required: bool
+    rate_limit_per_min: int
+    token_budget_configured: bool
+    supported_chunking_strategies: list[str] = Field(
+        default_factory=lambda: ["recursive", "markdown"]
+    )
+

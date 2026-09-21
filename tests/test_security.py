@@ -78,6 +78,7 @@ def test_public_paths_cover_probes_metrics_and_docs():
         "/health/ready",
         "/metrics",
         "/metrics.json",
+        "/config",
         "/docs",
         "/openapi.json",
     ):

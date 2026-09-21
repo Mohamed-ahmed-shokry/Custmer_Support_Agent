@@ -61,6 +61,7 @@ from api.pydantic_models import (
     BulkUploadItem,
     BulkUploadResponse,
     ChatMessage,
+    ConfigResponse,
     DeleteDocumentResponse,
     DeleteFileRequest,
     DeleteSessionResponse,
@@ -246,6 +247,26 @@ def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval opti
 @app.get("/health", response_model=HealthResponse)
 def health():
     return HealthResponse(status="ok", app=settings.app_name, version=settings.app_version)
+
+
+@app.get("/config", response_model=ConfigResponse)
+def get_runtime_config():
+    return ConfigResponse(
+        app_name=settings.app_name,
+        app_version=settings.app_version,
+        default_model=settings.default_model,
+        retriever_k=settings.retriever_k,
+        max_history_turns=settings.max_history_turns,
+        max_upload_mb=settings.max_upload_mb,
+        max_bulk_files=settings.max_bulk_files,
+        use_hybrid_retriever=settings.use_hybrid_retriever,
+        use_query_expansion=settings.use_query_expansion,
+        use_rerank=settings.use_rerank,
+        api_key_required=bool(settings.api_key),
+        rate_limit_per_min=settings.rate_limit_per_min,
+        token_budget_configured=settings.token_daily_budget_est > 0,
+    )
+
 
 
 @app.get("/health/live")
