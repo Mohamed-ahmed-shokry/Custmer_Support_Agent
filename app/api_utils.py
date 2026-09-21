@@ -311,11 +311,12 @@ def rename_session(session_id, label):
         return None
 
 
-def export_session(session_id):
+def export_session(session_id, format="markdown"):
     try:
         response = requests.get(
             f"{API_BASE_URL}/sessions/{session_id}/export",
-            headers=_request_headers({"accept": "text/markdown"}),
+            params={"format": format},
+            headers=_request_headers(),
             timeout=30,
         )
         if response.status_code == HTTP_OK:
@@ -326,6 +327,7 @@ def export_session(session_id):
     except Exception as e:
         st.error(f"An error occurred while exporting the session: {str(e)}")
         return None
+
 
 
 def submit_feedback(session_id, rating):

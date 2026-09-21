@@ -5,7 +5,6 @@ import io
 import json
 from types import SimpleNamespace
 
-
 from api.presenters import (
     build_search_hits,
     build_sources,

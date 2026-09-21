@@ -54,7 +54,13 @@ from api.observability import (
     snapshot,
 )
 from api.pii import redact_pii
-from api.presenters import build_search_hits, build_sources, render_session_markdown
+from api.presenters import (
+    build_search_hits,
+    build_sources,
+    render_session_csv,
+    render_session_json,
+    render_session_markdown,
+)
 from api.pydantic_models import (
     BulkDeleteFileRequest,
     BulkDeleteFileResult,
@@ -787,20 +793,39 @@ def session_history(session_id: str):
 
 
 @app.get("/sessions/{session_id}/export")
-def export_session(session_id: str):
+def export_session(session_id: str, format: str = "markdown"):
     _require_session_id(session_id)
+    export_format = format.strip().lower()
+    if export_format not in {"markdown", "json", "csv"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Query parameter 'format' must be one of: markdown, json, csv.",
+        )
     history = get_chat_history(session_id)
     if not history:
         raise HTTPException(
             status_code=404, detail=f"Session {session_id} was not found."
         )
     label = _get_session_summary_or_404(session_id).get("label")
-    markdown = render_session_markdown(session_id, label, history)
+    if export_format == "json":
+        content = render_session_json(session_id, label, history)
+        media_type = "application/json"
+        extension = "json"
+    elif export_format == "csv":
+        content = render_session_csv(session_id, label, history)
+        media_type = "text/csv"
+        extension = "csv"
+    else:
+        content = render_session_markdown(session_id, label, history)
+        media_type = "text/markdown"
+        extension = "md"
+
     return PlainTextResponse(
-        markdown,
-        media_type="text/markdown",
-        headers={"Content-Disposition": f'attachment; filename="{session_id}.md"'},
+        content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{session_id}.{extension}"'},
     )
+
 
 
 @app.delete("/sessions", response_model=PruneSessionsResponse)

@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from api import main, observability, security
@@ -776,6 +777,41 @@ def test_export_session_rejects_blank_session_id():
     response = client.get("/sessions/%20/export")
 
     assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_export_session_json_and_csv(monkeypatch):
+    history = [
+        {"role": "human", "content": "When is rent due?"},
+        {"role": "ai", "content": "On the first."},
+    ]
+    monkeypatch.setattr(main, "get_chat_history", lambda session_id: history)
+    monkeypatch.setattr(
+        main,
+        "get_all_sessions",
+        lambda: [{"session_id": "session-1", "label": "Rent questions"}],
+    )
+
+    json_res = client.get("/sessions/session-1/export?format=json")
+    assert json_res.status_code == HTTP_OK
+    assert "application/json" in json_res.headers["content-type"]
+    assert "session-1.json" in json_res.headers["content-disposition"]
+    json_data = json.loads(json_res.text)
+    expected_messages = 2
+    assert json_data["session_id"] == "session-1"
+    assert len(json_data["messages"]) == expected_messages
+
+    csv_res = client.get("/sessions/session-1/export?format=csv")
+    assert csv_res.status_code == HTTP_OK
+    assert "text/csv" in csv_res.headers["content-type"]
+    assert "session-1.csv" in csv_res.headers["content-disposition"]
+    assert "session_id,label,turn,role,content" in csv_res.text
+
+
+def test_export_session_rejects_invalid_format():
+    response = client.get("/sessions/session-1/export?format=xml")
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert "format" in response.json()["detail"].lower()
+
 
 
 def test_rename_session_returns_updated_summary(monkeypatch):

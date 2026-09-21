@@ -363,6 +363,15 @@ def test_export_session_error_returns_none(fake_requests, fake_st):
     assert fake_st.errors
 
 
+def test_export_session_passes_format(fake_requests):
+    fake_requests.response = FakeResponse(text='{"session_id": "s1"}')
+    result = api_utils.export_session("s1", format="json")
+    assert result == '{"session_id": "s1"}'
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs["params"] == {"format": "json"}
+
+
+
 def test_submit_feedback_success(fake_requests):
     fake_requests.response = FakeResponse(payload={"feedback_id": 7})
     result = api_utils.submit_feedback("s1", 1)
