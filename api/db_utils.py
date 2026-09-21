@@ -307,6 +307,43 @@ def get_all_collections():
         return [row["collection"] for row in cursor.fetchall()]
 
 
+def get_collections_details() -> list[dict]:
+    """Return aggregated metrics per document collection."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        rows = cursor.execute(
+            "SELECT id, filename, collection, upload_timestamp "
+            "FROM document_store ORDER BY collection ASC, id ASC"
+        ).fetchall()
+
+    collections_map: dict[str, dict] = {}
+    for row in rows:
+        col = row["collection"]
+        if col not in collections_map:
+            collections_map[col] = {
+                "collection": col,
+                "document_count": 0,
+                "file_formats": {},
+                "earliest_upload": None,
+                "latest_upload": None,
+            }
+        data = collections_map[col]
+        data["document_count"] += 1
+
+        filename = row["filename"] or ""
+        ext = Path(filename).suffix.lstrip(".").lower() or "unknown"
+        data["file_formats"][ext] = data["file_formats"].get(ext, 0) + 1
+
+        ts = str(row["upload_timestamp"]) if row["upload_timestamp"] else None
+        if ts:
+            if data["earliest_upload"] is None or ts < data["earliest_upload"]:
+                data["earliest_upload"] = ts
+            if data["latest_upload"] is None or ts > data["latest_upload"]:
+                data["latest_upload"] = ts
+
+    return list(collections_map.values())
+
+
 def get_library_stats():
     """Return library totals without loading any rows."""
     with closing(get_db_connection()) as conn:

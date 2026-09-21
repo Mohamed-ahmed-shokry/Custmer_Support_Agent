@@ -578,3 +578,33 @@ def test_get_feedback_analytics_empty_and_populated(monkeypatch, tmp_path):
     assert analytics["comment_rate"] == expected_comment_rate
     assert len(analytics["recent_comments"]) == expected_recent_count
     assert analytics["recent_comments"][0]["comment"] == "Incorrect response."
+
+
+def test_get_collections_details_empty_and_populated(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Empty
+    assert db_utils.get_collections_details() == []
+
+    # Insert docs in different collections with various extensions
+    db_utils.insert_document_record("lease.pdf", collection="legal")
+    db_utils.insert_document_record("policy.docx", collection="legal")
+    db_utils.insert_document_record("guide.txt", collection="help")
+    db_utils.insert_document_record("README", collection="help")
+
+    details = db_utils.get_collections_details()
+    expected_collections_count = 2
+    assert len(details) == expected_collections_count
+
+    legal = next(c for c in details if c["collection"] == "legal")
+    help_col = next(c for c in details if c["collection"] == "help")
+
+    expected_legal_doc_count = 2
+    expected_help_doc_count = 2
+    assert legal["document_count"] == expected_legal_doc_count
+    assert legal["file_formats"] == {"pdf": 1, "docx": 1}
+    assert legal["earliest_upload"] is not None
+    assert legal["latest_upload"] is not None
+
+    assert help_col["document_count"] == expected_help_doc_count
+    assert help_col["file_formats"] == {"txt": 1, "unknown": 1}
