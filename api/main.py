@@ -35,6 +35,7 @@ from api.db_utils import (
     get_chat_history,
     get_document_by_hash,
     get_document_record,
+    get_feedback_analytics,
     get_library_stats,
     get_session_feedback,
     insert_application_logs,
@@ -82,6 +83,7 @@ from api.pydantic_models import (
     DocumentChunkInfo,
     DocumentDetailResponse,
     DocumentInfo,
+    FeedbackAnalyticsResponse,
     FeedbackInput,
     FeedbackItem,
     FeedbackListResponse,
@@ -958,6 +960,31 @@ def list_feedback_route(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+MAX_ANALYTICS_COMMENTS_LIMIT = 50
+
+
+@app.get("/feedback/analytics", response_model=FeedbackAnalyticsResponse)
+def feedback_analytics_route(recent_comments_limit: int = 5):
+    if recent_comments_limit < 0 or recent_comments_limit > MAX_ANALYTICS_COMMENTS_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Query param 'recent_comments_limit' must be between 0 and "
+                f"{MAX_ANALYTICS_COMMENTS_LIMIT}."
+            ),
+        )
+    data = get_feedback_analytics(recent_comments_limit=recent_comments_limit)
+    return FeedbackAnalyticsResponse(
+        total_feedback=data["total_feedback"],
+        positive_feedback=data["positive_feedback"],
+        negative_feedback=data["negative_feedback"],
+        satisfaction_rate=data["satisfaction_rate"],
+        total_comments=data["total_comments"],
+        comment_rate=data["comment_rate"],
+        recent_comments=[FeedbackItem(**item) for item in data["recent_comments"]],
     )
 
 

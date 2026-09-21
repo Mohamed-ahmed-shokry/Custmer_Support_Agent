@@ -850,6 +850,45 @@ def test_get_session_feedback_route_not_found(monkeypatch):
     assert response.status_code == HTTP_NOT_FOUND
 
 
+def test_feedback_analytics_route_success(monkeypatch):
+    sample_data = {
+        "total_feedback": 10,
+        "positive_feedback": 8,
+        "negative_feedback": 2,
+        "satisfaction_rate": 80.0,
+        "total_comments": 4,
+        "comment_rate": 40.0,
+        "recent_comments": [
+            {
+                "id": 1,
+                "session_id": "s1",
+                "rating": 1,
+                "comment": "Good job",
+                "created_at": "2026-09-21 00:00:00",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        main, "get_feedback_analytics", lambda recent_comments_limit=5: sample_data
+    )
+    response = client.get("/feedback/analytics?recent_comments_limit=3")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    expected_rate = 80.0
+    expected_total = 10
+    assert data["satisfaction_rate"] == expected_rate
+    assert data["total_feedback"] == expected_total
+    assert len(data["recent_comments"]) == 1
+
+
+def test_feedback_analytics_route_validation():
+    res_neg = client.get("/feedback/analytics?recent_comments_limit=-1")
+    assert res_neg.status_code == HTTP_BAD_REQUEST
+
+    res_too_large = client.get("/feedback/analytics?recent_comments_limit=51")
+    assert res_too_large.status_code == HTTP_BAD_REQUEST
+
+
 
 def test_export_session_returns_markdown_transcript(monkeypatch):
     history = [

@@ -291,6 +291,16 @@ class FeedbackListResponse(BaseModel):
     offset: int = 0
 
 
+class FeedbackAnalyticsResponse(BaseModel):
+    total_feedback: int
+    positive_feedback: int
+    negative_feedback: int
+    satisfaction_rate: float
+    total_comments: int
+    comment_rate: float
+    recent_comments: list[FeedbackItem] = Field(default_factory=list)
+
+
 
 class QuotaInfo(BaseModel):
     budget: int

@@ -708,5 +708,29 @@ def test_get_session_feedback_success_and_failure(monkeypatch, fake_requests, fa
     assert api_utils.get_session_feedback("s1") is None
 
 
+def test_get_feedback_analytics_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_payload = {
+        "total_feedback": 5,
+        "positive_feedback": 4,
+        "negative_feedback": 1,
+        "satisfaction_rate": 80.0,
+        "total_comments": 2,
+        "comment_rate": 40.0,
+        "recent_comments": [],
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.get_feedback_analytics(recent_comments_limit=5)
+    assert result == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/feedback/analytics")
+    assert kwargs["params"] == {"recent_comments_limit": 5}
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.get_feedback_analytics() is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_feedback_analytics() is None
+
+
 
 
