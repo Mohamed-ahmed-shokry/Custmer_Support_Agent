@@ -628,6 +628,8 @@ def test_list_sessions_returns_summaries(monkeypatch):
             "last_active": "2026-09-04T00:00:00",
             "preview": "How do I request?",
             "label": None,
+            "status": "active",
+            "tags": "",
         }
     ]
     monkeypatch.setattr(main, "get_all_sessions", lambda: sessions)
@@ -636,6 +638,28 @@ def test_list_sessions_returns_summaries(monkeypatch):
 
     assert response.status_code == HTTP_OK
     assert response.json() == sessions
+
+
+def test_list_sessions_filtering(monkeypatch):
+    calls = []
+
+    def fake_get_sessions(status=None, tag=None):
+        calls.append((status, tag))
+        return []
+
+    monkeypatch.setattr(main, "get_all_sessions", fake_get_sessions)
+
+    res1 = client.get("/sessions?status=resolved")
+    assert res1.status_code == HTTP_OK
+    assert calls[-1] == ("resolved", None)
+
+    res2 = client.get("/sessions?tag=urgent")
+    assert res2.status_code == HTTP_OK
+    assert calls[-1] == (None, "urgent")
+
+    res3 = client.get("/sessions?status=invalid-status")
+    assert res3.status_code == HTTP_BAD_REQUEST
+    assert "Invalid session status" in res3.json()["detail"]
 
 
 def test_session_history_returns_messages(monkeypatch):
@@ -936,6 +960,52 @@ def test_rename_session_rejects_blank_label():
     response = client.patch("/sessions/session-1", json={"label": "   "})
 
     assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_update_session_metadata_success(monkeypatch):
+    summary = {
+        "session_id": "session-1",
+        "message_count": 2,
+        "last_active": "2026-09-04T00:00:00",
+        "preview": "How do I request?",
+        "label": "Lease",
+        "status": "resolved",
+        "tags": "lease, urgent",
+    }
+    recorded_args = {}
+
+    def fake_update(session_id, label=None, status=None, tags=None):
+        recorded_args.update(
+            {"session_id": session_id, "label": label, "status": status, "tags": tags}
+        )
+        return True
+
+    monkeypatch.setattr(main, "update_session_metadata", fake_update)
+    monkeypatch.setattr(main, "get_all_sessions", lambda: [summary])
+
+    payload = {"status": "resolved", "tags": "lease, urgent"}
+    response = client.patch("/sessions/session-1", json=payload)
+
+    assert response.status_code == HTTP_OK
+    assert response.json()["status"] == "resolved"
+    assert response.json()["tags"] == "lease, urgent"
+    assert recorded_args["status"] == "resolved"
+
+
+def test_update_session_rejects_invalid_status_or_empty_body():
+    # Invalid status -> 422
+    res_bad_status = client.patch("/sessions/session-1", json={"status": "invalid_status"})
+    assert res_bad_status.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    # Empty body -> 422
+    res_empty = client.patch("/sessions/session-1", json={})
+    assert res_empty.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_update_session_returns_404_when_missing(monkeypatch):
+    monkeypatch.setattr(main, "update_session_metadata", lambda *args, **kwargs: False)
+    response = client.patch("/sessions/missing", json={"status": "resolved"})
+    assert response.status_code == HTTP_NOT_FOUND
 
 
 def test_chat_records_estimated_tokens(monkeypatch):

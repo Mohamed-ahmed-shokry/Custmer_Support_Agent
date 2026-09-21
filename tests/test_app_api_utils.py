@@ -342,6 +342,15 @@ def test_delete_session_success(fake_requests):
     assert url.endswith("/sessions/s1")
 
 
+def test_list_sessions_with_filters(fake_requests):
+    fake_requests.response = FakeResponse(payload=[{"session_id": "s1", "status": "resolved"}])
+    result = api_utils.list_sessions(status="resolved", tag="urgent")
+    assert result == [{"session_id": "s1", "status": "resolved"}]
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions")
+    assert kwargs["params"] == {"status": "resolved", "tag": "urgent"}
+
+
 def test_rename_session_success(fake_requests):
     fake_requests.response = FakeResponse(payload={"label": "Jean"})
     result = api_utils.rename_session("s1", "Jean")
@@ -349,6 +358,22 @@ def test_rename_session_success(fake_requests):
     _, url, kwargs = fake_requests.calls[0]
     assert url.endswith("/sessions/s1")
     assert kwargs["json"] == {"label": "Jean"}
+
+
+def test_update_session_success(fake_requests):
+    fake_requests.response = FakeResponse(payload={"session_id": "s1", "status": "resolved"})
+    result = api_utils.update_session("s1", status="resolved", tags=["billing", "urgent"])
+    assert result == {"session_id": "s1", "status": "resolved"}
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/s1")
+    assert kwargs["json"] == {"status": "resolved", "tags": ["billing", "urgent"]}
+
+
+def test_update_session_error(fake_requests, fake_st):
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "failed"})
+    result = api_utils.update_session("s1", status="bad")
+    assert result is None
+    assert fake_st.errors
 
 
 def test_export_session_returns_text_not_json(fake_requests):

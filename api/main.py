@@ -24,6 +24,7 @@ from api.chroma_utils import (
 )
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
+    VALID_SESSION_STATUSES,
     delete_document_record,
     delete_documents_by_collection,
     delete_session,
@@ -47,6 +48,7 @@ from api.db_utils import (
     rename_session,
     search_sessions,
     truncate_history,
+    update_session_metadata,
 )
 from api.observability import (
     estimate_tokens,
@@ -91,13 +93,13 @@ from api.pydantic_models import (
     QuotaInfo,
     RenameCollectionRequest,
     RenameCollectionResponse,
-    RenameSessionRequest,
     SearchInput,
     SearchResponse,
     SessionInfo,
     SessionSearchResponse,
     SessionSearchResult,
     StatsResponse,
+    UpdateSessionRequest,
     UploadDocumentResponse,
 )
 from api.security import (
@@ -744,7 +746,23 @@ def delete_collection_route(collection: str):
 
 
 @app.get("/sessions", response_model=list[SessionInfo])
-def list_sessions():
+def list_sessions(status: str | None = None, tag: str | None = None):
+    if status is not None:
+        cleaned_status = status.strip().lower()
+        if cleaned_status not in VALID_SESSION_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid session status '{cleaned_status}'. "
+                    f"Must be one of: {sorted(VALID_SESSION_STATUSES)}."
+                ),
+            )
+        status = cleaned_status
+    if tag is not None:
+        cleaned_tag = tag.strip().lower()
+        tag = cleaned_tag if cleaned_tag else None
+    if status is not None or tag is not None:
+        return get_all_sessions(status=status, tag=tag)
     return get_all_sessions()
 
 
@@ -956,13 +974,22 @@ def get_session_feedback_route(session_id: str):
 
 
 @app.patch("/sessions/{session_id}", response_model=SessionInfo)
-def rename_session_route(session_id: str, request: RenameSessionRequest):
+def update_session_route(session_id: str, request: UpdateSessionRequest):
     _require_session_id(session_id)
     try:
-        label = normalize_session_label(request.label)
+        if request.status is None and request.tags is None and request.label is not None:
+            label = normalize_session_label(request.label)
+            updated = rename_session(session_id, label)
+        else:
+            updated = update_session_metadata(
+                session_id,
+                label=request.label,
+                status=request.status,
+                tags=request.tags,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if not rename_session(session_id, label):
+    if not updated:
         raise HTTPException(
             status_code=404, detail=f"Session {session_id} was not found."
         )

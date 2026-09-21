@@ -245,10 +245,18 @@ def list_documents(collection=None):
         return []
 
 
-def list_sessions():
+def list_sessions(status=None, tag=None):
     try:
+        params = {}
+        if status:
+            params["status"] = status
+        if tag:
+            params["tag"] = tag
         response = requests.get(
-            f"{API_BASE_URL}/sessions", headers=_request_headers(), timeout=30
+            f"{API_BASE_URL}/sessions",
+            params=params or None,
+            headers=_request_headers(),
+            timeout=30,
         )
         if response.status_code == HTTP_OK:
             return response.json()
@@ -293,22 +301,33 @@ def delete_session(session_id):
         return None
 
 
-def rename_session(session_id, label):
+def update_session(session_id, label=None, status=None, tags=None):
+    payload = {}
+    if label is not None:
+        payload["label"] = label
+    if status is not None:
+        payload["status"] = status
+    if tags is not None:
+        payload["tags"] = tags
     try:
         response = requests.patch(
             f"{API_BASE_URL}/sessions/{session_id}",
-            json={"label": label},
+            json=payload,
             headers=_request_headers(),
             timeout=30,
         )
         if response.status_code == HTTP_OK:
             return response.json()
         else:
-            show_api_error("Failed to rename session", response)
+            show_api_error("Failed to update session", response)
             return None
     except Exception as e:
-        st.error(f"An error occurred while renaming the session: {str(e)}")
+        st.error(f"An error occurred while updating the session: {str(e)}")
         return None
+
+
+def rename_session(session_id, label):
+    return update_session(session_id, label=label)
 
 
 def export_session(session_id, format="markdown"):

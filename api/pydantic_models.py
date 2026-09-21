@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, PositiveInt, field_validator
+from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.settings import settings
@@ -147,17 +147,26 @@ class DocumentDetailResponse(BaseModel):
     chunks: list[DocumentChunkInfo] = Field(default_factory=list)
 
 
+VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
+MAX_SESSION_LABEL_LENGTH = 80
+MAX_SESSION_TAGS_LENGTH = 200
+
+
 class SessionInfo(BaseModel):
     session_id: str
     message_count: int
     last_active: datetime
     preview: str = ""
     label: str | None = None
+    status: str = "active"
+    tags: str = ""
 
 
 class SessionSearchResult(BaseModel):
     session_id: str
     label: str | None = None
+    status: str = "active"
+    tags: str = ""
     match_count: int
     preview: str = ""
     last_active: datetime
@@ -169,15 +178,51 @@ class SessionSearchResponse(BaseModel):
     results: list[SessionSearchResult] = Field(default_factory=list)
 
 
-class RenameSessionRequest(BaseModel):
-    label: str = Field(min_length=1, max_length=80)
+class UpdateSessionRequest(BaseModel):
+    label: str | None = None
+    status: str | None = None
+    tags: str | list[str] | None = None
 
     @field_validator("label", mode="before")
     @classmethod
-    def strip_label(cls, v: str) -> str:
+    def strip_label(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         if isinstance(v, str):
-            return v.strip()
+            cleaned = v.strip()
+            if not cleaned:
+                raise ValueError("Session label must not be blank.")
+            if len(cleaned) > MAX_SESSION_LABEL_LENGTH:
+                raise ValueError(
+                    f"Session label must be at most {MAX_SESSION_LABEL_LENGTH} characters."
+                )
+            return cleaned
         return v
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            if cleaned not in VALID_SESSION_STATUSES:
+                raise ValueError(
+                    f"Invalid session status '{cleaned}'. "
+                    f"Must be one of: {sorted(VALID_SESSION_STATUSES)}."
+                )
+            return cleaned
+        return v
+
+    @model_validator(mode="after")
+    def check_at_least_one_field(self) -> "UpdateSessionRequest":
+        if self.label is None and self.status is None and self.tags is None:
+            raise ValueError("At least one of 'label', 'status', or 'tags' must be provided.")
+        return self
+
+
+class RenameSessionRequest(UpdateSessionRequest):
+    label: str = Field(min_length=1, max_length=80)
 
 
 class RenameCollectionRequest(BaseModel):
