@@ -173,7 +173,22 @@ Deliver operational visibility, batch maintenance, conversational history search
 - [x] Multi-Strategy Retrieval Eval: Extend `scripts/eval_retrieval.py` with `--hybrid`, `--rerank`, `--collection`, and `--json-output` flags
 - [x] Test Coverage & Quality Gates: Unit tests for all new endpoints, utilities, and UI widgets; 0 ruff errors, 0 mypy errors, 309 tests passing, 95.87% test coverage
 
-## Next Candidates (v0.21.0+)
+## v0.21.0 plan — Feedback Quality Review, Bulk Session Management, Multi-Format Conversation Export & Dynamic Config Discovery 🚀 IN PROGRESS
+
+Deliver a closed-loop feedback review system, bulk session operations, flexible conversation exports (Markdown/JSON/CSV), and dynamic runtime configuration discovery.
+
+- [ ] Dynamic Config Discovery: `GET /config` public endpoint and client method `get_config()` exposing non-sensitive runtime parameters (models, upload limits, retrieval defaults, security flags)
+- [ ] Bulk Session Deletion: `POST /delete-sessions` endpoint + SQLite cascade deletion (`delete_sessions`) with per-session status reports (`deleted`, `not_found`, `error`) and client helper `delete_sessions`
+- [ ] Multi-Format Conversation Export: `GET /sessions/{session_id}/export?format=markdown|json|csv` supporting structured JSON and CSV downloads alongside Markdown, with presenter helpers `render_session_json` and `render_session_csv`
+- [ ] Feedback Comments & Quality Review: SQLite migration for `feedback.comment`, `POST /feedback` with optional comments, `GET /feedback` with rating/session filtering and pagination, `GET /sessions/{session_id}/feedback`, and client methods
+- [ ] Streamlit UI Integration:
+  - Dynamic runtime configuration loading for upload size limits and model defaults
+  - Bulk session deletion mode in `app/sidebar.py`
+  - Multi-format session export selector (Markdown / JSON / CSV)
+  - Feedback review panel to inspect rated sessions, read user comments, and load associated conversations
+- [ ] Test Coverage & Quality Gates: Unit tests for all new endpoints, SQLite functions, presenters, client methods, and UI components; 0 ruff errors, 0 mypy errors, >=95% test coverage
+
+## Next Candidates (v0.22.0+)
 
 - Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets (dependent on real credentials)
