@@ -19,6 +19,7 @@ from app.api_utils import (
     get_stats,
     list_collections,
     list_documents,
+    list_feedback,
     list_sessions,
     rename_collection,
     rename_session,
@@ -477,6 +478,56 @@ def _render_retrieval_filters():
     st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
 
 
+def _render_feedback_review():
+    with st.sidebar.expander("Feedback Review"):
+        rating_filter_label = st.selectbox(
+            "Filter by rating",
+            options=["All", "Positive (👍)", "Negative (👎)"],
+            key="feedback_rating_filter",
+        )
+        rating_filter = None
+        if rating_filter_label == "Positive (👍)":
+            rating_filter = 1
+        elif rating_filter_label == "Negative (👎)":
+            rating_filter = -1
+
+        if st.button("Refresh Feedback", key="refresh_feedback_btn"):
+            st.session_state.feedback_data = list_feedback(rating=rating_filter, limit=20)
+
+        if (
+            "feedback_data" not in st.session_state
+            or st.session_state.get("feedback_filter") != rating_filter
+        ):
+            st.session_state.feedback_data = list_feedback(rating=rating_filter, limit=20)
+            st.session_state.feedback_filter = rating_filter
+
+        data = st.session_state.get("feedback_data")
+        if not data or not data.get("items"):
+            st.caption("No feedback recorded yet.")
+            return
+
+        items = data["items"]
+        total = data.get("total", len(items))
+        st.caption(f"Showing {len(items)} of {total} feedback entries")
+
+        for item in items:
+            icon = "👍" if item.get("rating") == 1 else "👎"
+            sid = item.get("session_id", "")
+            sid_short = sid[:8]
+            created = item.get("created_at", "")
+            comment = item.get("comment")
+            comment_text = f'"{comment}"' if comment else "*(no comment)*"
+            st.markdown(f"**{icon} {sid_short}** ({created})  \n{comment_text}")
+            if st.button(f"Open {sid_short}", key=f"open_fb_{item['id']}"):
+                with st.spinner("Loading session..."):
+                    history = get_session_history(sid)
+                    st.session_state.session_id = sid
+                    st.session_state.messages = [
+                        {"role": m["role"], "content": m["content"]} for m in history
+                    ]
+                    st.rerun()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -490,4 +541,5 @@ def display_sidebar():
     _render_document_inspector()
     _render_retrieval_filters()
     _render_document_list()
+    _render_feedback_review()
     _render_ops_metrics()

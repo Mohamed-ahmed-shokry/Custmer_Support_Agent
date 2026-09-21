@@ -723,6 +723,7 @@ def test_display_sidebar_complete(monkeypatch):
     monkeypatch.setattr(sidebar, "get_metrics", lambda: {"chat_requests": 1})
     monkeypatch.setattr(sidebar, "get_stats", lambda: None)
     monkeypatch.setattr(sidebar, "get_quota", lambda: None)
+    monkeypatch.setattr(sidebar, "list_feedback", lambda **kw: {"items": [], "total": 0})
 
     sidebar.display_sidebar()
     assert any(c.fn == "caption" for c in st.calls)
@@ -931,6 +932,7 @@ def test_display_sidebar_initializes_config(monkeypatch):
     monkeypatch.setattr(sidebar, "_render_document_inspector", lambda: None)
     monkeypatch.setattr(sidebar, "_render_retrieval_filters", lambda: None)
     monkeypatch.setattr(sidebar, "_render_document_list", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_feedback_review", lambda: None)
     monkeypatch.setattr(sidebar, "_render_ops_metrics", lambda: None)
 
     conf = {"version": "0.21.0"}
@@ -1038,3 +1040,118 @@ def test_render_session_export_json_and_csv(monkeypatch):
     download_csv = next(c for c in st_csv.calls if c.fn == "download_button")
     assert download_csv.kwargs["file_name"] == "s1.csv"
     assert download_csv.kwargs["mime"] == "text/csv"
+
+
+# --- feedback review panel -------------------------------------------------
+
+
+def test_render_feedback_review_empty(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar, "list_feedback", lambda rating=None, limit=20: {"items": [], "total": 0}
+    )
+
+    sidebar._render_feedback_review()
+
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("No feedback recorded yet." in c for c in captions)
+
+
+def test_render_feedback_review_items_and_ratings(monkeypatch):
+    items = [
+        {
+            "id": 1,
+            "session_id": "sess-alpha-12345",
+            "rating": 1,
+            "comment": "Great answer!",
+            "created_at": "2026-09-21 10:00:00",
+        },
+        {
+            "id": 2,
+            "session_id": "sess-beta-67890",
+            "rating": -1,
+            "comment": None,
+            "created_at": "2026-09-21 10:05:00",
+        },
+    ]
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar, "list_feedback", lambda rating=None, limit=20: {"items": items, "total": 2}
+    )
+
+    sidebar._render_feedback_review()
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("👍 sess-alp" in m and "Great answer!" in m for m in markdowns)
+    assert any("👎 sess-bet" in m and "*(no comment)*" in m for m in markdowns)
+
+
+def test_render_feedback_review_rating_filters(monkeypatch):
+    calls = []
+
+    def fake_list(rating=None, limit=20):
+        calls.append(rating)
+        return {"items": [], "total": 0}
+
+    monkeypatch.setattr(sidebar, "list_feedback", fake_list)
+
+    # Filter by positive
+    st_pos = FakeStreamlit(values={"feedback_rating_filter": "Positive (👍)"})
+    monkeypatch.setattr(sidebar, "st", st_pos)
+    sidebar._render_feedback_review()
+    assert calls[-1] == 1
+
+    # Filter by negative
+    st_neg = FakeStreamlit(values={"feedback_rating_filter": "Negative (👎)"})
+    monkeypatch.setattr(sidebar, "st", st_neg)
+    sidebar._render_feedback_review()
+    assert calls[-1] == -1
+
+
+def test_render_feedback_review_open_session(monkeypatch):
+    items = [
+        {
+            "id": 10,
+            "session_id": "session-xyz",
+            "rating": -1,
+            "comment": "Inaccurate info",
+            "created_at": "2026-09-21 10:10:00",
+        }
+    ]
+    st = FakeStreamlit(
+        buttons={"open_fb_10": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar, "list_feedback", lambda rating=None, limit=20: {"items": items, "total": 1}
+    )
+    history = [
+        {"role": "user", "content": "What is the pet policy?"},
+        {"role": "assistant", "content": "No pets allowed."},
+    ]
+    monkeypatch.setattr(sidebar, "get_session_history", lambda sid: history)
+
+    sidebar._render_feedback_review()
+
+    assert st.session_state.session_id == "session-xyz"
+    assert st.session_state.messages == history
+    assert st.reruns == 1
+
+
+def test_render_feedback_review_refresh(monkeypatch):
+    st = FakeStreamlit(
+        buttons={"refresh_feedback_btn": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_feedback",
+        lambda rating=None, limit=20: called.append(1) or {"items": [], "total": 0},
+    )
+
+    sidebar._render_feedback_review()
+
+    assert len(called) >= 1

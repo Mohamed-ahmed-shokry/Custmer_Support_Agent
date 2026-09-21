@@ -205,8 +205,8 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 8: Streamlit UI dynamic config discovery & model/upload limit integration
 - [x] Task 9: Streamlit UI bulk session deletion mode in sidebar
 - [x] Task 10: Streamlit UI multi-format session export selector
-- [ ] Task 11: Streamlit UI feedback review panel with session deep-linking
-- [ ] Task 12: Streamlit UI test suite updates and widget coverage
+- [x] Task 11: Streamlit UI feedback review panel with session deep-linking
+- [x] Task 12: Streamlit UI test suite updates and widget coverage
 - [ ] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
 
 ## Next Candidates (v0.22.0+)
