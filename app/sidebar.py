@@ -13,6 +13,7 @@ from app.api_utils import (
     get_collections_details,
     get_config,
     get_document_details,
+    get_feedback_analytics,
     get_health,
     get_metrics,
     get_quota,
@@ -565,6 +566,36 @@ def _render_retrieval_filters():
     st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
 
 
+def _render_feedback_analytics():
+    with st.sidebar.expander("Feedback Analytics"):
+        try:
+            analytics = get_feedback_analytics(recent_comments_limit=3)
+            total = analytics.get("total_feedback", 0)
+            positive = analytics.get("positive_feedback", 0)
+            negative = analytics.get("negative_feedback", 0)
+            satisfaction = analytics.get("satisfaction_rate", 0.0)
+            comment_rate = analytics.get("comment_rate", 0.0)
+            recent = analytics.get("recent_comments", [])
+
+            st.metric("Satisfaction Rate", f"{satisfaction:.1f}%")
+            col1, col2 = st.columns(2)
+            col1.metric("👍 Positive", positive)
+            col2.metric("👎 Negative", negative)
+
+            st.caption(f"Total feedback: {total} · Comment rate: {comment_rate:.1f}%")
+
+            if recent:
+                st.caption("Recent comments:")
+                for item in recent:
+                    icon = "👍" if item.get("rating") == 1 else "👎"
+                    sid = item.get("session_id", "")[:8]
+                    comment = item.get("comment")
+                    if comment:
+                        st.markdown(f"{icon} `{sid}`: \"{comment[:50]}...\"")
+        except Exception as e:
+            st.caption(f"Error loading analytics: {e}")
+
+
 def _render_feedback_review():
     with st.sidebar.expander("Feedback Review"):
         rating_filter_label = st.selectbox(
@@ -629,5 +660,6 @@ def display_sidebar():
     _render_document_inspector()
     _render_retrieval_filters()
     _render_document_list()
+    _render_feedback_analytics()
     _render_feedback_review()
     _render_ops_metrics()
