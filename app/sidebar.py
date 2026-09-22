@@ -542,7 +542,9 @@ def _render_document_inspector():
                 st.caption(f"SHA-256: `{details['sha256'][:16]}...`")
             for chunk in details.get("chunks", [])[:10]:
                 pg = f", p.{chunk['page']}" if chunk.get("page") else ""
-                st.caption(f"Chunk {chunk['chunk_index']}{pg}:")
+                score = chunk.get("score")
+                score_badge = f" (score: {score:.3f})" if score is not None else ""
+                st.caption(f"Chunk {chunk['chunk_index']}{pg}{score_badge}:")
                 st.text(chunk.get("preview", ""))
 
 

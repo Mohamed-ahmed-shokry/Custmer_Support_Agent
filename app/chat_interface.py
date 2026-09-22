@@ -32,6 +32,9 @@ def _render_assistant_message(answer, selected_model, session_id, sources):
                     page = source.get("page")
                     if page is not None:
                         label = f"{label}, page {page}"
+                    score = source.get("score")
+                    if score is not None:
+                        label = f"{label} (score: {score:.3f})"
                     st.markdown(f"**{label}**")
                     st.caption(source.get("preview", ""))
         _render_feedback_widget(session_id)
