@@ -301,8 +301,11 @@ def test_render_session_history_builds_labels(monkeypatch, session):
     sidebar._render_session_history()
 
     selectbox_calls = [c for c in st.calls if c.fn == "selectbox"]
-    assert len(selectbox_calls) == 1
-    labels = selectbox_calls[0].kwargs["format_func"]
+    EXPECTED_SELECTBOX_COUNT = 2
+    assert len(selectbox_calls) == EXPECTED_SELECTBOX_COUNT
+    # The second one is the session picker
+    session_picker_call = next(c for c in selectbox_calls if c.args[0] == "Open a session")
+    labels = session_picker_call.kwargs["format_func"]
     assert labels(session["session_id"]).endswith("msgs)")
 
 
