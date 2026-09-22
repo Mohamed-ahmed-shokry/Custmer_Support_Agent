@@ -91,3 +91,37 @@ class RerankingRetriever(BaseRetriever):
     def _get_relevant_documents(self, query: str, *, run_manager: Any = None) -> list[Document]:
         documents = self.base.invoke(query)
         return rerank_by_term_overlap(query, list(documents), self.top_n)
+
+
+class CrossEncoderReranker(BaseRetriever):
+    """Wrap another retriever and reorder its hits using a cross-encoder model.
+
+    Uses sentence-transformers CrossEncoder for semantic reranking.
+    Lazy imports to maintain Python 3.14 compatibility.
+    """
+
+    base: Any
+    top_n: int = 5
+    model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    _model: Any = None
+
+    def _get_model(self):
+        """Lazy-load the cross-encoder model."""
+        if self._model is None:
+            from sentence_transformers import CrossEncoder  # noqa: PLC0415 - lazy import
+
+            self._model = CrossEncoder(self.model_name)
+        return self._model
+
+    def _get_relevant_documents(self, query: str, *, run_manager: Any = None) -> list[Document]:
+        documents = self.base.invoke(query)
+        if not documents:
+            return []
+
+        model = self._get_model()
+        pairs = [(query, doc.page_content) for doc in documents]
+        scores = model.predict(pairs)
+        # Sort by score descending
+        scored_docs = list(zip(scores, documents, strict=False))
+        scored_docs.sort(key=lambda x: x[0], reverse=True)
+        return [doc for _, doc in scored_docs[: self.top_n]]

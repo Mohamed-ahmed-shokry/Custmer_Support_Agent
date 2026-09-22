@@ -45,3 +45,36 @@ def test_reranking_retriever_wraps_base_retriever():
     retriever = rerank.RerankingRetriever(base=FakeBase(), top_n=2)
 
     assert retriever.invoke("When is rent due?") == [docs[1], docs[0]]
+
+
+def test_cross_encoder_reranker_sorts_by_score(monkeypatch):
+    docs = [_doc("unrelated"), _doc("rent due date")]
+
+    class FakeBase:
+        def invoke(self, query):
+            return docs
+
+    retriever = rerank.CrossEncoderReranker(base=FakeBase(), top_n=2)
+
+    # Mock the model to return predictable scores
+    class FakeModel:
+        def predict(self, pairs):
+            # Return high score for second doc, low for first
+            return [0.1, 0.9]
+
+    def _fake_model():
+        return FakeModel()
+    monkeypatch.setattr(retriever, "_get_model", _fake_model)
+
+    result = retriever.invoke("When is rent due?")
+    assert result == [docs[1], docs[0]]
+
+
+def test_cross_encoder_reranker_empty_documents():
+    class FakeBase:
+        def invoke(self, query):
+            return []
+
+    retriever = rerank.CrossEncoderReranker(base=FakeBase(), top_n=5)
+    result = retriever.invoke("test query")
+    assert result == []

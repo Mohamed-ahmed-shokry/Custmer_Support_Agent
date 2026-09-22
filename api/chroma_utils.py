@@ -391,6 +391,8 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
     llm=None,
     expansion_count: int = 3,
     rerank: bool = False,
+    use_cross_encoder_rerank: bool = False,
+    cross_encoder_model: str | None = None,
 ):
     """Pick vector / filtered / hybrid / expanded retriever based on request flags.
 
@@ -398,9 +400,11 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
     out into reformulations and fuses the vector hits with reciprocal-rank
     fusion (filters still apply to every variant). When ``rerank`` is set,
     the chosen retriever fetches extra candidates that are reordered by a
-    lexical-overlap signal and trimmed back to ``k``.
+    lexical-overlap signal and trimmed back to ``k``. When
+    ``use_cross_encoder_rerank`` is set, a cross-encoder model reorders the
+    candidates semantically (takes precedence over lexical rerank).
     """
-    fetch_k = k * RERANK_CANDIDATE_MULTIPLIER if rerank else k
+    fetch_k = k * RERANK_CANDIDATE_MULTIPLIER if (rerank or use_cross_encoder_rerank) else k
     base: Any
     if expand_query:
         from api.expansion import ExpandedVectorRetriever  # noqa: PLC0415 - lazy, see ADR-001
@@ -432,8 +436,13 @@ def select_retriever(  # noqa: PLR0913, PLR0917 - explicit retriever options
         )
     else:
         base = get_vectorstore().as_retriever(search_kwargs={"k": fetch_k})
-    if not rerank:
+    if not rerank and not use_cross_encoder_rerank:
         return base
+    if use_cross_encoder_rerank:
+        from api.rerank import CrossEncoderReranker  # noqa: PLC0415 - lazy, see ADR-001
+
+        model_name = cross_encoder_model or settings.cross_encoder_model
+        return CrossEncoderReranker(base=base, top_n=k, model_name=model_name)
     from api.rerank import RerankingRetriever  # noqa: PLC0415 - lazy, see ADR-001
 
     return RerankingRetriever(base=base, top_n=k)

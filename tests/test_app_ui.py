@@ -201,7 +201,7 @@ def test_handle_streaming_response_forwards_file_ids_and_hybrid(monkeypatch):
     monkeypatch.setattr(chat_interface, "get_api_stream_response", fake_stream)
 
     chat_interface._handle_streaming_response(
-        "q", "s1", "m", None, None, None, [3, 7], True
+        "q", "s1", "m", None, None, None, [3, 7], True, None, None
     )
 
     assert captured["args"] == (
@@ -213,6 +213,8 @@ def test_handle_streaming_response_forwards_file_ids_and_hybrid(monkeypatch):
         None,
         [3, 7],
         True,
+        None,
+        None,
     )
 
 
@@ -228,10 +230,10 @@ def test_handle_non_streaming_response_forwards_file_ids_and_hybrid(monkeypatch)
     monkeypatch.setattr(chat_interface, "get_api_response", fake_response)
 
     chat_interface._handle_non_streaming_response(
-        "q", "s1", "m", None, None, None, [3, 7], True
+        "q", "s1", "m", None, None, None, [3, 7], True, None, None
     )
 
-    assert captured["args"] == ("q", "s1", "m", None, None, None, [3, 7], True)
+    assert captured["args"] == ("q", "s1", "m", None, None, None, [3, 7], True, None, None)
 
 
 # --- sidebar ---------------------------------------------------------------
@@ -467,8 +469,10 @@ def test_render_retrieval_filters_with_documents(monkeypatch):
     assert multiselects[0].kwargs["key"] == "selected_doc_ids"
     assert multiselects[0].kwargs["format_func"](7) == "b.pdf"
     checkboxes = [c for c in st.calls if c.fn == "checkbox"]
-    assert len(checkboxes) == 1
+    EXPECTED_CHECKBOX_COUNT = 2
+    assert len(checkboxes) == EXPECTED_CHECKBOX_COUNT
     assert checkboxes[0].kwargs["key"] == "use_hybrid"
+    assert checkboxes[1].kwargs["key"] == "use_cross_encoder_rerank"
 
 
 def test_render_retrieval_filters_without_documents_resets(monkeypatch):

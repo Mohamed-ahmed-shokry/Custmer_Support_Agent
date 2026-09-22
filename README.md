@@ -18,6 +18,10 @@ A local-first customer support assistant for real estate and property management
   `USE_QUERY_EXPANSION`.
 - Opt-in lexical rerank (`rerank`): term-overlap reordering that composes
   with filters, hybrid, and expansion; sidebar toggle or `USE_RERANK`.
+- Opt-in cross-encoder rerank (`use_cross_encoder_rerank`): semantic reordering
+  using a cross-encoder model (e.g., `cross-encoder/ms-marco-MiniLM-L-6-v2`);
+  takes precedence over lexical rerank; enable via sidebar toggle or
+  `USE_CROSS_ENCODER_RERANK` and configure model via `CROSS_ENCODER_MODEL`.
 - Document chunk inspection (`GET /docs/{id}`): view chunk count, chunk previews,
   and metadata in the Streamlit inspector widget.
 - Bulk document deletion (`POST /delete-docs`) with batch selection mode in the UI.

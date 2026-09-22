@@ -84,6 +84,8 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     collections: list[str] | None = None,
     expand_query: bool | None = None,
     rerank: bool | None = None,
+    use_cross_encoder_rerank: bool | None = None,
+    cross_encoder_model: str | None = None,
 ):
     # ruff: noqa: PLC0415 - lazy imports required for Python 3.14 compatibility (ADR-001)
     from langchain.chains import create_history_aware_retriever, create_retrieval_chain
@@ -93,6 +95,14 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     hybrid = settings.use_hybrid_retriever if use_hybrid is None else use_hybrid
     expand = settings.use_query_expansion if expand_query is None else expand_query
     rerank_flag = settings.use_rerank if rerank is None else rerank
+    use_cross_encoder = (
+        settings.use_cross_encoder_rerank
+        if use_cross_encoder_rerank is None else use_cross_encoder_rerank
+    )
+    cross_encoder_model_name = (
+        settings.cross_encoder_model
+        if cross_encoder_model is None else cross_encoder_model
+    )
     retriever = select_retriever(
         k=settings.retriever_k,
         file_ids=file_ids,
@@ -105,6 +115,8 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
         llm=llm,
         expansion_count=settings.expansion_count,
         rerank=rerank_flag,
+        use_cross_encoder_rerank=use_cross_encoder,
+        cross_encoder_model=cross_encoder_model_name,
     )
     history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)

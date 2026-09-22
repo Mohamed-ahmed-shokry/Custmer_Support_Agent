@@ -250,6 +250,8 @@ def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval opti
     collections: list[str] | None = None,
     expand_query: bool | None = None,
     rerank: bool | None = None,
+    use_cross_encoder_rerank: bool | None = None,
+    cross_encoder_model: str | None = None,
 ):
     # ruff: noqa: PLC0415 - lazy import required for Python 3.14 compatibility
     from api.langchain_utils import get_rag_chain
@@ -262,6 +264,8 @@ def get_rag_chain_for_model(  # noqa: PLR0913, PLR0917 - explicit retrieval opti
         collections=collections,
         expand_query=expand_query,
         rerank=rerank,
+        use_cross_encoder_rerank=use_cross_encoder_rerank,
+        cross_encoder_model=cross_encoder_model,
     )
 
 
@@ -375,6 +379,8 @@ def chat(query_input: QueryInput, request: Request):
         collections=query_input.collections,
         expand_query=query_input.expand_query,
         rerank=query_input.rerank,
+        use_cross_encoder_rerank=query_input.use_cross_encoder_rerank,
+        cross_encoder_model=query_input.cross_encoder_model,
     )
     try:
         result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
@@ -421,6 +427,12 @@ def search(search_input: SearchInput, request: Request):
     rerank = search_input.rerank
     if rerank is None:
         rerank = settings.use_rerank
+    use_cross_encoder = search_input.use_cross_encoder_rerank
+    if use_cross_encoder is None:
+        use_cross_encoder = settings.use_cross_encoder_rerank
+    cross_encoder_model = search_input.cross_encoder_model
+    if cross_encoder_model is None:
+        cross_encoder_model = settings.cross_encoder_model
     retriever = select_retriever(
         k=search_input.k,
         file_ids=search_input.file_ids,
@@ -433,6 +445,8 @@ def search(search_input: SearchInput, request: Request):
         llm=None,
         expansion_count=settings.expansion_count,
         rerank=rerank,
+        use_cross_encoder_rerank=use_cross_encoder,
+        cross_encoder_model=cross_encoder_model,
     )
     try:
         documents = retriever.invoke(search_input.question)
@@ -458,6 +472,8 @@ async def _stream_rag_response(
         collections=query_input.collections,
         expand_query=query_input.expand_query,
         rerank=query_input.rerank,
+        use_cross_encoder_rerank=query_input.use_cross_encoder_rerank,
+        cross_encoder_model=query_input.cross_encoder_model,
     )
     try:
         async for chunk in rag_chain.astream(

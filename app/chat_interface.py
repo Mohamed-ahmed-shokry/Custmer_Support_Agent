@@ -61,6 +61,8 @@ def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request opt
     rerank=None,
     file_ids=None,
     use_hybrid=None,
+    use_cross_encoder_rerank=None,
+    cross_encoder_model=None,
 ):
     """Handle streaming response from API."""
     stream = get_api_stream_response(
@@ -72,6 +74,8 @@ def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request opt
         rerank,
         file_ids,
         use_hybrid,
+        use_cross_encoder_rerank,
+        cross_encoder_model,
     )
     if not stream:
         return None, None, None
@@ -115,6 +119,8 @@ def _handle_non_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request
     rerank=None,
     file_ids=None,
     use_hybrid=None,
+    use_cross_encoder_rerank=None,
+    cross_encoder_model=None,
 ):
     """Handle non-streaming response from API."""
     response = get_api_response(
@@ -126,6 +132,8 @@ def _handle_non_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request
         rerank,
         file_ids,
         use_hybrid,
+        use_cross_encoder_rerank,
+        cross_encoder_model,
     )
     if not response:
         return None, None, None
@@ -156,6 +164,7 @@ def display_chat_interface():
         collections = [active_collection] if active_collection else None
         file_ids = st.session_state.get("selected_doc_ids") or None
         use_hybrid = bool(st.session_state.get("use_hybrid", False))
+        use_cross_encoder_rerank = bool(st.session_state.get("use_cross_encoder_rerank", False))
 
         with st.spinner("Generating response..."):
             if use_streaming:
@@ -168,6 +177,7 @@ def display_chat_interface():
                     rerank,
                     file_ids,
                     use_hybrid,
+                    use_cross_encoder_rerank,
                 )
             else:
                 answer, sources, new_session_id = _handle_non_streaming_response(
@@ -179,6 +189,7 @@ def display_chat_interface():
                     rerank,
                     file_ids,
                     use_hybrid,
+                    use_cross_encoder_rerank,
                 )
 
         if answer:

@@ -43,12 +43,15 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
   "use_hybrid": true,
   "collections": ["clients-acme"],
   "expand_query": true,
-  "rerank": true
+  "rerank": true,
+  "use_cross_encoder_rerank": true,
+  "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
 }
 ```
 
 - `file_ids` (max 50), `source_filename`, `use_hybrid`, `collections`
-  (max 20), `expand_query`, and `rerank` are optional retrieval controls.
+  (max 20), `expand_query`, `rerank`, `use_cross_encoder_rerank`, and
+  `cross_encoder_model` are optional retrieval controls.
   Omit them for plain vector search over all documents.
 - `expand_query` fans the question out into LLM reformulations and fuses the
   per-variant vector hits with reciprocal-rank fusion (takes precedence over
@@ -56,6 +59,9 @@ All responses carry an `X-Request-ID` header (echoed if the client sends one).
 - `rerank` reorders the retrieved candidates with a dependency-free
   term-overlap signal and trims back to `k` (extra candidates are fetched
   automatically; composes with filters, hybrid, and expansion).
+- `use_cross_encoder_rerank` enables semantic reranking using a cross-encoder
+  model (takes precedence over `rerank`). Configure the model via
+  `cross_encoder_model` (default: `cross-encoder/ms-marco-MiniLM-L-6-v2`).
 - Success → `200` with `{answer, session_id, model, sources[]}`.
 - Retrieval failure → `502`; bad input → `422`.
 - Each chat/stream turn adds approximate token usage (`~4 chars/token`)
@@ -127,11 +133,16 @@ computed with `COUNT` queries.
   "use_hybrid": true,
   "expand_query": false,
   "rerank": true,
+  "use_cross_encoder_rerank": true,
+  "cross_encoder_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
   "score_threshold": 0.7
 }
 ```
 
 - Accepts the same retrieval controls as `/chat` (`k` is 1–50).
+- `use_cross_encoder_rerank` enables semantic reranking using a cross-encoder
+  model (takes precedence over `rerank`). Configure the model via
+  `cross_encoder_model` (default: `cross-encoder/ms-marco-MiniLM-L-6-v2`).
 - `score_threshold` (optional, 0.0–1.0): filter out hits below the given relevance confidence score.
 - Success → `200` with `{hits: [{rank, preview, file_id, filename, page,
   chunk_index, collection, score}]}`; retrieval failure → `502`. Each hit includes a `score` field (0.0–1.0 relevance confidence) when available from the retriever.

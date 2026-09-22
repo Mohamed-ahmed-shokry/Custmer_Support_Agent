@@ -36,6 +36,8 @@ class QueryInput(BaseModel):
     collections: list[str] | None = Field(default=None, max_length=20)
     expand_query: bool | None = Field(default=None)
     rerank: bool | None = Field(default=None)
+    use_cross_encoder_rerank: bool | None = Field(default=None)
+    cross_encoder_model: str | None = Field(default=None, max_length=100)
 
     @field_validator("collections", mode="before")
     @classmethod
@@ -69,6 +71,8 @@ class SearchInput(BaseModel):
     collections: list[str] | None = Field(default=None, max_length=20)
     expand_query: bool | None = Field(default=None)
     rerank: bool | None = Field(default=None)
+    use_cross_encoder_rerank: bool | None = Field(default=None)
+    cross_encoder_model: str | None = Field(default=None, max_length=100)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @field_validator("collections", mode="before")

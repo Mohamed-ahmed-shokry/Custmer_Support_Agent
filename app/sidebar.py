@@ -555,6 +555,9 @@ def _render_retrieval_filters():
         st.session_state.selected_doc_ids = []
         st.sidebar.caption("No documents in the active collection.")
         st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
+        st.sidebar.checkbox(
+    "Cross-encoder rerank (semantic)", value=False, key="use_cross_encoder_rerank"
+)
         return
     st.sidebar.multiselect(
         "Restrict to document(s)",
@@ -566,6 +569,9 @@ def _render_retrieval_filters():
         key="selected_doc_ids",
     )
     st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
+    st.sidebar.checkbox(
+    "Cross-encoder rerank (semantic)", value=False, key="use_cross_encoder_rerank"
+)
 
 
 def _render_feedback_analytics():

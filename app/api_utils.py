@@ -49,6 +49,8 @@ def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
     rerank=None,
     file_ids=None,
     use_hybrid=None,
+    use_cross_encoder_rerank=None,
+    cross_encoder_model=None,
 ):
     data = {"question": question, "model": model}
     if session_id:
@@ -63,6 +65,10 @@ def get_api_response(  # noqa: PLR0913, PLR0917 - explicit request options
         data["expand_query"] = expand_query
     if rerank is not None:
         data["rerank"] = rerank
+    if use_cross_encoder_rerank is not None:
+        data["use_cross_encoder_rerank"] = use_cross_encoder_rerank
+    if cross_encoder_model is not None:
+        data["cross_encoder_model"] = cross_encoder_model
 
     try:
         response = requests.post(
@@ -87,6 +93,8 @@ def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request option
     rerank=None,
     file_ids=None,
     use_hybrid=None,
+    use_cross_encoder_rerank=None,
+    cross_encoder_model=None,
 ):
     """Get streaming response from the API."""
     data = {"question": question, "model": model}
@@ -102,6 +110,10 @@ def get_api_stream_response(  # noqa: PLR0913, PLR0917 - explicit request option
         data["expand_query"] = expand_query
     if rerank is not None:
         data["rerank"] = rerank
+    if use_cross_encoder_rerank is not None:
+        data["use_cross_encoder_rerank"] = use_cross_encoder_rerank
+    if cross_encoder_model is not None:
+        data["cross_encoder_model"] = cross_encoder_model
 
     try:
         response = requests.post(

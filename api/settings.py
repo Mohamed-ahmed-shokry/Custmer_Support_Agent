@@ -48,6 +48,10 @@ class Settings:
         self.use_hybrid_retriever = get_bool_env("USE_HYBRID_RETRIEVER", False)
         self.use_query_expansion = get_bool_env("USE_QUERY_EXPANSION", False)
         self.use_rerank = get_bool_env("USE_RERANK", False)
+        self.use_cross_encoder_rerank = get_bool_env("USE_CROSS_ENCODER_RERANK", False)
+        self.cross_encoder_model = os.getenv(
+    "CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
         self.expansion_count = get_positive_int_env("EXPANSION_COUNT", 3)
         self.hybrid_bm25_weight = get_float_env("HYBRID_BM25_WEIGHT", 0.5)
         self.hybrid_vector_weight = get_float_env("HYBRID_VECTOR_WEIGHT", 0.5)

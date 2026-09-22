@@ -13,6 +13,7 @@ requests
 streamlit
 python-dotenv
 uvicorn
+sentence-transformers>=3.0.0,<4.0
 
 # Development dependencies
 pytest

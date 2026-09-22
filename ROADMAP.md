@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.22.0, 2026-09-22)
+## Current State (v0.23.0, 2026-09-23)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -47,7 +47,13 @@
   - Quality Analytics card: satisfaction rate (%), positive/negative counts, comment rate
   - Collection Insights widget: document count, chunk count, file formats, upload timestamps
   - Retrieval confidence scoring: score badges in chunk inspector and search results
-- 371 tests passing; 94.64% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.23.0 additions**:
+  - Cross-encoder semantic reranking: sentence-transformers integration with `cross-encoder/ms-marco-MiniLM-L-6-v2` model
+  - Cross-encoder rerank takes precedence over lexical rerank in `/chat`, `/chat/stream`, `/search`
+  - Configurable via `USE_CROSS_ENCODER_RERANK` and `CROSS_ENCODER_MODEL` settings
+  - Streamlit UI toggle for cross-encoder rerank in Retrieval Filters
+  - Unit tests for CrossEncoderReranker with mock model
+- 373 tests passing; 94.32% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -218,26 +224,28 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 12: Streamlit UI test suite updates and widget coverage
 - [x] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
 
-## v0.22.0 plan — Session Lifecycle Management, Quality Analytics, Collection Insights & Retrieval Confidence Scoring ✅ COMPLETED
+## v0.22.0 plan — Session Lifecycle Management, Quality Analytics, Collection Insights, Retrieval Confidence Scoring & Cross-Encoder Reranking ✅ COMPLETED
 
-Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, collection-level operational insights, and retrieval confidence score visibility with thresholding.
+Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, collection-level operational insights, retrieval confidence score visibility with thresholding, and semantic cross-encoder reranking.
 
 ### Scope & Objectives
 - **Session Lifecycle & Categorization**: Support conversation lifecycle states (`active`, `resolved`, `escalated`, `closed`) and custom tags in SQLite (`session_labels` table migration), API routes (`PATCH /sessions/{session_id}` accepting status and tags, `GET /sessions` with `status` and `tag` query filters), and Streamlit UI controls.
 - **Operational Quality & CSAT Analytics**: Aggregate feedback metrics into structured analytics (`GET /feedback/analytics`), returning satisfaction rate (`%`), positive/negative distribution, comment count, and ratings over time, surfaced in an interactive analytics card in the Streamlit UI.
 - **Collection Metadata & Insights**: Provide detailed statistics per collection (`GET /collections/details`), including document count, chunk count, file format distribution, total size, and last updated timestamps, surfaced in the Streamlit collection picker widget.
 - **Retrieval Confidence Scoring & Thresholding**: Enhance `POST /search` and presenters to expose relevance confidence scores (0.0 to 1.0) and accept an optional `score_threshold` filter to weed out low-confidence context; display similarity scores in the chunk inspector and search results.
+- **Cross-Encoder Semantic Reranking**: Integrate sentence-transformers cross-encoder models (e.g., `cross-encoder/ms-marco-MiniLM-L-6-v2`) for semantic reranking of retrieved chunks; configurable via `USE_CROSS_ENCODER_RERANK` and `CROSS_ENCODER_MODEL` settings; takes precedence over lexical rerank; available in `/chat`, `/chat/stream`, and `/search` endpoints with Streamlit UI toggle.
 - **Streamlit UI Integration**:
   - Session status picker (Active / Resolved / Escalated / Closed) and tags manager in sidebar.
   - Session status filter in past conversations list.
   - Quality Analytics card in sidebar with satisfaction rate (%) and rating counts.
   - Collection stats summary under active collection picker.
   - Relevance score badges in document chunk inspector and search results.
+  - Cross-encoder rerank toggle in Retrieval Filters section.
 - **Quality Gates**: Zero ruff/mypy errors, >=95% test coverage, comprehensive unit tests.
 
-### Explicit Exclusions (Deferred to v0.23.0+)
-- Cross-encoder reranker models requiring new heavy ML dependencies.
+### Explicit Exclusions (Deferred to v0.24.0+)
 - Multi-tenant user authentication and RBAC permissions.
+- Browser-based automated UI testing via Playwright.
 - Browser-based automated UI testing via Playwright.
 
 ### Granular Task Breakdown
@@ -254,12 +262,13 @@ Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, co
 - [x] Task 11: Streamlit UI retrieval confidence score badges in chunk inspector with unit tests
 - [x] Task 12: Documentation updates (`docs/API.md`, `README.md`), version bump to 0.22.0, and `ROADMAP.md` updates
 
-## Next Candidates (v0.23.0+)
+## Next Candidates (v0.24.0+)
 
-- Cross-encoder reranking (needs new model dependency + eval baseline)
 - Staging/production environment targets (dependent on real credentials)
 - Automated end-to-end browser tests via Playwright
 - Document chunk semantic re-chunking and visualization
+- Multi-tenant user authentication and RBAC permissions
+- Browser-based automated UI testing via Playwright
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
