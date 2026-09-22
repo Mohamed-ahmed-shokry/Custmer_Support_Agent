@@ -10,6 +10,7 @@ from app.api_utils import (
     delete_session,
     delete_sessions,
     export_session,
+    get_collections_details,
     get_config,
     get_document_details,
     get_health,
@@ -24,11 +25,20 @@ from app.api_utils import (
     rename_collection,
     rename_session,
     search_sessions,
+    update_session,
     upload_document,
     upload_documents,
 )
 
 MODEL_OPTIONS = [model.value for model in ModelName]
+SESSION_STATUS_OPTIONS = ["active", "resolved", "escalated", "closed"]
+SESSION_STATUS_FILTER_OPTIONS = ["All statuses", *SESSION_STATUS_OPTIONS]
+SESSION_STATUS_ICONS = {
+    "active": "🟢",
+    "resolved": "✅",
+    "escalated": "⚠️",
+    "closed": "🔒",
+}
 
 
 def _init_config():
@@ -71,6 +81,14 @@ def _render_reset_chat():
 
 
 def _filter_sessions(sessions):
+    status_filter = st.sidebar.selectbox(
+        "Filter by status",
+        options=SESSION_STATUS_FILTER_OPTIONS,
+        key="session_status_filter",
+    )
+    if status_filter != "All statuses":
+        sessions = [s for s in sessions if (s.get("status") or "active") == status_filter]
+
     search_query = st.sidebar.text_input(
         "Search conversations", key="session_search_query", placeholder="Filter by keyword..."
     )
@@ -130,7 +148,13 @@ def _render_session_history():
     labels = {"(current)": "(current)"}
     for session in sessions:
         title = session.get("label") or session.get("preview") or session["session_id"][:8]
-        labels[session["session_id"]] = f"{title} ({session['message_count']} msgs)"
+        status = session.get("status") or "active"
+        icon = SESSION_STATUS_ICONS.get(status, "🟢")
+        tags = session.get("tags") or []
+        tags_str = f" [{', '.join(tags)}]" if tags else ""
+        labels[session["session_id"]] = (
+            f"{icon} {title} ({session['message_count']} msgs){tags_str}"
+        )
 
     bulk_delete = st.sidebar.checkbox(
         "Bulk delete sessions", value=False, key="bulk_delete_sessions_mode"
@@ -170,7 +194,40 @@ def _render_session_history():
         return
     new_label = st.sidebar.text_input("Rename session", key="rename_session", max_chars=80)
     _handle_session_actions(selected, new_label)
+    _render_session_metadata(selected, sessions)
     _render_session_export(selected)
+
+
+def _render_session_metadata(selected, sessions):
+    current = next((s for s in sessions if s.get("session_id") == selected), None)
+    curr_status = (current.get("status") or "active") if current else "active"
+    status_idx = (
+        SESSION_STATUS_OPTIONS.index(curr_status)
+        if curr_status in SESSION_STATUS_OPTIONS
+        else 0
+    )
+    new_status = st.sidebar.selectbox(
+        "Session status",
+        options=SESSION_STATUS_OPTIONS,
+        index=status_idx,
+        key=f"session_status_{selected}",
+    )
+    curr_tags = ", ".join(current.get("tags") or []) if current else ""
+    new_tags_str = st.sidebar.text_input(
+        "Tags (comma-separated)",
+        value=curr_tags,
+        key=f"session_tags_{selected}",
+        placeholder="e.g. billing, urgent",
+    )
+    if st.sidebar.button("Update Metadata", key=f"btn_update_meta_{selected}"):
+        tag_list = [t.strip() for t in new_tags_str.split(",") if t.strip()]
+        with st.spinner("Updating session metadata..."):
+            if update_session(selected, status=new_status, tags=tag_list):
+                st.sidebar.success("Session metadata updated.")
+                st.session_state.sessions = list_sessions()
+                st.rerun()
+            else:
+                st.sidebar.error("Failed to update session metadata.")
 
 
 EXPORT_FORMAT_META = {
@@ -277,6 +334,36 @@ def _render_collection_picker():
                     st.session_state.active_collection = None
                     st.rerun()
     return active
+
+
+def _render_collection_insights(active_collection):
+    """Render collection metadata and storage statistics."""
+    if not active_collection or active_collection == "default":
+        return
+    with st.sidebar.expander("Collection Insights"):
+        try:
+            details = get_collections_details()
+            collection_detail = next(
+                (d for d in details if d["collection"] == active_collection), None
+            )
+            if not collection_detail:
+                st.caption("No details available.")
+                return
+            st.metric("Documents", collection_detail.get("document_count", 0))
+            st.metric("Chunks", collection_detail.get("chunk_count", 0))
+            file_formats = collection_detail.get("file_formats", {})
+            if file_formats:
+                st.caption("File formats:")
+                for fmt, count in file_formats.items():
+                    st.write(f"  {fmt}: {count}")
+            earliest = collection_detail.get("earliest_upload")
+            latest = collection_detail.get("latest_upload")
+            if earliest:
+                st.caption(f"First upload: {earliest}")
+            if latest:
+                st.caption(f"Last upload: {latest}")
+        except Exception as e:
+            st.caption(f"Error loading collection details: {e}")
 
 
 def _render_ops_metrics():
@@ -536,6 +623,7 @@ def display_sidebar():
     _render_session_history()
     _render_model_selector()
     active_collection = _render_collection_picker()
+    _render_collection_insights(active_collection)
     _render_upload_document(active_collection)
     _render_refresh_documents(active_collection)
     _render_document_inspector()
