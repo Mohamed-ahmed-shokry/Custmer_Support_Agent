@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.21.0, 2026-09-21)
+## Current State (v0.22.0, 2026-09-22)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -42,7 +42,12 @@
 - Bulk session deletion: `POST /delete-sessions` with cascade deletion and UI batch delete mode
 - Multi-format session export: Markdown, JSON, CSV export presenters, API endpoint, and UI download selector
 - Feedback quality review: feedback comments schema & migration, `GET /feedback` with filters/pagination, `GET /sessions/{session_id}/feedback`, and UI feedback review panel with session deep-linking
-- 309 tests passing; 95.87% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.22.0 additions**:
+  - Session lifecycle management: status (active/resolved/escalated/closed) and tags with API + UI
+  - Quality Analytics card: satisfaction rate (%), positive/negative counts, comment rate
+  - Collection Insights widget: document count, chunk count, file formats, upload timestamps
+  - Retrieval confidence scoring: score badges in chunk inspector and search results
+- 371 tests passing; 94.64% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -213,7 +218,7 @@ Deliver a closed-loop feedback review system, bulk session operations, flexible 
 - [x] Task 12: Streamlit UI test suite updates and widget coverage
 - [x] Task 13: Documentation updates (`docs/API.md`, `README.md`) and version bump to 0.21.0
 
-## v0.22.0 plan — Session Lifecycle Management, Quality Analytics, Collection Insights & Retrieval Confidence Scoring 🚀 IN PROGRESS
+## v0.22.0 plan — Session Lifecycle Management, Quality Analytics, Collection Insights & Retrieval Confidence Scoring ✅ COMPLETED
 
 Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, collection-level operational insights, and retrieval confidence score visibility with thresholding.
 
@@ -243,11 +248,11 @@ Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, co
 - [x] Task 5: Collection details & storage statistics DB query (`get_collections_details`) and unit tests
 - [x] Task 6: Collection details API endpoint `GET /collections/details`, models, client helper `get_collections_details()`, and unit tests
 - [x] Task 7: Retrieval confidence scoring and `score_threshold` in `POST /search`, presenter score support, Pydantic models, and unit tests
-- [ ] Task 8: Streamlit UI session lifecycle integration (status dropdown, tagging, status filtering in past sessions) and unit tests
-- [ ] Task 9: Streamlit UI collection insights summary widget and unit tests
-- [ ] Task 10: Streamlit UI feedback analytics cards (satisfaction rate, rating distribution) and unit tests
-- [ ] Task 11: Streamlit UI retrieval confidence score badges in chunk inspector with unit tests
-- [ ] Task 12: Documentation updates (`docs/API.md`, `README.md`), version bump to 0.22.0, and `ROADMAP.md` updates
+- [x] Task 8: Streamlit UI session lifecycle integration (status dropdown, tagging, status filtering in past sessions) and unit tests
+- [x] Task 9: Streamlit UI collection insights summary widget and unit tests
+- [x] Task 10: Streamlit UI feedback analytics cards (satisfaction rate, rating distribution) and unit tests
+- [x] Task 11: Streamlit UI retrieval confidence score badges in chunk inspector with unit tests
+- [x] Task 12: Documentation updates (`docs/API.md`, `README.md`), version bump to 0.22.0, and `ROADMAP.md` updates
 
 ## Next Candidates (v0.23.0+)
 

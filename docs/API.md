@@ -1,4 +1,4 @@
-# API Reference (v0.21.0)
+# API Reference (v0.22.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -98,6 +98,8 @@ filter with `?collection=<name>`.
 
 `GET /collections` → sorted array of known collection names.
 
+`GET /collections/details` → array of `{collection, document_count, chunk_count, file_formats, earliest_upload, latest_upload}` for each collection, providing document counts, chunk counts, file format distribution, and upload timestamps.
+
 `DELETE /collections/{name}` → removes every document and chunk in the
 collection (the `default` collection is protected → `400`; unknown → `404`;
 Chroma failure → `500`).
@@ -124,13 +126,15 @@ computed with `COUNT` queries.
   "collections": ["clients-acme"],
   "use_hybrid": true,
   "expand_query": false,
-  "rerank": true
+  "rerank": true,
+  "score_threshold": 0.7
 }
 ```
 
 - Accepts the same retrieval controls as `/chat` (`k` is 1–50).
+- `score_threshold` (optional, 0.0–1.0): filter out hits below the given relevance confidence score.
 - Success → `200` with `{hits: [{rank, preview, file_id, filename, page,
-  chunk_index, collection}]}`; retrieval failure → `502`.
+  chunk_index, collection, score}]}`; retrieval failure → `502`. Each hit includes a `score` field (0.0–1.0 relevance confidence) when available from the retriever.
 
 `POST /delete-doc` with `{"file_id": 42}` removes Chroma chunks and the
 SQLite record (`404` when unknown).
@@ -138,13 +142,12 @@ SQLite record (`404` when unknown).
 ## Sessions
 
 - `GET /sessions` → array of `{session_id, message_count, last_active,
-  preview, label}` ordered by most recent activity (`preview` is the
-  truncated first question).
+  preview, label, status, tags}` ordered by most recent activity (`preview` is the
+  truncated first question). Optional query params: `status` (one of `active`, `resolved`, `escalated`, `closed`) and `tag` (case-insensitive) to filter sessions.
 - `GET /sessions/{session_id}/history` → array of `{role, content}` pairs
   for that session (`400` for a blank id). The Streamlit sidebar uses these
   to list and reload past conversations.
-- `PATCH /sessions/{session_id}` with `{"label": "..."}` → renames a session
-  (1–80 chars; `404` when unknown, `422` for a blank/oversize label).
+- `PATCH /sessions/{session_id}` with `{"label": "...", "status": "...", "tags": [...]}` → updates session metadata. `label` (1–80 chars), `status` (one of `active`, `resolved`, `escalated`, `closed`), `tags` (array of strings). Returns updated session info (`404` when unknown, `422` for invalid input).
 - `DELETE /sessions/{session_id}` → removes the session history, label,
   and feedback (`400` for a blank id, `404` when unknown).
 - `POST /delete-sessions` with `{"session_ids": ["s1", "s2"]}` (up to 50 sessions) deletes multiple sessions with cascading removal of chat history and feedback, returning `{results: [{session_id, status, error}], deleted: int, failed: int}`.
@@ -169,6 +172,8 @@ SQLite record (`404` when unknown).
   Returns paginated feedback records with optional filtering by rating and session ID (`limit` 1–100).
 - `GET /sessions/{session_id}/feedback` → array of `{id, session_id, rating, comment, created_at}` feedback
   entries recorded for the specified session (`404` when session is unknown).
+- `GET /feedback/analytics?recent_comments_limit=5` → `{total_feedback, positive_feedback, negative_feedback, satisfaction_rate, total_comments, comment_rate, recent_comments: [...]}`.
+  Returns aggregated CSAT analytics: satisfaction rate (%), positive/negative counts, total comments, comment rate (%), and recent comments with ratings. `recent_comments_limit` (0–50, default 5) controls how many recent commented entries to include.
 
 ## Evaluation Harness
 
