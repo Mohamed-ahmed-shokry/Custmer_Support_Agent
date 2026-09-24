@@ -33,6 +33,7 @@ dev = [
     "black",
     "mypy",
     "pre-commit",
+    "playwright",
 ]
 
 [tool.ruff]

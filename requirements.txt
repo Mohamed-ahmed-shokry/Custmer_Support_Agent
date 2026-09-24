@@ -21,3 +21,4 @@ pytest-cov
 ruff
 mypy
 pre-commit
+playwright
