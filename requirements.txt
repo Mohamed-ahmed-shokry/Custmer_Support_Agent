@@ -22,3 +22,4 @@ ruff
 mypy
 pre-commit
 playwright
+pytest-asyncio

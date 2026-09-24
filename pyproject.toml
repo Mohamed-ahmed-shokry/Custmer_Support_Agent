@@ -34,6 +34,7 @@ dev = [
     "mypy",
     "pre-commit",
     "playwright",
+    "pytest-asyncio",
 ]
 
 [tool.ruff]
@@ -135,10 +136,12 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-v --strict-markers --strict-config --cov=api --cov=app --cov-report=term-missing"
+addopts = "-v --strict-markers --strict-config --cov=api --cov=app --cov-report=term-missing -m \"not e2e\""
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow",
     "integration: marks tests as integration tests",
+    "e2e: Playwright browser tests against a live API + Streamlit UI (opt-in)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:chromadb.telemetry.opentelemetry.*",
