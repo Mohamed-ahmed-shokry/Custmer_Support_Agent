@@ -140,7 +140,6 @@ class ChatInterface:
 
     async def wait_for_response(self) -> str:
         """Wait for the assistant response and return it."""
-        # Wait for the assistant message to appear
         await self.page.wait_for_selector('[data-testid="stChatMessage"]:has-text("assistant")', timeout=60000)
         messages = await self.chat_container.locator('[data-testid="stChatMessage"]').all()
         if messages:
@@ -193,6 +192,27 @@ class SessionsPanel:
         await self.page.get_by_role("option", name=session_id).click()
 
     async def delete_session(self, session_id: str) -> None:
-        """Delete a session."""
+        """Open a session and click the Delete button."""
         await self.open_session(session_id)
-        await self.sidebar.sidebar.get_by_role(
+        await self.sidebar.sidebar.get_by_role("button", name="Delete").click()
+
+    async def load_session(self, session_id: str) -> None:
+        """Open a session and click the Load Session button."""
+        await self.open_session(session_id)
+        await self.sidebar.sidebar.get_by_role("button", name="Load Session").click()
+
+    async def rename_session(self, session_id: str, new_label: str) -> None:
+        """Open a session, type a new label, and click Rename."""
+        await self.open_session(session_id)
+        await self.sidebar.sidebar.get_by_label("Rename session").fill(new_label)
+        await self.sidebar.sidebar.get_by_role("button", name="Rename").click()
+
+    async def session_options(self) -> List[str]:
+        """Return the session ids listed in the Open a session picker."""
+        picker = self.sidebar.sidebar.locator(
+            '[data-testid="stSelectbox"]'
+        ).filter(has_text="Open a session")
+        await picker.click()
+        options = await self.page.get_by_role("option").all_inner_texts()
+        await self.page.keyboard.press("Escape")
+        return options
