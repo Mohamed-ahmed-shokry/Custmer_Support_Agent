@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncGenerator
+
 import pytest
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
-from typing import AsyncGenerator
-
 
 # Get the base URLs from environment or use defaults
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")

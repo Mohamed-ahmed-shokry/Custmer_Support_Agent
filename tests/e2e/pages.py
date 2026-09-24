@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from playwright.async_api import Page, Locator
-from typing import List, Optional
+from playwright.async_api import Locator, Page
 
 
 class BasePage:
@@ -41,36 +40,46 @@ class Sidebar:
 
     async def select_model(self, model: str) -> None:
         """Select a model from the dropdown."""
-        await self.sidebar.locator('[data-testid="stSelectbox"]').filter(has_text="Select Model").click()
+        await self.sidebar.locator(
+            '[data-testid="stSelectbox"]'
+        ).filter(has_text="Select Model").click()
         await self.page.get_by_role("option", name=model).click()
 
     async def get_active_collection(self) -> str:
         """Get the currently active collection."""
-        collection_picker = self.sidebar.locator('[data-testid="stSelectbox"]').filter(has_text="Active collection")
+        collection_picker = self.sidebar.locator(
+            '[data-testid="stSelectbox"]'
+        ).filter(has_text="Active collection")
         return await collection_picker.locator('[data-testid="stSelectbox"]').inner_text()
 
     async def select_collection(self, collection: str) -> None:
         """Select a collection from the picker."""
-        picker = self.sidebar.locator('[data-testid="stSelectbox"]').filter(has_text="Active collection")
+        picker = self.sidebar.locator(
+            '[data-testid="stSelectbox"]'
+        ).filter(has_text="Active collection")
         await picker.click()
         await self.page.get_by_role("option", name=collection).click()
 
-    async def upload_files(self, file_paths: list[str], collection: Optional[str] = None) -> None:
+    async def upload_files(self, file_paths: list[str], collection: str | None = None) -> None:
         """Upload files through the sidebar."""
         file_input = self.sidebar.locator('[data-testid="stFileUploader"] input[type="file"]')
         await file_input.set_input_files(file_paths)
 
         if collection:
-            collection_input = self.sidebar.locator('[data-testid="stTextInput"]').filter(has_text="New collection")
+            collection_input = self.sidebar.locator(
+                '[data-testid="stTextInput"]'
+            ).filter(has_text="New collection")
             await collection_input.fill(collection)
 
         await self.sidebar.get_by_role("button", name="Upload").click()
         await self.page.wait_for_load_state("networkidle")
 
-    async def get_documents(self) -> List[str]:
+    async def get_documents(self) -> list[str]:
         """Get list of uploaded document filenames."""
         docs = []
-        doc_elements = await self.sidebar.locator('[data-testid="stMarkdown"]').filter(has_text="ID:").all()
+        doc_elements = await self.sidebar.locator(
+            '[data-testid="stMarkdown"]'
+        ).filter(has_text="ID:").all()
         for elem in doc_elements:
             text = await elem.inner_text()
             if "**" in text:
@@ -78,9 +87,11 @@ class Sidebar:
                 docs.append(filename)
         return docs
 
-    async def select_documents_for_retrieval(self, doc_names: List[str]) -> None:
+    async def select_documents_for_retrieval(self, doc_names: list[str]) -> None:
         """Select documents for retrieval filtering."""
-        multiselect = self.sidebar.locator('[data-testid="stMultiSelect"]').filter(has_text="Restrict to document")
+        multiselect = self.sidebar.locator(
+            '[data-testid="stMultiSelect"]'
+        ).filter(has_text="Restrict to document")
         await multiselect.click()
         for name in doc_names:
             await self.page.get_by_role("option", name=name).click()
@@ -88,14 +99,18 @@ class Sidebar:
 
     async def toggle_hybrid_search(self, enabled: bool = True) -> None:
         """Toggle hybrid search checkbox."""
-        checkbox = self.sidebar.locator('[data-testid="stCheckbox"]').filter(has_text="Hybrid search")
+        checkbox = self.sidebar.locator(
+            '[data-testid="stCheckbox"]'
+        ).filter(has_text="Hybrid search")
         is_checked = await checkbox.locator("input").is_checked()
         if is_checked != enabled:
             await checkbox.click()
 
     async def toggle_cross_encoder_rerank(self, enabled: bool = True) -> None:
         """Toggle cross-encoder rerank checkbox."""
-        checkbox = self.sidebar.locator('[data-testid="stCheckbox"]').filter(has_text="Cross-encoder rerank")
+        checkbox = self.sidebar.locator(
+            '[data-testid="stCheckbox"]'
+        ).filter(has_text="Cross-encoder rerank")
         is_checked = await checkbox.locator("input").is_checked()
         if is_checked != enabled:
             await checkbox.click()
@@ -140,7 +155,9 @@ class ChatInterface:
 
     async def wait_for_response(self) -> str:
         """Wait for the assistant response and return it."""
-        await self.page.wait_for_selector('[data-testid="stChatMessage"]:has-text("assistant")', timeout=60000)
+        await self.page.wait_for_selector(
+            '[data-testid="stChatMessage"]:has-text("assistant")', timeout=60000
+        )
         messages = await self.chat_container.locator('[data-testid="stChatMessage"]').all()
         if messages:
             return await messages[-1].inner_text()
@@ -167,7 +184,7 @@ class ChatInterface:
         if is_checked != enabled:
             await checkbox.click()
 
-    async def get_messages(self) -> List[dict]:
+    async def get_messages(self) -> list[dict]:
         """Get all messages in the chat."""
         messages = []
         elements = await self.chat_container.locator('[data-testid="stChatMessage"]').all()
@@ -187,7 +204,9 @@ class SessionsPanel:
 
     async def open_session(self, session_id: str) -> None:
         """Open a past session by ID."""
-        picker = self.sidebar.sidebar.locator('[data-testid="stSelectbox"]').filter(has_text="Open a session")
+        picker = self.sidebar.sidebar.locator(
+            '[data-testid="stSelectbox"]'
+        ).filter(has_text="Open a session")
         await picker.click()
         await self.page.get_by_role("option", name=session_id).click()
 
@@ -207,7 +226,7 @@ class SessionsPanel:
         await self.sidebar.sidebar.get_by_label("Rename session").fill(new_label)
         await self.sidebar.sidebar.get_by_role("button", name="Rename").click()
 
-    async def session_options(self) -> List[str]:
+    async def session_options(self) -> list[str]:
         """Return the session ids listed in the Open a session picker."""
         picker = self.sidebar.sidebar.locator(
             '[data-testid="stSelectbox"]'
