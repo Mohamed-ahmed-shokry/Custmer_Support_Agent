@@ -13,7 +13,6 @@ async def test_ui_renders(authenticated_page):
 
 async def test_backend_health_shown_in_sidebar(authenticated_page):
     sidebar = Sidebar(authenticated_page)
-    await authenticated_page.wait_for_load_state("networkidle")
     assert "Backend" in await sidebar.health_status.inner_text()
 
 
