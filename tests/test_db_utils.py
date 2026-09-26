@@ -375,6 +375,105 @@ def test_document_record_lifecycle(monkeypatch, tmp_path):
     assert db_utils.get_document_record(first_id) is None
 
 
+def test_document_source_roundtrip_with_default_options(monkeypatch, tmp_path):
+    expected_size = 1000
+    expected_overlap = 200
+    initialize_temp_db(monkeypatch, tmp_path)
+    file_id = db_utils.insert_document_record("notes.txt")
+
+    db_utils.save_document_source(file_id, "Source text here.")
+
+    source = db_utils.get_document_source(file_id)
+    assert source["file_id"] == file_id
+    assert source["source_text"] == "Source text here."
+    assert source["strategy"] == "recursive"
+    assert source["chunk_size"] == expected_size
+    assert source["chunk_overlap"] == expected_overlap
+
+
+def test_document_source_saves_explicit_options(monkeypatch, tmp_path):
+    expected_size = 400
+    expected_overlap = 50
+    initialize_temp_db(monkeypatch, tmp_path)
+    file_id = db_utils.insert_document_record("notes.txt")
+
+    db_utils.save_document_source(file_id, "Text.", "semantic", expected_size, expected_overlap)
+
+    source = db_utils.get_document_source(file_id)
+    assert source["strategy"] == "semantic"
+    assert source["chunk_size"] == expected_size
+    assert source["chunk_overlap"] == expected_overlap
+
+
+def test_document_source_upsert_refreshes_options(monkeypatch, tmp_path):
+    refreshed_size = 300
+    refreshed_overlap = 30
+    initialize_temp_db(monkeypatch, tmp_path)
+    file_id = db_utils.insert_document_record("notes.txt")
+
+    db_utils.save_document_source(file_id, "Original text.", "recursive", 1000, 200)
+    db_utils.save_document_source(
+        file_id, "Rewritten text.", "markdown", refreshed_size, refreshed_overlap
+    )
+
+    source = db_utils.get_document_source(file_id)
+    assert source["source_text"] == "Rewritten text."
+    assert source["strategy"] == "markdown"
+    assert source["chunk_size"] == refreshed_size
+    assert source["chunk_overlap"] == refreshed_overlap
+    assert source["updated_at"] is not None
+
+
+def test_document_source_missing_returns_none(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    assert db_utils.get_document_source(999) is None
+
+
+def test_document_source_deletion(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    file_id = db_utils.insert_document_record("notes.txt")
+    db_utils.save_document_source(file_id, "Text.")
+
+    assert db_utils.delete_document_source(file_id) is True
+    assert db_utils.get_document_source(file_id) is None
+    assert db_utils.delete_document_source(file_id) is False
+
+
+def test_delete_document_sources_by_collection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    first_id = db_utils.insert_document_record("a.txt", "legal")
+    second_id = db_utils.insert_document_record("b.txt", "legal")
+    default_id = db_utils.insert_document_record("c.txt", "default")
+    db_utils.save_document_source(first_id, "A.")
+    db_utils.save_document_source(second_id, "B.")
+    db_utils.save_document_source(default_id, "C.")
+
+    expected_deleted = 2
+    assert db_utils.delete_document_sources_by_collection("legal") == expected_deleted
+    assert db_utils.get_document_source(first_id) is None
+    assert db_utils.get_document_source(second_id) is None
+    assert db_utils.get_document_source(default_id) is not None
+
+
+def test_migrate_document_store_creates_document_sources(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "CREATE TABLE document_store (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "filename TEXT, upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.commit()
+    conn.close()
+
+    db_utils.migrate_document_store()
+
+    file_id = db_utils.insert_document_record("legacy.pdf")
+    db_utils.save_document_source(file_id, "Stored text.")
+    assert db_utils.get_document_source(file_id)["source_text"] == "Stored text."
+
+
 def test_search_sessions_matches_query_and_response(monkeypatch, tmp_path):
     initialize_temp_db(monkeypatch, tmp_path)
 

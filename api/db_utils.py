@@ -23,6 +23,36 @@ _CREATE_DOC_STORE_TABLE = (
     "sha256 TEXT, upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
+_CREATE_DOC_SOURCES_TABLE = (
+    "CREATE TABLE IF NOT EXISTS document_sources "
+    "(file_id INTEGER PRIMARY KEY REFERENCES document_store(id) ON DELETE CASCADE, "
+    "source_text TEXT NOT NULL, "
+    "strategy TEXT NOT NULL DEFAULT 'recursive', "
+    "chunk_size INTEGER NOT NULL DEFAULT 1000, "
+    "chunk_overlap INTEGER NOT NULL DEFAULT 200, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+_INSERT_DOC_SOURCE = (
+    "INSERT INTO document_sources "
+    "(file_id, source_text, strategy, chunk_size, chunk_overlap) VALUES (?, ?, ?, ?, ?) "
+    "ON CONFLICT(file_id) DO UPDATE SET "
+    "source_text=excluded.source_text, strategy=excluded.strategy, "
+    "chunk_size=excluded.chunk_size, chunk_overlap=excluded.chunk_overlap, "
+    "updated_at=CURRENT_TIMESTAMP"
+)
+
+_SELECT_DOC_SOURCE = (
+    "SELECT file_id, source_text, strategy, chunk_size, chunk_overlap, updated_at "
+    "FROM document_sources WHERE file_id = ?"
+)
+
+_DELETE_DOC_SOURCE = "DELETE FROM document_sources WHERE file_id = ?"
+_DELETE_DOC_SOURCES_BY_COLLECTION = (
+    "DELETE FROM document_sources "
+    "WHERE file_id IN (SELECT id FROM document_store WHERE collection = ?)"
+)
+
 _CREATE_SESSION_LABELS_TABLE = (
     "CREATE TABLE IF NOT EXISTS session_labels "
     "(session_id TEXT PRIMARY KEY, label TEXT NOT NULL, "
@@ -38,9 +68,7 @@ _CREATE_FEEDBACK_TABLE = (
     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
-_INSERT_FEEDBACK = (
-    "INSERT INTO feedback (session_id, rating, comment) VALUES (?, ?, ?)"
-)
+_INSERT_FEEDBACK = "INSERT INTO feedback (session_id, rating, comment) VALUES (?, ?, ?)"
 
 _SELECT_FEEDBACK_COUNT = "SELECT COUNT(*) FROM feedback WHERE rating = ?"
 
@@ -49,8 +77,7 @@ VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
 MAX_SESSION_TAGS_LENGTH = 200
 
 _INSERT_APP_LOG = (
-    "INSERT INTO application_logs (session_id, user_query, gpt_response, model) "
-    "VALUES (?, ?, ?, ?)"
+    "INSERT INTO application_logs (session_id, user_query, gpt_response, model) VALUES (?, ?, ?, ?)"
 )
 
 _SELECT_CHAT_HISTORY = (
@@ -120,8 +147,7 @@ _DELETE_SESSION = "DELETE FROM application_logs WHERE session_id = ?"
 _DELETE_SESSION_LABEL = "DELETE FROM session_labels WHERE session_id = ?"
 _DELETE_SESSION_FEEDBACK = "DELETE FROM feedback WHERE session_id = ?"
 _STALE_SESSIONS = (
-    "SELECT session_id FROM application_logs "
-    "GROUP BY session_id HAVING MAX(created_at) < ?"
+    "SELECT session_id FROM application_logs GROUP BY session_id HAVING MAX(created_at) < ?"
 )
 _UPSERT_SESSION_LABEL = (
     "INSERT INTO session_labels (session_id, label) VALUES (?, ?) "
@@ -136,9 +162,7 @@ def normalize_session_label(value: str | None) -> str:
     if not label:
         raise ValueError("Session label must not be blank.")
     if len(label) > MAX_SESSION_LABEL_LENGTH:
-        raise ValueError(
-            f"Session label must be at most {MAX_SESSION_LABEL_LENGTH} characters."
-        )
+        raise ValueError(f"Session label must be at most {MAX_SESSION_LABEL_LENGTH} characters.")
     return label
 
 
@@ -163,6 +187,7 @@ def normalize_session_tags(value: str | list[str] | None) -> str:
     if len(tags_str) > MAX_SESSION_TAGS_LENGTH:
         raise ValueError(f"Session tags must be at most {MAX_SESSION_TAGS_LENGTH} characters.")
     return tags_str
+
 
 PREVIEW_MAX_LENGTH = 80
 
@@ -220,17 +245,18 @@ def truncate_history(messages, max_turns):
 def create_document_store():
     with closing(get_db_connection()) as conn:
         conn.execute(_CREATE_DOC_STORE_TABLE)
+        conn.execute(_CREATE_DOC_SOURCES_TABLE)
         conn.commit()
 
 
 def migrate_document_store():
     """Add newer columns to pre-existing databases (no-op otherwise)."""
     with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_DOC_SOURCES_TABLE)
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(document_store)")]
         if "collection" not in columns:
             conn.execute(
-                "ALTER TABLE document_store "
-                "ADD COLUMN collection TEXT NOT NULL DEFAULT 'default'"
+                "ALTER TABLE document_store ADD COLUMN collection TEXT NOT NULL DEFAULT 'default'"
             )
         if "sha256" not in columns:
             conn.execute("ALTER TABLE document_store ADD COLUMN sha256 TEXT")
@@ -267,6 +293,48 @@ def delete_document_record(file_id):
     with closing(get_db_connection()) as conn:
         cursor = conn.execute(_DELETE_DOC_RECORD, (file_id,))
         deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
+
+
+def save_document_source(
+    file_id,
+    source_text,
+    strategy="recursive",
+    chunk_size=1000,
+    chunk_overlap=200,
+):
+    """Insert or refresh the stored source text and chunking options for a document."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            _INSERT_DOC_SOURCE,
+            (file_id, source_text, strategy, chunk_size, chunk_overlap),
+        )
+        conn.commit()
+
+
+def get_document_source(file_id):
+    """Return the stored source row (with chunking options) for a document, if any."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_SELECT_DOC_SOURCE, (file_id,))
+        source = cursor.fetchone()
+        return dict(source) if source else None
+
+
+def delete_document_source(file_id):
+    """Remove the stored source text for a document, returning whether a row existed."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_DELETE_DOC_SOURCE, (file_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
+
+
+def delete_document_sources_by_collection(collection):
+    """Remove stored source rows for every document in a collection."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_DELETE_DOC_SOURCES_BY_COLLECTION, (collection,))
+        deleted = cursor.rowcount
         conn.commit()
         return deleted
 
@@ -356,9 +424,7 @@ def get_library_stats():
             "SELECT COUNT(DISTINCT session_id) FROM application_logs"
         ).fetchone()[0]
         messages = cursor.execute("SELECT COUNT(*) FROM application_logs").fetchone()[0]
-        feedback_up = cursor.execute(
-            "SELECT COUNT(*) FROM feedback WHERE rating = 1"
-        ).fetchone()[0]
+        feedback_up = cursor.execute("SELECT COUNT(*) FROM feedback WHERE rating = 1").fetchone()[0]
         feedback_down = cursor.execute(
             "SELECT COUNT(*) FROM feedback WHERE rating = -1"
         ).fetchone()[0]
@@ -468,7 +534,6 @@ def delete_sessions(session_ids: list[str]) -> dict[str, str]:
                     results[session_id] = "not_found"
         conn.commit()
     return results
-
 
 
 def prune_sessions_before(cutoff_iso):
@@ -702,4 +767,3 @@ create_session_labels()
 migrate_session_labels()
 create_feedback()
 migrate_feedback()
-
