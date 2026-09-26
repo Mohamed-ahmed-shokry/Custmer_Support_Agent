@@ -1,4 +1,6 @@
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI
 
 from api.chroma_utils import select_retriever
@@ -76,6 +78,11 @@ qa_prompt = ChatPromptTemplate.from_messages(
 )
 
 
+def _format_docs(docs) -> str:
+    """Join retrieved document chunks into a single context block."""
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
 def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     model="gpt-4o-mini",
     file_ids: list[int] | None = None,
@@ -88,9 +95,6 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     cross_encoder_model: str | None = None,
 ):
     # ruff: noqa: PLC0415 - lazy imports required for Python 3.14 compatibility (ADR-001)
-    from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-    from langchain.chains.combine_documents import create_stuff_documents_chain
-
     llm = ChatOpenAI(model=model)
     hybrid = settings.use_hybrid_retriever if use_hybrid is None else use_hybrid
     expand = settings.use_query_expansion if expand_query is None else expand_query
@@ -118,7 +122,22 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
         use_cross_encoder_rerank=use_cross_encoder,
         cross_encoder_model=cross_encoder_model_name,
     )
-    history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
-    question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
-    rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-    return rag_chain
+    # Build the RAG pipeline with pure LCEL (langchain_core). The legacy
+    # classic-chain builders (langchain.chains / create_stuff_documents_chain)
+    # crash under pydantic >=2.12 during annotation evaluation, so they are
+    # avoided here to keep chat working across supported Python versions.
+    contextualize_q_chain = contextualize_q_prompt | llm | StrOutputParser()
+    history_aware_retriever = RunnablePassthrough.assign(
+        context=contextualize_q_chain | retriever
+    )
+    question_answer_chain = (
+        {
+            "context": lambda x: _format_docs(x["context"]),
+            "input": lambda x: x["input"],
+            "chat_history": lambda x: x["chat_history"],
+        }
+        | qa_prompt
+        | llm
+        | StrOutputParser()
+    )
+    return history_aware_retriever | question_answer_chain

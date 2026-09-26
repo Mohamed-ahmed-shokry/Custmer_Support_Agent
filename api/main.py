@@ -391,7 +391,10 @@ def chat(query_input: QueryInput, request: Request):
             status_code=502, detail="Failed to generate a response from the retrieval pipeline."
         ) from exc
 
-    answer = result.get("answer") if isinstance(result, dict) else None
+    if isinstance(result, str):
+        answer = result
+    else:
+        answer = result.get("answer") if isinstance(result, dict) else None
     if not isinstance(answer, str):
         increment("chat_errors")
         logger.error("RAG chain returned an invalid response for session_id %s", session_id)
@@ -399,7 +402,7 @@ def chat(query_input: QueryInput, request: Request):
             status_code=502, detail="The retrieval pipeline returned an invalid response."
         )
 
-    sources = build_sources(result.get("context"))
+    sources = build_sources(result.get("context") if isinstance(result, dict) else [])
 
     insert_application_logs(session_id, query_input.question, answer, query_input.model.value)
     answer_tokens = estimate_tokens(answer)
@@ -479,13 +482,16 @@ async def _stream_rag_response(
         async for chunk in rag_chain.astream(
             {"input": query_input.question, "chat_history": chat_history}
         ):
-            if "answer" in chunk:
-                yield f"data: {chunk['answer']}\n\n"
-            elif "context" in chunk:
-                sources = build_sources(chunk["context"])
-                if sources:
-                    source_data = json.dumps([s.model_dump() for s in sources])
-                    yield f"event: sources\ndata: {source_data}\n\n"
+            if isinstance(chunk, dict):
+                if "answer" in chunk:
+                    yield f"data: {chunk['answer']}\n\n"
+                elif "context" in chunk:
+                    sources = build_sources(chunk["context"])
+                    if sources:
+                        source_data = json.dumps([s.model_dump() for s in sources])
+                        yield f"event: sources\ndata: {source_data}\n\n"
+            elif isinstance(chunk, str):
+                yield f"data: {chunk}\n\n"
     except Exception:
         logger.exception("RAG chain streaming failed for session_id %s", session_id)
         yield "event: error\ndata: Failed to generate response\n\n"

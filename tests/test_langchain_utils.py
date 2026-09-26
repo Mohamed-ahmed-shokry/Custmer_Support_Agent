@@ -1,7 +1,10 @@
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from api import langchain_utils
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable
 
 
 def test_prompts_and_system_instructions_exist():
@@ -20,6 +23,14 @@ def test_prompts_and_system_instructions_exist():
     assert "input" in qa_input_vars
 
 
+def test_format_docs_joins_page_content():
+    docs = [
+        SimpleNamespace(page_content="first chunk"),
+        SimpleNamespace(page_content="second chunk"),
+    ]
+    assert langchain_utils._format_docs(docs) == "first chunk\n\nsecond chunk"
+
+
 def test_get_rag_chain_construction(monkeypatch):
     mock_retriever = MagicMock()
     mock_select_retriever = MagicMock(return_value=mock_retriever)
@@ -27,24 +38,6 @@ def test_get_rag_chain_construction(monkeypatch):
 
     mock_llm = MagicMock()
     monkeypatch.setattr(langchain_utils, "ChatOpenAI", lambda model: mock_llm)
-
-    mock_history_aware = MagicMock()
-    mock_stuff_chain = MagicMock()
-    mock_rag_chain = MagicMock()
-
-    mock_create_history_aware = MagicMock(return_value=mock_history_aware)
-    mock_create_stuff = MagicMock(return_value=mock_stuff_chain)
-    mock_create_retrieval = MagicMock(return_value=mock_rag_chain)
-
-    mock_chains_module = MagicMock()
-    mock_chains_module.create_history_aware_retriever = mock_create_history_aware
-    mock_chains_module.create_retrieval_chain = mock_create_retrieval
-
-    mock_combine_module = MagicMock()
-    mock_combine_module.create_stuff_documents_chain = mock_create_stuff
-
-    monkeypatch.setitem(sys.modules, "langchain.chains", mock_chains_module)
-    monkeypatch.setitem(sys.modules, "langchain.chains.combine_documents", mock_combine_module)
 
     result = langchain_utils.get_rag_chain(
         model="gpt-4o",
@@ -56,7 +49,8 @@ def test_get_rag_chain_construction(monkeypatch):
         rerank=True,
     )
 
-    assert result is mock_rag_chain
+    assert isinstance(result, Runnable)
+
     mock_select_retriever.assert_called_once()
     _, kwargs = mock_select_retriever.call_args
     assert kwargs["file_ids"] == [10, 20]
@@ -67,12 +61,6 @@ def test_get_rag_chain_construction(monkeypatch):
     assert kwargs["rerank"] is True
     assert kwargs["llm"] is mock_llm
 
-    mock_create_history_aware.assert_called_once_with(
-        mock_llm, mock_retriever, langchain_utils.contextualize_q_prompt
-    )
-    mock_create_stuff.assert_called_once_with(mock_llm, langchain_utils.qa_prompt)
-    mock_create_retrieval.assert_called_once_with(mock_history_aware, mock_stuff_chain)
-
 
 def test_get_rag_chain_defaults(monkeypatch):
     mock_retriever = MagicMock()
@@ -80,14 +68,70 @@ def test_get_rag_chain_defaults(monkeypatch):
     monkeypatch.setattr(langchain_utils, "select_retriever", mock_select)
     monkeypatch.setattr(langchain_utils, "ChatOpenAI", lambda model: MagicMock())
 
-    mock_chains = MagicMock()
-    mock_combine = MagicMock()
-    monkeypatch.setitem(sys.modules, "langchain.chains", mock_chains)
-    monkeypatch.setitem(sys.modules, "langchain.chains.combine_documents", mock_combine)
+    result = langchain_utils.get_rag_chain()
 
-    langchain_utils.get_rag_chain()
+    assert isinstance(result, Runnable)
     mock_select.assert_called_once()
     _, kwargs = mock_select.call_args
     assert kwargs["file_ids"] is None
     assert kwargs["source_filename"] is None
     assert kwargs["collections"] is None
+
+
+class _EchoLLM:
+    """Returns the rendered messages so the pipeline wiring is observable."""
+
+    def __init__(self, model):
+        self.model = model
+
+    def __call__(self, value):
+        if isinstance(value, list):
+            messages = value
+        elif hasattr(value, "messages"):
+            messages = value.messages
+        else:
+            return str(value)
+        return "".join(str(message.content) for message in messages)
+
+
+class _FakeRetriever:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, question):
+        self.calls.append(question)
+        return [SimpleNamespace(page_content="RETRIEVED-CHUNK")]
+
+
+def test_get_rag_chain_invokes_lcel_pipeline(monkeypatch):
+    monkeypatch.setattr(
+        langchain_utils,
+        "contextualize_q_prompt",
+        ChatPromptTemplate.from_template("Q:{input}"),
+    )
+    monkeypatch.setattr(
+        langchain_utils,
+        "qa_prompt",
+        ChatPromptTemplate.from_template("C:{context} | I:{input}"),
+    )
+    fake_retriever = _FakeRetriever()
+    monkeypatch.setattr(langchain_utils, "select_retriever", lambda **kwargs: fake_retriever)
+    monkeypatch.setattr(langchain_utils, "ChatOpenAI", _EchoLLM)
+
+    chain = langchain_utils.get_rag_chain()
+    result = chain.invoke({"input": "hello", "chat_history": []})
+
+    assert "RETRIEVED-CHUNK" in result
+    assert "I:hello" in result
+    assert fake_retriever.calls == ["Q:hello"]
+
+
+def test_get_rag_chain_does_not_import_legacy_chains(monkeypatch):
+    """The LCEL pipeline must not rely on the broken langchain.chains package."""
+    monkeypatch.setattr(langchain_utils, "select_retriever", lambda **kwargs: MagicMock())
+    monkeypatch.setattr(langchain_utils, "ChatOpenAI", lambda model: MagicMock())
+
+    langchain_utils.get_rag_chain()
+
+    assert "langchain.chains" not in sys.modules
+    assert "langchain.chains.combine_documents" not in sys.modules
