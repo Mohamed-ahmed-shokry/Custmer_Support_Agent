@@ -391,10 +391,13 @@ def chat(query_input: QueryInput, request: Request):
             status_code=502, detail="Failed to generate a response from the retrieval pipeline."
         ) from exc
 
+    answer: str | None
     if isinstance(result, str):
         answer = result
+    elif isinstance(result, dict):
+        answer = result.get("answer") if isinstance(result.get("answer"), str) else None
     else:
-        answer = result.get("answer") if isinstance(result, dict) else None
+        answer = None
     if not isinstance(answer, str):
         increment("chat_errors")
         logger.error("RAG chain returned an invalid response for session_id %s", session_id)

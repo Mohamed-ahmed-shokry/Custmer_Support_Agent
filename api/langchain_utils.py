@@ -1,6 +1,6 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import Runnable, RunnableParallel, RunnablePassthrough
 from langchain_openai import ChatOpenAI
 
 from api.chroma_utils import select_retriever
@@ -130,12 +130,12 @@ def get_rag_chain(  # noqa: PLR0913, PLR0917 - explicit retrieval options
     history_aware_retriever = RunnablePassthrough.assign(
         context=contextualize_q_chain | retriever
     )
-    question_answer_chain = (
-        {
-            "context": lambda x: _format_docs(x["context"]),
-            "input": lambda x: x["input"],
-            "chat_history": lambda x: x["chat_history"],
-        }
+    question_answer_chain: Runnable = (
+        RunnableParallel(
+            context=lambda x: _format_docs(x["context"]),
+            input=lambda x: x["input"],
+            chat_history=lambda x: x["chat_history"],
+        )
         | qa_prompt
         | llm
         | StrOutputParser()
