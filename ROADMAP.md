@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.23.0, 2026-09-23)
+## Current State (v0.24.0, 2026-09-26)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -53,7 +53,13 @@
   - Configurable via `USE_CROSS_ENCODER_RERANK` and `CROSS_ENCODER_MODEL` settings
   - Streamlit UI toggle for cross-encoder rerank in Retrieval Filters
   - Unit tests for CrossEncoderReranker with mock model
-- 373 tests passing; 94.32% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- 373 unit tests passing; 94.32% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.24.0 additions**:
+  - Playwright e2e suite (`tests/e2e`, opt-in `-m e2e`): chat flow (incl. LLM round-trip), document upload/management, session panel, UI smoke; page objects in `pages.py`
+  - Dedicated CI `e2e` job booting the API + Streamlit against a throwaway DB and running the suite headless; `make test-e2e`
+  - e2e self-skip guards: LLM round-trip tests skip when the model is unreachable, upload tests skip when embeddings are; session tests skip on an empty store
+  - Pydantic >= 2.12 compatibility: RAG chain rebuilt in pure LCEL (`api/langchain_utils.py`) so fresh installs no longer crash in `langchain.chains`
+  - Fixed a real upload bug the e2e suite surfaced: the Streamlit client forced `Content-Type: application/json` on multipart uploads, so every upload 422'd (`_upload_headers`)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -245,8 +251,6 @@ Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, co
 
 ### Explicit Exclusions (Deferred to v0.24.0+)
 - Multi-tenant user authentication and RBAC permissions.
-- Browser-based automated UI testing via Playwright.
-- Browser-based automated UI testing via Playwright.
 
 ### Granular Task Breakdown
 - [x] Task 1: Session metadata schema migration (`status`, `tags` columns in `session_labels`) and DB functions (`update_session_metadata`, `get_all_sessions` filters) with unit tests
@@ -262,13 +266,68 @@ Deliver ticket/session lifecycle states, quantitative quality/CSAT analytics, co
 - [x] Task 11: Streamlit UI retrieval confidence score badges in chunk inspector with unit tests
 - [x] Task 12: Documentation updates (`docs/API.md`, `README.md`), version bump to 0.22.0, and `ROADMAP.md` updates
 
+## v0.24.0 plan — End-to-end UI testing (Playwright) & pydantic 2.12 fix ✅ COMPLETED
+
+Deliver a runnable end-to-end browser suite covering the main user journeys,
+belt it with a CI job, and fix the fresh-install breakage that running chat
+for the first time exposed (pydantic >= 2.12 vs langchain <1).
+
+### Scope & Objectives
+- **Playwright e2e suite** (`tests/e2e`, opt-in via `-m e2e`; excluded from the
+  default `pytest` run through `addopts`): page objects (`pages.py`), async
+  fixtures (`conftest.py`), and 21 tests across:
+  - Chat flow: UI controls (streaming, query expansion, rerank, retrieval
+    filters) plus an LLM round-trip that preflights the live model and skips
+    when it is unreachable (e.g. an OpenAI key without credits).
+  - Document upload & management: single/multi/bulk upload, upload into a new
+    collection (switching the active collection before asserting), listing,
+    retrieval filtering, active-collection read.
+  - Sessions panel: list/rename/delete, skipping when the store is empty.
+  - UI smoke: frontend renders, backend health marker shown in the sidebar.
+- **Environment resilience**: two known blockers made raw execution impossible
+  on a credit-less machine and would be required for meaningful CI; both are
+  handled with preflight skips rather than flaky failures.
+- **pydantic >= 2.12 / langchain <1 fix**: the classic `langchain.chains`
+  builders crash while evaluating pydantic annotations on fresh installs
+  (`TypeError: 'function' object is not subscriptable`); the RAG chain is
+  rebuilt from `langchain_core` runnables only (LCEL), keeping the streaming
+  answer pipeline and matching `langchain.chains` absence in tests.
+- **Upload bug found & fixed**: the Streamlit client pinned
+  `Content-Type: application/json` on multipart upload requests, so the API
+  could not parse the body and returned 422; uploads now use
+  `_upload_headers()` (auth only) and let `requests` set the boundary.
+- **CI**: a dedicated `e2e` job installs a headless Chromium, boots the API +
+  Streamlit in the background against a throwaway DB, waits on the health
+  endpoints, and runs the suite; `make test-e2e` mirrors it locally.
+- **Quality Gates**: unit suite + e2e green; ruff + mypy clean; docs updated.
+
+### Explicit Exclusions (Deferred to a later phase)
+- Full authenticated multi-tenant UI coverage (no identity model yet).
+- Screenshot/visual-regression testing and headed-mode test runs.
+- Cross-browser matrix (Chromium only for now).
+
+### Granular Task Breakdown
+- [x] Task 1: e2e scaffolding — pytest-asyncio + `e2e` marker, opt-in addopts, Playwright page objects and fixtures
+- [x] Task 2: Session panel page object completion (load/rename/delete/options)
+- [x] Task 3: e2e tests: chat flow, sessions, UI smoke (plus upload/management files)
+- [x] Task 4: Run e2e against a live API + UI and fix the blockers it surfaced:
+      Streamlit websocket means `networkidle` never fires; async Playwright
+      fixtures must share the session event loop; health text / selectors
+      aligned with the real DOM
+- [x] Task 5: Chat round-trip fix — RAG chain rebuilt in pure LCEL; `/chat` and
+      `/chat/stream` accept str or dict answers; unit tests rewritten for LCEL
+- [x] Task 6: Embargo preflights — chat skips when the model is unreachable,
+      uploads skip when embeddings are, sessions skip on an empty store
+- [x] Task 7: Upload bug fix — `_upload_headers()` without forced JSON
+      content-type; e2e `helpers.py` with probe/skip, file utilities, wait-for-doc
+- [x] Task 8: CI `e2e` job + `make test-e2e`; docs (`README`, `CONTRIBUTING`,
+      `ROADMAP`) updated; version already billed as v0.24.0
+
 ## Next Candidates (v0.24.0+)
 
 - Staging/production environment targets (dependent on real credentials)
-- Automated end-to-end browser tests via Playwright
 - Document chunk semantic re-chunking and visualization
 - Multi-tenant user authentication and RBAC permissions
-- Browser-based automated UI testing via Playwright
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
