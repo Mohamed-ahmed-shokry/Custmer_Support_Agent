@@ -57,7 +57,9 @@ def ui_base_url() -> str:
 async def authenticated_page(page: Page, ui_base_url: str) -> Page:
     """Navigate to the UI and wait for it to load."""
     await page.goto(ui_base_url)
-    await page.wait_for_load_state("networkidle")
+    # Streamlit keeps a websocket open for the session, so the Playwright
+    # "networkidle" state never fires; wait on the app shell instead.
+    await page.wait_for_load_state("domcontentloaded")
     # Wait for Streamlit to fully load
     await page.wait_for_selector(".stApp", state="visible", timeout=30000)
     return page
