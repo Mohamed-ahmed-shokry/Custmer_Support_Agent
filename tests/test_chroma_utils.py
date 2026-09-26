@@ -97,13 +97,9 @@ def test_metadata_filter_combines_scopes():
 
 
 def test_matches_scope_filters_by_collection():
+    assert chroma_utils._matches_scope({"file_id": 7, "collection": "acme"}, [7], ["acme"]) is True
     assert (
-        chroma_utils._matches_scope({"file_id": 7, "collection": "acme"}, [7], ["acme"])
-        is True
-    )
-    assert (
-        chroma_utils._matches_scope({"file_id": 7, "collection": "other"}, [7], ["acme"])
-        is False
+        chroma_utils._matches_scope({"file_id": 7, "collection": "other"}, [7], ["acme"]) is False
     )
     assert chroma_utils._matches_scope({"file_id": 7}, None, None) is True
 
@@ -284,8 +280,7 @@ def test_index_document_retries_transient_failures(monkeypatch):
     monkeypatch.setattr(chroma_utils.time, "sleep", lambda seconds: None)
 
     assert (
-        chroma_utils.index_document_to_chroma("retry.pdf", file_id=42, filename="retry.pdf")
-        is True
+        chroma_utils.index_document_to_chroma("retry.pdf", file_id=42, filename="retry.pdf") is True
     )
     expected_attempts = 2
     assert vectorstore.calls == expected_attempts
@@ -306,8 +301,7 @@ def test_index_document_returns_false_after_retries_exhausted(monkeypatch):
     monkeypatch.setattr(chroma_utils.time, "sleep", lambda seconds: None)
 
     assert (
-        chroma_utils.index_document_to_chroma("fail.pdf", file_id=42, filename="fail.pdf")
-        is False
+        chroma_utils.index_document_to_chroma("fail.pdf", file_id=42, filename="fail.pdf") is False
     )
 
 
@@ -315,6 +309,110 @@ def test_get_text_splitter_markdown():
     options = chroma_utils.ChunkingOptions(strategy=chroma_utils.ChunkingStrategy.MARKDOWN)
     splitter = chroma_utils._get_text_splitter(options)
     assert isinstance(splitter, chroma_utils.MarkdownHeaderTextSplitter)
+
+
+def test_get_text_splitter_semantic():
+    expected_size = 500
+    expected_overlap = 50
+    options = chroma_utils.ChunkingOptions(
+        strategy=chroma_utils.ChunkingStrategy.SEMANTIC,
+        chunk_size=expected_size,
+        chunk_overlap=expected_overlap,
+    )
+    splitter = chroma_utils._get_text_splitter(options)
+    assert isinstance(splitter, chroma_utils.SentenceAwareTextSplitter)
+    assert splitter._chunk_size == expected_size
+    assert splitter._chunk_overlap == expected_overlap
+
+
+def test_get_text_splitter_recursive_default():
+    splitter = chroma_utils._get_text_splitter(chroma_utils.ChunkingOptions())
+    assert isinstance(splitter, chroma_utils.RecursiveCharacterTextSplitter)
+
+
+def test_sentence_aware_splitter_respects_paragraph_and_sentence_boundaries():
+    text = (
+        "First sentence here. Second sentence follows. Third one too.\n\n"
+        "A fresh paragraph with several words. Another sentence inside it."
+    )
+    chunks = chroma_utils.SentenceAwareTextSplitter(chunk_size=1000, chunk_overlap=0).split_text(
+        text
+    )
+    assert chunks == [
+        "First sentence here. Second sentence follows. Third one too.",
+        "A fresh paragraph with several words. Another sentence inside it.",
+    ]
+
+
+def test_sentence_aware_splitter_packs_windows_up_to_chunk_size():
+    expected_windows = 2
+    splitter = chroma_utils.SentenceAwareTextSplitter(chunk_size=100, chunk_overlap=0)
+    sentences = [f"Sentence number {i} with enough words." for i in range(4)]
+    chunks = splitter.split_text(" ".join(sentences))
+    assert len(chunks) == expected_windows
+    assert all(len(chunk.split()) > 1 for chunk in chunks)
+    assert " ".join(chunks) == " ".join(sentences)
+
+
+def test_sentence_aware_splitter_no_overlap_keeps_disjoint_windows():
+    splitter = chroma_utils.SentenceAwareTextSplitter(chunk_size=12, chunk_overlap=0)
+    chunks = splitter.split_text("Aaa. Bbb. Ccc.")
+    assert chunks == ["Aaa. Bbb.", "Ccc."]
+
+
+def test_sentence_aware_splitter_overlap_keeps_trailing_sentences():
+    splitter = chroma_utils.SentenceAwareTextSplitter(chunk_size=12, chunk_overlap=6)
+    chunks = splitter.split_text("Aaa. Bbb. Ccc.")
+    assert chunks == ["Aaa. Bbb.", "Bbb. Ccc."]
+
+
+def test_sentence_aware_splitter_hard_splits_oversized_sentences():
+    chunk_size = 100
+    chunk_overlap = 10
+    text = "Short opener.\n\n" + "word " * 200 + ".\n\n" + "Closing sentence here."
+    chunks = chroma_utils.SentenceAwareTextSplitter(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap
+    ).split_text(text)
+    assert chunks
+    assert chunks[0] == "Short opener."
+    assert chunks[-1] == "Closing sentence here."
+    assert any(len(chunk) >= chunk_size for chunk in chunks)
+
+
+def test_sentence_aware_splitter_empty_and_blank_input():
+    splitter = chroma_utils.SentenceAwareTextSplitter()
+    assert splitter.split_text("") == []
+    assert splitter.split_text("   \n\n  ") == []
+
+
+def test_sentence_aware_splitter_validation():
+    with pytest.raises(ValueError, match="chunk_size must be positive"):
+        chroma_utils.SentenceAwareTextSplitter(chunk_size=0)
+    with pytest.raises(ValueError, match="chunk_overlap"):
+        chroma_utils.SentenceAwareTextSplitter(chunk_size=100, chunk_overlap=100)
+    with pytest.raises(ValueError, match="chunk_overlap"):
+        chroma_utils.SentenceAwareTextSplitter(chunk_size=100, chunk_overlap=-1)
+
+
+def test_sentence_aware_splitter_merge_order_preserved():
+    text = "alpha. beta. gamma. delta. epsilon."
+    chunks = chroma_utils.SentenceAwareTextSplitter(chunk_size=20, chunk_overlap=5).split_text(text)
+    full = " ".join(chunks)
+    for token in ("alpha", "beta", "gamma", "delta", "epsilon"):
+        first = full.index(token)
+        assert first >= 0
+    assert full.index("alpha") < full.index("beta") < full.index("gamma") < full.index("delta")
+
+
+def test_sentence_aware_splitter_split_documents_copies_metadata():
+    expected_splits = 2
+    splitter = chroma_utils.SentenceAwareTextSplitter(chunk_size=40, chunk_overlap=0)
+    documents = [
+        Document(page_content="First sentence here. Second sentence there.", metadata={"page": 1})
+    ]
+    splits = splitter.split_documents(documents)
+    assert len(splits) == expected_splits
+    assert all(split.metadata.get("page") == 1 for split in splits)
 
 
 def test_load_and_split_document_unsupported_type():
@@ -453,5 +551,3 @@ def test_get_doc_chunks_from_chroma_error_returns_empty(monkeypatch):
 
     monkeypatch.setattr(chroma_utils, "get_vectorstore", ErrorVectorstore)
     assert chroma_utils.get_doc_chunks_from_chroma(file_id) == []
-
-

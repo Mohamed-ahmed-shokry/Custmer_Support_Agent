@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from dataclasses import dataclass
 from enum import StrEnum
@@ -20,6 +21,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
+    TextSplitter,
 )
 
 from api.collections import DEFAULT_COLLECTION
@@ -35,6 +37,7 @@ logger = logging.getLogger(__name__)
 class ChunkingStrategy(StrEnum):
     RECURSIVE = "recursive"
     MARKDOWN = "markdown"
+    SEMANTIC = "semantic"
 
 
 _DEFAULT_CHUNK_SIZE = 1000
@@ -49,6 +52,129 @@ class ChunkingOptions:
     chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP
 
 
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
+_PARAGRAPH_BOUNDARY_RE = re.compile(r"\n\s*\n+")
+_ABBREVIATION_RE = re.compile(
+    r"\b(?:Dr|Mr|Mrs|Ms|Prof|St|Sr|Jr|vs|etc|e\.g|i\.e|Fig|approx)\.$",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _join_sentences(sentences: list[str]) -> str:
+    return " ".join(sentences)
+
+
+def _join_length(sentences: list[str]) -> int:
+    return sum(len(sentence) for sentence in sentences) + max(0, len(sentences) - 1)
+
+
+def _overlap_carry(sentences: list[str], overlap: int) -> list[str]:
+    """Return the trailing sentences that fit within ``overlap`` chars."""
+    if overlap <= 0:
+        return []
+    carry: list[str] = []
+    carry_len = 0
+    for sentence in reversed(sentences):
+        add = len(sentence) + (1 if carry else 0)
+        if carry_len + add > overlap:
+            break
+        carry.insert(0, sentence)
+        carry_len += add
+    return carry
+
+
+def _hard_split_sentence(sentence: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    step = chunk_size - chunk_overlap
+    if step <= 0:
+        return [sentence]
+    return [
+        sentence[position : position + chunk_size] for position in range(0, len(sentence), step)
+    ]
+
+
+class SentenceAwareTextSplitter(TextSplitter):
+    """Dependency-free, sentence-boundary-aware text splitter.
+
+    Paragraph breaks are preserved as split seams; within a paragraph,
+    sentences are packed into windows of at most ``chunk_size`` characters,
+    keeping up to ``chunk_overlap`` characters of trailing sentences in the
+    next window. Sentences longer than ``chunk_size`` are hard-split. No model
+    or API calls happen at split time, so ``SEMANTIC`` chunking works with
+    embedder agnostic sources.
+    """
+
+    def __init__(
+        self,
+        chunk_size: int = _DEFAULT_CHUNK_SIZE,
+        chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP,
+        **kwargs,
+    ):
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive.")
+        if not 0 <= chunk_overlap < chunk_size:
+            raise ValueError("chunk_overlap must be >= 0 and < chunk_size.")
+        super().__init__(chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs)
+
+    def split_text(self, text: str) -> list[str]:  # type: ignore[override]
+        windows: list[str] = []
+        for paragraph in _PARAGRAPH_BOUNDARY_RE.split(text or ""):
+            sentences = self._collect_sentences(paragraph)
+            if not sentences:
+                continue
+            windows.extend(self._pack_windows(sentences))
+        return windows
+
+    def _collect_sentences(self, paragraph: str) -> list[str]:
+        sentences: list[str] = []
+        for raw_line in paragraph.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            sentences.extend(self._split_line_into_sentences(line))
+        return [sentence for sentence in sentences if sentence]
+
+    @staticmethod
+    def _split_line_into_sentences(line: str) -> list[str]:
+        pieces = _SENTENCE_BOUNDARY_RE.split(line)
+        merged: list[str] = []
+        for raw_piece in pieces:
+            piece = raw_piece.strip()
+            if not piece:
+                continue
+            if merged and SentenceAwareTextSplitter._is_continuation(piece, merged[-1]):
+                merged[-1] += " " + piece
+            else:
+                merged.append(piece)
+        return merged
+
+    @staticmethod
+    def _is_continuation(piece: str, previous: str) -> bool:
+        first = piece[0]
+        if first.islower() or first in ",;:)":
+            return True
+        return bool(_ABBREVIATION_RE.search(previous))
+
+    def _pack_windows(self, sentences: list[str]) -> list[str]:
+        chunk_size = self._chunk_size
+        chunk_overlap = self._chunk_overlap
+        windows: list[str] = []
+        current: list[str] = []
+        for sentence in sentences:
+            if len(sentence) > chunk_size:
+                if current:
+                    windows.append(_join_sentences(current))
+                    current = []
+                windows.extend(_hard_split_sentence(sentence, chunk_size, chunk_overlap))
+                continue
+            if current and _join_length(current) + len(sentence) + 1 > chunk_size:
+                windows.append(_join_sentences(current))
+                current = _overlap_carry(current, chunk_overlap)
+            current.append(sentence)
+        if current:
+            windows.append(_join_sentences(current))
+        return windows
+
+
 def _get_text_splitter(options: ChunkingOptions):
     if options.strategy == ChunkingStrategy.MARKDOWN:
         return MarkdownHeaderTextSplitter(
@@ -57,6 +183,11 @@ def _get_text_splitter(options: ChunkingOptions):
                 ("##", "Header 2"),
                 ("###", "Header 3"),
             ]
+        )
+    if options.strategy == ChunkingStrategy.SEMANTIC:
+        return SentenceAwareTextSplitter(
+            chunk_size=options.chunk_size,
+            chunk_overlap=options.chunk_overlap,
         )
     return RecursiveCharacterTextSplitter(
         chunk_size=options.chunk_size,
@@ -177,9 +308,7 @@ def get_doc_chunks_from_chroma(file_id: int) -> list[dict[str, Any]]:
     """Retrieve all chunk records for a document ordered by chunk_index."""
     try:
         vectorstore = get_vectorstore()
-        raw = vectorstore.get(
-            where={"file_id": file_id}, include=["documents", "metadatas"]
-        )
+        raw = vectorstore.get(where={"file_id": file_id}, include=["documents", "metadatas"])
         ids = raw.get("ids") or []
         contents = raw.get("documents") or []
         metadatas = raw.get("metadatas") or []
@@ -258,9 +387,7 @@ def rename_collection_in_chroma(old: str, new: str) -> int:
     """Retag every chunk of a collection, returning the chunk count (-1 on error)."""
     try:
         vectorstore = get_vectorstore()
-        docs = vectorstore.get(
-            where={"collection": old}, include=["documents", "metadatas"]
-        )
+        docs = vectorstore.get(where={"collection": old}, include=["documents", "metadatas"])
         document_ids = list(docs.get("ids", []))
         if not document_ids:
             return 0
@@ -274,9 +401,7 @@ def rename_collection_in_chroma(old: str, new: str) -> int:
             for text, meta in zip(texts, metas, strict=True)
         ]
         vectorstore.update_documents(ids=document_ids, documents=documents)
-        logger.info(
-            "Renamed %s chunks from collection %s to %s", len(document_ids), old, new
-        )
+        logger.info("Renamed %s chunks from collection %s to %s", len(document_ids), old, new)
         return len(document_ids)
     except Exception:
         logger.exception("Error renaming collection %s to %s in Chroma", old, new)
@@ -337,9 +462,7 @@ def get_hybrid_retriever(
                 all_docs["documents"], all_docs.get("metadatas") or [], strict=False
             )
         ]
-        documents = [
-            d for d in documents if _matches_scope(d.metadata, file_ids, collections)
-        ]
+        documents = [d for d in documents if _matches_scope(d.metadata, file_ids, collections)]
         if not documents:
             return vector_retriever
         bm25_retriever = BM25Retriever.from_documents(documents)
