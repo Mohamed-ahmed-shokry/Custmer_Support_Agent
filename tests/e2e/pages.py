@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from playwright.async_api import Locator, Page
 
 
@@ -66,6 +68,18 @@ class Sidebar:
         """Upload files through the sidebar."""
         file_input = self.sidebar.locator('[data-testid="stFileUploader"] input[type="file"]')
         await file_input.set_input_files(file_paths)
+
+        # Streamlit needs a rerun to register the selected files before its
+        # widget state reflects them; clicking Upload too early is a no-op.
+        filename = os.path.basename(file_paths[0])
+        try:
+            await self.page.wait_for_selector(
+                f'[data-testid="stFileUploader"]:has-text("{filename}")',
+                state="visible",
+                timeout=10000,
+            )
+        except TimeoutError:
+            await self.page.wait_for_timeout(500)
 
         if collection:
             collection_input = self.sidebar.locator(
