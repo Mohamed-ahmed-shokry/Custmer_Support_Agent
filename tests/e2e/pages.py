@@ -13,7 +13,7 @@ class BasePage:
 
     async def wait_for_load(self) -> None:
         """Wait for the page to fully load."""
-        await self.page.wait_for_load_state("networkidle")
+        await self.page.wait_for_load_state("domcontentloaded")
         await self.page.wait_for_selector(".stApp", state="visible", timeout=30000)
 
 
@@ -31,7 +31,9 @@ class Sidebar:
     @property
     def health_status(self) -> Locator:
         """Get the health status element."""
-        return self.sidebar.locator('[data-testid="stSidebarContent"] >> text="Backend"')
+        return self.sidebar.locator('[data-testid="stSidebarContent"]').get_by_text(
+            "Backend"
+        )
 
     async def reset_chat(self) -> None:
         """Click the Reset Chat button."""
@@ -50,7 +52,7 @@ class Sidebar:
         collection_picker = self.sidebar.locator(
             '[data-testid="stSelectbox"]'
         ).filter(has_text="Active collection")
-        return await collection_picker.locator('[data-testid="stSelectbox"]').inner_text()
+        return await collection_picker.inner_text()
 
     async def select_collection(self, collection: str) -> None:
         """Select a collection from the picker."""
@@ -68,11 +70,11 @@ class Sidebar:
         if collection:
             collection_input = self.sidebar.locator(
                 '[data-testid="stTextInput"]'
-            ).filter(has_text="New collection")
+            ).filter(has_text="New collection").locator("input")
             await collection_input.fill(collection)
 
         await self.sidebar.get_by_role("button", name="Upload").click()
-        await self.page.wait_for_load_state("networkidle")
+        await self.page.wait_for_load_state("domcontentloaded")
 
     async def get_documents(self) -> list[str]:
         """Get list of uploaded document filenames."""
@@ -151,7 +153,8 @@ class ChatInterface:
         """Send a message through the chat interface."""
         await self.chat_input.fill(message)
         await self.chat_input.press("Enter")
-        await self.page.wait_for_load_state("networkidle")
+        # Streamlit keeps a websocket open, so rely on the caller waiting for
+        # the assistant response rather than the "networkidle" load state.
 
     async def wait_for_response(self) -> str:
         """Wait for the assistant response and return it."""
