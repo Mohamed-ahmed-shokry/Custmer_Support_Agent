@@ -22,22 +22,19 @@ def _list_sessions(api_base_url: str) -> list[str]:
     return [session["session_id"] for session in response.json()]
 
 
-async def _has_sessions(authenticated_page, api_base_url: str) -> bool:
-    if _list_sessions(api_base_url):
-        return True
-    panel = SessionsPanel(authenticated_page)
-    return bool(await panel.session_options())
+async def _has_sessions(api_base_url: str) -> bool:
+    return bool(_list_sessions(api_base_url))
 
 
 async def test_session_panel_lists_sessions(authenticated_page, api_base_url):
-    if not await _has_sessions(authenticated_page, api_base_url):
+    if not await _has_sessions(api_base_url):
         pytest.skip("no past sessions on the backend")
     panel = SessionsPanel(authenticated_page)
     assert await panel.session_options()
 
 
 async def test_rename_session(authenticated_page, api_base_url):
-    if not await _has_sessions(authenticated_page, api_base_url):
+    if not await _has_sessions(api_base_url):
         pytest.skip("no past sessions on the backend")
     panel = SessionsPanel(authenticated_page)
     session_id = (await panel.session_options())[0]
@@ -48,7 +45,7 @@ async def test_rename_session(authenticated_page, api_base_url):
 
 
 async def test_delete_session(authenticated_page, api_base_url):
-    if not await _has_sessions(authenticated_page, api_base_url):
+    if not await _has_sessions(api_base_url):
         pytest.skip("no past sessions on the backend")
     panel = SessionsPanel(authenticated_page)
     options = await panel.session_options()
