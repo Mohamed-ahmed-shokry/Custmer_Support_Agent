@@ -17,6 +17,19 @@ def _request_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
     return headers
 
 
+def _upload_headers() -> dict[str, str]:
+    """Headers for multipart uploads; do NOT pin Content-Type.
+
+    requests sets the multipart boundary itself; forcing "application/json"
+    leaves the request with a JSON content type and no boundary, so the API
+    cannot parse the multipart body and rejects it with HTTP 422.
+    """
+    headers = {"accept": "application/json"}
+    if settings.api_key:
+        headers["X-API-Key"] = settings.api_key
+    return headers
+
+
 def extract_error_detail(response):
     try:
         payload = response.json()
@@ -157,7 +170,7 @@ def upload_documents(files, collection="default"):
             f"{API_BASE_URL}/upload-docs",
             params={"collection": collection},
             files=multipart,
-            headers=_request_headers(),
+            headers=_upload_headers(),
             timeout=300,
         )
         if response.status_code == HTTP_OK:
@@ -177,7 +190,7 @@ def upload_document(file, collection="default"):
             f"{API_BASE_URL}/upload-doc",
             params={"collection": collection},
             files=files,
-            headers=_request_headers(),
+            headers=_upload_headers(),
             timeout=120,
         )
         if response.status_code == HTTP_OK:
