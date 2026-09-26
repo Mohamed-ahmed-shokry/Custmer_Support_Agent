@@ -36,6 +36,11 @@ python -m mypy api/ app/ scripts/
   behavior in `tests/test_app_ui.py` / `tests/test_app_api_utils.py` (using
   the `FakeStreamlit` helper in `tests/fake_streamlit.py`). Update docs
   (`README.md`, `docs/API.md`) when endpoints change.
+- UI-facing changes that touch the chat, sidebar, upload, or sessions flows
+  should also get a Playwright step. The suite lives in `tests/e2e/` (`-m e2e`,
+  opt-in) and needs a running API + UI; see the "Browser end-to-end tests"
+  section of `README.md`. Tests there self-skip when a model or embeddings
+  provider is unavailable, so they stay green without credits.
 
 ## Compatibility rules
 

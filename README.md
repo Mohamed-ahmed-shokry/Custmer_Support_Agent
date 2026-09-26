@@ -220,3 +220,24 @@ python -m mypy api/ app/ scripts/
 `pytest` also enforces an 80% coverage floor across `api/` and the
 Streamlit client (`app/`), which is unit-tested via a fake Streamlit helper
 in `tests/`.
+
+### Browser end-to-end tests (Playwright, opt-in)
+
+`tests/e2e/` holds a Playwright suite (`-m e2e`) that drives the real UI with
+a headless Chromium against the live API + Streamlit app:
+
+```powershell
+# terminal 1 — API on :8000
+$env:SQLITE_DB_PATH = "$pwd\rag_app.db"; $env:CHROMA_PERSIST_DIR = "$pwd\chroma_db"
+python -m uvicorn api.main:app --port 8000
+# terminal 2 — UI on :8501
+python -m streamlit run app/streamlit_app.py --server.port 8501 --server.headless true
+# terminal 3 — the suite
+python -m pytest -m e2e --no-cov tests/e2e
+```
+
+The e2e tests are excluded from the default `pytest` run. LLM round-trip and
+document-upload tests self-skip when the configured model/embeddings are
+unreachable (e.g. an OpenAI key without credits), so the suite stays green on
+a credit-less machine and keyless CI; set `OPENAI_API_KEY` to actually run the
+model-backed paths. `make test-e2e` runs the same command.
