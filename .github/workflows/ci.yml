@@ -25,3 +25,35 @@ jobs:
           if grep -R -n -E 'sk-[A-Za-z0-9_-]+|lsv2_[A-Za-z0-9_-]+|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]+' --exclude-dir=.git .; then
             exit 1
           fi
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies and a headless browser
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Start API and UI against a throwaway database
+        run: |
+          mkdir -p /tmp/e2e
+          SQLITE_DB_PATH=/tmp/e2e/rag_app.db CHROMA_PERSIST_DIR=/tmp/e2e/chroma \
+            nohup python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 > /tmp/e2e/api.log 2>&1 &
+          SQLITE_DB_PATH=/tmp/e2e/rag_app.db CHROMA_PERSIST_DIR=/tmp/e2e/chroma \
+            nohup python -m streamlit run app/streamlit_app.py --server.port 8501 --server.headless true > /tmp/e2e/ui.log 2>&1 &
+      - name: Wait for services
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/health && curl -sf http://127.0.0.1:8501/_stcore/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API/UI did not come up in time:"
+          cat /tmp/e2e/api.log
+          exit 1
+      - name: Run e2e tests
+        run: python -m pytest -m e2e --no-cov tests/e2e

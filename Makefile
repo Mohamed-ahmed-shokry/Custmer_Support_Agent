@@ -1,4 +1,4 @@
-.PHONY: install api app test lint typecheck verify secret-scan
+.PHONY: install api app test test-e2e lint typecheck verify secret-scan
 
 PYTHON ?= python
 PYTEST ?= $(PYTHON) -m pytest
@@ -14,6 +14,9 @@ app:
 
 test:
 	$(PYTEST)
+
+test-e2e:
+	$(PYTEST) -m e2e --no-cov tests/e2e
 
 lint:
 	$(PYTHON) -m ruff check api/ app/ tests/ scripts/
