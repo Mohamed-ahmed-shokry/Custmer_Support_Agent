@@ -326,8 +326,55 @@ for the first time exposed (pydantic >= 2.12 vs langchain <1).
 ## Next Candidates (v0.24.0+)
 
 - Staging/production environment targets (dependent on real credentials)
-- Document chunk semantic re-chunking and visualization
 - Multi-tenant user authentication and RBAC permissions
+
+## v0.25.0 plan — Semantic chunking & re-chunking with visualization (IN PROGRESS)
+
+Deliver the remaining chunking story: a dependency-free sentence-aware
+"semantic" chunking strategy, persistent source text + chunking options so a
+document can be re-chunked without re-uploading, a `POST /docs/{file_id}/rechunk`
+endpoint, and a Re-chunk control plus chunking-settings display in the
+document inspector. Validates the Phase 2.2 "semantic" chunking checkbox for
+real (the shipped system only had recursive/markdown despite the completed
+mark).
+
+### Scope & Objectives
+- **Semantic chunking strategy (offline)**: `ChunkingStrategy.SEMANTIC` backed
+  by a `SentenceAwareTextSplitter` — paragraph-honoring, sentence-boundary
+  preserving windows that respect `chunk_size`/`chunk_overlap`. No LLM or
+  embedding calls at split time, so it works with zero credits.
+- **Persistent source text + options**: new `document_sources` table
+  (`file_id` PK→`document_store`, `source_text`, `strategy`, `chunk_size`,
+  `chunk_overlap`, `updated_at`) filled at upload; chunk metadata also records
+  the options that produced each chunk.
+- **Re-chunk endpoint**: `POST /docs/{file_id}/rechunk` accepting
+  `chunking_strategy`/`chunk_size`/`chunk_overlap` (same validation as upload),
+  re-splitting the stored source text, replacing the Chroma chunks, and
+  returning the refreshed `DocumentDetailResponse`.
+- **UI visibility**: the document inspector shows how every document was chunked
+  and offers a Re-chunk form (strategy/size/overlap) that calls the endpoint
+  and refreshes chunk previews via the existing details call.
+- **Deletion hygiene**: removing a document or collection also removes its
+  `document_sources` row.
+- **Quality Gates**: offline unit coverage for splitter, persistence/migration,
+  endpoint, and UI wiring; default suite + ruff + mypy green; docs
+  (`README.md`, `docs/API.md`) updated.
+
+### Explicit Exclusions (Deferred)
+- Embedding/LLM-driven semantic chunking (needs funded API credits).
+- Browser-based rechunk e2e (uploads already skip without embeddings here; the
+  rechunk flow inherits the same skip guard if wired later).
+- Storing original file bytes (we persist extracted text, not the source file).
+- Batch/background re-chunking across a collection.
+
+### Granular Task Breakdown
+- [ ] Task 1: `ROADMAP.md` v0.25.0 plan + next-candidates prune
+- [ ] Task 2: `SEMANTIC` strategy + `SentenceAwareTextSplitter` (paragraph/sentence-aware, size+overlap respected, order-preserving) and unit tests
+- [ ] Task 3: `document_sources` table (create + migration), save/load/delete helpers and unit tests
+- [ ] Task 4: ingest wiring — store extracted source text + chunking options at upload; chunk metadata carries options; delete endpoints remove sources; tests
+- [ ] Task 5: `POST /docs/{file_id}/rechunk` (validation, split, replace chunks, update `document_sources`, return details) + model + tests + `docs/API.md`
+- [ ] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
+- [ ] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
