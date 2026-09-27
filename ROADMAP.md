@@ -370,8 +370,8 @@ mark).
 ### Granular Task Breakdown
 - [x] Task 1: `ROADMAP.md` v0.25.0 plan + next-candidates prune
 - [x] Task 2: `SEMANTIC` strategy + `SentenceAwareTextSplitter` (paragraph/sentence-aware, size+overlap respected, order-preserving) and unit tests
-- [ ] Task 3: `document_sources` table (create + migration), save/load/delete helpers and unit tests
-- [ ] Task 4: ingest wiring — store extracted source text + chunking options at upload; chunk metadata carries options; delete endpoints remove sources; tests
+- [x] Task 3: `document_sources` table (create + migration), save/load/delete helpers and unit tests
+- [x] Task 4: ingest wiring — store extracted source text + chunking options at upload; chunk metadata carries options; delete endpoints remove sources; tests
 - [ ] Task 5: `POST /docs/{file_id}/rechunk` (validation, split, replace chunks, update `document_sources`, return details) + model + tests + `docs/API.md`
 - [ ] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
 - [ ] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
