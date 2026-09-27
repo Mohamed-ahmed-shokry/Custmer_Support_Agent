@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import (
@@ -27,9 +27,6 @@ from langchain_text_splitters import (
 from api.collections import DEFAULT_COLLECTION
 from api.presenters import preview_content
 from api.settings import settings
-
-if TYPE_CHECKING:
-    from langchain_community.document_loaders.base import BaseLoader
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +203,42 @@ def get_vectorstore() -> Chroma:
     return get_vectorstore._vectorstore  # type: ignore[attr-defined, no-any-return]
 
 
+def _pick_loader(file_path: str):  # noqa: PLR0911 - one return per supported extension
+    if file_path.endswith(".pdf"):
+        return PyPDFLoader(file_path)
+    if file_path.endswith(".docx"):
+        return Docx2txtLoader(file_path)
+    if file_path.endswith(".html"):
+        try:
+            return BSHTMLLoader(file_path)
+        except Exception:
+            try:
+                return UnstructuredHTMLLoader(file_path)
+            except Exception:
+                return TextLoader(file_path, encoding="utf-8")
+    if file_path.endswith(".md"):
+        try:
+            return UnstructuredMarkdownLoader(file_path)
+        except Exception:
+            return TextLoader(file_path, encoding="utf-8")
+    if file_path.endswith(".txt"):
+        return TextLoader(file_path, encoding="utf-8")
+    if file_path.endswith(".csv"):
+        return CSVLoader(file_path)
+    raise ValueError(f"Unsupported file type: {file_path}")
+
+
+def _load_documents(file_path: str) -> list[Document]:
+    loader = _pick_loader(file_path)
+    return loader.load()  # type: ignore[no-any-return]
+
+
+def load_document_source(file_path: str) -> str:
+    """Extract and normalize the full text of a staged document."""
+    documents = _load_documents(file_path)
+    return "\n".join(document.page_content for document in documents).strip()
+
+
 def load_and_split_document(
     file_path: str,
     options: ChunkingOptions | None = None,
@@ -213,32 +246,7 @@ def load_and_split_document(
     if options is None:
         options = ChunkingOptions()
 
-    loader: BaseLoader
-    if file_path.endswith(".pdf"):
-        loader = PyPDFLoader(file_path)
-    elif file_path.endswith(".docx"):
-        loader = Docx2txtLoader(file_path)
-    elif file_path.endswith(".html"):
-        try:
-            loader = BSHTMLLoader(file_path)
-        except Exception:
-            try:
-                loader = UnstructuredHTMLLoader(file_path)
-            except Exception:
-                loader = TextLoader(file_path, encoding="utf-8")
-    elif file_path.endswith(".md"):
-        try:
-            loader = UnstructuredMarkdownLoader(file_path)
-        except Exception:
-            loader = TextLoader(file_path, encoding="utf-8")
-    elif file_path.endswith(".txt"):
-        loader = TextLoader(file_path, encoding="utf-8")
-    elif file_path.endswith(".csv"):
-        loader = CSVLoader(file_path)
-    else:
-        raise ValueError(f"Unsupported file type: {file_path}")
-
-    documents = loader.load()
+    documents = _load_documents(file_path)
     splitter = _get_text_splitter(options)
     return splitter.split_documents(documents)  # type: ignore[no-any-return]
 
@@ -270,6 +278,9 @@ def index_document_to_chroma(
             split.metadata["filename"] = source_name
             split.metadata["chunk_index"] = index
             split.metadata["collection"] = collection
+            split.metadata["chunking_strategy"] = options.strategy.value
+            split.metadata["chunk_size"] = options.chunk_size
+            split.metadata["chunk_overlap"] = options.chunk_overlap
 
         document_ids = build_chroma_document_ids(file_id, len(splits))
         _add_documents_with_retry(get_vectorstore(), splits, document_ids, file_path)

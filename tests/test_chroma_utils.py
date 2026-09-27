@@ -60,6 +60,9 @@ def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
         "filename": "lease.pdf",
         "chunk_index": 0,
         "collection": "default",
+        "chunking_strategy": "recursive",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
     }
     assert vectorstore.added_documents[1].metadata == {
         "page": 2,
@@ -67,12 +70,17 @@ def test_index_document_adds_metadata_and_deterministic_ids(monkeypatch):
         "filename": "lease.pdf",
         "chunk_index": 1,
         "collection": "default",
+        "chunking_strategy": "recursive",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
     }
 
 
-def test_index_document_stamps_custom_collection(monkeypatch):
+def test_index_document_stamps_custom_collection_and_options(monkeypatch):
     documents = [Document(page_content="Chunk", metadata={})]
     vectorstore = FakeVectorstore()
+    expected_size = 640
+    expected_overlap = 80
 
     monkeypatch.setattr(
         chroma_utils, "load_and_split_document", lambda file_path, *args, **kwargs: documents
@@ -81,11 +89,22 @@ def test_index_document_stamps_custom_collection(monkeypatch):
 
     assert (
         chroma_utils.index_document_to_chroma(
-            "upload.pdf", file_id=42, filename="lease.pdf", collection="clients-acme"
+            "upload.pdf",
+            file_id=42,
+            filename="lease.pdf",
+            collection="clients-acme",
+            options=chroma_utils.ChunkingOptions(
+                strategy=chroma_utils.ChunkingStrategy.SEMANTIC,
+                chunk_size=expected_size,
+                chunk_overlap=expected_overlap,
+            ),
         )
         is True
     )
     assert vectorstore.added_documents[0].metadata["collection"] == "clients-acme"
+    assert vectorstore.added_documents[0].metadata["chunking_strategy"] == "semantic"
+    assert vectorstore.added_documents[0].metadata["chunk_size"] == expected_size
+    assert vectorstore.added_documents[0].metadata["chunk_overlap"] == expected_overlap
 
 
 def test_metadata_filter_combines_scopes():
@@ -459,6 +478,29 @@ def test_load_and_split_document_mocked_loaders(monkeypatch):
     monkeypatch.setattr(chroma_utils, "UnstructuredHTMLLoader", MockLoader)
     docs_html = chroma_utils.load_and_split_document("doc.html")
     assert docs_html[0].page_content == "mocked content"
+
+
+def test_load_document_source_joins_loaded_pages(monkeypatch):
+    documents = [
+        Document(page_content="First page"),
+        Document(page_content="Second page"),
+    ]
+
+    monkeypatch.setattr(chroma_utils, "_load_documents", lambda file_path: documents)
+
+    assert chroma_utils.load_document_source("doc.txt") == "First page\nSecond page"
+
+
+def test_load_document_source_normalizes_blank_pages(monkeypatch):
+    documents = [
+        Document(page_content="  Lead page  "),
+        Document(page_content="   "),
+        Document(page_content="Tail page"),
+    ]
+
+    monkeypatch.setattr(chroma_utils, "_load_documents", lambda file_path: documents)
+
+    assert chroma_utils.load_document_source("doc.txt") == "Lead page  \n   \nTail page"
 
 
 def test_delete_doc_from_chroma_exception(monkeypatch):
