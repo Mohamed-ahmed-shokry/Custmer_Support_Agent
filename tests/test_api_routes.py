@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+import pytest
 from api import main, observability, security
 from api.observability import estimate_tokens
 from api.settings import settings
@@ -20,6 +21,35 @@ HTTP_BAD_GATEWAY = 502
 EXPECTED_RETRIEVER_K = 5
 
 
+@pytest.fixture(autouse=True)
+def _stub_document_source_storage(monkeypatch):
+    """Keep source-storage wiring out of unrelated upload tests.
+
+    Records `save_document_source` calls instead of hitting the real DB so
+    whole-suite runs do not churn through real loaders or accumulate source
+    rows. Dedicated tests below override the load stub to assert the exact
+    source text and options stored.
+    """
+    saved = []
+
+    def record_source(
+        file_id, source_text, strategy="recursive", chunk_size=1000, chunk_overlap=200
+    ):
+        saved.append(
+            {
+                "file_id": file_id,
+                "source_text": source_text,
+                "strategy": strategy,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+            }
+        )
+
+    monkeypatch.setattr(main, "load_document_source", lambda file_path: "stub source text")
+    monkeypatch.setattr(main, "save_document_source", record_source)
+    yield saved
+
+
 def test_health_route():
     response = client.get("/health")
 
@@ -37,7 +67,6 @@ def test_get_config_route():
     assert data["default_model"] == settings.default_model
     assert data["retriever_k"] == settings.retriever_k
     assert "supported_chunking_strategies" in data
-
 
 
 def test_sanitize_filename_removes_path_segments():
@@ -70,9 +99,7 @@ def test_upload_removes_document_record_when_indexing_fails(monkeypatch):
 
     monkeypatch.setattr(main, "insert_document_record", lambda filename, *args, **kwargs: 42)
     monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
-    monkeypatch.setattr(
-        main, "index_document_to_chroma", lambda *args, **kwargs: False
-    )
+    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         main, "delete_document_record", lambda file_id: deleted_file_ids.append(file_id) or True
     )
@@ -110,6 +137,55 @@ def test_upload_stores_normalized_collection(monkeypatch):
     assert recorded["options"] is not None
     expected_hex_length = 64
     assert recorded["sha256"] is not None and len(recorded["sha256"]) == expected_hex_length
+
+
+def test_upload_stores_source_text_and_chunking_options(monkeypatch, _stub_document_source_storage):
+    expected_file_id = 7
+    expected_size = 400
+    expected_overlap = 50
+    expected_source = "extracted source: " * 10
+    monkeypatch.setattr(
+        main, "insert_document_record", lambda filename, *args, **kwargs: expected_file_id
+    )
+    monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
+    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args, **kwargs: True)
+    monkeypatch.setattr(main, "load_document_source", lambda file_path: expected_source)
+
+    response = client.post(
+        "/upload-doc?chunking_strategy=semantic&chunk_size=400&chunk_overlap=50",
+        files={"file": ("lease.pdf", b"%PDF fake", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_OK
+    stored = _stub_document_source_storage[-1]
+    assert stored["file_id"] == expected_file_id
+    assert stored["source_text"] == expected_source
+    assert stored["strategy"] == "semantic"
+    assert stored["chunk_size"] == expected_size
+    assert stored["chunk_overlap"] == expected_overlap
+
+
+def test_upload_index_failure_removes_source_text(monkeypatch):
+    cleanup_events = []
+    monkeypatch.setattr(main, "insert_document_record", lambda filename, *args, **kwargs: 9)
+    monkeypatch.setattr(main, "get_document_by_hash", lambda sha256: None)
+    monkeypatch.setattr(main, "index_document_to_chroma", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        main, "delete_document_record", lambda file_id: cleanup_events.append(file_id) or True
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_document_source",
+        lambda file_id: cleanup_events.append(("source", file_id)) or True,
+    )
+
+    response = client.post(
+        "/upload-doc",
+        files={"file": ("lease.pdf", b"%PDF fake", "application/pdf")},
+    )
+
+    assert response.status_code == HTTP_INTERNAL_ERROR
+    assert cleanup_events == [9, ("source", 9)]
 
 
 def test_bulk_upload_indexes_each_file(monkeypatch):
@@ -515,9 +591,7 @@ def test_chat_rate_limit_blocks_after_quota(monkeypatch):
     security.reset()
     monkeypatch.setattr(settings, "rate_limit_per_min", 2)
     monkeypatch.setattr(main, "get_chat_history", lambda session_id: [])
-    monkeypatch.setattr(
-        main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeChain()
-    )
+    monkeypatch.setattr(main, "get_rag_chain_for_model", lambda model, *args, **kwargs: FakeChain())
     monkeypatch.setattr(main, "insert_application_logs", lambda *args: None)
 
     try:
@@ -756,9 +830,7 @@ def test_submit_feedback_records_rating(monkeypatch):
     monkeypatch.setattr(
         main, "get_chat_history", lambda session_id: [{"role": "human", "content": "Hi"}]
     )
-    monkeypatch.setattr(
-        main, "insert_feedback", lambda session_id, rating, comment=None: 3
-    )
+    monkeypatch.setattr(main, "insert_feedback", lambda session_id, rating, comment=None: 3)
 
     response = client.post("/feedback", json={"session_id": "session-1", "rating": 1})
 
@@ -894,9 +966,7 @@ def test_feedback_analytics_route_success(monkeypatch):
             }
         ],
     }
-    monkeypatch.setattr(
-        main, "get_feedback_analytics", lambda recent_comments_limit=5: sample_data
-    )
+    monkeypatch.setattr(main, "get_feedback_analytics", lambda recent_comments_limit=5: sample_data)
     response = client.get("/feedback/analytics?recent_comments_limit=3")
     assert response.status_code == HTTP_OK
     data = response.json()
@@ -913,7 +983,6 @@ def test_feedback_analytics_route_validation():
 
     res_too_large = client.get("/feedback/analytics?recent_comments_limit=51")
     assert res_too_large.status_code == HTTP_BAD_REQUEST
-
 
 
 def test_export_session_returns_markdown_transcript(monkeypatch):
@@ -993,7 +1062,6 @@ def test_export_session_rejects_invalid_format():
     response = client.get("/sessions/session-1/export?format=xml")
     assert response.status_code == HTTP_BAD_REQUEST
     assert "format" in response.json()["detail"].lower()
-
 
 
 def test_rename_session_returns_updated_summary(monkeypatch):
@@ -1150,9 +1218,7 @@ def test_search_returns_502_when_retrieval_fails(monkeypatch):
         def invoke(self, question):
             raise RuntimeError("vector store down")
 
-    monkeypatch.setattr(
-        main, "select_retriever", lambda **kwargs: FailingRetriever()
-    )
+    monkeypatch.setattr(main, "select_retriever", lambda **kwargs: FailingRetriever())
 
     response = client.post("/search", json={"question": "Hello"})
 
@@ -1233,6 +1299,37 @@ def test_delete_document_deletes_chroma_and_record(monkeypatch):
 
     assert response.status_code == HTTP_OK
     assert calls == [("chroma", 42), ("db", 42)]
+
+
+def test_delete_document_removes_source_text(monkeypatch):
+    removed_sources = []
+    monkeypatch.setattr(main, "get_document_record", lambda file_id: {"id": file_id})
+    monkeypatch.setattr(main, "delete_doc_from_chroma", lambda file_id: True)
+    monkeypatch.setattr(main, "delete_document_record", lambda file_id: True)
+    monkeypatch.setattr(
+        main, "delete_document_source", lambda file_id: removed_sources.append(file_id) or True
+    )
+
+    response = client.post("/delete-doc", json={"file_id": 55})
+
+    assert response.status_code == HTTP_OK
+    assert removed_sources == [55]
+
+
+def test_delete_collection_removes_source_text(monkeypatch):
+    removed = []
+    monkeypatch.setattr(main, "delete_collection_from_chroma", lambda collection: 3)
+    monkeypatch.setattr(main, "delete_documents_by_collection", lambda collection: 2)
+    monkeypatch.setattr(
+        main,
+        "delete_document_sources_by_collection",
+        lambda collection: removed.append(collection) or True,
+    )
+
+    response = client.delete("/collections/acme")
+
+    assert response.status_code == HTTP_OK
+    assert removed == ["acme"]
 
 
 def test_chat_stream_returns_sse_events(monkeypatch):
@@ -1343,9 +1440,7 @@ def test_delete_many_documents_success(monkeypatch):
     second_id = 43
     expected_deleted = 2
 
-    monkeypatch.setattr(
-        main, "get_document_record", lambda fid: {"id": fid, "filename": "doc.pdf"}
-    )
+    monkeypatch.setattr(main, "get_document_record", lambda fid: {"id": fid, "filename": "doc.pdf"})
     monkeypatch.setattr(main, "delete_doc_from_chroma", lambda fid: True)
     monkeypatch.setattr(main, "delete_document_record", lambda fid: True)
 
@@ -1462,7 +1557,6 @@ def test_delete_many_sessions_mixed(monkeypatch):
     assert status_map == {"s1": "deleted", "s2": "not_found", "s3": "error"}
 
 
-
 def test_delete_many_sessions_validation():
     response = client.post("/delete-sessions", json={"session_ids": []})
     assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
@@ -1479,5 +1573,3 @@ def test_delete_many_sessions_server_error(monkeypatch):
     response = client.post("/delete-sessions", json={"session_ids": ["s1"]})
     assert response.status_code == HTTP_INTERNAL_ERROR
     assert "Failed to delete sessions" in response.json()["detail"]
-
-

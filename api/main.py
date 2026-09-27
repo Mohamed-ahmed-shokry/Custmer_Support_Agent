@@ -20,6 +20,7 @@ from api.chroma_utils import (
     get_collection_chunk_count,
     get_doc_chunks_from_chroma,
     index_document_to_chroma,
+    load_document_source,
     rename_collection_in_chroma,
     select_retriever,
 )
@@ -27,6 +28,8 @@ from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     VALID_SESSION_STATUSES,
     delete_document_record,
+    delete_document_source,
+    delete_document_sources_by_collection,
     delete_documents_by_collection,
     delete_session,
     delete_sessions,
@@ -49,6 +52,7 @@ from api.db_utils import (
     prune_sessions_before,
     rename_collection,
     rename_session,
+    save_document_source,
     search_sessions,
     truncate_history,
     update_session_metadata,
@@ -291,7 +295,6 @@ def get_runtime_config():
         rate_limit_per_min=settings.rate_limit_per_min,
         token_budget_configured=settings.token_daily_budget_est > 0,
     )
-
 
 
 @app.get("/health/live")
@@ -600,6 +603,20 @@ def ingest_single_file(
             )
 
         file_id = insert_document_record(safe_filename, collection_name, content_hash)
+        try:
+            source_text = load_document_source(temp_file_path)
+            save_document_source(
+                file_id,
+                source_text,
+                chunking_strategy.value,
+                chunk_size,
+                chunk_overlap,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to store source text for %s; re-chunking will be unavailable",
+                safe_filename,
+            )
         success = index_document_to_chroma(
             temp_file_path,
             file_id,
@@ -620,6 +637,7 @@ def ingest_single_file(
             logger.warning(
                 "Failed to remove document metadata after indexing failed for file_id %s", file_id
             )
+        delete_document_source(file_id)
         raise HTTPException(status_code=500, detail=f"Failed to index {safe_filename}.")
     finally:
         if temp_file_path and os.path.exists(temp_file_path):
@@ -786,6 +804,7 @@ def delete_collection_route(collection: str):
             status_code=404, detail=f"Collection {collection_name} was not found."
         )
 
+    delete_document_sources_by_collection(collection_name)
     increment("deletes")
     return DeleteDocumentResponse(
         message=(
@@ -823,9 +842,7 @@ MAX_SEARCH_LIMIT = 100
 def search_sessions_route(q: str, limit: int = 20):
     cleaned = q.strip()
     if not cleaned:
-        raise HTTPException(
-            status_code=400, detail="Query parameter 'q' must not be empty."
-        )
+        raise HTTPException(status_code=400, detail="Query parameter 'q' must not be empty.")
     if limit <= 0 or limit > MAX_SEARCH_LIMIT:
         raise HTTPException(
             status_code=400,
@@ -852,9 +869,7 @@ def _normalize_collection_param(collection: str) -> str:
 def _get_session_summary_or_404(session_id: str):
     summaries = [s for s in get_all_sessions() if s["session_id"] == session_id]
     if not summaries:
-        raise HTTPException(
-            status_code=404, detail=f"Session {session_id} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
     return summaries[0]
 
 
@@ -875,9 +890,7 @@ def export_session(session_id: str, format: str = "markdown"):
         )
     history = get_chat_history(session_id)
     if not history:
-        raise HTTPException(
-            status_code=404, detail=f"Session {session_id} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
     label = _get_session_summary_or_404(session_id).get("label")
     if export_format == "json":
         content = render_session_json(session_id, label, history)
@@ -897,7 +910,6 @@ def export_session(session_id: str, format: str = "markdown"):
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{session_id}.{extension}"'},
     )
-
 
 
 @app.delete("/sessions", response_model=PruneSessionsResponse)
@@ -923,9 +935,7 @@ def prune_sessions(before: str):
 def delete_session_route(session_id: str):
     _require_session_id(session_id)
     if not delete_session(session_id):
-        raise HTTPException(
-            status_code=404, detail=f"Session {session_id} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
     return DeleteSessionResponse(message=f"Session {session_id} deleted.")
 
 
@@ -970,13 +980,10 @@ def delete_many_sessions(request: BulkDeleteSessionRequest):
     )
 
 
-
 @app.post("/feedback", response_model=FeedbackResponse)
 def submit_feedback(feedback: FeedbackInput):
     if not get_chat_history(feedback.session_id):
-        raise HTTPException(
-            status_code=404, detail=f"Session {feedback.session_id} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session {feedback.session_id} was not found.")
     feedback_id = insert_feedback(feedback.session_id, feedback.rating, feedback.comment)
     increment("feedback_up" if feedback.rating == 1 else "feedback_down")
     return FeedbackResponse(message="Feedback recorded.", feedback_id=feedback_id)
@@ -1040,12 +1047,9 @@ def feedback_analytics_route(recent_comments_limit: int = 5):
 def get_session_feedback_route(session_id: str):
     _require_session_id(session_id)
     if not get_chat_history(session_id):
-        raise HTTPException(
-            status_code=404, detail=f"Session {session_id} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
     items = get_session_feedback(session_id)
     return [FeedbackItem(**item) for item in items]
-
 
 
 @app.patch("/sessions/{session_id}", response_model=SessionInfo)
@@ -1065,9 +1069,7 @@ def update_session_route(session_id: str, request: UpdateSessionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not updated:
-        raise HTTPException(
-            status_code=404, detail=f"Session {session_id} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
     return SessionInfo(**_get_session_summary_or_404(session_id))
 
 
@@ -1094,6 +1096,7 @@ def delete_document(request: DeleteFileRequest):
         )
         raise HTTPException(status_code=500, detail=detail)
 
+    delete_document_source(request.file_id)
     increment("deletes")
     return DeleteDocumentResponse(
         message=f"Successfully deleted document with file_id {request.file_id} from the system."
@@ -1136,6 +1139,8 @@ def delete_many_documents(request: BulkDeleteFileRequest):
                 )
             )
             continue
+
+        delete_document_source(file_id)
 
         increment("deletes")
         results.append(BulkDeleteFileResult(file_id=file_id, status="deleted"))
