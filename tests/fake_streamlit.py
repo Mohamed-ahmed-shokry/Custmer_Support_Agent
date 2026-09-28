@@ -168,6 +168,25 @@ class FakeStreamlit:
         )
         return self.values.get(key, value)
 
+    def number_input(  # noqa: PLR0913, PLR0917
+        self, label, min_value=None, max_value=None, value=0, step=None, key=None
+    ):
+        self.calls.append(
+            Call(
+                "st",
+                "number_input",
+                (label,),
+                {
+                    "min_value": min_value,
+                    "max_value": max_value,
+                    "value": value,
+                    "step": step,
+                    "key": key,
+                },
+            )
+        )
+        return self.values.get(key, value)
+
     def chat_input(self, placeholder):
         self.calls.append(Call("st", "chat_input", (placeholder,), {}))
         return self._chat_input_value

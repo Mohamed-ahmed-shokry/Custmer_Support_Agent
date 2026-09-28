@@ -23,6 +23,7 @@ from app.api_utils import (
     list_documents,
     list_feedback,
     list_sessions,
+    rechunk_document,
     rename_collection,
     rename_session,
     search_sessions,
@@ -538,8 +539,63 @@ def _render_document_inspector():
         details = st.session_state.get("inspect_doc_details")
         if details and details.get("id") == inspect_id:
             st.markdown(f"**Total chunks:** `{details.get('chunk_count', 0)}`")
+            if details.get("chunking_strategy"):
+                strategy_label = str(details["chunking_strategy"]).capitalize()
+                chunk_size = details.get("chunk_size", 1000)
+                chunk_overlap = details.get("chunk_overlap", 200)
+                st.markdown(
+                    f"**Strategy:** `{strategy_label}`  \n"
+                    f"**Chunk size:** `{chunk_size}` | **Overlap:** `{chunk_overlap}`"
+                )
             if details.get("sha256"):
                 st.caption(f"SHA-256: `{details['sha256'][:16]}...`")
+
+            # Re-chunking controls
+            rechunk_strategy_options = ["recursive", "semantic", "markdown"]
+            current_strat = details.get("chunking_strategy") or "recursive"
+            strat_idx = (
+                rechunk_strategy_options.index(current_strat)
+                if current_strat in rechunk_strategy_options
+                else 0
+            )
+            new_strat = st.selectbox(
+                "Re-chunk Strategy",
+                options=rechunk_strategy_options,
+                index=strat_idx,
+                format_func=lambda s: s.capitalize(),
+                key=f"rechunk_strat_{inspect_id}",
+            )
+            new_size = st.number_input(
+                "Re-chunk Size",
+                min_value=100,
+                max_value=4000,
+                value=int(details.get("chunk_size") or 1000),
+                step=50,
+                key=f"rechunk_size_{inspect_id}",
+            )
+            max_overlap = max(0, int(new_size) - 1)
+            current_overlap = min(int(details.get("chunk_overlap") or 200), max_overlap)
+            new_overlap = st.number_input(
+                "Re-chunk Overlap",
+                min_value=0,
+                max_value=max_overlap,
+                value=current_overlap,
+                step=20,
+                key=f"rechunk_overlap_{inspect_id}",
+            )
+            if st.button("Apply Re-chunk", key=f"rechunk_btn_{inspect_id}"):
+                with st.spinner("Re-chunking document..."):
+                    updated = rechunk_document(
+                        inspect_id,
+                        chunking_strategy=new_strat,
+                        chunk_size=int(new_size),
+                        chunk_overlap=int(new_overlap),
+                    )
+                    if updated:
+                        st.session_state["inspect_doc_details"] = updated
+                        st.success("Document re-chunked successfully!")
+                        st.rerun()
+
             for chunk in details.get("chunks", [])[:10]:
                 pg = f", p.{chunk['page']}" if chunk.get("page") else ""
                 score = chunk.get("score")

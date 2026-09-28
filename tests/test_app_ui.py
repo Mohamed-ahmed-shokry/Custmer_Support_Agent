@@ -796,6 +796,78 @@ def test_render_document_inspector(monkeypatch):
     assert "Hello chunk preview" in texts
 
 
+def test_render_document_inspector_displays_chunking_settings(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+
+    doc_id = 42
+    st.session_state["documents"] = [{"id": doc_id, "filename": "terms.pdf"}]
+    st.values["inspect_doc_id"] = doc_id
+    fake_details = {
+        "id": doc_id,
+        "filename": "terms.pdf",
+        "chunk_count": 3,
+        "chunking_strategy": "semantic",
+        "chunk_size": 450,
+        "chunk_overlap": 45,
+        "chunks": [],
+    }
+    st.session_state["inspect_doc_details"] = fake_details
+
+    sidebar._render_document_inspector()
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Semantic" in m for m in markdowns)
+    assert any("450" in m and "45" in m for m in markdowns)
+
+
+def test_render_document_inspector_rechunk_action(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+
+    doc_id = 42
+    st.session_state["documents"] = [{"id": doc_id, "filename": "terms.pdf"}]
+    st.values["inspect_doc_id"] = doc_id
+    initial_details = {
+        "id": doc_id,
+        "filename": "terms.pdf",
+        "chunk_count": 2,
+        "chunking_strategy": "recursive",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+        "chunks": [],
+    }
+    st.session_state["inspect_doc_details"] = initial_details
+    st.values[f"rechunk_strat_{doc_id}"] = "semantic"
+    st.values[f"rechunk_size_{doc_id}"] = 500
+    st.values[f"rechunk_overlap_{doc_id}"] = 50
+    st.buttons[f"rechunk_btn_{doc_id}"] = True
+
+    updated_details = {
+        "id": doc_id,
+        "filename": "terms.pdf",
+        "chunk_count": 4,
+        "chunking_strategy": "semantic",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "chunks": [],
+    }
+    rechunk_called = []
+
+    def fake_rechunk(file_id, chunking_strategy, chunk_size, chunk_overlap):
+        rechunk_called.append((file_id, chunking_strategy, chunk_size, chunk_overlap))
+        return updated_details
+
+    monkeypatch.setattr(sidebar, "rechunk_document", fake_rechunk)
+
+    sidebar._render_document_inspector()
+    assert len(rechunk_called) == 1
+    assert rechunk_called[0] == (doc_id, "semantic", 500, 50)
+    assert st.session_state["inspect_doc_details"] == updated_details
+    assert st.reruns == 1
+    assert any("re-chunked successfully" in s for s in st.successes)
+
+
+
 def test_render_document_list_bulk_delete(monkeypatch):
     st = FakeStreamlit()
     doc_ids = [10, 11]
