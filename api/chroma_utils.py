@@ -239,6 +239,23 @@ def load_document_source(file_path: str) -> str:
     return "\n".join(document.page_content for document in documents).strip()
 
 
+def split_text_to_documents(
+    text: str,
+    options: ChunkingOptions | None = None,
+) -> list[Document]:
+    """Split raw text into Document chunks according to the given options."""
+    if not text or not text.strip():
+        return []
+    if options is None:
+        options = ChunkingOptions()
+
+    splitter = _get_text_splitter(options)
+    if isinstance(splitter, MarkdownHeaderTextSplitter):
+        splits = splitter.split_text(text)
+        return splits if splits else [Document(page_content=text)]
+    return splitter.create_documents([text])  # type: ignore[no-any-return]
+
+
 def load_and_split_document(
     file_path: str,
     options: ChunkingOptions | None = None,
@@ -248,6 +265,21 @@ def load_and_split_document(
 
     documents = _load_documents(file_path)
     splitter = _get_text_splitter(options)
+    if isinstance(splitter, MarkdownHeaderTextSplitter):
+        results: list[Document] = []
+        for doc in documents:
+            splits = splitter.split_text(doc.page_content)
+            if splits:
+                for s in splits:
+                    results.append(
+                        Document(
+                            page_content=s.page_content,
+                            metadata={**doc.metadata, **s.metadata},
+                        )
+                    )
+            elif doc.page_content.strip():
+                results.append(doc)
+        return results
     return splitter.split_documents(documents)  # type: ignore[no-any-return]
 
 
@@ -287,6 +319,41 @@ def index_document_to_chroma(
         return True
     except Exception:
         logger.exception("Error indexing document %s", file_path)
+        return False
+
+
+def reindex_chunks_in_chroma(
+    file_id: int,
+    source_text: str,
+    filename: str,
+    collection: str = DEFAULT_COLLECTION,
+    options: ChunkingOptions | None = None,
+) -> bool:
+    """Re-split source text and replace all chunks in Chroma for this document."""
+    if options is None:
+        options = ChunkingOptions()
+
+    try:
+        splits = split_text_to_documents(source_text, options)
+        if not splits:
+            logger.warning("Re-chunking document %s produced no chunks", filename)
+            return False
+
+        for index, split in enumerate(splits):
+            split.metadata["file_id"] = file_id
+            split.metadata["filename"] = filename
+            split.metadata["chunk_index"] = index
+            split.metadata["collection"] = collection
+            split.metadata["chunking_strategy"] = options.strategy.value
+            split.metadata["chunk_size"] = options.chunk_size
+            split.metadata["chunk_overlap"] = options.chunk_overlap
+
+        delete_doc_from_chroma(file_id)
+        document_ids = build_chroma_document_ids(file_id, len(splits))
+        _add_documents_with_retry(get_vectorstore(), splits, document_ids, filename)
+        return True
+    except Exception:
+        logger.exception("Error re-indexing document chunks for file_id %s", file_id)
         return False
 
 

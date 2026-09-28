@@ -593,3 +593,132 @@ def test_get_doc_chunks_from_chroma_error_returns_empty(monkeypatch):
 
     monkeypatch.setattr(chroma_utils, "get_vectorstore", ErrorVectorstore)
     assert chroma_utils.get_doc_chunks_from_chroma(file_id) == []
+
+
+def test_split_text_to_documents_empty_or_whitespace():
+    assert chroma_utils.split_text_to_documents("") == []
+    assert chroma_utils.split_text_to_documents("   \n\t  ") == []
+
+
+def test_split_text_to_documents_recursive():
+    text = "Hello world. This is a simple test document for recursive chunking."
+    docs = chroma_utils.split_text_to_documents(
+        text,
+        chroma_utils.ChunkingOptions(
+            strategy=chroma_utils.ChunkingStrategy.RECURSIVE,
+            chunk_size=30,
+            chunk_overlap=5,
+        ),
+    )
+    min_expected_docs = 2
+    assert len(docs) >= min_expected_docs
+    assert all(isinstance(d, Document) for d in docs)
+    assert "".join(d.page_content for d in docs).replace(" ", "") != ""
+
+
+def test_split_text_to_documents_semantic():
+    text = "First paragraph here. It has two sentences.\n\nSecond paragraph here. Another sentence."
+    docs = chroma_utils.split_text_to_documents(
+        text,
+        chroma_utils.ChunkingOptions(
+            strategy=chroma_utils.ChunkingStrategy.SEMANTIC,
+            chunk_size=50,
+            chunk_overlap=10,
+        ),
+    )
+    min_expected_docs = 2
+    assert len(docs) >= min_expected_docs
+    assert all(isinstance(d, Document) for d in docs)
+
+
+def test_split_text_to_documents_markdown():
+    text_with_headers = "# Overview\nThis is overview.\n## Details\nThese are details."
+    docs = chroma_utils.split_text_to_documents(
+        text_with_headers,
+        chroma_utils.ChunkingOptions(strategy=chroma_utils.ChunkingStrategy.MARKDOWN),
+    )
+    expected_docs = 2
+    assert len(docs) == expected_docs
+    assert docs[0].metadata.get("Header 1") == "Overview"
+    assert docs[1].metadata.get("Header 2") == "Details"
+
+    text_no_headers = "Plain text with no headers at all."
+    fallback_docs = chroma_utils.split_text_to_documents(
+        text_no_headers,
+        chroma_utils.ChunkingOptions(strategy=chroma_utils.ChunkingStrategy.MARKDOWN),
+    )
+    assert len(fallback_docs) == 1
+    assert fallback_docs[0].page_content == text_no_headers
+
+
+def test_load_and_split_document_markdown_loader_support(monkeypatch):
+    documents = [
+        Document(page_content="# Section 1\nContent 1", metadata={"source": "test.md"}),
+        Document(page_content="No header content", metadata={"source": "test.md"}),
+    ]
+    monkeypatch.setattr(chroma_utils, "_load_documents", lambda file_path: documents)
+
+    splits = chroma_utils.load_and_split_document(
+        "test.md",
+        options=chroma_utils.ChunkingOptions(strategy=chroma_utils.ChunkingStrategy.MARKDOWN),
+    )
+    expected_splits = 2
+    assert len(splits) == expected_splits
+    assert splits[0].metadata["Header 1"] == "Section 1"
+    assert splits[0].metadata["source"] == "test.md"
+    assert splits[1].page_content == "No header content"
+
+
+def test_reindex_chunks_in_chroma_success(monkeypatch):
+    target_file_id = 42
+    vectorstore = FakeVectorstore(ids=[f"{target_file_id}:0"])
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    success = chroma_utils.reindex_chunks_in_chroma(
+        file_id=target_file_id,
+        source_text="First sentence for reindexing. Second sentence follows.",
+        filename="lease.pdf",
+        collection="default",
+        options=chroma_utils.ChunkingOptions(
+            strategy=chroma_utils.ChunkingStrategy.SEMANTIC,
+            chunk_size=40,
+            chunk_overlap=5,
+        ),
+    )
+    assert success is True
+    assert vectorstore.deleted_ids == [f"{target_file_id}:0"]
+    assert vectorstore.added_ids is not None
+    assert len(vectorstore.added_documents) >= 1
+    assert vectorstore.added_documents[0].metadata["file_id"] == target_file_id
+    assert vectorstore.added_documents[0].metadata["filename"] == "lease.pdf"
+    assert vectorstore.added_documents[0].metadata["chunking_strategy"] == "semantic"
+
+
+def test_reindex_chunks_in_chroma_empty_splits_aborts(monkeypatch):
+    target_file_id = 42
+    vectorstore = FakeVectorstore(ids=[f"{target_file_id}:0"])
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    success = chroma_utils.reindex_chunks_in_chroma(
+        file_id=target_file_id,
+        source_text="",
+        filename="empty.pdf",
+    )
+    assert success is False
+    # Existing chunks should NOT have been deleted
+    assert vectorstore.deleted_ids is None
+
+
+def test_reindex_chunks_in_chroma_exception_returns_false(monkeypatch):
+    class FailingVectorstore(FakeVectorstore):
+        def add_documents(self, *args, **kwargs):
+            raise RuntimeError("Database write failure")
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", FailingVectorstore)
+    success = chroma_utils.reindex_chunks_in_chroma(
+        file_id=42,
+        source_text="Some text",
+        filename="fail.pdf",
+    )
+    assert success is False
+
