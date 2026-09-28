@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.22.0)
+# Customer Support RAG Agent (v0.25.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -22,8 +22,9 @@ A local-first customer support assistant for real estate and property management
   using a cross-encoder model (e.g., `cross-encoder/ms-marco-MiniLM-L-6-v2`);
   takes precedence over lexical rerank; enable via sidebar toggle or
   `USE_CROSS_ENCODER_RERANK` and configure model via `CROSS_ENCODER_MODEL`.
-- Document chunk inspection (`GET /docs/{id}`): view chunk count, chunk previews,
-  and metadata in the Streamlit inspector widget.
+- Document chunk inspection & re-chunking (`GET /docs/{id}`, `POST /docs/{id}/rechunk`):
+  view chunk counts, previews, and persistent chunking options (strategy, size, overlap);
+  re-chunk documents in place without re-uploading via the API or Streamlit inspector widget.
 - Bulk document deletion (`POST /delete-docs`) with batch selection mode in the UI.
 - Bulk session deletion (`POST /delete-sessions`) with cascading removal of chat history and feedback, plus batch deletion mode in the UI sidebar.
 - Multi-format conversation export (`GET /sessions/{id}/export?format=markdown|json|csv`) with instant UI downloads as Markdown (`.md`), JSON (`.json`), or CSV (`.csv`).
@@ -38,8 +39,9 @@ A local-first customer support assistant for real estate and property management
   removed (`DELETE /collections/{name}`, `default` protected).
 - Retrieval inspection without chat cost (`POST /search` returns ranked
   chunks with metadata).
-- Configurable chunking (recursive / markdown-aware) plus chunk-size/overlap
-  validation and a configurable upload size cap.
+- Configurable chunking (recursive, sentence-aware semantic, markdown-aware) plus
+  chunk-size/overlap validation, persistent source preservation, and a configurable
+  upload size cap.
 - Source-aware answers with document metadata returned by the API.
 - Streamlit document upload, listing, deletion, chat controls, and a past-sessions switcher with previews, rename, session deletion, and quota display.
 - Answer feedback (thumbs up/down under each answer, stored for future eval).
@@ -174,7 +176,7 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
 - `POST /upload-doc` — multipart upload with optional `chunking_strategy`,
   `chunk_size` (100–4000), `chunk_overlap` (< chunk size).
 - `POST /upload-docs` — bulk upload with per-file results.
-- `GET /list-docs`, `POST /delete-doc`, `POST /delete-docs` — document metadata management.
+- `GET /list-docs`, `GET /docs/{id}`, `POST /docs/{id}/rechunk`, `POST /delete-doc`, `POST /delete-docs` — document metadata, chunk inspection, in-place re-chunking, and deletion.
 - `GET /collections`, `PATCH`/`DELETE /collections/{name}` — collection lifecycle.
 - `GET /config` — dynamic runtime configuration discovery (models, export formats, upload limits).
 - `GET /stats` — library totals (documents, collections, sessions, messages).

@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.24.0, 2026-09-26)
+## Current State (v0.25.0, 2026-09-28)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -60,6 +60,13 @@
   - e2e self-skip guards: LLM round-trip tests skip when the model is unreachable, upload tests skip when embeddings are; session tests skip on an empty store
   - Pydantic >= 2.12 compatibility: RAG chain rebuilt in pure LCEL (`api/langchain_utils.py`) so fresh installs no longer crash in `langchain.chains`
   - Fixed a real upload bug the e2e suite surfaced: the Streamlit client forced `Content-Type: application/json` on multipart uploads, so every upload 422'd (`_upload_headers`)
+- **v0.25.0 additions**:
+  - Offline sentence-aware semantic chunking strategy: paragraph-honoring, sentence-boundary-preserving text splitter respecting chunk size and overlap without requiring LLM or embedding credits
+  - Persistent source text and chunking options: `document_sources` table and SQLite migration, saving extracted document text and options at upload, and cleaning up on document or collection deletion
+  - Re-chunk endpoint: `POST /docs/{file_id}/rechunk` accepting chunking options, validating chunk bounds, re-splitting preserved source text, deterministically replacing Chroma chunks, and returning refreshed document details
+  - Document inspector chunking visualization and Re-chunk form: displays persistent chunking options (strategy, size, overlap) and allows in-place re-chunking directly from the Streamlit sidebar
+  - Document detail response: `GET /docs/{file_id}` enriched with persistent chunking metadata
+- 418+ unit tests passing; >94% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -328,7 +335,7 @@ for the first time exposed (pydantic >= 2.12 vs langchain <1).
 - Staging/production environment targets (dependent on real credentials)
 - Multi-tenant user authentication and RBAC permissions
 
-## v0.25.0 plan — Semantic chunking & re-chunking with visualization (IN PROGRESS)
+## v0.25.0 plan — Semantic chunking & re-chunking with visualization ✅ COMPLETED
 
 Deliver the remaining chunking story: a dependency-free sentence-aware
 "semantic" chunking strategy, persistent source text + chunking options so a
@@ -374,7 +381,7 @@ mark).
 - [x] Task 4: ingest wiring — store extracted source text + chunking options at upload; chunk metadata carries options; delete endpoints remove sources; tests
 - [x] Task 5: `POST /docs/{file_id}/rechunk` (validation, split, replace chunks, update `document_sources`, return details) + model + tests + `docs/API.md`
 - [x] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
-- [ ] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
+- [x] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
