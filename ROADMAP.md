@@ -373,7 +373,7 @@ mark).
 - [x] Task 3: `document_sources` table (create + migration), save/load/delete helpers and unit tests
 - [x] Task 4: ingest wiring — store extracted source text + chunking options at upload; chunk metadata carries options; delete endpoints remove sources; tests
 - [x] Task 5: `POST /docs/{file_id}/rechunk` (validation, split, replace chunks, update `document_sources`, return details) + model + tests + `docs/API.md`
-- [ ] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
+- [x] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
 - [ ] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
