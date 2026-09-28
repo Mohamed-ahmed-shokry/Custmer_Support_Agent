@@ -2,7 +2,6 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -26,15 +25,10 @@ from langchain_text_splitters import (
 
 from api.collections import DEFAULT_COLLECTION
 from api.presenters import preview_content
+from api.pydantic_models import ChunkingStrategy
 from api.settings import settings
 
 logger = logging.getLogger(__name__)
-
-
-class ChunkingStrategy(StrEnum):
-    RECURSIVE = "recursive"
-    MARKDOWN = "markdown"
-    SEMANTIC = "semantic"
 
 
 _DEFAULT_CHUNK_SIZE = 1000

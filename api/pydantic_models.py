@@ -8,6 +8,12 @@ from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.settings import settings
 
 
+class ChunkingStrategy(StrEnum):
+    RECURSIVE = "recursive"
+    MARKDOWN = "markdown"
+    SEMANTIC = "semantic"
+
+
 class ModelName(StrEnum):
     GPT4_O = "gpt-4o"
     GPT4_O_MINI = "gpt-4o-mini"
@@ -152,6 +158,21 @@ class DocumentDetailResponse(BaseModel):
     upload_timestamp: datetime | None = None
     chunk_count: int
     chunks: list[DocumentChunkInfo] = Field(default_factory=list)
+    chunking_strategy: str | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+
+
+class RechunkDocumentRequest(BaseModel):
+    chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE
+    chunk_size: int = Field(default=1000, ge=100, le=4000)
+    chunk_overlap: int = Field(default=200, ge=0)
+
+    @model_validator(mode="after")
+    def validate_overlap_less_than_size(self) -> "RechunkDocumentRequest":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size.")
+        return self
 
 
 class CollectionDetailResponse(BaseModel):
