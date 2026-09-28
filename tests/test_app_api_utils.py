@@ -602,6 +602,7 @@ def test_api_key_forwarded_in_client_requests(monkeypatch, fake_requests):
         lambda: api_utils.get_session_history("s1"),
         lambda: api_utils.delete_document("doc-1"),
         lambda: api_utils.get_document_details(1),
+        lambda: api_utils.rechunk_document(1),
         lambda: api_utils.delete_documents([1]),
         lambda: api_utils.search_sessions("test"),
         api_utils.get_stats,
@@ -630,6 +631,38 @@ def test_get_document_details_success_and_failure(monkeypatch, fake_requests, fa
 
     monkeypatch.setattr(api_utils, "requests", BoomRequests())
     assert api_utils.get_document_details(file_id) is None
+
+
+def test_rechunk_document_success_and_failure(monkeypatch, fake_requests, fake_st):
+    file_id = 42
+    fake_payload = {
+        "id": file_id,
+        "filename": "lease.pdf",
+        "chunk_count": 2,
+        "chunking_strategy": "semantic",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "chunks": [],
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.rechunk_document(
+        file_id, chunking_strategy="semantic", chunk_size=500, chunk_overlap=50
+    )
+    assert result == fake_payload
+    assert len(fake_requests.calls) == 1
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs.get("json") == {
+        "chunking_strategy": "semantic",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+    }
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "source not found"})
+    assert api_utils.rechunk_document(file_id) is None
+    assert any("failed" in err.lower() or "source" in err.lower() for err in fake_st.errors)
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.rechunk_document(file_id) is None
 
 
 def test_delete_documents_success_and_failure(monkeypatch, fake_requests, fake_st):

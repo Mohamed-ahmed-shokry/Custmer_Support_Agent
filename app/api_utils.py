@@ -525,6 +525,30 @@ def get_document_details(file_id):
         return None
 
 
+def rechunk_document(
+    file_id, chunking_strategy="recursive", chunk_size=1000, chunk_overlap=200
+):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/docs/{file_id}/rechunk",
+            headers=_request_headers(),
+            json={
+                "chunking_strategy": chunking_strategy,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+            },
+            timeout=60,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to re-chunk document", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while re-chunking document: {str(e)}")
+        return None
+
+
 def delete_documents(file_ids):
     try:
         response = requests.post(
