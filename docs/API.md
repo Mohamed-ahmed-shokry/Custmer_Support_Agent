@@ -114,7 +114,9 @@ Chroma failure → `500`).
 document and chunk (`409` when the target exists, `404` when the source is
 empty, `422` for an invalid name).
 
-`GET /docs/{file_id}` → `{id, filename, upload_timestamp, collection, sha256, chunk_count, chunks: [{chunk_index, page, preview, metadata}]}` (`404` when unknown). Inspects document metadata and chunk breakdown directly from SQLite and Chroma.
+`GET /docs/{file_id}` → `{id, filename, upload_timestamp, collection, sha256, chunk_count, chunks: [{chunk_index, page, preview, metadata}], chunking_strategy, chunk_size, chunk_overlap}` (`404` when unknown). Inspects document metadata, persistent chunking options, and chunk breakdown directly from SQLite and Chroma.
+
+`POST /docs/{file_id}/rechunk` with `{"chunking_strategy": "recursive" | "markdown" | "semantic", "chunk_size": int, "chunk_overlap": int}` → re-splits the document's stored source text with the requested chunking strategy and sizes, replaces the Chroma vectorstore chunks, updates persistent document source options, and returns the refreshed `DocumentDetailResponse` (`400` if source text is unavailable or parameters are invalid, `404` if document not found, `500` on indexing failure).
 
 `POST /delete-docs` with `{"file_ids": [1, 2, 3]}` accepts up to 50 document IDs for bulk deletion and returns `{results: [{file_id, status, error}], deleted: int, failed: int}` where status is `deleted`, `not_found`, or `error`.
 

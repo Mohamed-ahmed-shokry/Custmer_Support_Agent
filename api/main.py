@@ -21,6 +21,7 @@ from api.chroma_utils import (
     get_doc_chunks_from_chroma,
     index_document_to_chroma,
     load_document_source,
+    reindex_chunks_in_chroma,
     rename_collection_in_chroma,
     select_retriever,
 )
@@ -40,6 +41,7 @@ from api.db_utils import (
     get_collections_details,
     get_document_by_hash,
     get_document_record,
+    get_document_source,
     get_feedback_analytics,
     get_library_stats,
     get_session_feedback,
@@ -100,6 +102,7 @@ from api.pydantic_models import (
     QueryInput,
     QueryResponse,
     QuotaInfo,
+    RechunkDocumentRequest,
     RenameCollectionRequest,
     RenameCollectionResponse,
     SearchInput,
@@ -714,6 +717,7 @@ def get_document_details(file_id: int):
         )
     raw_chunks = get_doc_chunks_from_chroma(file_id)
     chunks = [DocumentChunkInfo(**chunk) for chunk in raw_chunks]
+    source_record = get_document_source(file_id)
     return DocumentDetailResponse(
         id=record["id"],
         filename=record["filename"],
@@ -722,6 +726,80 @@ def get_document_details(file_id: int):
         upload_timestamp=record.get("upload_timestamp"),
         chunk_count=len(chunks),
         chunks=chunks,
+        chunking_strategy=source_record.get("strategy") if source_record else None,
+        chunk_size=source_record.get("chunk_size") if source_record else None,
+        chunk_overlap=source_record.get("chunk_overlap") if source_record else None,
+    )
+
+
+@app.post("/docs/{file_id}/rechunk", response_model=DocumentDetailResponse)
+def rechunk_document_route(
+    file_id: int,
+    request: RechunkDocumentRequest | None = None,
+):
+    record = get_document_record(file_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404, detail=f"Document with file_id {file_id} was not found."
+        )
+
+    req = request or RechunkDocumentRequest()
+    validate_chunk_params(req.chunk_size, req.chunk_overlap)
+
+    source_record = get_document_source(file_id)
+    if source_record is None or not source_record.get("source_text"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Source text for document with file_id {file_id} is not available for re-chunking."
+            ),
+        )
+
+    options = ChunkingOptions(
+        strategy=req.chunking_strategy,
+        chunk_size=req.chunk_size,
+        chunk_overlap=req.chunk_overlap,
+    )
+
+    filename = record.get("filename", f"doc_{file_id}")
+    collection = record.get("collection", DEFAULT_COLLECTION)
+    source_text = source_record["source_text"]
+
+    success = reindex_chunks_in_chroma(
+        file_id=file_id,
+        source_text=source_text,
+        filename=filename,
+        collection=collection,
+        options=options,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to re-chunk document '{filename}'.",
+        )
+
+    save_document_source(
+        file_id=file_id,
+        source_text=source_text,
+        strategy=req.chunking_strategy.value,
+        chunk_size=req.chunk_size,
+        chunk_overlap=req.chunk_overlap,
+    )
+
+    raw_chunks = get_doc_chunks_from_chroma(file_id)
+    chunks = [DocumentChunkInfo(**chunk) for chunk in raw_chunks]
+
+    return DocumentDetailResponse(
+        id=record["id"],
+        filename=filename,
+        collection=collection,
+        sha256=record.get("sha256"),
+        upload_timestamp=record.get("upload_timestamp"),
+        chunk_count=len(chunks),
+        chunks=chunks,
+        chunking_strategy=req.chunking_strategy.value,
+        chunk_size=req.chunk_size,
+        chunk_overlap=req.chunk_overlap,
     )
 
 

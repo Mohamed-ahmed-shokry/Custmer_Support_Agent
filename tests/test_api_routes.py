@@ -1435,6 +1435,166 @@ def test_get_document_details_not_found(monkeypatch):
     assert "not found" in response.json()["detail"].lower()
 
 
+def test_get_document_details_includes_chunking_options(monkeypatch):
+    file_id = 42
+    expected_chunk_size = 500
+    expected_chunk_overlap = 50
+    fake_record = {
+        "id": file_id,
+        "filename": "lease.pdf",
+        "collection": "default",
+        "sha256": "abcdef",
+        "upload_timestamp": "2026-09-28T00:00:00Z",
+    }
+    fake_source = {
+        "file_id": file_id,
+        "source_text": "Sample text",
+        "strategy": "semantic",
+        "chunk_size": expected_chunk_size,
+        "chunk_overlap": expected_chunk_overlap,
+    }
+    monkeypatch.setattr(
+        main, "get_document_record", lambda fid: fake_record if fid == file_id else None
+    )
+    monkeypatch.setattr(main, "get_doc_chunks_from_chroma", lambda fid: [])
+    monkeypatch.setattr(
+        main, "get_document_source", lambda fid: fake_source if fid == file_id else None
+    )
+
+    response = client.get(f"/docs/{file_id}")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["chunking_strategy"] == "semantic"
+    assert data["chunk_size"] == expected_chunk_size
+    assert data["chunk_overlap"] == expected_chunk_overlap
+
+
+def test_rechunk_document_route_success(monkeypatch):
+    file_id = 42
+    target_size = 600
+    target_overlap = 60
+    fake_record = {
+        "id": file_id,
+        "filename": "lease.pdf",
+        "collection": "clients-acme",
+        "sha256": "hash123",
+        "upload_timestamp": "2026-09-28T00:00:00Z",
+    }
+    fake_source = {
+        "file_id": file_id,
+        "source_text": "First page text. Second page text.",
+        "strategy": "recursive",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+    }
+    reindexed_calls = []
+    saved_sources = []
+
+    monkeypatch.setattr(
+        main, "get_document_record", lambda fid: fake_record if fid == file_id else None
+    )
+    monkeypatch.setattr(
+        main, "get_document_source", lambda fid: fake_source if fid == file_id else None
+    )
+    monkeypatch.setattr(
+        main,
+        "reindex_chunks_in_chroma",
+        lambda file_id, source_text, filename, collection, options: reindexed_calls.append(
+            (file_id, filename, collection, options)
+        )
+        or True,
+    )
+    monkeypatch.setattr(
+        main,
+        "save_document_source",
+        lambda *args, **kwargs: saved_sources.append((args, kwargs)),
+    )
+    fake_doc_chunks = [
+        {"chunk_id": f"{file_id}:0", "chunk_index": 0, "preview": "P1", "content": "Text 1"},
+        {"chunk_id": f"{file_id}:1", "chunk_index": 1, "preview": "P2", "content": "Text 2"},
+    ]
+    monkeypatch.setattr(
+        main,
+        "get_doc_chunks_from_chroma",
+        lambda fid: fake_doc_chunks if fid == file_id else [],
+    )
+
+    response = client.post(
+        f"/docs/{file_id}/rechunk",
+        json={
+            "chunking_strategy": "semantic",
+            "chunk_size": target_size,
+            "chunk_overlap": target_overlap,
+        },
+    )
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["id"] == file_id
+    assert data["filename"] == "lease.pdf"
+    assert data["collection"] == "clients-acme"
+    expected_chunks = 2
+    assert data["chunk_count"] == expected_chunks
+    assert data["chunking_strategy"] == "semantic"
+    assert data["chunk_size"] == target_size
+    assert data["chunk_overlap"] == target_overlap
+
+    assert len(reindexed_calls) == 1
+    assert reindexed_calls[0][0] == file_id
+    assert reindexed_calls[0][1] == "lease.pdf"
+    assert reindexed_calls[0][2] == "clients-acme"
+    assert reindexed_calls[0][3].strategy.value == "semantic"
+
+    assert len(saved_sources) == 1
+    assert saved_sources[0][1]["file_id"] == file_id
+    assert saved_sources[0][1]["strategy"] == "semantic"
+    assert saved_sources[0][1]["chunk_size"] == target_size
+    assert saved_sources[0][1]["chunk_overlap"] == target_overlap
+
+
+def test_rechunk_document_route_not_found(monkeypatch):
+    monkeypatch.setattr(main, "get_document_record", lambda fid: None)
+    response = client.post("/docs/999/rechunk", json={})
+    assert response.status_code == HTTP_NOT_FOUND
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_rechunk_document_route_no_source_text(monkeypatch):
+    file_id = 42
+    monkeypatch.setattr(
+        main, "get_document_record", lambda fid: {"id": fid, "filename": "doc.pdf"}
+    )
+    monkeypatch.setattr(main, "get_document_source", lambda fid: None)
+
+    response = client.post(f"/docs/{file_id}/rechunk", json={})
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert "not available" in response.json()["detail"].lower()
+
+
+def test_rechunk_document_route_invalid_chunk_params():
+    # Test invalid overlap >= chunk_size
+    response = client.post("/docs/42/rechunk", json={"chunk_size": 200, "chunk_overlap": 200})
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    # Test chunk_size below minimum (100)
+    response_small = client.post("/docs/42/rechunk", json={"chunk_size": 50})
+    assert response_small.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_rechunk_document_route_reindex_failure(monkeypatch):
+    file_id = 42
+    fake_record = {"id": file_id, "filename": "lease.pdf", "collection": "default"}
+    fake_source = {"file_id": file_id, "source_text": "Text"}
+
+    monkeypatch.setattr(main, "get_document_record", lambda fid: fake_record)
+    monkeypatch.setattr(main, "get_document_source", lambda fid: fake_source)
+    monkeypatch.setattr(main, "reindex_chunks_in_chroma", lambda *args, **kwargs: False)
+
+    response = client.post(f"/docs/{file_id}/rechunk", json={})
+    assert response.status_code == HTTP_INTERNAL_ERROR
+    assert "failed to re-chunk" in response.json()["detail"].lower()
+
+
+
 def test_delete_many_documents_success(monkeypatch):
     first_id = 42
     second_id = 43
