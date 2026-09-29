@@ -424,6 +424,150 @@ def test_rename_collection_rejects_invalid_names():
     )
 
 
+def test_get_collection_analytics_success(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["legal", "default"])
+    mock_analytics = {
+        "collection": "legal",
+        "total_documents": 2,
+        "total_chunks": 8,
+        "avg_chunk_length": 420.5,
+        "min_chunk_length": 150,
+        "max_chunk_length": 950,
+        "median_chunk_length": 410.0,
+        "strategy_distribution": {"recursive": 5, "semantic": 3},
+        "length_histogram": {
+            "<200": 1,
+            "200-500": 4,
+            "500-1000": 3,
+            "1000-2000": 0,
+            ">2000": 0,
+        },
+    }
+    monkeypatch.setattr(main, "get_collection_chunk_analytics", lambda col: mock_analytics)
+
+    response = client.get("/collections/legal/analytics")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    expected_docs = 2
+    expected_chunks = 8
+    expected_avg = 420.5
+    expected_semantic = 3
+    assert data["collection"] == "legal"
+    assert data["total_documents"] == expected_docs
+    assert data["total_chunks"] == expected_chunks
+    assert data["avg_chunk_length"] == expected_avg
+    assert data["strategy_distribution"]["semantic"] == expected_semantic
+
+
+def test_get_collection_analytics_not_found(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["default"])
+    response = client.get("/collections/nonexistent/analytics")
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_get_collection_analytics_invalid_name():
+    response = client.get("/collections/bad%20name!/analytics")
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_rechunk_collection_success_default_and_custom(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["legal"])
+
+    mock_result = {
+        "collection": "legal",
+        "strategy": "semantic",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "total_documents": 3,
+        "rechunked_documents": 2,
+        "skipped_documents": 1,
+        "failed_documents": 0,
+        "total_chunks_created": 12,
+        "items": [
+            {
+                "file_id": 1,
+                "filename": "doc1.txt",
+                "status": "rechunked",
+                "chunk_count": 6,
+                "error_message": None,
+            },
+            {
+                "file_id": 2,
+                "filename": "doc2.txt",
+                "status": "rechunked",
+                "chunk_count": 6,
+                "error_message": None,
+            },
+            {
+                "file_id": 3,
+                "filename": "doc3.txt",
+                "status": "skipped",
+                "chunk_count": 0,
+                "error_message": "No stored source text",
+            },
+        ],
+    }
+    called_options = []
+
+    def fake_rechunk(col, options):
+        called_options.append((col, options))
+        return mock_result
+
+    monkeypatch.setattr(main, "rechunk_collection_in_chroma", fake_rechunk)
+
+    # 1. Custom body
+    response = client.post(
+        "/collections/legal/rechunk",
+        json={"chunking_strategy": "semantic", "chunk_size": 500, "chunk_overlap": 50},
+    )
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    expected_total_docs = 3
+    expected_rechunked = 2
+    expected_skipped = 1
+    expected_chunks = 12
+    assert data["collection"] == "legal"
+    assert data["strategy"] == "semantic"
+    assert data["total_documents"] == expected_total_docs
+    assert data["rechunked_documents"] == expected_rechunked
+    assert data["skipped_documents"] == expected_skipped
+    assert data["total_chunks_created"] == expected_chunks
+    assert len(data["items"]) == expected_total_docs
+    assert "Re-chunked collection 'legal'" in data["message"]
+    assert called_options[0][1].strategy == "semantic"
+
+    # 2. Empty body (defaults)
+    called_options.clear()
+    response_empty = client.post("/collections/legal/rechunk", json={})
+    assert response_empty.status_code == HTTP_OK
+    assert called_options[0][1].strategy == "recursive"
+
+
+def test_rechunk_collection_not_found(monkeypatch):
+    monkeypatch.setattr(main, "get_all_collections", lambda: ["default"])
+    response = client.post("/collections/unknown/rechunk", json={})
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_rechunk_collection_invalid_name():
+    response = client.post("/collections/bad%20name!/rechunk", json={})
+    assert response.status_code == HTTP_BAD_REQUEST
+
+
+def test_rechunk_collection_invalid_body():
+    response = client.post(
+        "/collections/legal/rechunk",
+        json={"chunk_size": 50},  # below min 100
+    )
+    assert response.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    response_overlap = client.post(
+        "/collections/legal/rechunk",
+        json={"chunk_size": 500, "chunk_overlap": 500},  # overlap >= size
+    )
+    assert response_overlap.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
 def test_chat_returns_sources(monkeypatch):
     class FakeChain:
         def invoke(self, payload):

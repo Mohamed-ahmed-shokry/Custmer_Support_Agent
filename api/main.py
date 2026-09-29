@@ -17,10 +17,12 @@ from api.chroma_utils import (
     ChunkingStrategy,
     delete_collection_from_chroma,
     delete_doc_from_chroma,
+    get_collection_chunk_analytics,
     get_collection_chunk_count,
     get_doc_chunks_from_chroma,
     index_document_to_chroma,
     load_document_source,
+    rechunk_collection_in_chroma,
     reindex_chunks_in_chroma,
     rename_collection_in_chroma,
     select_retriever,
@@ -84,7 +86,10 @@ from api.pydantic_models import (
     BulkUploadItem,
     BulkUploadResponse,
     ChatMessage,
+    CollectionAnalyticsResponse,
     CollectionDetailResponse,
+    CollectionRechunkRequest,
+    CollectionRechunkResponse,
     ConfigResponse,
     DeleteDocumentResponse,
     DeleteFileRequest,
@@ -92,6 +97,7 @@ from api.pydantic_models import (
     DocumentChunkInfo,
     DocumentDetailResponse,
     DocumentInfo,
+    DocumentRechunkItem,
     FeedbackAnalyticsResponse,
     FeedbackInput,
     FeedbackItem,
@@ -889,6 +895,66 @@ def delete_collection_route(collection: str):
             f"Deleted collection {collection_name}: "
             f"{db_documents} document(s), {chroma_chunks} chunk(s)."
         )
+    )
+
+
+@app.get(
+    "/collections/{collection}/analytics",
+    response_model=CollectionAnalyticsResponse,
+)
+def get_collection_analytics_route(collection: str):
+    collection_name = _normalize_collection_param(collection)
+    known = get_all_collections()
+    if collection_name not in known:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Collection '{collection_name}' was not found.",
+        )
+    analytics = get_collection_chunk_analytics(collection_name)
+    return CollectionAnalyticsResponse(**analytics)
+
+
+@app.post(
+    "/collections/{collection}/rechunk",
+    response_model=CollectionRechunkResponse,
+)
+def rechunk_collection_route(
+    collection: str,
+    request: CollectionRechunkRequest | None = None,
+):
+    collection_name = _normalize_collection_param(collection)
+    known = get_all_collections()
+    if collection_name not in known:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Collection '{collection_name}' was not found.",
+        )
+
+    req = request or CollectionRechunkRequest()
+    options = ChunkingOptions(
+        strategy=req.chunking_strategy,
+        chunk_size=req.chunk_size,
+        chunk_overlap=req.chunk_overlap,
+    )
+    result = rechunk_collection_in_chroma(collection_name, options)
+    increment("rechunks")
+    return CollectionRechunkResponse(
+        message=(
+            f"Re-chunked collection '{collection_name}': "
+            f"{result['rechunked_documents']} re-chunked, "
+            f"{result['skipped_documents']} skipped, "
+            f"{result['failed_documents']} failed."
+        ),
+        collection=collection_name,
+        strategy=result["strategy"],
+        chunk_size=result["chunk_size"],
+        chunk_overlap=result["chunk_overlap"],
+        total_documents=result["total_documents"],
+        rechunked_documents=result["rechunked_documents"],
+        skipped_documents=result["skipped_documents"],
+        failed_documents=result["failed_documents"],
+        total_chunks_created=result["total_chunks_created"],
+        items=[DocumentRechunkItem(**item) for item in result["items"]],
     )
 
 
