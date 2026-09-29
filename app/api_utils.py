@@ -549,6 +549,50 @@ def rechunk_document(
         return None
 
 
+def rechunk_collection(
+    collection,
+    chunking_strategy="recursive",
+    chunk_size=1000,
+    chunk_overlap=200,
+):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/collections/{collection}/rechunk",
+            headers=_request_headers(),
+            json={
+                "chunking_strategy": chunking_strategy,
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+            },
+            timeout=120,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to re-chunk collection", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while re-chunking collection: {str(e)}")
+        return None
+
+
+def get_collection_analytics(collection):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/collections/{collection}/analytics",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to load collection analytics", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while loading collection analytics: {str(e)}")
+        return None
+
+
 def delete_documents(file_ids):
     try:
         response = requests.post(

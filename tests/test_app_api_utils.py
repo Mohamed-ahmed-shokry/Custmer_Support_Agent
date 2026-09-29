@@ -603,6 +603,8 @@ def test_api_key_forwarded_in_client_requests(monkeypatch, fake_requests):
         lambda: api_utils.delete_document("doc-1"),
         lambda: api_utils.get_document_details(1),
         lambda: api_utils.rechunk_document(1),
+        lambda: api_utils.rechunk_collection("legal"),
+        lambda: api_utils.get_collection_analytics("legal"),
         lambda: api_utils.delete_documents([1]),
         lambda: api_utils.search_sessions("test"),
         api_utils.get_stats,
@@ -663,6 +665,67 @@ def test_rechunk_document_success_and_failure(monkeypatch, fake_requests, fake_s
 
     monkeypatch.setattr(api_utils, "requests", BoomRequests())
     assert api_utils.rechunk_document(file_id) is None
+
+
+def test_rechunk_collection_success_and_failure(monkeypatch, fake_requests, fake_st):
+    collection = "legal"
+    fake_payload = {
+        "collection": collection,
+        "strategy": "semantic",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "total_documents": 2,
+        "rechunked_documents": 2,
+        "skipped_documents": 0,
+        "failed_documents": 0,
+        "total_chunks_created": 8,
+        "items": [],
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.rechunk_collection(
+        collection, chunking_strategy="semantic", chunk_size=500, chunk_overlap=50
+    )
+    assert result == fake_payload
+    expected_calls = 1
+    assert len(fake_requests.calls) == expected_calls
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs.get("json") == {
+        "chunking_strategy": "semantic",
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+    }
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.rechunk_collection(collection) is None
+    assert any("failed" in err.lower() or "not found" in err.lower() for err in fake_st.errors)
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.rechunk_collection(collection) is None
+
+
+def test_get_collection_analytics_success_and_failure(monkeypatch, fake_requests, fake_st):
+    collection = "legal"
+    fake_payload = {
+        "collection": collection,
+        "total_documents": 2,
+        "total_chunks": 10,
+        "avg_chunk_length": 450.0,
+        "min_chunk_length": 100,
+        "max_chunk_length": 800,
+        "median_chunk_length": 420.0,
+        "strategy_distribution": {"recursive": 10},
+        "length_histogram": {"200-500": 10},
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.get_collection_analytics(collection)
+    assert result == fake_payload
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_collection_analytics(collection) is None
+    assert any("failed" in err.lower() or "not found" in err.lower() for err in fake_st.errors)
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_collection_analytics(collection) is None
 
 
 def test_delete_documents_success_and_failure(monkeypatch, fake_requests, fake_st):
