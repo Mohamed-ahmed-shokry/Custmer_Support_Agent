@@ -184,6 +184,52 @@ class CollectionDetailResponse(BaseModel):
     latest_upload: str | None = None
 
 
+class CollectionRechunkRequest(BaseModel):
+    chunking_strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE
+    chunk_size: int = Field(default=1000, ge=100, le=4000)
+    chunk_overlap: int = Field(default=200, ge=0)
+
+    @model_validator(mode="after")
+    def validate_overlap_less_than_size(self) -> "CollectionRechunkRequest":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size.")
+        return self
+
+
+class DocumentRechunkItem(BaseModel):
+    file_id: int
+    filename: str
+    status: Literal["rechunked", "skipped", "error"]
+    chunk_count: int = 0
+    error_message: str | None = None
+
+
+class CollectionRechunkResponse(BaseModel):
+    message: str
+    collection: str
+    strategy: str
+    chunk_size: int
+    chunk_overlap: int
+    total_documents: int
+    rechunked_documents: int
+    skipped_documents: int
+    failed_documents: int
+    total_chunks_created: int
+    items: list[DocumentRechunkItem] = Field(default_factory=list)
+
+
+class CollectionAnalyticsResponse(BaseModel):
+    collection: str
+    total_documents: int
+    total_chunks: int
+    avg_chunk_length: float = 0.0
+    min_chunk_length: int = 0
+    max_chunk_length: int = 0
+    median_chunk_length: float = 0.0
+    strategy_distribution: dict[str, int] = Field(default_factory=dict)
+    length_histogram: dict[str, int] = Field(default_factory=dict)
+
+
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
 MAX_SESSION_LABEL_LENGTH = 80
 MAX_SESSION_TAGS_LENGTH = 200

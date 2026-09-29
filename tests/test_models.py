@@ -2,7 +2,11 @@ import pytest
 from api.pydantic_models import (
     DEFAULT_MODEL,
     ChunkingStrategy,
+    CollectionAnalyticsResponse,
+    CollectionRechunkRequest,
+    CollectionRechunkResponse,
     DocumentDetailResponse,
+    DocumentRechunkItem,
     ModelName,
     QueryInput,
     QueryResponse,
@@ -115,3 +119,104 @@ def test_document_detail_response_chunking_fields():
     assert resp_default.chunking_strategy is None
     assert resp_default.chunk_size is None
     assert resp_default.chunk_overlap is None
+
+
+def test_collection_rechunk_request_defaults_and_custom():
+    default_req = CollectionRechunkRequest()
+    expected_default_size = 1000
+    expected_default_overlap = 200
+    assert default_req.chunking_strategy == ChunkingStrategy.RECURSIVE
+    assert default_req.chunk_size == expected_default_size
+    assert default_req.chunk_overlap == expected_default_overlap
+
+    expected_custom_size = 600
+    expected_custom_overlap = 80
+    custom_req = CollectionRechunkRequest(
+        chunking_strategy=ChunkingStrategy.SEMANTIC,
+        chunk_size=expected_custom_size,
+        chunk_overlap=expected_custom_overlap,
+    )
+    assert custom_req.chunking_strategy == ChunkingStrategy.SEMANTIC
+    assert custom_req.chunk_size == expected_custom_size
+    assert custom_req.chunk_overlap == expected_custom_overlap
+
+
+def test_collection_rechunk_request_validation():
+    with pytest.raises(ValidationError):
+        CollectionRechunkRequest(chunk_size=50)
+
+    with pytest.raises(ValidationError):
+        CollectionRechunkRequest(chunk_size=5000)
+
+    with pytest.raises(ValidationError):
+        CollectionRechunkRequest(chunk_overlap=-1)
+
+    with pytest.raises(ValidationError):
+        CollectionRechunkRequest(chunk_size=400, chunk_overlap=400)
+
+
+def test_collection_rechunk_response():
+    expected_docs = 5
+    expected_rechunked = 4
+    expected_skipped = 1
+    expected_failed = 0
+    expected_chunks = 28
+    item1 = DocumentRechunkItem(
+        file_id=1,
+        filename="doc1.txt",
+        status="rechunked",
+        chunk_count=10,
+    )
+    item2 = DocumentRechunkItem(
+        file_id=2,
+        filename="doc2.txt",
+        status="skipped",
+        chunk_count=0,
+        error_message="No stored source text",
+    )
+    resp = CollectionRechunkResponse(
+        message="Re-chunked collection legal",
+        collection="legal",
+        strategy="semantic",
+        chunk_size=500,
+        chunk_overlap=50,
+        total_documents=expected_docs,
+        rechunked_documents=expected_rechunked,
+        skipped_documents=expected_skipped,
+        failed_documents=expected_failed,
+        total_chunks_created=expected_chunks,
+        items=[item1, item2],
+    )
+    assert resp.collection == "legal"
+    expected_items_count = 2
+    assert resp.total_documents == expected_docs
+    assert resp.rechunked_documents == expected_rechunked
+    assert len(resp.items) == expected_items_count
+    assert resp.items[0].status == "rechunked"
+    assert resp.items[1].error_message == "No stored source text"
+
+
+def test_collection_analytics_response():
+    expected_docs = 3
+    expected_chunks = 15
+    expected_avg = 450.5
+    expected_min = 120
+    expected_max = 980
+    expected_median = 430.0
+    expected_semantic_count = 5
+    resp = CollectionAnalyticsResponse(
+        collection="kb",
+        total_documents=expected_docs,
+        total_chunks=expected_chunks,
+        avg_chunk_length=expected_avg,
+        min_chunk_length=expected_min,
+        max_chunk_length=expected_max,
+        median_chunk_length=expected_median,
+        strategy_distribution={"recursive": 10, "semantic": expected_semantic_count},
+        length_histogram={"<200": 1, "200-500": 8, "500-1000": 6},
+    )
+    assert resp.collection == "kb"
+    assert resp.total_documents == expected_docs
+    assert resp.total_chunks == expected_chunks
+    assert resp.avg_chunk_length == expected_avg
+    assert resp.strategy_distribution["semantic"] == expected_semantic_count
