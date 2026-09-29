@@ -1234,3 +1234,86 @@ def test_render_feedback_review_refresh(monkeypatch):
     sidebar._render_feedback_review()
 
     assert len(called) >= 1
+
+
+def test_render_collection_insights_renders_chunk_analytics(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    mock_details = [
+        {
+            "collection": "legal",
+            "document_count": 2,
+            "chunk_count": 8,
+            "file_formats": {"pdf": 2},
+            "earliest_upload": "2026-09-01",
+            "latest_upload": "2026-09-02",
+        }
+    ]
+    mock_analytics = {
+        "collection": "legal",
+        "total_documents": 2,
+        "total_chunks": 8,
+        "avg_chunk_length": 450.2,
+        "min_chunk_length": 120,
+        "max_chunk_length": 980,
+        "median_chunk_length": 430.0,
+        "strategy_distribution": {"recursive": 5, "semantic": 3},
+        "length_histogram": {"200-500": 5, "500-1000": 3},
+    }
+    monkeypatch.setattr(sidebar, "get_collections_details", lambda: mock_details)
+    monkeypatch.setattr(sidebar, "get_collection_analytics", lambda col: mock_analytics)
+
+    sidebar._render_collection_insights("legal")
+
+    metric_labels = [c.args[0] for c in st.calls if c.fn == "metric"]
+    assert "Avg Chunk Length" in metric_labels
+    assert "Documents" in metric_labels
+    assert "Chunks" in metric_labels
+
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("Strategies:" in cap for cap in captions)
+    assert any("Min / Max" in cap for cap in captions)
+
+
+def test_render_batch_rechunk_action_success(monkeypatch):
+    st = FakeStreamlit(
+        buttons={"btn_batch_rechunk_legal": True},
+        values={
+            "batch_rechunk_strat_legal": "semantic",
+            "batch_rechunk_size_legal": 600,
+            "batch_rechunk_overlap_legal": 60,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+
+    def fake_rechunk(collection, chunking_strategy, chunk_size, chunk_overlap):
+        called.append((collection, chunking_strategy, chunk_size, chunk_overlap))
+        return {
+            "collection": collection,
+            "rechunked_documents": 3,
+            "skipped_documents": 0,
+        }
+
+    monkeypatch.setattr(sidebar, "rechunk_collection", fake_rechunk)
+    monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
+
+    sidebar._render_batch_rechunk("legal")
+
+    assert len(called) == 1
+    assert called[0] == ("legal", "semantic", 600, 60)
+    assert any("re-chunked" in msg for msg in st.successes)
+    assert st.reruns == 1
+
+
+def test_render_batch_rechunk_action_failure(monkeypatch):
+    st = FakeStreamlit(
+        buttons={"btn_batch_rechunk_legal": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "rechunk_collection", lambda *args, **kwargs: None)
+
+    sidebar._render_batch_rechunk("legal")
+
+    assert any("failed" in err.lower() for err in st.errors)
+    assert st.reruns == 0

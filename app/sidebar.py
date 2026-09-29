@@ -10,6 +10,7 @@ from app.api_utils import (
     delete_session,
     delete_sessions,
     export_session,
+    get_collection_analytics,
     get_collections_details,
     get_config,
     get_document_details,
@@ -23,6 +24,7 @@ from app.api_utils import (
     list_documents,
     list_feedback,
     list_sessions,
+    rechunk_collection,
     rechunk_document,
     rename_collection,
     rename_session,
@@ -339,8 +341,8 @@ def _render_collection_picker():
 
 
 def _render_collection_insights(active_collection):
-    """Render collection metadata and storage statistics."""
-    if not active_collection or active_collection == "default":
+    """Render collection metadata and chunk distribution statistics."""
+    if not active_collection:
         return
     with st.sidebar.expander("Collection Insights"):
         try:
@@ -353,6 +355,29 @@ def _render_collection_insights(active_collection):
                 return
             st.metric("Documents", collection_detail.get("document_count", 0))
             st.metric("Chunks", collection_detail.get("chunk_count", 0))
+
+            analytics = get_collection_analytics(active_collection)
+            if analytics and analytics.get("total_chunks", 0) > 0:
+                avg_len = analytics.get("avg_chunk_length", 0)
+                st.metric("Avg Chunk Length", f"{avg_len:.0f} chars")
+                min_len = analytics.get("min_chunk_length", 0)
+                max_len = analytics.get("max_chunk_length", 0)
+                st.caption(f"Min / Max chunk size: {min_len} / {max_len} chars")
+
+                strategies = analytics.get("strategy_distribution", {})
+                if strategies:
+                    strat_pills = " · ".join(
+                        f"{k}: {v}" for k, v in sorted(strategies.items())
+                    )
+                    st.caption(f"Strategies: {strat_pills}")
+
+                histogram = analytics.get("length_histogram", {})
+                if histogram and any(v > 0 for v in histogram.values()):
+                    st.caption("Length distribution:")
+                    for bucket, count in histogram.items():
+                        if count > 0:
+                            st.write(f"  {bucket} chars: {count}")
+
             file_formats = collection_detail.get("file_formats", {})
             if file_formats:
                 st.caption("File formats:")
@@ -366,6 +391,57 @@ def _render_collection_insights(active_collection):
                 st.caption(f"Last upload: {latest}")
         except Exception as e:
             st.caption(f"Error loading collection details: {e}")
+
+
+def _render_batch_rechunk(active_collection):
+    """Render batch collection re-chunking controls in the sidebar."""
+    if not active_collection:
+        return
+    with st.sidebar.expander("Batch Re-chunk Collection"):
+        rechunk_strategy_options = ["recursive", "semantic", "markdown"]
+        col_strat = st.selectbox(
+            "Collection Strategy",
+            options=rechunk_strategy_options,
+            index=0,
+            format_func=lambda s: s.capitalize(),
+            key=f"batch_rechunk_strat_{active_collection}",
+        )
+        col_size = st.number_input(
+            "Batch Chunk Size",
+            min_value=100,
+            max_value=4000,
+            value=1000,
+            step=50,
+            key=f"batch_rechunk_size_{active_collection}",
+        )
+        max_col_overlap = max(0, int(col_size) - 1)
+        col_overlap = st.number_input(
+            "Batch Chunk Overlap",
+            min_value=0,
+            max_value=max_col_overlap,
+            value=min(200, max_col_overlap),
+            step=20,
+            key=f"batch_rechunk_overlap_{active_collection}",
+        )
+        if st.button("Re-chunk Entire Collection", key=f"btn_batch_rechunk_{active_collection}"):
+            with st.spinner(f"Re-chunking all documents in '{active_collection}'..."):
+                res = rechunk_collection(
+                    active_collection,
+                    chunking_strategy=col_strat,
+                    chunk_size=int(col_size),
+                    chunk_overlap=int(col_overlap),
+                )
+                if res:
+                    msg = (
+                        f"Collection '{active_collection}' re-chunked: "
+                        f"{res.get('rechunked_documents', 0)} re-chunked, "
+                        f"{res.get('skipped_documents', 0)} skipped."
+                    )
+                    st.success(msg)
+                    st.session_state.documents = list_documents(active_collection)
+                    st.rerun()
+                else:
+                    st.error("Batch re-chunking failed.")
 
 
 def _render_ops_metrics():
@@ -719,6 +795,7 @@ def display_sidebar():
     _render_model_selector()
     active_collection = _render_collection_picker()
     _render_collection_insights(active_collection)
+    _render_batch_rechunk(active_collection)
     _render_upload_document(active_collection)
     _render_refresh_documents(active_collection)
     _render_document_inspector()
