@@ -383,6 +383,45 @@ mark).
 - [x] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
 - [x] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
 
+## v0.26.0 plan — Batch Collection Re-Chunking & Chunk Quality Analytics
+
+Deliver collection-wide chunk maintenance and operational chunk quality visibility:
+batch re-chunk all documents in a collection with uniform strategy and windowing
+parameters, compute granular chunk distribution analytics (character lengths,
+histograms, strategy breakdowns), and integrate batch controls into the Streamlit UI.
+
+### Scope & Objectives
+- **Batch Collection Re-chunking**: `POST /collections/{collection}/rechunk` endpoint
+  accepting `chunking_strategy`, `chunk_size`, and `chunk_overlap`. Iterates through all
+  documents in the collection with stored source text, re-splits, updates Chroma chunks,
+  and updates `document_sources`. Documents lacking source text are reported as skipped.
+  Returns summary counts (`total_documents`, `rechunked_documents`, `skipped_documents`,
+  `failed_documents`, `total_chunks_created`) and per-document statuses.
+- **Collection Chunk Analytics**: `GET /collections/{collection}/analytics` endpoint
+  computing chunk statistics across Chroma chunks in that collection:
+  total chunks, document count, length metrics (avg, min, max, median), strategy distribution,
+  and length histograms (`<200`, `200-500`, `500-1000`, `1000-2000`, `>2000`).
+- **Client Integration**: `app/api_utils.py` helpers `rechunk_collection()` and
+  `get_collection_analytics()` with header forwarding and error handling.
+- **Streamlit UI Integration**:
+  - Enhanced Collection Insights widget showing chunk distribution metrics and strategy pills.
+  - Interactive "Batch Re-chunk Collection" expander form with strategy and size controls.
+- **Quality Gates**: Maintain test coverage >= 80%, zero ruff/mypy errors.
+
+### Explicit Exclusions (Deferred to v0.27.0+)
+- Asynchronous Celery/Redis background task queues (batch operations remain synchronous for now).
+- Embedding-based chunk clustering and semantic topic labeling.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.26.0 plan specification
+- [ ] Task 2: Database helper `get_document_sources_by_collection` in `api/db_utils.py` with unit tests
+- [ ] Task 3: Pydantic models for batch re-chunking and collection chunk analytics in `api/pydantic_models.py` with unit tests
+- [ ] Task 4: Chroma operations `get_collection_chunk_analytics` and `rechunk_collection_in_chroma` in `api/chroma_utils.py` with unit tests
+- [ ] Task 5: API routes `POST /collections/{collection}/rechunk` and `GET /collections/{collection}/analytics` in `api/main.py` with unit tests
+- [ ] Task 6: Client helpers `rechunk_collection` and `get_collection_analytics` in `app/api_utils.py` with unit tests
+- [ ] Task 7: Streamlit UI batch re-chunk controls and chunk distribution analytics in `app/sidebar.py` with unit tests
+- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`) and final verification gate
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
