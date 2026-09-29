@@ -480,6 +480,224 @@ def rename_collection_in_chroma(old: str, new: str) -> int:
         return -1
 
 
+def get_collection_chunk_analytics(collection: str) -> dict[str, Any]:
+    """Compute length distribution, strategy breakdown, and chunk statistics for a collection."""
+    try:
+        vectorstore = get_vectorstore()
+        docs = vectorstore.get(
+            where={"collection": collection},
+            include=["documents", "metadatas"],
+        )
+        texts = docs.get("documents") or []
+        metas = docs.get("metadatas") or []
+        total_chunks = len(texts)
+        if total_chunks == 0:
+            return {
+                "collection": collection,
+                "total_documents": 0,
+                "total_chunks": 0,
+                "avg_chunk_length": 0.0,
+                "min_chunk_length": 0,
+                "max_chunk_length": 0,
+                "median_chunk_length": 0.0,
+                "strategy_distribution": {},
+                "length_histogram": {
+                    "<200": 0,
+                    "200-500": 0,
+                    "500-1000": 0,
+                    "1000-2000": 0,
+                    ">2000": 0,
+                },
+            }
+
+        doc_ids = {m.get("file_id") for m in metas if m and m.get("file_id") is not None}
+        total_documents = len(doc_ids)
+
+        lengths = [len(t) for t in texts]
+        min_len = min(lengths)
+        max_len = max(lengths)
+        avg_len = round(sum(lengths) / total_chunks, 1)
+
+        sorted_lengths = sorted(lengths)
+        mid = total_chunks // 2
+        if total_chunks % 2 == 1:
+            median_len = float(sorted_lengths[mid])
+        else:
+            median_len = round((sorted_lengths[mid - 1] + sorted_lengths[mid]) / 2.0, 1)
+
+        strategies: dict[str, int] = {}
+        for m in metas:
+            strat = (m or {}).get("chunking_strategy") or "unknown"
+            strategies[strat] = strategies.get(strat, 0) + 1
+
+        histogram = {
+            "<200": 0,
+            "200-500": 0,
+            "500-1000": 0,
+            "1000-2000": 0,
+            ">2000": 0,
+        }
+        b200, b500, b1000, b2000 = 200, 500, 1000, 2000
+        for length in lengths:
+            if length < b200:
+                histogram["<200"] += 1
+            elif length <= b500:
+                histogram["200-500"] += 1
+            elif length <= b1000:
+                histogram["500-1000"] += 1
+            elif length <= b2000:
+                histogram["1000-2000"] += 1
+            else:
+                histogram[">2000"] += 1
+
+        return {
+            "collection": collection,
+            "total_documents": total_documents,
+            "total_chunks": total_chunks,
+            "avg_chunk_length": avg_len,
+            "min_chunk_length": min_len,
+            "max_chunk_length": max_len,
+            "median_chunk_length": median_len,
+            "strategy_distribution": strategies,
+            "length_histogram": histogram,
+        }
+    except Exception:
+        logger.exception("Error computing chunk analytics for collection %s", collection)
+        return {
+            "collection": collection,
+            "total_documents": 0,
+            "total_chunks": 0,
+            "avg_chunk_length": 0.0,
+            "min_chunk_length": 0,
+            "max_chunk_length": 0,
+            "median_chunk_length": 0.0,
+            "strategy_distribution": {},
+            "length_histogram": {
+                "<200": 0,
+                "200-500": 0,
+                "500-1000": 0,
+                "1000-2000": 0,
+                ">2000": 0,
+            },
+        }
+
+
+def rechunk_collection_in_chroma(
+    collection: str,
+    options: ChunkingOptions | None = None,
+) -> dict[str, Any]:
+    """Re-chunk all documents in a collection that have stored source text."""
+    from api.db_utils import (  # noqa: PLC0415
+        get_all_documents,
+        get_document_sources_by_collection,
+        save_document_source,
+    )
+
+    if options is None:
+        options = ChunkingOptions()
+
+    documents = get_all_documents(collection)
+    sources = get_document_sources_by_collection(collection)
+    sources_by_id = {s["file_id"]: s for s in sources}
+
+    items: list[dict[str, Any]] = []
+    rechunked_count = 0
+    skipped_count = 0
+    failed_count = 0
+    total_chunks_created = 0
+
+    for doc in documents:
+        file_id = doc["id"]
+        filename = doc["filename"]
+
+        if file_id not in sources_by_id:
+            skipped_count += 1
+            items.append({
+                "file_id": file_id,
+                "filename": filename,
+                "status": "skipped",
+                "chunk_count": 0,
+                "error_message": (
+                    "No stored source text (document may have been ingested prior to v0.25.0)"
+                ),
+            })
+            continue
+
+        source_info = sources_by_id[file_id]
+        source_text = source_info["source_text"]
+
+        try:
+            splits = split_text_to_documents(source_text, options)
+            if not splits:
+                failed_count += 1
+                items.append({
+                    "file_id": file_id,
+                    "filename": filename,
+                    "status": "error",
+                    "chunk_count": 0,
+                    "error_message": "Chunk splitter produced zero chunks",
+                })
+                continue
+
+            success = reindex_chunks_in_chroma(
+                file_id=file_id,
+                source_text=source_text,
+                filename=filename,
+                collection=collection,
+                options=options,
+            )
+            if success:
+                save_document_source(
+                    file_id=file_id,
+                    source_text=source_text,
+                    strategy=options.strategy.value,
+                    chunk_size=options.chunk_size,
+                    chunk_overlap=options.chunk_overlap,
+                )
+                chunk_count = len(splits)
+                rechunked_count += 1
+                total_chunks_created += chunk_count
+                items.append({
+                    "file_id": file_id,
+                    "filename": filename,
+                    "status": "rechunked",
+                    "chunk_count": chunk_count,
+                    "error_message": None,
+                })
+            else:
+                failed_count += 1
+                items.append({
+                    "file_id": file_id,
+                    "filename": filename,
+                    "status": "error",
+                    "chunk_count": 0,
+                    "error_message": "Failed to reindex chunks in Chroma",
+                })
+        except Exception as exc:
+            logger.exception("Error rechunking file_id %s in collection %s", file_id, collection)
+            failed_count += 1
+            items.append({
+                "file_id": file_id,
+                "filename": filename,
+                "status": "error",
+                "chunk_count": 0,
+                "error_message": str(exc),
+            })
+
+    return {
+        "collection": collection,
+        "strategy": options.strategy.value,
+        "chunk_size": options.chunk_size,
+        "chunk_overlap": options.chunk_overlap,
+        "total_documents": len(documents),
+        "rechunked_documents": rechunked_count,
+        "skipped_documents": skipped_count,
+        "failed_documents": failed_count,
+        "total_chunks_created": total_chunks_created,
+        "items": items,
+    }
+
+
 def _metadata_filter(
     file_ids: list[int] | None = None,
     collections: list[str] | None = None,

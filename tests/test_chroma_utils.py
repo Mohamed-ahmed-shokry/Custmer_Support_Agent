@@ -8,11 +8,13 @@ EXPECTED_RETRIEVER_K = 5
 
 
 class FakeVectorstore:
-    def __init__(self, ids=None):
+    def __init__(self, ids=None, documents=None, metadatas=None):
         self.added_documents = None
         self.added_ids = None
         self.deleted_ids = None
         self.ids = ids or []
+        self.documents = documents or []
+        self.metadatas = metadatas or []
 
     def add_documents(self, documents, ids=None):
         self.added_documents = documents
@@ -20,7 +22,13 @@ class FakeVectorstore:
 
     def get(self, where=None, include=None):
         self.last_where = where
-        return {"ids": self.ids}
+        res = {"ids": self.ids}
+        if include:
+            if "documents" in include:
+                res["documents"] = self.documents
+            if "metadatas" in include:
+                res["metadatas"] = self.metadatas
+        return res
 
     def delete(self, ids):
         self.deleted_ids = ids
@@ -721,4 +729,178 @@ def test_reindex_chunks_in_chroma_exception_returns_false(monkeypatch):
         filename="fail.pdf",
     )
     assert success is False
+
+
+def test_get_collection_chunk_analytics_empty(monkeypatch):
+    vectorstore = FakeVectorstore(ids=[])
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    analytics = chroma_utils.get_collection_chunk_analytics("empty_col")
+    assert analytics["collection"] == "empty_col"
+    assert analytics["total_documents"] == 0
+    assert analytics["total_chunks"] == 0
+    assert analytics["avg_chunk_length"] == 0.0
+    assert analytics["strategy_distribution"] == {}
+
+
+def test_get_collection_chunk_analytics_populated(monkeypatch):
+    ids = ["1:0", "1:1", "2:0"]
+    documents = [
+        "short",  # length 5 -> <200
+        "a" * 300,  # length 300 -> 200-500
+        "b" * 600,  # length 600 -> 500-1000
+    ]
+    metadatas = [
+        {"file_id": 1, "chunking_strategy": "recursive"},
+        {"file_id": 1, "chunking_strategy": "recursive"},
+        {"file_id": 2, "chunking_strategy": "semantic"},
+    ]
+    vectorstore = FakeVectorstore(ids=ids, documents=documents, metadatas=metadatas)
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", lambda: vectorstore)
+
+    expected_docs = 2
+    expected_chunks = 3
+    expected_min = 5
+    expected_max = 600
+    expected_median = 300.0
+    expected_avg = 301.7  # (5 + 300 + 600) / 3 = 301.666... -> 301.7
+
+    analytics = chroma_utils.get_collection_chunk_analytics("my_col")
+    assert analytics["collection"] == "my_col"
+    assert analytics["total_documents"] == expected_docs
+    assert analytics["total_chunks"] == expected_chunks
+    assert analytics["min_chunk_length"] == expected_min
+    assert analytics["max_chunk_length"] == expected_max
+    assert analytics["median_chunk_length"] == expected_median
+    assert analytics["avg_chunk_length"] == expected_avg
+    expected_recursive = 2
+    assert analytics["strategy_distribution"]["recursive"] == expected_recursive
+    assert analytics["strategy_distribution"]["semantic"] == 1
+    assert analytics["length_histogram"]["<200"] == 1
+    assert analytics["length_histogram"]["200-500"] == 1
+    assert analytics["length_histogram"]["500-1000"] == 1
+    assert analytics["length_histogram"]["1000-2000"] == 0
+
+
+def test_get_collection_chunk_analytics_error_returns_defaults(monkeypatch):
+    def failing_vectorstore():
+        raise RuntimeError("Chroma down")
+
+    monkeypatch.setattr(chroma_utils, "get_vectorstore", failing_vectorstore)
+    analytics = chroma_utils.get_collection_chunk_analytics("faulty")
+    assert analytics["collection"] == "faulty"
+    assert analytics["total_documents"] == 0
+    assert analytics["total_chunks"] == 0
+
+
+def test_rechunk_collection_in_chroma_success(monkeypatch):
+    from api import db_utils  # noqa: PLC0415
+
+    docs = [
+        {"id": 1, "filename": "doc1.txt", "collection": "test_col"},
+        {"id": 2, "filename": "doc2.txt", "collection": "test_col"},
+    ]
+    sources = [
+        {
+            "file_id": 1,
+            "source_text": "First doc source sentence one. Sentence two.",
+            "strategy": "recursive",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+        },
+        {
+            "file_id": 2,
+            "source_text": "Second doc source sentence three. Sentence four.",
+            "strategy": "recursive",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+        },
+    ]
+
+    saved_sources = []
+    monkeypatch.setattr(db_utils, "get_all_documents", lambda col: docs)
+    monkeypatch.setattr(db_utils, "get_document_sources_by_collection", lambda col: sources)
+    monkeypatch.setattr(
+        db_utils,
+        "save_document_source",
+        lambda file_id, source_text, strategy, chunk_size, chunk_overlap: saved_sources.append(
+            (file_id, strategy, chunk_size, chunk_overlap)
+        ),
+    )
+
+    reindexed = []
+
+    def fake_reindex(file_id, source_text, filename, collection, options):
+        reindexed.append((file_id, filename, options.strategy.value))
+        return True
+
+    monkeypatch.setattr(chroma_utils, "reindex_chunks_in_chroma", fake_reindex)
+
+    options = chroma_utils.ChunkingOptions(
+        strategy=chroma_utils.ChunkingStrategy.SEMANTIC,
+        chunk_size=40,
+        chunk_overlap=5,
+    )
+    result = chroma_utils.rechunk_collection_in_chroma("test_col", options)
+
+    expected_total = 2
+    assert result["collection"] == "test_col"
+    assert result["total_documents"] == expected_total
+    assert result["rechunked_documents"] == expected_total
+    assert result["skipped_documents"] == 0
+    assert result["failed_documents"] == 0
+    assert result["total_chunks_created"] >= expected_total
+    assert len(reindexed) == expected_total
+    assert len(saved_sources) == expected_total
+    assert saved_sources[0][1] == "semantic"
+
+
+def test_rechunk_collection_in_chroma_skips_and_errors(monkeypatch):
+    from api import db_utils  # noqa: PLC0415
+
+    docs = [
+        {"id": 1, "filename": "doc1.txt", "collection": "mixed_col"},
+        {"id": 2, "filename": "doc2.txt", "collection": "mixed_col"},
+        {"id": 3, "filename": "doc3.txt", "collection": "mixed_col"},
+    ]
+    # Doc 2 has no stored source text (legacy)
+    sources = [
+        {
+            "file_id": 1,
+            "source_text": "Good text here.",
+            "strategy": "recursive",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+        },
+        {
+            "file_id": 3,
+            "source_text": "Text that fails reindex.",
+            "strategy": "recursive",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+        },
+    ]
+
+    monkeypatch.setattr(db_utils, "get_all_documents", lambda col: docs)
+    monkeypatch.setattr(db_utils, "get_document_sources_by_collection", lambda col: sources)
+    monkeypatch.setattr(db_utils, "save_document_source", lambda *args, **kwargs: None)
+
+    def fake_reindex(file_id, source_text, filename, collection, options):
+        # File 3 fails indexing
+        return file_id == 1
+
+    monkeypatch.setattr(chroma_utils, "reindex_chunks_in_chroma", fake_reindex)
+
+    result = chroma_utils.rechunk_collection_in_chroma("mixed_col")
+
+    expected_total_docs = 3
+    assert result["total_documents"] == expected_total_docs
+    assert result["rechunked_documents"] == 1
+    assert result["skipped_documents"] == 1
+    assert result["failed_documents"] == 1
+    items = result["items"]
+    assert items[0]["status"] == "rechunked"
+    assert items[1]["status"] == "skipped"
+    assert "No stored source text" in items[1]["error_message"]
+    assert items[2]["status"] == "error"
 
