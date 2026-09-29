@@ -383,7 +383,7 @@ mark).
 - [x] Task 6: client `rechunk_document` helper + inspector settings display + Re-chunk form in sidebar + unit tests
 - [x] Task 7: docs (`README.md`, `docs/API.md`, `ROADMAP.md` current state) + final validation (default suite, ruff, mypy) + push
 
-## v0.26.0 plan — Batch Collection Re-Chunking & Chunk Quality Analytics
+## v0.26.0 plan — Batch Collection Re-Chunking & Chunk Quality Analytics ✅ COMPLETED
 
 Deliver collection-wide chunk maintenance and operational chunk quality visibility:
 batch re-chunk all documents in a collection with uniform strategy and windowing
@@ -420,7 +420,7 @@ histograms, strategy breakdowns), and integrate batch controls into the Streamli
 - [x] Task 5: API routes `POST /collections/{collection}/rechunk` and `GET /collections/{collection}/analytics` in `api/main.py` with unit tests
 - [x] Task 6: Client helpers `rechunk_collection` and `get_collection_analytics` in `app/api_utils.py` with unit tests
 - [x] Task 7: Streamlit UI batch re-chunk controls and chunk distribution analytics in `app/sidebar.py` with unit tests
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`) and final verification gate
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`) and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

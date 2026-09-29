@@ -106,6 +106,10 @@ filter with `?collection=<name>`.
 
 `GET /collections/details` → array of `{collection, document_count, chunk_count, file_formats, earliest_upload, latest_upload}` for each collection, providing document counts, chunk counts, file format distribution, and upload timestamps.
 
+`GET /collections/{name}/analytics` → `{collection, total_documents, total_chunks, avg_chunk_length, min_chunk_length, max_chunk_length, median_chunk_length, strategy_distribution, length_histogram}` providing detailed character length statistics, strategy breakdown, and length histogram buckets (`<200`, `200-500`, `500-1000`, `1000-2000`, `>2000`).
+
+`POST /collections/{name}/rechunk` with `{"chunking_strategy": "recursive" | "markdown" | "semantic", "chunk_size": int, "chunk_overlap": int}` → batch re-chunks every document in the collection that has stored source text, updates their Chroma chunks and source metadata, and returns `{message, collection, strategy, chunk_size, chunk_overlap, total_documents, rechunked_documents, skipped_documents, failed_documents, total_chunks_created, items: [{file_id, filename, status, chunk_count, error_message}]}`. Documents lacking stored source text (ingested prior to v0.25.0) are safely skipped and reported.
+
 `DELETE /collections/{name}` → removes every document and chunk in the
 collection (the `default` collection is protected → `400`; unknown → `404`;
 Chroma failure → `500`).

@@ -1,4 +1,4 @@
-# Customer Support RAG Agent (v0.25.0)
+# Customer Support RAG Agent (v0.26.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
@@ -25,6 +25,8 @@ A local-first customer support assistant for real estate and property management
 - Document chunk inspection & re-chunking (`GET /docs/{id}`, `POST /docs/{id}/rechunk`):
   view chunk counts, previews, and persistent chunking options (strategy, size, overlap);
   re-chunk documents in place without re-uploading via the API or Streamlit inspector widget.
+- Batch collection re-chunking & chunk analytics (`POST /collections/{name}/rechunk`, `GET /collections/{name}/analytics`):
+  batch re-chunk entire collections with uniform chunking strategies and windowing parameters; inspect chunk length distributions, histograms, and strategy breakdowns via the API or Streamlit Collection Insights widget.
 - Bulk document deletion (`POST /delete-docs`) with batch selection mode in the UI.
 - Bulk session deletion (`POST /delete-sessions`) with cascading removal of chat history and feedback, plus batch deletion mode in the UI sidebar.
 - Multi-format conversation export (`GET /sessions/{id}/export?format=markdown|json|csv`) with instant UI downloads as Markdown (`.md`), JSON (`.json`), or CSV (`.csv`).
