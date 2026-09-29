@@ -46,6 +46,14 @@ _SELECT_DOC_SOURCE = (
     "SELECT file_id, source_text, strategy, chunk_size, chunk_overlap, updated_at "
     "FROM document_sources WHERE file_id = ?"
 )
+_SELECT_DOC_SOURCES_BY_COLLECTION = (
+    "SELECT ds.file_id, ds.source_text, ds.strategy, ds.chunk_size, "
+    "ds.chunk_overlap, ds.updated_at, d.filename, d.collection "
+    "FROM document_sources ds "
+    "JOIN document_store d ON ds.file_id = d.id "
+    "WHERE d.collection = ? "
+    "ORDER BY ds.file_id ASC"
+)
 
 _DELETE_DOC_SOURCE = "DELETE FROM document_sources WHERE file_id = ?"
 _DELETE_DOC_SOURCES_BY_COLLECTION = (
@@ -319,6 +327,13 @@ def get_document_source(file_id):
         cursor = conn.execute(_SELECT_DOC_SOURCE, (file_id,))
         source = cursor.fetchone()
         return dict(source) if source else None
+
+
+def get_document_sources_by_collection(collection):
+    """Return all stored document source rows and options for a given collection."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_SELECT_DOC_SOURCES_BY_COLLECTION, (collection,))
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def delete_document_source(file_id):

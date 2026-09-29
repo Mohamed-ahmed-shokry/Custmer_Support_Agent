@@ -456,6 +456,39 @@ def test_delete_document_sources_by_collection(monkeypatch, tmp_path):
     assert db_utils.get_document_source(default_id) is not None
 
 
+def test_get_document_sources_by_collection(monkeypatch, tmp_path):
+    expected_sources_count = 2
+    expected_size = 500
+    expected_overlap = 50
+    initialize_temp_db(monkeypatch, tmp_path)
+    first_id = db_utils.insert_document_record("a.txt", "hr")
+    second_id = db_utils.insert_document_record("b.txt", "hr")
+    other_id = db_utils.insert_document_record("c.txt", "sales")
+
+    db_utils.save_document_source(
+        first_id, "Source text A", "semantic", expected_size, expected_overlap
+    )
+    db_utils.save_document_source(second_id, "Source text B", "recursive", 800, 100)
+    db_utils.save_document_source(other_id, "Source text C", "markdown", 1000, 200)
+
+    hr_sources = db_utils.get_document_sources_by_collection("hr")
+    assert len(hr_sources) == expected_sources_count
+    assert hr_sources[0]["file_id"] == first_id
+    assert hr_sources[0]["filename"] == "a.txt"
+    assert hr_sources[0]["source_text"] == "Source text A"
+    assert hr_sources[0]["strategy"] == "semantic"
+    assert hr_sources[0]["chunk_size"] == expected_size
+    assert hr_sources[0]["chunk_overlap"] == expected_overlap
+
+    assert hr_sources[1]["file_id"] == second_id
+    assert hr_sources[1]["filename"] == "b.txt"
+    assert hr_sources[1]["source_text"] == "Source text B"
+    assert hr_sources[1]["strategy"] == "recursive"
+
+    empty_sources = db_utils.get_document_sources_by_collection("nonexistent")
+    assert empty_sources == []
+
+
 def test_migrate_document_store_creates_document_sources(monkeypatch, tmp_path):
     db_path = tmp_path / "legacy.db"
     monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))

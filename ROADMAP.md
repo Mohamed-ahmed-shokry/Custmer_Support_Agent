@@ -414,7 +414,7 @@ histograms, strategy breakdowns), and integrate batch controls into the Streamli
 
 ### Granular Task Breakdown
 - [x] Task 1: `ROADMAP.md` v0.26.0 plan specification
-- [ ] Task 2: Database helper `get_document_sources_by_collection` in `api/db_utils.py` with unit tests
+- [x] Task 2: Database helper `get_document_sources_by_collection` in `api/db_utils.py` with unit tests
 - [ ] Task 3: Pydantic models for batch re-chunking and collection chunk analytics in `api/pydantic_models.py` with unit tests
 - [ ] Task 4: Chroma operations `get_collection_chunk_analytics` and `rechunk_collection_in_chroma` in `api/chroma_utils.py` with unit tests
 - [ ] Task 5: API routes `POST /collections/{collection}/rechunk` and `GET /collections/{collection}/analytics` in `api/main.py` with unit tests
