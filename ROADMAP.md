@@ -469,7 +469,7 @@ support triage analytics API and Streamlit operations dashboard.
 - [x] Task 5: Multi-format session export presenter updates with resolution details in `api/presenters.py` with unit tests
 - [x] Task 6: API routes `POST /sessions/{session_id}/summarize`, `GET /sessions/triage-analytics`, and extended `PATCH /sessions/{session_id}` in `api/main.py` with unit tests
 - [x] Task 7: Client helpers `summarize_session`, `get_support_triage_analytics`, and extended `update_session` in `app/api_utils.py` with unit tests
-- [ ] Task 8: Streamlit UI support triage analytics widget and session resolution/summary panel in `app/sidebar.py` with unit tests
+- [x] Task 8: Streamlit UI support triage analytics widget and session resolution/summary panel in `app/sidebar.py` with unit tests
 - [ ] Task 9: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`) and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
