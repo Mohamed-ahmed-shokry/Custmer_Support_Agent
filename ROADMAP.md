@@ -465,7 +465,7 @@ support triage analytics API and Streamlit operations dashboard.
 - [x] Task 1: `ROADMAP.md` v0.27.0 plan specification
 - [x] Task 2: Database schema migration and triage analytics queries in `api/db_utils.py` with unit tests
 - [x] Task 3: Conversation summarization & sentiment engine in `api/summarization.py` with unit tests
-- [ ] Task 4: Pydantic schemas for summarization and triage analytics in `api/pydantic_models.py` with unit tests
+- [x] Task 4: Pydantic schemas for summarization and triage analytics in `api/pydantic_models.py` with unit tests
 - [ ] Task 5: Multi-format session export presenter updates with resolution details in `api/presenters.py` with unit tests
 - [ ] Task 6: API routes `POST /sessions/{session_id}/summarize`, `GET /sessions/triage-analytics`, and extended `PATCH /sessions/{session_id}` in `api/main.py` with unit tests
 - [ ] Task 7: Client helpers `summarize_session`, `get_support_triage_analytics`, and extended `update_session` in `app/api_utils.py` with unit tests
