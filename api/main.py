@@ -47,6 +47,8 @@ from api.db_utils import (
     get_feedback_analytics,
     get_library_stats,
     get_session_feedback,
+    get_session_metadata,
+    get_support_triage_analytics,
     insert_application_logs,
     insert_document_record,
     insert_feedback,
@@ -116,7 +118,11 @@ from api.pydantic_models import (
     SessionInfo,
     SessionSearchResponse,
     SessionSearchResult,
+    SessionSummaryRequest,
+    SessionSummaryResponse,
     StatsResponse,
+    SupportTriageAnalyticsResponse,
+    TagCount,
     UpdateSessionRequest,
     UploadDocumentResponse,
 )
@@ -130,6 +136,7 @@ from api.security import (
     record_token_usage,
 )
 from api.settings import settings
+from api.summarization import summarize_dialogue
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -997,6 +1004,22 @@ def search_sessions_route(q: str, limit: int = 20):
     return SessionSearchResponse(query=cleaned, results=results)
 
 
+@app.get("/sessions/triage-analytics", response_model=SupportTriageAnalyticsResponse)
+def support_triage_analytics():
+    data = get_support_triage_analytics()
+    return SupportTriageAnalyticsResponse(
+        total_sessions=data["total_sessions"],
+        active_count=data["active_count"],
+        resolved_count=data["resolved_count"],
+        escalated_count=data["escalated_count"],
+        closed_count=data["closed_count"],
+        resolution_rate=data["resolution_rate"],
+        escalation_rate=data["escalation_rate"],
+        avg_turns_per_session=data["avg_turns_per_session"],
+        top_tags=[TagCount(**t) for t in data["top_tags"]],
+    )
+
+
 def _require_session_id(session_id: str) -> str:
     if not session_id.strip():
         raise HTTPException(status_code=400, detail="session_id must not be empty.")
@@ -1035,17 +1058,46 @@ def export_session(session_id: str, format: str = "markdown"):
     history = get_chat_history(session_id)
     if not history:
         raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
-    label = _get_session_summary_or_404(session_id).get("label")
+    session_data = _get_session_summary_or_404(session_id)
+    label = session_data.get("label")
+    status = session_data.get("status")
+    tags = session_data.get("tags")
+    summary = session_data.get("summary")
+    resolution_notes = session_data.get("resolution_notes")
     if export_format == "json":
-        content = render_session_json(session_id, label, history)
+        content = render_session_json(
+            session_id,
+            label,
+            history,
+            status=status,
+            tags=tags,
+            summary=summary,
+            resolution_notes=resolution_notes,
+        )
         media_type = "application/json"
         extension = "json"
     elif export_format == "csv":
-        content = render_session_csv(session_id, label, history)
+        content = render_session_csv(
+            session_id,
+            label,
+            history,
+            status=status,
+            tags=tags,
+            summary=summary,
+            resolution_notes=resolution_notes,
+        )
         media_type = "text/csv"
         extension = "csv"
     else:
-        content = render_session_markdown(session_id, label, history)
+        content = render_session_markdown(
+            session_id,
+            label,
+            history,
+            status=status,
+            tags=tags,
+            summary=summary,
+            resolution_notes=resolution_notes,
+        )
         media_type = "text/markdown"
         extension = "md"
 
@@ -1200,7 +1252,13 @@ def get_session_feedback_route(session_id: str):
 def update_session_route(session_id: str, request: UpdateSessionRequest):
     _require_session_id(session_id)
     try:
-        if request.status is None and request.tags is None and request.label is not None:
+        if (
+            request.status is None
+            and request.tags is None
+            and request.summary is None
+            and request.resolution_notes is None
+            and request.label is not None
+        ):
             label = normalize_session_label(request.label)
             updated = rename_session(session_id, label)
         else:
@@ -1209,12 +1267,50 @@ def update_session_route(session_id: str, request: UpdateSessionRequest):
                 label=request.label,
                 status=request.status,
                 tags=request.tags,
+                summary=request.summary,
+                resolution_notes=request.resolution_notes,
             )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
     return SessionInfo(**_get_session_summary_or_404(session_id))
+
+
+@app.post("/sessions/{session_id}/summarize", response_model=SessionSummaryResponse)
+def summarize_session_route(
+    session_id: str, request: SessionSummaryRequest | None = None
+):
+    _require_session_id(session_id)
+    history = get_chat_history(session_id)
+    if not history:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
+
+    req = request or SessionSummaryRequest()
+    summary_data = summarize_dialogue(history, model=req.model)
+
+    saved = False
+    if req.save_summary and summary_data.get("summary"):
+        meta = get_session_metadata(session_id) or {}
+        existing_tags = [
+            t.strip() for t in (meta.get("tags") or "").split(",") if t.strip()
+        ]
+        new_tags = sorted(set(existing_tags + summary_data.get("suggested_tags", [])))
+        update_session_metadata(
+            session_id,
+            summary=summary_data["summary"],
+            tags=new_tags if new_tags else None,
+        )
+        saved = True
+
+    return SessionSummaryResponse(
+        session_id=session_id,
+        summary=summary_data["summary"],
+        key_points=summary_data.get("key_points", []),
+        sentiment=summary_data.get("sentiment", "neutral"),
+        suggested_tags=summary_data.get("suggested_tags", []),
+        saved=saved,
+    )
 
 
 @app.post("/delete-doc", response_model=DeleteDocumentResponse)

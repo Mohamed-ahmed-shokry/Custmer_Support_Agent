@@ -245,8 +245,8 @@ class SessionInfo(BaseModel):
     label: str | None = None
     status: str = "active"
     tags: str = ""
-    summary: str = ""
-    resolution_notes: str = ""
+    summary: str | None = None
+    resolution_notes: str | None = None
 
 
 class SessionSearchResult(BaseModel):

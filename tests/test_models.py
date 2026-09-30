@@ -233,8 +233,8 @@ def test_collection_analytics_response():
 def test_session_info_summary_and_resolution_notes():
     now = datetime.now()
     default_info = SessionInfo(session_id="s1", message_count=2, last_active=now)
-    assert default_info.summary == ""
-    assert default_info.resolution_notes == ""
+    assert default_info.summary is None
+    assert default_info.resolution_notes is None
     assert default_info.status == "active"
 
     custom_info = SessionInfo(

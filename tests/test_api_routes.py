@@ -874,6 +874,8 @@ def test_list_sessions_returns_summaries(monkeypatch):
             "label": None,
             "status": "active",
             "tags": "",
+            "summary": None,
+            "resolution_notes": None,
         }
     ]
     monkeypatch.setattr(main, "get_all_sessions", lambda: sessions)
@@ -1199,7 +1201,7 @@ def test_export_session_json_and_csv(monkeypatch):
     assert csv_res.status_code == HTTP_OK
     assert "text/csv" in csv_res.headers["content-type"]
     assert "session-1.csv" in csv_res.headers["content-disposition"]
-    assert "session_id,label,turn,role,content" in csv_res.text
+    assert "session_id,label,status,tags,summary,resolution_notes,turn,role,content" in csv_res.text
 
 
 def test_export_session_rejects_invalid_format():
@@ -1251,7 +1253,7 @@ def test_update_session_metadata_success(monkeypatch):
     }
     recorded_args = {}
 
-    def fake_update(session_id, label=None, status=None, tags=None):
+    def fake_update(session_id, label=None, status=None, tags=None, **kwargs):
         recorded_args.update(
             {"session_id": session_id, "label": label, "status": status, "tags": tags}
         )
@@ -1877,3 +1879,153 @@ def test_delete_many_sessions_server_error(monkeypatch):
     response = client.post("/delete-sessions", json={"session_ids": ["s1"]})
     assert response.status_code == HTTP_INTERNAL_ERROR
     assert "Failed to delete sessions" in response.json()["detail"]
+
+
+def test_get_support_triage_analytics_route(monkeypatch):
+    expected_data = {
+        "total_sessions": 5,
+        "active_count": 2,
+        "resolved_count": 2,
+        "escalated_count": 1,
+        "closed_count": 0,
+        "resolution_rate": 40.0,
+        "escalation_rate": 20.0,
+        "avg_turns_per_session": 3.2,
+        "top_tags": [{"tag": "lease", "count": 3}, {"tag": "urgent", "count": 2}],
+    }
+    monkeypatch.setattr(main, "get_support_triage_analytics", lambda: expected_data)
+
+    response = client.get("/sessions/triage-analytics")
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    expected_total = 5
+    expected_rate = 40.0
+    expected_tag_count = 3
+    assert data["total_sessions"] == expected_total
+    assert data["resolution_rate"] == expected_rate
+    assert data["top_tags"][0]["tag"] == "lease"
+    assert data["top_tags"][0]["count"] == expected_tag_count
+
+
+def test_summarize_session_route_not_found(monkeypatch):
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: [])
+    response = client.post("/sessions/nonexistent/summarize")
+    assert response.status_code == HTTP_NOT_FOUND
+
+
+def test_summarize_session_route_success(monkeypatch):
+    fake_history = [
+        {"role": "human", "content": "How do I cancel my lease agreement?"},
+        {"role": "ai", "content": "You must provide 30-day notice."},
+    ]
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: fake_history)
+
+    saved_metadata = {}
+
+    def fake_update(session_id, **kwargs):
+        saved_metadata.update(kwargs)
+        return True
+
+    monkeypatch.setattr(main, "update_session_metadata", fake_update)
+    monkeypatch.setattr(main, "get_session_metadata", lambda sid: {"tags": "tenant"})
+
+    response = client.post("/sessions/s1/summarize", json={"save_summary": True})
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["session_id"] == "s1"
+    assert "cancel my lease agreement" in data["summary"]
+    assert "lease" in data["suggested_tags"]
+    assert data["saved"] is True
+    assert saved_metadata.get("summary") == data["summary"]
+    tags_str = str(saved_metadata.get("tags", ""))
+    assert "lease" in tags_str
+    assert "tenant" in tags_str
+
+
+def test_summarize_session_route_unsaved(monkeypatch):
+    fake_history = [{"role": "human", "content": "Hello"}]
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: fake_history)
+
+    called = False
+
+    def fake_update(*args, **kwargs):
+        nonlocal called
+        called = True
+        return True
+
+    monkeypatch.setattr(main, "update_session_metadata", fake_update)
+
+    response = client.post("/sessions/s2/summarize", json={"save_summary": False})
+    assert response.status_code == HTTP_OK
+    assert response.json()["saved"] is False
+    assert called is False
+
+
+def test_patch_session_summary_and_resolution_notes(monkeypatch):
+    session_id = "s-42"
+    fake_summary = {
+        "session_id": session_id,
+        "message_count": 2,
+        "last_active": "2026-09-30T10:00:00",
+        "preview": "Test question",
+        "label": "Ticket 42",
+        "status": "resolved",
+        "tags": "lease, refund",
+        "summary": "Resolved billing discrepancy.",
+        "resolution_notes": "Issued $50 refund.",
+    }
+    monkeypatch.setattr(main, "update_session_metadata", lambda sid, **kwargs: True)
+    monkeypatch.setattr(main, "_get_session_summary_or_404", lambda sid: fake_summary)
+
+    response = client.patch(
+        f"/sessions/{session_id}",
+        json={
+            "status": "resolved",
+            "summary": "Resolved billing discrepancy.",
+            "resolution_notes": "Issued $50 refund.",
+        },
+    )
+    assert response.status_code == HTTP_OK
+    data = response.json()
+    assert data["status"] == "resolved"
+    assert data["summary"] == "Resolved billing discrepancy."
+    assert data["resolution_notes"] == "Issued $50 refund."
+
+
+def test_export_session_includes_resolution_details(monkeypatch):
+    session_id = "s-export"
+    fake_summary = {
+        "session_id": session_id,
+        "label": "Move-out request",
+        "status": "resolved",
+        "tags": "lease, moveout",
+        "summary": "Tenant requested early move-out date.",
+        "resolution_notes": "Inspection scheduled for Friday.",
+    }
+    fake_history = [
+        {"role": "human", "content": "Can I move out early?"},
+        {"role": "ai", "content": "Yes, following inspection."},
+    ]
+    monkeypatch.setattr(main, "_get_session_summary_or_404", lambda sid: fake_summary)
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: fake_history)
+
+    # Markdown export includes details
+    resp_md = client.get(f"/sessions/{session_id}/export?format=markdown")
+    assert resp_md.status_code == HTTP_OK
+    assert "- Status: resolved" in resp_md.text
+    assert "- Summary: Tenant requested early move-out date." in resp_md.text
+    assert "- Resolution Notes: Inspection scheduled for Friday." in resp_md.text
+
+    # JSON export includes details
+    resp_json = client.get(f"/sessions/{session_id}/export?format=json")
+    assert resp_json.status_code == HTTP_OK
+    json_data = resp_json.json()
+    assert json_data["status"] == "resolved"
+    assert json_data["summary"] == "Tenant requested early move-out date."
+    assert json_data["resolution_notes"] == "Inspection scheduled for Friday."
+
+    # CSV export includes details
+    resp_csv = client.get(f"/sessions/{session_id}/export?format=csv")
+    assert resp_csv.status_code == HTTP_OK
+    assert "Move-out request" in resp_csv.text
+    assert "Inspection scheduled for Friday." in resp_csv.text
