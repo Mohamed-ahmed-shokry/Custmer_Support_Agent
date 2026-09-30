@@ -89,6 +89,9 @@ class FakeStreamlit:
     def toast(self, message):
         self.toasts.append(message)
 
+    def info(self, message):
+        self.calls.append(Call("st", "info", (message,), {}))
+
     def caption(self, *args, **kwargs):
         self.calls.append(Call("st", "caption", args, kwargs))
 
@@ -163,6 +166,15 @@ class FakeStreamlit:
         self.calls.append(
             Call(
                 "st", "text_input", (label,),
+                {"value": value, "max_chars": max_chars, "key": key, "placeholder": placeholder},
+            )
+        )
+        return self.values.get(key, value)
+
+    def text_area(self, label, value="", max_chars=None, key=None, placeholder=None):
+        self.calls.append(
+            Call(
+                "st", "text_area", (label,),
                 {"value": value, "max_chars": max_chars, "key": key, "placeholder": placeholder},
             )
         )

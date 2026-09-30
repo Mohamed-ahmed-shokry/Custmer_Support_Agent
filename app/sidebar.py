@@ -20,6 +20,7 @@ from app.api_utils import (
     get_quota,
     get_session_history,
     get_stats,
+    get_support_triage_analytics,
     list_collections,
     list_documents,
     list_feedback,
@@ -29,6 +30,7 @@ from app.api_utils import (
     rename_collection,
     rename_session,
     search_sessions,
+    summarize_session,
     update_session,
     upload_document,
     upload_documents,
@@ -216,17 +218,54 @@ def _render_session_metadata(selected, sessions):
         index=status_idx,
         key=f"session_status_{selected}",
     )
-    curr_tags = ", ".join(current.get("tags") or []) if current else ""
+    raw_tags = current.get("tags") if current else ""
+    if isinstance(raw_tags, list):
+        curr_tags = ", ".join(raw_tags)
+    elif isinstance(raw_tags, str):
+        curr_tags = raw_tags
+    else:
+        curr_tags = ""
+
     new_tags_str = st.sidebar.text_input(
         "Tags (comma-separated)",
         value=curr_tags,
         key=f"session_tags_{selected}",
         placeholder="e.g. billing, urgent",
     )
+
+    curr_summary = current.get("summary") if current else None
+    if curr_summary:
+        st.sidebar.caption(f"**Summary:** {curr_summary}")
+
+    if st.sidebar.button("Auto-Summarize Dialogue", key=f"btn_summarize_{selected}"):
+        with st.spinner("Summarizing dialogue..."):
+            summary_res = summarize_session(selected, save_summary=True)
+            if summary_res:
+                st.sidebar.success("Session summarized!")
+                if summary_res.get("sentiment"):
+                    st.sidebar.info(f"Sentiment: {summary_res['sentiment']}")
+                st.session_state.sessions = list_sessions()
+                st.rerun()
+            else:
+                st.sidebar.error("Failed to summarize session.")
+
+    curr_notes = (current.get("resolution_notes") or "") if current else ""
+    new_notes = st.sidebar.text_area(
+        "Resolution Notes",
+        value=curr_notes,
+        key=f"session_notes_{selected}",
+        placeholder="Add resolution or follow-up notes...",
+    )
+
     if st.sidebar.button("Update Metadata", key=f"btn_update_meta_{selected}"):
         tag_list = [t.strip() for t in new_tags_str.split(",") if t.strip()]
         with st.spinner("Updating session metadata..."):
-            if update_session(selected, status=new_status, tags=tag_list):
+            if update_session(
+                selected,
+                status=new_status,
+                tags=tag_list,
+                resolution_notes=new_notes.strip() if new_notes.strip() else None,
+            ):
                 st.sidebar.success("Session metadata updated.")
                 st.session_state.sessions = list_sessions()
                 st.rerun()
@@ -786,6 +825,43 @@ def _render_feedback_review():
                     st.rerun()
 
 
+def _render_support_triage_analytics():
+    with st.sidebar.expander("Support Triage Analytics"):
+        try:
+            analytics = get_support_triage_analytics()
+            if not analytics:
+                st.caption("No triage analytics available.")
+                return
+            total = analytics.get("total_sessions", 0)
+            res_rate = analytics.get("resolution_rate", 0.0)
+            esc_rate = analytics.get("escalation_rate", 0.0)
+            avg_turns = analytics.get("avg_turns_per_session", 0.0)
+
+            col1, col2 = st.columns(2)
+            col1.metric("Total Sessions", total)
+            col2.metric("Resolution Rate", f"{res_rate:.1f}%")
+
+            col3, col4 = st.columns(2)
+            col3.metric("Escalation Rate", f"{esc_rate:.1f}%")
+            col4.metric("Avg Turns", f"{avg_turns:.1f}")
+
+            active = analytics.get("active_count", 0)
+            resolved = analytics.get("resolved_count", 0)
+            escalated = analytics.get("escalated_count", 0)
+            closed = analytics.get("closed_count", 0)
+            st.caption(
+                f"🟢 Active: {active} · ✅ Resolved: {resolved} · "
+                f"⚠️ Escalated: {escalated} · 🔒 Closed: {closed}"
+            )
+
+            top_tags = analytics.get("top_tags", [])
+            if top_tags:
+                tag_badges = " ".join([f"`{t['tag']}` ({t['count']})" for t in top_tags[:5]])
+                st.markdown(f"**Top Tags:** {tag_badges}")
+        except Exception as e:
+            st.caption(f"Error loading triage analytics: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -803,4 +879,5 @@ def display_sidebar():
     _render_document_list()
     _render_feedback_analytics()
     _render_feedback_review()
+    _render_support_triage_analytics()
     _render_ops_metrics()

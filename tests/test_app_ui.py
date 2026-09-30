@@ -1317,3 +1317,138 @@ def test_render_batch_rechunk_action_failure(monkeypatch):
 
     assert any("failed" in err.lower() for err in st.errors)
     assert st.reruns == 0
+
+
+def test_render_session_metadata_displays_summary_and_notes(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    sessions = [
+        {
+            "session_id": "s1",
+            "status": "resolved",
+            "tags": "billing, urgent",
+            "summary": "Resolved invoice discrepancy.",
+            "resolution_notes": "Issued credit note.",
+        }
+    ]
+
+    sidebar._render_session_metadata("s1", sessions)
+
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("Resolved invoice discrepancy." in cap for cap in captions)
+    text_areas = [c for c in st.calls if c.fn == "text_area"]
+    assert any(c.kwargs.get("value") == "Issued credit note." for c in text_areas)
+
+
+def test_render_session_metadata_auto_summarize_success(monkeypatch):
+    st = FakeStreamlit(buttons={"btn_summarize_s1": True})
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+    monkeypatch.setattr(
+        sidebar,
+        "summarize_session",
+        lambda sid, save_summary=True: (
+            called.append((sid, save_summary)) or {
+                "summary": "Auto generated summary",
+                "sentiment": "positive",
+            }
+        ),
+    )
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
+
+    sidebar._render_session_metadata("s1", [{"session_id": "s1"}])
+
+    assert len(called) == 1
+    assert called[0] == ("s1", True)
+    assert any("Session summarized!" in s for s in st.successes)
+    assert st.reruns == 1
+
+
+def test_render_session_metadata_auto_summarize_failure(monkeypatch):
+    st = FakeStreamlit(buttons={"btn_summarize_s1": True})
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "summarize_session", lambda *args, **kwargs: None)
+
+    sidebar._render_session_metadata("s1", [{"session_id": "s1"}])
+
+    assert any("Failed to summarize session." in e for e in st.errors)
+    assert st.reruns == 0
+
+
+def test_render_session_metadata_update_action(monkeypatch):
+    st = FakeStreamlit(
+        buttons={"btn_update_meta_s1": True},
+        values={
+            "session_status_s1": "resolved",
+            "session_tags_s1": "billing, urgent",
+            "session_notes_s1": "Refund processed.",
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+
+    def fake_update(session_id, status=None, tags=None, resolution_notes=None):
+        called.append((session_id, status, tags, resolution_notes))
+        return {"session_id": session_id}
+
+    monkeypatch.setattr(sidebar, "update_session", fake_update)
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
+
+    sidebar._render_session_metadata("s1", [{"session_id": "s1"}])
+
+    assert len(called) == 1
+    assert called[0] == ("s1", "resolved", ["billing", "urgent"], "Refund processed.")
+    assert any("Session metadata updated." in s for s in st.successes)
+    assert st.reruns == 1
+
+
+def test_render_support_triage_analytics_renders_kpis(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    fake_analytics = {
+        "total_sessions": 10,
+        "active_count": 3,
+        "resolved_count": 5,
+        "escalated_count": 2,
+        "closed_count": 0,
+        "resolution_rate": 50.0,
+        "escalation_rate": 20.0,
+        "avg_turns_per_session": 2.8,
+        "top_tags": [{"tag": "lease", "count": 4}, {"tag": "deposit", "count": 2}],
+    }
+    monkeypatch.setattr(sidebar, "get_support_triage_analytics", lambda: fake_analytics)
+
+    sidebar._render_support_triage_analytics()
+
+    metric_labels = [c.args[0] for c in st.calls if c.fn == "metric"]
+    assert "Total Sessions" in metric_labels
+    assert "Resolution Rate" in metric_labels
+    assert "Escalation Rate" in metric_labels
+    assert "Avg Turns" in metric_labels
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Top Tags:" in md for md in markdowns)
+    assert any("`lease` (4)" in md for md in markdowns)
+
+
+def test_render_support_triage_analytics_empty_and_error(monkeypatch):
+    st_empty = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st_empty)
+    monkeypatch.setattr(sidebar, "get_support_triage_analytics", lambda: None)
+
+    sidebar._render_support_triage_analytics()
+    captions = [c.args[0] for c in st_empty.calls if c.fn == "caption"]
+    assert any("No triage analytics available." in c for c in captions)
+
+    st_err = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st_err)
+
+    def boom():
+        raise RuntimeError("DB connection dropped")
+
+    monkeypatch.setattr(sidebar, "get_support_triage_analytics", boom)
+
+    sidebar._render_support_triage_analytics()
+    captions_err = [c.args[0] for c in st_err.calls if c.fn == "caption"]
+    assert any("Error loading triage analytics" in c for c in captions_err)
+
