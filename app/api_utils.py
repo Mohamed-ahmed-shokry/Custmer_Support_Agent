@@ -343,7 +343,14 @@ def delete_session(session_id):
         return None
 
 
-def update_session(session_id, label=None, status=None, tags=None):
+def update_session(  # noqa: PLR0913, PLR0917
+    session_id,
+    label=None,
+    status=None,
+    tags=None,
+    summary=None,
+    resolution_notes=None,
+):
     payload = {}
     if label is not None:
         payload["label"] = label
@@ -351,6 +358,10 @@ def update_session(session_id, label=None, status=None, tags=None):
         payload["status"] = status
     if tags is not None:
         payload["tags"] = tags
+    if summary is not None:
+        payload["summary"] = summary
+    if resolution_notes is not None:
+        payload["resolution_notes"] = resolution_notes
     try:
         response = requests.patch(
             f"{API_BASE_URL}/sessions/{session_id}",
@@ -370,6 +381,27 @@ def update_session(session_id, label=None, status=None, tags=None):
 
 def rename_session(session_id, label):
     return update_session(session_id, label=label)
+
+
+def summarize_session(session_id, model=None, save_summary=True):
+    payload = {"save_summary": save_summary}
+    if model:
+        payload["model"] = model
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/summarize",
+            json=payload,
+            headers=_request_headers(),
+            timeout=60,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to summarize session", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while summarizing the session: {str(e)}")
+        return None
 
 
 def export_session(session_id, format="markdown"):
@@ -467,6 +499,23 @@ def get_feedback_analytics(recent_comments_limit=5):
             return None
     except Exception as e:
         st.error(f"An error occurred while fetching feedback analytics: {str(e)}")
+        return None
+
+
+def get_support_triage_analytics():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/triage-analytics",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch support triage analytics", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching support triage analytics: {str(e)}")
         return None
 
 

@@ -852,5 +852,78 @@ def test_get_feedback_analytics_success_and_failure(monkeypatch, fake_requests, 
     assert api_utils.get_feedback_analytics() is None
 
 
+def test_update_session_with_summary_and_resolution_notes(fake_requests):
+    fake_payload = {
+        "session_id": "s1",
+        "status": "resolved",
+        "summary": "Resolved billing issue.",
+        "resolution_notes": "Applied credit.",
+    }
+    fake_requests.response = FakeResponse(payload=fake_payload)
+    result = api_utils.update_session(
+        "s1",
+        status="resolved",
+        summary="Resolved billing issue.",
+        resolution_notes="Applied credit.",
+    )
+    assert result == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/s1")
+    assert kwargs["json"]["summary"] == "Resolved billing issue."
+    assert kwargs["json"]["resolution_notes"] == "Applied credit."
+
+
+def test_summarize_session_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_payload = {
+        "session_id": "s1",
+        "summary": "Summary text",
+        "key_points": ["Point 1"],
+        "sentiment": "positive",
+        "suggested_tags": ["tag1"],
+        "saved": True,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.summarize_session("s1", model="gpt-4o-mini", save_summary=True)
+    assert result == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/s1/summarize")
+    assert kwargs["json"] == {"model": "gpt-4o-mini", "save_summary": True}
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.summarize_session("s1") is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.summarize_session("s1") is None
+
+
+def test_get_support_triage_analytics_success_and_failure(monkeypatch, fake_requests, fake_st):
+    expected_total = 8
+    fake_payload = {
+        "total_sessions": expected_total,
+        "active_count": 3,
+        "resolved_count": 4,
+        "escalated_count": 1,
+        "closed_count": 0,
+        "resolution_rate": 50.0,
+        "escalation_rate": 12.5,
+        "avg_turns_per_session": 3.0,
+        "top_tags": [{"tag": "lease", "count": 4}],
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+    result = api_utils.get_support_triage_analytics()
+    assert result == fake_payload
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/sessions/triage-analytics")
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "server error"})
+    assert api_utils.get_support_triage_analytics() is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_support_triage_analytics() is None
+
+
+
 
 
