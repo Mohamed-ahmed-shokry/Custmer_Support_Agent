@@ -233,6 +233,8 @@ class CollectionAnalyticsResponse(BaseModel):
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
 MAX_SESSION_LABEL_LENGTH = 80
 MAX_SESSION_TAGS_LENGTH = 200
+MAX_SESSION_SUMMARY_LENGTH = 2000
+MAX_RESOLUTION_NOTES_LENGTH = 2000
 
 
 class SessionInfo(BaseModel):
@@ -243,6 +245,8 @@ class SessionInfo(BaseModel):
     label: str | None = None
     status: str = "active"
     tags: str = ""
+    summary: str = ""
+    resolution_notes: str = ""
 
 
 class SessionSearchResult(BaseModel):
@@ -265,6 +269,8 @@ class UpdateSessionRequest(BaseModel):
     label: str | None = None
     status: str | None = None
     tags: str | list[str] | None = None
+    summary: str | None = None
+    resolution_notes: str | None = None
 
     @field_validator("label", mode="before")
     @classmethod
@@ -297,11 +303,79 @@ class UpdateSessionRequest(BaseModel):
             return cleaned
         return v
 
+    @field_validator("summary", mode="before")
+    @classmethod
+    def validate_summary(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip()
+            if len(cleaned) > MAX_SESSION_SUMMARY_LENGTH:
+                raise ValueError(
+                    f"Session summary must be at most {MAX_SESSION_SUMMARY_LENGTH} characters."
+                )
+            return cleaned
+        return v
+
+    @field_validator("resolution_notes", mode="before")
+    @classmethod
+    def validate_resolution_notes(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip()
+            if len(cleaned) > MAX_RESOLUTION_NOTES_LENGTH:
+                raise ValueError(
+                    f"Resolution notes must be at most {MAX_RESOLUTION_NOTES_LENGTH} characters."
+                )
+            return cleaned
+        return v
+
     @model_validator(mode="after")
     def check_at_least_one_field(self) -> "UpdateSessionRequest":
-        if self.label is None and self.status is None and self.tags is None:
-            raise ValueError("At least one of 'label', 'status', or 'tags' must be provided.")
+        if (
+            self.label is None
+            and self.status is None
+            and self.tags is None
+            and self.summary is None
+            and self.resolution_notes is None
+        ):
+            raise ValueError(
+                "At least one of 'label', 'status', 'tags', 'summary', or 'resolution_notes' "
+                "must be provided."
+            )
         return self
+
+
+class SessionSummaryRequest(BaseModel):
+    model: str | None = None
+    save_summary: bool = True
+
+
+class SessionSummaryResponse(BaseModel):
+    session_id: str
+    summary: str
+    key_points: list[str] = Field(default_factory=list)
+    sentiment: Literal["positive", "neutral", "negative"] = "neutral"
+    suggested_tags: list[str] = Field(default_factory=list)
+    saved: bool = False
+
+
+class TagCount(BaseModel):
+    tag: str
+    count: int
+
+
+class SupportTriageAnalyticsResponse(BaseModel):
+    total_sessions: int
+    active_count: int
+    resolved_count: int
+    escalated_count: int
+    closed_count: int
+    resolution_rate: float
+    escalation_rate: float
+    avg_turns_per_session: float
+    top_tags: list[TagCount] = Field(default_factory=list)
 
 
 class RenameSessionRequest(UpdateSessionRequest):

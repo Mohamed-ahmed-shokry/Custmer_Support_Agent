@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 from api.pydantic_models import (
     DEFAULT_MODEL,
@@ -11,7 +13,13 @@ from api.pydantic_models import (
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
+    SessionInfo,
+    SessionSummaryRequest,
+    SessionSummaryResponse,
     SourceInfo,
+    SupportTriageAnalyticsResponse,
+    TagCount,
+    UpdateSessionRequest,
     model_from_value,
 )
 from pydantic import ValidationError
@@ -56,7 +64,7 @@ def test_query_response_accepts_sources():
     response = QueryResponse(
         answer="Answer",
         session_id="session-1",
-        model="gpt-4o-mini",
+        model=ModelName.GPT4_O_MINI,
         sources=[SourceInfo(filename="guide.pdf", preview="Relevant text")],
     )
 
@@ -220,3 +228,94 @@ def test_collection_analytics_response():
     assert resp.total_chunks == expected_chunks
     assert resp.avg_chunk_length == expected_avg
     assert resp.strategy_distribution["semantic"] == expected_semantic_count
+
+
+def test_session_info_summary_and_resolution_notes():
+    now = datetime.now()
+    default_info = SessionInfo(session_id="s1", message_count=2, last_active=now)
+    assert default_info.summary == ""
+    assert default_info.resolution_notes == ""
+    assert default_info.status == "active"
+
+    custom_info = SessionInfo(
+        session_id="s2",
+        message_count=4,
+        last_active=now,
+        status="resolved",
+        summary="Customer resolved fee discrepancy.",
+        resolution_notes="Refund processed successfully.",
+    )
+    assert custom_info.summary == "Customer resolved fee discrepancy."
+    assert custom_info.resolution_notes == "Refund processed successfully."
+
+
+def test_update_session_request_summary_and_notes():
+    # At least one field required
+    with pytest.raises(ValidationError):
+        UpdateSessionRequest()
+
+    # Valid with only summary
+    req1 = UpdateSessionRequest(summary="  New summary  ")
+    assert req1.summary == "New summary"
+
+    # Valid with only resolution_notes
+    req2 = UpdateSessionRequest(resolution_notes="  New notes  ")
+    assert req2.resolution_notes == "New notes"
+
+    # Reject overly long summary or notes
+    with pytest.raises(ValidationError):
+        UpdateSessionRequest(summary="x" * 2001)
+
+    with pytest.raises(ValidationError):
+        UpdateSessionRequest(resolution_notes="y" * 2001)
+
+
+def test_session_summary_request_and_response():
+    req_def = SessionSummaryRequest()
+    assert req_def.model is None
+    assert req_def.save_summary is True
+
+    req_custom = SessionSummaryRequest(model="gpt-4o", save_summary=False)
+    assert req_custom.model == "gpt-4o"
+    assert req_custom.save_summary is False
+
+    resp = SessionSummaryResponse(
+        session_id="s1",
+        summary="User asked about lease.",
+        key_points=["Customer inquiry: lease terms"],
+        sentiment="positive",
+        suggested_tags=["lease"],
+        saved=True,
+    )
+    assert resp.session_id == "s1"
+    assert resp.sentiment == "positive"
+    assert resp.saved is True
+
+
+def test_support_triage_analytics_response():
+
+    expected_total = 10
+    expected_active = 4
+    expected_resolved = 4
+    expected_escalated = 1
+    expected_closed = 1
+    expected_res_rate = 50.0
+    expected_esc_rate = 10.0
+    expected_turns = 2.5
+    expected_tag_count = 5
+
+    resp = SupportTriageAnalyticsResponse(
+        total_sessions=expected_total,
+        active_count=expected_active,
+        resolved_count=expected_resolved,
+        escalated_count=expected_escalated,
+        closed_count=expected_closed,
+        resolution_rate=expected_res_rate,
+        escalation_rate=expected_esc_rate,
+        avg_turns_per_session=expected_turns,
+        top_tags=[TagCount(tag="lease", count=expected_tag_count)],
+    )
+    assert resp.total_sessions == expected_total
+    assert resp.resolution_rate == expected_res_rate
+    assert resp.top_tags[0].tag == "lease"
+    assert resp.top_tags[0].count == expected_tag_count
