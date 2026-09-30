@@ -69,7 +69,12 @@
   - Batch collection re-chunking: `POST /collections/{collection}/rechunk` iterating through collection documents with stored sources, re-splitting, replacing chunks, and reporting summary metrics
   - Collection chunk distribution analytics: `GET /collections/{collection}/analytics` computing chunk counts, length distributions (mean, min, max, median), histograms, and strategy breakdowns
   - Client & Streamlit UI integration: `rechunk_collection` and `get_collection_analytics` helpers, interactive batch re-chunk expander form, and chunk analytics card in the sidebar
-- 443 unit tests passing; 94.97% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.27.0 additions**:
+  - Conversation summarization engine & sentiment classification: automated dialogue summarization (`POST /sessions/{id}/summarize`) with key bullet points, sentiment classification, and suggested domain tags running offline with LLM fallback
+  - Support triage analytics & operations dashboard: `GET /sessions/triage-analytics` and Streamlit card computing status counts, resolution rate (%), escalation rate (%), average turns, and top tags
+  - Session resolution lifecycle management: `summary` and `resolution_notes` SQLite columns and migration, API route updating, and Streamlit session resolution panel
+  - Enriched multi-format export: Markdown, JSON, and CSV exports embed session status, tags, summary, and resolution notes alongside conversation transcripts
+- 485 unit tests passing; 95%+ total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -425,7 +430,7 @@ histograms, strategy breakdowns), and integrate batch controls into the Streamli
 - [x] Task 7: Streamlit UI batch re-chunk controls and chunk distribution analytics in `app/sidebar.py` with unit tests
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`) and final verification gate
 
-## v0.27.0 plan — Support Conversation Summarization, Resolution Management & Triage Analytics
+## v0.27.0 plan — Support Conversation Summarization, Resolution Management & Triage Analytics ✅ COMPLETED
 
 Deliver conversation intelligence, ticket resolution documentation, and operational triage KPIs for support workflows:
 automated conversation summarization with key points, detected sentiment, and suggested tags; agent resolution notes
@@ -470,7 +475,7 @@ support triage analytics API and Streamlit operations dashboard.
 - [x] Task 6: API routes `POST /sessions/{session_id}/summarize`, `GET /sessions/triage-analytics`, and extended `PATCH /sessions/{session_id}` in `api/main.py` with unit tests
 - [x] Task 7: Client helpers `summarize_session`, `get_support_triage_analytics`, and extended `update_session` in `app/api_utils.py` with unit tests
 - [x] Task 8: Streamlit UI support triage analytics widget and session resolution/summary panel in `app/sidebar.py` with unit tests
-- [ ] Task 9: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`) and final verification gate
+- [x] Task 9: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`) and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

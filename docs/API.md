@@ -1,4 +1,4 @@
-# API Reference (v0.22.0)
+# API Reference (v0.27.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -158,21 +158,16 @@ SQLite record (`404` when unknown).
 
 ## Sessions
 
-- `GET /sessions` → array of `{session_id, message_count, last_active,
-  preview, label, status, tags}` ordered by most recent activity (`preview` is the
-  truncated first question). Optional query params: `status` (one of `active`, `resolved`, `escalated`, `closed`) and `tag` (case-insensitive) to filter sessions.
-- `GET /sessions/{session_id}/history` → array of `{role, content}` pairs
-  for that session (`400` for a blank id). The Streamlit sidebar uses these
-  to list and reload past conversations.
-- `PATCH /sessions/{session_id}` with `{"label": "...", "status": "...", "tags": [...]}` → updates session metadata. `label` (1–80 chars), `status` (one of `active`, `resolved`, `escalated`, `closed`), `tags` (array of strings). Returns updated session info (`404` when unknown, `422` for invalid input).
-- `DELETE /sessions/{session_id}` → removes the session history, label,
-  and feedback (`400` for a blank id, `404` when unknown).
+- `GET /sessions` → array of `{session_id, message_count, last_active, preview, label, status, tags, summary, resolution_notes}` ordered by most recent activity (`preview` is the truncated first question). Optional query params: `status` (one of `active`, `resolved`, `escalated`, `closed`) and `tag` (case-insensitive) to filter sessions.
+- `GET /sessions/triage-analytics` → returns aggregated support operations KPIs: `{total_sessions, active_count, resolved_count, escalated_count, closed_count, resolution_rate, escalation_rate, avg_turns_per_session, top_tags: [{tag, count}]}`.
+- `GET /sessions/{session_id}/history` → array of `{role, content}` pairs for that session (`400` for a blank id). The Streamlit sidebar uses these to list and reload past conversations.
+- `POST /sessions/{session_id}/summarize` with `{"model": "gpt-4o-mini", "save_summary": true}` → generates conversation dialogue summary, key bullet points, detected sentiment (`positive`, `neutral`, `negative`), and suggested domain tags. When `save_summary` is true, persists the summary and merges suggested tags into session metadata. Returns `{session_id, summary, key_points, sentiment, suggested_tags, saved}` (`404` when session history is empty).
+- `PATCH /sessions/{session_id}` with `{"label": "...", "status": "...", "tags": [...], "summary": "...", "resolution_notes": "..."}` → updates session metadata. `label` (1–80 chars), `status` (`active`, `resolved`, `escalated`, `closed`), `tags` (string or array), `summary` (max 2000 chars), `resolution_notes` (max 2000 chars). Returns updated session info (`404` when unknown, `422` for invalid input).
+- `DELETE /sessions/{session_id}` → removes the session history, label, and feedback (`400` for a blank id, `404` when unknown).
 - `POST /delete-sessions` with `{"session_ids": ["s1", "s2"]}` (up to 50 sessions) deletes multiple sessions with cascading removal of chat history and feedback, returning `{results: [{session_id, status, error}], deleted: int, failed: int}`.
-- `DELETE /sessions?before=<ISO datetime>` → prunes sessions inactive since
-  the cutoff, including labels and feedback (`400` for a bad date).
-- `GET /sessions/{session_id}/export?format=markdown|json|csv` → exports the conversation transcript in the requested format (`text/markdown`, `application/json`, or `text/csv`). Default format is `markdown`. Invalid format → `400`. `404` when the session has no history.
-- `GET /sessions/search?q=<query>&limit=20` → searches SQLite conversation history
-  for matching questions and answers, returning an array of `{session_id, match_count, last_active, preview, label}`.
+- `DELETE /sessions?before=<ISO datetime>` → prunes sessions inactive since the cutoff, including labels and feedback (`400` for a bad date).
+- `GET /sessions/{session_id}/export?format=markdown|json|csv` → exports conversation transcript enriched with session metadata (`status`, `tags`, `summary`, `resolution_notes`) alongside turns in requested format (`text/markdown`, `application/json`, or `text/csv`). Default format is `markdown`. Invalid format → `400`. `404` when the session has no history.
+- `GET /sessions/search?q=<query>&limit=20` → searches SQLite conversation history for matching questions and answers, returning an array of `{session_id, match_count, last_active, preview, label}`.
 
 ## Quotas
 

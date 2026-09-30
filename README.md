@@ -1,10 +1,14 @@
-# Customer Support RAG Agent (v0.26.0)
+# Customer Support RAG Agent (v0.27.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
 ## Features
 
 - Conversational customer support over uploaded PDF, DOCX, HTML, MD, TXT, and CSV documents.
+- Support conversation summarization & sentiment engine (`POST /sessions/{id}/summarize`): automated dialogue summarization with key points, detected sentiment (positive/neutral/negative), suggested tags, and offline fallback; actionable via the Streamlit session resolution panel.
+- Support triage analytics & operations dashboard (`GET /sessions/triage-analytics`): aggregated operational KPIs (resolution rate %, escalation rate %, average turns per session, status distributions, and top issue tags) surfaced in the Streamlit sidebar.
+- Session resolution notes & lifecycle metadata (`PATCH /sessions/{id}`): record resolution summaries and agent notes in persistent SQLite metadata alongside session status and tags.
+- Enriched multi-format conversation export (`GET /sessions/{id}/export?format=markdown|json|csv`): Markdown, JSON, and CSV exports embed session status, tags, summary, and resolution notes alongside conversation transcripts.
 - Exact-duplicate uploads rejected (`409`) via content hashing.
 - Retrieval augmented generation with bounded chat history awareness
   (`MAX_HISTORY_TURNS`).
