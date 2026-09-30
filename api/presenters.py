@@ -91,7 +91,15 @@ def build_search_hits(
     return hits
 
 
-def render_session_markdown(session_id: str, label: str | None, messages: list[dict]) -> str:
+def render_session_markdown(  # noqa: PLR0913, PLR0917
+    session_id: str,
+    label: str | None,
+    messages: list[dict],
+    status: str | None = None,
+    tags: str | None = None,
+    summary: str | None = None,
+    resolution_notes: str | None = None,
+) -> str:
     """Render a conversation as a markdown transcript."""
     title = label or session_id
     lines = [
@@ -99,8 +107,16 @@ def render_session_markdown(session_id: str, label: str | None, messages: list[d
         "",
         f"- Session: `{session_id}`",
         f"- Exported: {datetime.now(UTC).isoformat(timespec='seconds')}",
-        "",
     ]
+    if status:
+        lines.append(f"- Status: {status}")
+    if tags:
+        lines.append(f"- Tags: {tags}")
+    if summary:
+        lines.append(f"- Summary: {summary}")
+    if resolution_notes:
+        lines.append(f"- Resolution Notes: {resolution_notes}")
+    lines.append("")
     for message in messages:
         lines.append(f"## {ROLE_HEADINGS.get(message['role'], message['role'])}")
         lines.append("")
@@ -109,11 +125,23 @@ def render_session_markdown(session_id: str, label: str | None, messages: list[d
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_session_json(session_id: str, label: str | None, messages: list[dict]) -> str:
+def render_session_json(  # noqa: PLR0913, PLR0917
+    session_id: str,
+    label: str | None,
+    messages: list[dict],
+    status: str | None = None,
+    tags: str | None = None,
+    summary: str | None = None,
+    resolution_notes: str | None = None,
+) -> str:
     """Render a conversation as structured JSON."""
     data = {
         "session_id": session_id,
         "label": label,
+        "status": status,
+        "tags": tags,
+        "summary": summary,
+        "resolution_notes": resolution_notes,
         "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "messages": [
             {
@@ -126,16 +154,40 @@ def render_session_json(session_id: str, label: str | None, messages: list[dict]
     return json.dumps(data, indent=2) + "\n"
 
 
-def render_session_csv(session_id: str, label: str | None, messages: list[dict]) -> str:
+def render_session_csv(  # noqa: PLR0913, PLR0917
+    session_id: str,
+    label: str | None,
+    messages: list[dict],
+    status: str | None = None,
+    tags: str | None = None,
+    summary: str | None = None,
+    resolution_notes: str | None = None,
+) -> str:
     """Render a conversation as CSV rows."""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["session_id", "label", "turn", "role", "content"])
+    writer.writerow(
+        [
+            "session_id",
+            "label",
+            "status",
+            "tags",
+            "summary",
+            "resolution_notes",
+            "turn",
+            "role",
+            "content",
+        ]
+    )
     for idx, message in enumerate(messages, start=1):
         writer.writerow(
             [
                 session_id,
                 label or "",
+                status or "",
+                tags or "",
+                summary or "",
+                resolution_notes or "",
                 idx,
                 message.get("role", ""),
                 message.get("content", ""),

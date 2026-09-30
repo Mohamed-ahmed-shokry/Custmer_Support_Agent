@@ -177,8 +177,72 @@ def test_render_session_csv():
     raw_csv = render_session_csv("session-2", "Label", messages)
     reader = list(csv.reader(io.StringIO(raw_csv)))
 
-    assert reader[0] == ["session_id", "label", "turn", "role", "content"]
-    assert reader[1] == ["session-2", "Label", "1", "human", "Line 1\nLine 2"]
-    assert reader[2] == ["session-2", "Label", "2", "ai", "Comma, here."]
+    expected_header = [
+        "session_id",
+        "label",
+        "status",
+        "tags",
+        "summary",
+        "resolution_notes",
+        "turn",
+        "role",
+        "content",
+    ]
+    assert reader[0] == expected_header
+    assert reader[1] == ["session-2", "Label", "", "", "", "", "1", "human", "Line 1\nLine 2"]
+    assert reader[2] == ["session-2", "Label", "", "", "", "", "2", "ai", "Comma, here."]
+
+
+def test_render_session_exports_with_resolution_details():
+    messages = [
+        {"role": "human", "content": "Lease question"},
+        {"role": "ai", "content": "Lease answer"},
+    ]
+    # Markdown
+    md = render_session_markdown(
+        "s-100",
+        "Resolved Issue",
+        messages,
+        status="resolved",
+        tags="lease, legal",
+        summary="Customer asked about clause 4.",
+        resolution_notes="Explained clause 4 terms.",
+    )
+    assert "- Status: resolved" in md
+    assert "- Tags: lease, legal" in md
+    assert "- Summary: Customer asked about clause 4." in md
+    assert "- Resolution Notes: Explained clause 4 terms." in md
+
+    # JSON
+    js_raw = render_session_json(
+        "s-100",
+        "Resolved Issue",
+        messages,
+        status="resolved",
+        tags="lease, legal",
+        summary="Customer asked about clause 4.",
+        resolution_notes="Explained clause 4 terms.",
+    )
+    data = json.loads(js_raw)
+    assert data["status"] == "resolved"
+    assert data["tags"] == "lease, legal"
+    assert data["summary"] == "Customer asked about clause 4."
+    assert data["resolution_notes"] == "Explained clause 4 terms."
+
+    # CSV
+    csv_raw = render_session_csv(
+        "s-100",
+        "Resolved Issue",
+        messages,
+        status="resolved",
+        tags="lease, legal",
+        summary="Customer asked about clause 4.",
+        resolution_notes="Explained clause 4 terms.",
+    )
+    csv_rows = list(csv.reader(io.StringIO(csv_raw)))
+    assert csv_rows[1][2] == "resolved"
+    assert csv_rows[1][3] == "lease, legal"
+    assert csv_rows[1][4] == "Customer asked about clause 4."
+    assert csv_rows[1][5] == "Explained clause 4 terms."
 
 
