@@ -463,7 +463,7 @@ support triage analytics API and Streamlit operations dashboard.
 
 ### Granular Task Breakdown
 - [x] Task 1: `ROADMAP.md` v0.27.0 plan specification
-- [ ] Task 2: Database schema migration and triage analytics queries in `api/db_utils.py` with unit tests
+- [x] Task 2: Database schema migration and triage analytics queries in `api/db_utils.py` with unit tests
 - [ ] Task 3: Conversation summarization & sentiment engine in `api/summarization.py` with unit tests
 - [ ] Task 4: Pydantic schemas for summarization and triage analytics in `api/pydantic_models.py` with unit tests
 - [ ] Task 5: Multi-format session export presenter updates with resolution details in `api/presenters.py` with unit tests
