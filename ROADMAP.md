@@ -1,6 +1,6 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.25.0, 2026-09-28)
+## Current State (v0.26.0, 2026-09-29)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -53,7 +53,6 @@
   - Configurable via `USE_CROSS_ENCODER_RERANK` and `CROSS_ENCODER_MODEL` settings
   - Streamlit UI toggle for cross-encoder rerank in Retrieval Filters
   - Unit tests for CrossEncoderReranker with mock model
-- 373 unit tests passing; 94.32% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 - **v0.24.0 additions**:
   - Playwright e2e suite (`tests/e2e`, opt-in `-m e2e`): chat flow (incl. LLM round-trip), document upload/management, session panel, UI smoke; page objects in `pages.py`
   - Dedicated CI `e2e` job booting the API + Streamlit against a throwaway DB and running the suite headless; `make test-e2e`
@@ -66,7 +65,11 @@
   - Re-chunk endpoint: `POST /docs/{file_id}/rechunk` accepting chunking options, validating chunk bounds, re-splitting preserved source text, deterministically replacing Chroma chunks, and returning refreshed document details
   - Document inspector chunking visualization and Re-chunk form: displays persistent chunking options (strategy, size, overlap) and allows in-place re-chunking directly from the Streamlit sidebar
   - Document detail response: `GET /docs/{file_id}` enriched with persistent chunking metadata
-- 418+ unit tests passing; >94% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.26.0 additions**:
+  - Batch collection re-chunking: `POST /collections/{collection}/rechunk` iterating through collection documents with stored sources, re-splitting, replacing chunks, and reporting summary metrics
+  - Collection chunk distribution analytics: `GET /collections/{collection}/analytics` computing chunk counts, length distributions (mean, min, max, median), histograms, and strategy breakdowns
+  - Client & Streamlit UI integration: `rechunk_collection` and `get_collection_analytics` helpers, interactive batch re-chunk expander form, and chunk analytics card in the sidebar
+- 443 unit tests passing; 94.97% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -421,6 +424,53 @@ histograms, strategy breakdowns), and integrate batch controls into the Streamli
 - [x] Task 6: Client helpers `rechunk_collection` and `get_collection_analytics` in `app/api_utils.py` with unit tests
 - [x] Task 7: Streamlit UI batch re-chunk controls and chunk distribution analytics in `app/sidebar.py` with unit tests
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`) and final verification gate
+
+## v0.27.0 plan — Support Conversation Summarization, Resolution Management & Triage Analytics
+
+Deliver conversation intelligence, ticket resolution documentation, and operational triage KPIs for support workflows:
+automated conversation summarization with key points, detected sentiment, and suggested tags; agent resolution notes
+and summary persistence in session metadata; multi-format session export with resolution details; and an aggregated
+support triage analytics API and Streamlit operations dashboard.
+
+### Scope & Objectives
+- **Conversation Summarization Engine**: `api/summarization.py` providing extractive dialogue summarization
+  (inquiry extraction, resolution/response synthesis, key bullet points, sentiment classification into
+  positive/neutral/negative, and domain-aware tag suggestions) running 100% offline without external API costs,
+  with transparent fallback when LLM credits are not available.
+- **Session Metadata & Persistence Enhancement**:
+  - SQLite schema migration: add `summary` and `resolution_notes` columns to `session_labels`.
+  - Database queries: update session metadata with notes/summary, fetch full session details, and compute
+    aggregated support triage analytics (`get_support_triage_analytics`) including status breakdowns, resolution
+    rate (%), escalation rate (%), average message turns, and top issue tags.
+- **Pydantic Schemas**:
+  - `SessionSummaryRequest` and `SessionSummaryResponse` with summary, key points, sentiment, and suggested tags.
+  - Enhanced `SessionInfo` and `UpdateSessionRequest` including `resolution_notes` and `summary`.
+  - `SupportTriageAnalyticsResponse` with status counts, rates, average turns, and tag distributions.
+- **FastAPI Endpoints**:
+  - `POST /sessions/{session_id}/summarize`: generate summary, sentiment, and tags, with optional database save.
+  - `GET /sessions/triage-analytics`: return aggregated support triage analytics.
+  - Extended `PATCH /sessions/{session_id}`: accept and update `resolution_notes` and `summary`.
+  - Extended `GET /sessions/{session_id}/export`: include summary and resolution notes in Markdown, JSON, and CSV exports.
+- **Client & Streamlit UI Integration**:
+  - Client methods in `app/api_utils.py`: `summarize_session()`, `get_support_triage_analytics()`, and extended `update_session()`.
+  - Support Triage Analytics Card in `app/sidebar.py`: display operational KPIs (Total Sessions, Resolution Rate %, Escalation Rate %, Avg Turns, status pills, top issue tags).
+  - Active Session Resolution & Triage Panel in `app/sidebar.py`: button to trigger auto-summarization, sentiment badge, and resolution notes editor with save action.
+- **Quality Gates**: Maintain test coverage >= 80%, zero ruff errors, zero mypy errors.
+
+### Explicit Exclusions (Deferred to v0.28.0+)
+- Real-time third-party ticketing webhooks (Zendesk, Jira, PagerDuty).
+- Continuous audio/speech-to-text live stream ingestion.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.27.0 plan specification
+- [ ] Task 2: Database schema migration and triage analytics queries in `api/db_utils.py` with unit tests
+- [ ] Task 3: Conversation summarization & sentiment engine in `api/summarization.py` with unit tests
+- [ ] Task 4: Pydantic schemas for summarization and triage analytics in `api/pydantic_models.py` with unit tests
+- [ ] Task 5: Multi-format session export presenter updates with resolution details in `api/presenters.py` with unit tests
+- [ ] Task 6: API routes `POST /sessions/{session_id}/summarize`, `GET /sessions/triage-analytics`, and extended `PATCH /sessions/{session_id}` in `api/main.py` with unit tests
+- [ ] Task 7: Client helpers `summarize_session`, `get_support_triage_analytics`, and extended `update_session` in `app/api_utils.py` with unit tests
+- [ ] Task 8: Streamlit UI support triage analytics widget and session resolution/summary panel in `app/sidebar.py` with unit tests
+- [ ] Task 9: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`) and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
