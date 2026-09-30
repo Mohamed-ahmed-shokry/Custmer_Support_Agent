@@ -1,4 +1,5 @@
 import sqlite3
+from collections import Counter
 from contextlib import closing
 from pathlib import Path
 
@@ -65,7 +66,9 @@ _CREATE_SESSION_LABELS_TABLE = (
     "CREATE TABLE IF NOT EXISTS session_labels "
     "(session_id TEXT PRIMARY KEY, label TEXT NOT NULL, "
     "status TEXT NOT NULL DEFAULT 'active', "
-    "tags TEXT NOT NULL DEFAULT '')"
+    "tags TEXT NOT NULL DEFAULT '', "
+    "summary TEXT DEFAULT '', "
+    "resolution_notes TEXT DEFAULT '')"
 )
 
 _CREATE_FEEDBACK_TABLE = (
@@ -83,6 +86,8 @@ _SELECT_FEEDBACK_COUNT = "SELECT COUNT(*) FROM feedback WHERE rating = ?"
 MAX_SESSION_LABEL_LENGTH = 80
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
 MAX_SESSION_TAGS_LENGTH = 200
+MAX_SESSION_SUMMARY_LENGTH = 2000
+MAX_RESOLUTION_NOTES_LENGTH = 2000
 
 _INSERT_APP_LOG = (
     "INSERT INTO application_logs (session_id, user_query, gpt_response, model) VALUES (?, ?, ?, ?)"
@@ -125,7 +130,13 @@ _SELECT_ALL_SESSIONS_BASE = (
     "COALESCE("
     "(SELECT status FROM session_labels WHERE session_id = l1.session_id), 'active'"
     ") AS status, "
-    "COALESCE((SELECT tags FROM session_labels WHERE session_id = l1.session_id), '') AS tags "
+    "COALESCE((SELECT tags FROM session_labels WHERE session_id = l1.session_id), '') AS tags, "
+    "COALESCE("
+    "(SELECT summary FROM session_labels WHERE session_id = l1.session_id), ''"
+    ") AS summary, "
+    "COALESCE("
+    "(SELECT resolution_notes FROM session_labels WHERE session_id = l1.session_id), ''"
+    ") AS resolution_notes "
     "FROM application_logs l1 GROUP BY l1.session_id"
 )
 _SELECT_ALL_SESSIONS = _SELECT_ALL_SESSIONS_BASE + " ORDER BY last_active DESC"
@@ -139,7 +150,13 @@ _SEARCH_SESSIONS = (
     "COALESCE("
     "(SELECT status FROM session_labels WHERE session_id = l1.session_id), 'active'"
     ") AS status, "
-    "COALESCE((SELECT tags FROM session_labels WHERE session_id = l1.session_id), '') AS tags "
+    "COALESCE((SELECT tags FROM session_labels WHERE session_id = l1.session_id), '') AS tags, "
+    "COALESCE("
+    "(SELECT summary FROM session_labels WHERE session_id = l1.session_id), ''"
+    ") AS summary, "
+    "COALESCE("
+    "(SELECT resolution_notes FROM session_labels WHERE session_id = l1.session_id), ''"
+    ") AS resolution_notes "
     "FROM application_logs l1 "
     "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
     "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
@@ -195,6 +212,28 @@ def normalize_session_tags(value: str | list[str] | None) -> str:
     if len(tags_str) > MAX_SESSION_TAGS_LENGTH:
         raise ValueError(f"Session tags must be at most {MAX_SESSION_TAGS_LENGTH} characters.")
     return tags_str
+
+
+def normalize_session_summary(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = value.strip()
+    if len(cleaned) > MAX_SESSION_SUMMARY_LENGTH:
+        raise ValueError(
+            f"Session summary must be at most {MAX_SESSION_SUMMARY_LENGTH} characters."
+        )
+    return cleaned
+
+
+def normalize_resolution_notes(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = value.strip()
+    if len(cleaned) > MAX_RESOLUTION_NOTES_LENGTH:
+        raise ValueError(
+            f"Resolution notes must be at most {MAX_RESOLUTION_NOTES_LENGTH} characters."
+        )
+    return cleaned
 
 
 PREVIEW_MAX_LENGTH = 80
@@ -692,7 +731,7 @@ def get_feedback_analytics(recent_comments_limit: int = 5) -> dict:
 
 
 def migrate_session_labels():
-    """Add newer columns (status, tags) to session_labels table if missing."""
+    """Add newer columns (status, tags, summary, notes) to session_labels if missing."""
     with closing(get_db_connection()) as conn:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(session_labels)")]
         if "status" not in columns:
@@ -701,19 +740,29 @@ def migrate_session_labels():
             )
         if "tags" not in columns:
             conn.execute("ALTER TABLE session_labels ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        if "summary" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN summary TEXT DEFAULT ''")
+        if "resolution_notes" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN resolution_notes TEXT DEFAULT ''")
         conn.commit()
 
 
-def update_session_metadata(
+def update_session_metadata(  # noqa: PLR0913, PLR0917
     session_id: str,
     label: str | None = None,
     status: str | None = None,
     tags: str | list[str] | None = None,
+    summary: str | None = None,
+    resolution_notes: str | None = None,
 ) -> bool:
-    """Update label, status, and/or tags for an existing session with history."""
+    """Update metadata (label, status, tags, summary, notes) for a session with history."""
     clean_label = normalize_session_label(label) if label is not None else None
     clean_status = normalize_session_status(status) if status is not None else None
     clean_tags = normalize_session_tags(tags) if tags is not None else None
+    clean_summary = normalize_session_summary(summary) if summary is not None else None
+    clean_notes = (
+        normalize_resolution_notes(resolution_notes) if resolution_notes is not None else None
+    )
 
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
@@ -721,37 +770,47 @@ def update_session_metadata(
             return False
 
         cur = conn.execute(
-            "SELECT label, status, tags FROM session_labels WHERE session_id = ?",
+            "SELECT label, status, tags, summary, resolution_notes FROM session_labels "
+            "WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         if cur is None:
             new_label = clean_label or ""
             new_status = clean_status or "active"
             new_tags = clean_tags or ""
+            new_summary = clean_summary or ""
+            new_notes = clean_notes or ""
             conn.execute(
-                "INSERT INTO session_labels (session_id, label, status, tags) VALUES (?, ?, ?, ?)",
-                (session_id, new_label, new_status, new_tags),
+                "INSERT INTO session_labels "
+                "(session_id, label, status, tags, summary, resolution_notes) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (session_id, new_label, new_status, new_tags, new_summary, new_notes),
             )
         else:
             new_label = clean_label if clean_label is not None else cur["label"]
             new_status = clean_status if clean_status is not None else cur["status"]
             new_tags = clean_tags if clean_tags is not None else cur["tags"]
+            new_summary = clean_summary if clean_summary is not None else (cur["summary"] or "")
+            new_notes = clean_notes if clean_notes is not None else (cur["resolution_notes"] or "")
             conn.execute(
-                "UPDATE session_labels SET label = ?, status = ?, tags = ? WHERE session_id = ?",
-                (new_label, new_status, new_tags, session_id),
+                "UPDATE session_labels "
+                "SET label = ?, status = ?, tags = ?, summary = ?, resolution_notes = ? "
+                "WHERE session_id = ?",
+                (new_label, new_status, new_tags, new_summary, new_notes, session_id),
             )
         conn.commit()
         return True
 
 
 def get_session_metadata(session_id: str) -> dict | None:
-    """Fetch label, status, and tags for a session, or None if session does not exist."""
+    """Fetch label, status, tags, summary, and notes for a session, or None if unknown."""
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
         if not exists:
             return None
         row = conn.execute(
-            "SELECT label, status, tags FROM session_labels WHERE session_id = ?",
+            "SELECT label, status, tags, summary, resolution_notes FROM session_labels "
+            "WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         if row is None:
@@ -760,12 +819,85 @@ def get_session_metadata(session_id: str) -> dict | None:
                 "label": None,
                 "status": "active",
                 "tags": "",
+                "summary": "",
+                "resolution_notes": "",
             }
         return {
             "session_id": session_id,
             "label": row["label"] if row["label"] else None,
             "status": row["status"] if row["status"] else "active",
             "tags": row["tags"] if row["tags"] else "",
+            "summary": row["summary"] if row["summary"] else "",
+            "resolution_notes": row["resolution_notes"] if row["resolution_notes"] else "",
+        }
+
+
+def get_support_triage_analytics() -> dict:
+    """Compute operational triage metrics across all customer support sessions."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        query = f"SELECT session_id, message_count, status, tags FROM ({_SELECT_ALL_SESSIONS_BASE})"
+        rows = cursor.execute(query).fetchall()
+
+        total_sessions = len(rows)
+        if total_sessions == 0:
+            return {
+                "total_sessions": 0,
+                "active_count": 0,
+                "resolved_count": 0,
+                "escalated_count": 0,
+                "closed_count": 0,
+                "resolution_rate": 0.0,
+                "escalation_rate": 0.0,
+                "avg_turns_per_session": 0.0,
+                "top_tags": [],
+            }
+
+        active_count = 0
+        resolved_count = 0
+        escalated_count = 0
+        closed_count = 0
+        total_messages = 0
+        tag_counter: Counter[str] = Counter()
+
+        for r in rows:
+            st = (r["status"] or "active").lower()
+            if st == "resolved":
+                resolved_count += 1
+            elif st == "escalated":
+                escalated_count += 1
+            elif st == "closed":
+                closed_count += 1
+            else:
+                active_count += 1
+
+            total_messages += int(r["message_count"] or 0)
+            raw_tags = r["tags"] or ""
+            if raw_tags:
+                for tag in raw_tags.split(","):
+                    clean = tag.strip().lower()
+                    if clean:
+                        tag_counter[clean] += 1
+
+        resolution_rate = round(((resolved_count + closed_count) / total_sessions) * 100.0, 2)
+        escalation_rate = round((escalated_count / total_sessions) * 100.0, 2)
+        avg_turns = round(total_messages / total_sessions, 2)
+
+        top_tags = [
+            {"tag": tag, "count": count}
+            for tag, count in tag_counter.most_common(10)
+        ]
+
+        return {
+            "total_sessions": total_sessions,
+            "active_count": active_count,
+            "resolved_count": resolved_count,
+            "escalated_count": escalated_count,
+            "closed_count": closed_count,
+            "resolution_rate": resolution_rate,
+            "escalation_rate": escalation_rate,
+            "avg_turns_per_session": avg_turns,
+            "top_tags": top_tags,
         }
 
 

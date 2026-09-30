@@ -1,6 +1,7 @@
 import sqlite3
 from contextlib import closing
 
+import pytest
 from api import db_utils
 
 
@@ -577,7 +578,14 @@ def test_update_session_metadata_and_retrieval(monkeypatch, tmp_path):
 
     # Initial metadata when not set
     meta = db_utils.get_session_metadata("session-1")
-    assert meta == {"session_id": "session-1", "label": None, "status": "active", "tags": ""}
+    assert meta == {
+        "session_id": "session-1",
+        "label": None,
+        "status": "active",
+        "tags": "",
+        "summary": "",
+        "resolution_notes": "",
+    }
 
     # Update metadata incrementally
     assert (
@@ -669,6 +677,8 @@ def test_migrate_session_labels_adds_columns(monkeypatch, tmp_path):
         assert row["label"] == "Old Session"
         assert row["status"] == "active"
         assert row["tags"] == ""
+        assert row["summary"] == ""
+        assert row["resolution_notes"] == ""
 
     # Second migration call is idempotent
     db_utils.migrate_session_labels()
@@ -740,3 +750,142 @@ def test_get_collections_details_empty_and_populated(monkeypatch, tmp_path):
 
     assert help_col["document_count"] == expected_help_doc_count
     assert help_col["file_formats"] == {"txt": 1, "unknown": 1}
+
+
+def test_normalize_session_summary_and_resolution_notes():
+    assert db_utils.normalize_session_summary(None) == ""
+    assert db_utils.normalize_session_summary("   ") == ""
+    assert db_utils.normalize_session_summary(" Customer needs refund ") == "Customer needs refund"
+    with pytest.raises(ValueError, match="Session summary must be at most"):
+        db_utils.normalize_session_summary("a" * 2001)
+
+    assert db_utils.normalize_resolution_notes(None) == ""
+    assert db_utils.normalize_resolution_notes("   ") == ""
+    assert db_utils.normalize_resolution_notes(" Issued refund via Stripe ") == (
+        "Issued refund via Stripe"
+    )
+    with pytest.raises(ValueError, match="Resolution notes must be at most"):
+        db_utils.normalize_resolution_notes("b" * 2001)
+
+
+def test_session_metadata_summary_and_resolution_notes(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Unknown session returns False
+    assert (
+        db_utils.update_session_metadata(
+            "unknown", summary="Summary text", resolution_notes="Notes text"
+        )
+        is False
+    )
+
+    # Session with logs
+    db_utils.insert_application_logs("s1", "Issue query", "Issue solution", "gpt-4o")
+
+    # Initial metadata without explicit labels
+    meta = db_utils.get_session_metadata("s1")
+    assert meta is not None
+    assert meta["summary"] == ""
+    assert meta["resolution_notes"] == ""
+    assert meta["status"] == "active"
+
+    # Update summary, notes, status, and tags
+    ok = db_utils.update_session_metadata(
+        "s1",
+        label="Lease Invariant",
+        status="resolved",
+        tags=["lease", "refund"],
+        summary="User asked about lease termination and refund.",
+        resolution_notes="Approved early termination with no penalty.",
+    )
+    assert ok is True
+
+    updated_meta = db_utils.get_session_metadata("s1")
+    assert updated_meta is not None
+    assert updated_meta["label"] == "Lease Invariant"
+    assert updated_meta["status"] == "resolved"
+    assert updated_meta["tags"] == "lease, refund"
+    assert updated_meta["summary"] == "User asked about lease termination and refund."
+    assert (
+        updated_meta["resolution_notes"]
+        == "Approved early termination with no penalty."
+    )
+
+    # Partial update preserves existing summary and notes
+    db_utils.update_session_metadata("s1", status="closed")
+    closed_meta = db_utils.get_session_metadata("s1")
+    assert closed_meta is not None
+    assert closed_meta["status"] == "closed"
+    assert closed_meta["summary"] == "User asked about lease termination and refund."
+    assert (
+        closed_meta["resolution_notes"]
+        == "Approved early termination with no penalty."
+    )
+
+    # Sessions listing reflects summary and resolution_notes
+    all_sessions = db_utils.get_all_sessions()
+    assert len(all_sessions) == 1
+    assert all_sessions[0]["summary"] == "User asked about lease termination and refund."
+    assert (
+        all_sessions[0]["resolution_notes"]
+        == "Approved early termination with no penalty."
+    )
+
+
+def test_get_support_triage_analytics(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Empty DB
+    empty_res = db_utils.get_support_triage_analytics()
+    assert empty_res["total_sessions"] == 0
+    assert empty_res["active_count"] == 0
+    assert empty_res["resolved_count"] == 0
+    assert empty_res["escalated_count"] == 0
+    assert empty_res["closed_count"] == 0
+    assert empty_res["resolution_rate"] == 0.0
+    assert empty_res["escalation_rate"] == 0.0
+    assert empty_res["avg_turns_per_session"] == 0.0
+    assert empty_res["top_tags"] == []
+
+    # Insert 4 sessions:
+    # s1: 2 turns (4 messages total in application_logs), resolved, tags: lease, urgent
+    # s2: 1 turn, escalated, tags: urgent, billing
+    # s3: 1 turn, closed, tags: lease
+    # s4: 1 turn, active (default), no tags
+    db_utils.insert_application_logs("s1", "Q1", "A1", "gpt-4o")
+    db_utils.insert_application_logs("s1", "Q2", "A2", "gpt-4o")
+    db_utils.insert_application_logs("s2", "Q3", "A3", "gpt-4o")
+    db_utils.insert_application_logs("s3", "Q4", "A4", "gpt-4o")
+    db_utils.insert_application_logs("s4", "Q5", "A5", "gpt-4o")
+
+    db_utils.update_session_metadata("s1", status="resolved", tags="lease, urgent")
+    db_utils.update_session_metadata("s2", status="escalated", tags="urgent, billing")
+    db_utils.update_session_metadata("s3", status="closed", tags="lease")
+
+    analytics = db_utils.get_support_triage_analytics()
+    expected_total_sessions = 4
+    expected_active_count = 1
+    expected_resolved_count = 1
+    expected_escalated_count = 1
+    expected_closed_count = 1
+    expected_resolution_rate = 50.0
+    expected_escalation_rate = 25.0
+    expected_avg_turns = 1.25
+    expected_lease_tag_count = 2
+    expected_urgent_tag_count = 2
+    expected_billing_tag_count = 1
+
+    assert analytics["total_sessions"] == expected_total_sessions
+    assert analytics["active_count"] == expected_active_count
+    assert analytics["resolved_count"] == expected_resolved_count
+    assert analytics["escalated_count"] == expected_escalated_count
+    assert analytics["closed_count"] == expected_closed_count
+    assert analytics["resolution_rate"] == expected_resolution_rate
+    assert analytics["escalation_rate"] == expected_escalation_rate
+    assert analytics["avg_turns_per_session"] == expected_avg_turns
+
+    tag_counts = {item["tag"]: item["count"] for item in analytics["top_tags"]}
+    assert tag_counts["lease"] == expected_lease_tag_count
+    assert tag_counts["urgent"] == expected_urgent_tag_count
+    assert tag_counts["billing"] == expected_billing_tag_count
+
