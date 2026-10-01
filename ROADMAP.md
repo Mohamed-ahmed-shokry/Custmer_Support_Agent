@@ -477,7 +477,7 @@ support triage analytics API and Streamlit operations dashboard.
 - [x] Task 8: Streamlit UI support triage analytics widget and session resolution/summary panel in `app/sidebar.py` with unit tests
 - [x] Task 9: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`) and final verification gate
 
-## v0.28.0 plan — Webhook Dispatch & Escalation Alerting Engine
+## v0.28.0 plan — Webhook Dispatch & Escalation Alerting Engine ✅ COMPLETED
 
 Deliver an automated webhook event notification engine with secure HMAC-SHA256 signature verification, event filtering, delivery audit logging, and administrative management in the Streamlit UI:
 external notifications for escalated and resolved support sessions and negative CSAT feedback dispatched in real time to external systems (Slack, Zendesk, incident management, or custom HTTP endpoints).
@@ -518,7 +518,7 @@ external notifications for escalated and resolved support sessions and negative 
 - [x] Task 5: API routes in `api/main.py` and event trigger wiring with unit tests
 - [x] Task 6: Client helpers in `app/api_utils.py` with unit tests
 - [x] Task 7: Streamlit UI webhook manager and delivery audit viewer in `app/sidebar.py` with unit tests
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.28.0, and final verification gate
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.28.0, and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

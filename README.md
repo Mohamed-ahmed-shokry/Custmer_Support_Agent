@@ -1,10 +1,12 @@
-# Customer Support RAG Agent (v0.27.0)
+# Customer Support RAG Agent (v0.28.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
 ## Features
 
 - Conversational customer support over uploaded PDF, DOCX, HTML, MD, TXT, and CSV documents.
+- Webhook dispatch & escalation alerting engine (`POST /webhooks`, `GET /webhooks`, `PATCH /webhooks/{id}`, `DELETE /webhooks/{id}`, `POST /webhooks/{id}/ping`, `GET /webhooks/deliveries`): automated real-time dispatching with HMAC-SHA256 signature verification (`X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Event`) and delivery audit logging on session escalations (`session.escalated`), resolutions (`session.resolved`), and negative CSAT feedback (`feedback.negative`).
+- Streamlit Webhooks & Alerts management panel: register endpoints with custom event filtering and HMAC secrets, test connectivity with one-click test pings, toggle active state, and monitor recent delivery status codes.
 - Support conversation summarization & sentiment engine (`POST /sessions/{id}/summarize`): automated dialogue summarization with key points, detected sentiment (positive/neutral/negative), suggested tags, and offline fallback; actionable via the Streamlit session resolution panel.
 - Support triage analytics & operations dashboard (`GET /sessions/triage-analytics`): aggregated operational KPIs (resolution rate %, escalation rate %, average turns per session, status distributions, and top issue tags) surfaced in the Streamlit sidebar.
 - Session resolution notes & lifecycle metadata (`PATCH /sessions/{id}`): record resolution summaries and agent notes in persistent SQLite metadata alongside session status and tags.

@@ -187,6 +187,35 @@ SQLite record (`404` when unknown).
 - `GET /feedback/analytics?recent_comments_limit=5` → `{total_feedback, positive_feedback, negative_feedback, satisfaction_rate, total_comments, comment_rate, recent_comments: [...]}`.
   Returns aggregated CSAT analytics: satisfaction rate (%), positive/negative counts, total comments, comment rate (%), and recent comments with ratings. `recent_comments_limit` (0–50, default 5) controls how many recent commented entries to include.
 
+## Webhooks & Alerts
+
+The agent includes an automated webhook event dispatcher and alerting engine. Subscribed endpoints receive JSON HTTP POST requests when important support events occur (e.g., ticket escalation, ticket resolution, or negative CSAT ratings).
+
+### Signature Verification
+
+When a webhook is configured with a shared secret, every dispatched HTTP request includes an HMAC-SHA256 signature in the headers for authenticity verification:
+- `X-Webhook-Event`: The event name (e.g., `session.escalated`, `session.resolved`, `feedback.negative`, `test.ping`).
+- `X-Webhook-Timestamp`: Unix epoch timestamp string (seconds) when the request was prepared.
+- `X-Webhook-Signature`: Lowercase hex-encoded HMAC-SHA256 digest computed over `f"{timestamp}.{raw_json_body}"` using the shared secret.
+
+Receivers can verify authenticity by computing `hmac.new(secret.encode(), f"{timestamp}.{raw_body}".encode(), hashlib.sha256).hexdigest()` and comparing using constant-time comparison `hmac.compare_digest()`.
+
+### Supported Events
+- `session.escalated`: Dispatched when a session status transitions to `escalated`. Payload data includes `session_id`, `status`, `previous_status`, `tags`, `summary`, and `resolution_notes`.
+- `session.resolved`: Dispatched when a session status transitions to `resolved`. Payload data includes `session_id`, `status`, `previous_status`, `tags`, `summary`, and `resolution_notes`.
+- `feedback.negative`: Dispatched when a user submits negative feedback (`rating: -1`). Payload data includes `session_id`, `feedback_id`, `rating`, `comment`, and `created_at`.
+- `test.ping`: Dispatched on manual ping to verify connectivity.
+- `*`: Wildcard subscription receiving all events.
+
+### Endpoints
+- `POST /webhooks` with `{"url": "https://example.com/alerts", "events": "session.escalated,feedback.negative", "secret": "...", "is_active": true}`: Registers a new webhook subscription. Returns `201` with `{id, url, events, is_active, failure_count, created_at, updated_at}`.
+- `GET /webhooks`: Lists all registered webhooks. Returns array of webhook records.
+- `GET /webhooks/{webhook_id}`: Returns detailed information for a webhook, including recent delivery logs. Returns `404` if not found.
+- `PATCH /webhooks/{webhook_id}` with `{"url": "...", "events": "...", "secret": "...", "is_active": bool}`: Partially updates a webhook configuration. Returns updated webhook record (`404` if not found).
+- `DELETE /webhooks/{webhook_id}`: Deletes the webhook subscription and its delivery logs. Returns `{"message": "Webhook deleted.", "id": <int>}` (`404` if not found).
+- `POST /webhooks/{webhook_id}/ping`: Dispatches a `test.ping` event to the webhook URL. Returns `{"success": bool, "status_code": int|null, "error": str|null}` (`404` if not found).
+- `GET /webhooks/deliveries?limit=50&offset=0`: Returns paginated audit logs of webhook delivery attempts across all webhooks: `{items: [{id, webhook_id, event, url, status_code, success, error_message, delivered_at}], total, limit, offset}`.
+
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:
