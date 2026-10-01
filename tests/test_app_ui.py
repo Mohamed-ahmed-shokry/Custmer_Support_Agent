@@ -1452,3 +1452,120 @@ def test_render_support_triage_analytics_empty_and_error(monkeypatch):
     captions_err = [c.args[0] for c in st_err.calls if c.fn == "caption"]
     assert any("Error loading triage analytics" in c for c in captions_err)
 
+
+def test_render_webhook_manager_empty(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_webhooks", lambda: [])
+    monkeypatch.setattr(
+        sidebar, "list_webhook_deliveries", lambda limit=5: {"items": [], "total": 0}
+    )
+
+    sidebar._render_webhook_manager()
+
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("No webhooks registered." in c for c in captions)
+    assert any("No delivery logs yet." in c for c in captions)
+
+
+def test_render_webhook_manager_populated(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    fake_hooks = [
+        {
+            "id": 1,
+            "url": "https://example.com/alerts",
+            "events": "session.escalated",
+            "is_active": True,
+            "failure_count": 0,
+        }
+    ]
+    fake_deliveries = {
+        "items": [
+            {
+                "id": 10,
+                "event": "session.escalated",
+                "status_code": 200,
+                "success": True,
+                "url": "https://example.com/alerts",
+                "error_message": None,
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_webhooks", lambda: fake_hooks)
+    monkeypatch.setattr(sidebar, "list_webhook_deliveries", lambda limit=5: fake_deliveries)
+
+    sidebar._render_webhook_manager()
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("**#1**" in md for md in markdowns)
+    assert any("`session.escalated`" in md for md in markdowns)
+    assert any("session.escalated" in md and "HTTP 200" in md for md in markdowns)
+
+
+def test_render_webhook_manager_actions(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    fake_hooks = [
+        {
+            "id": 1,
+            "url": "https://example.com/alerts",
+            "events": "*",
+            "is_active": True,
+            "failure_count": 0,
+        }
+    ]
+    monkeypatch.setattr(sidebar, "list_webhooks", lambda: fake_hooks)
+    monkeypatch.setattr(
+        sidebar, "list_webhook_deliveries", lambda limit=5: {"items": [], "total": 0}
+    )
+
+    pinged = []
+    monkeypatch.setattr(
+        sidebar,
+        "ping_webhook",
+        lambda wid: pinged.append(wid) or {"success": True},
+    )
+    st.buttons["ping_wh_1"] = True
+
+    sidebar._render_webhook_manager()
+    assert pinged == [1]
+    assert any("Ping delivered!" in s for s in st.successes)
+
+
+def test_render_webhook_manager_registration(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_webhooks", lambda: [])
+    monkeypatch.setattr(
+        sidebar, "list_webhook_deliveries", lambda limit=5: {"items": [], "total": 0}
+    )
+
+    st.values["new_webhook_url"] = "https://example.com/webhook"
+    st.values["new_webhook_events"] = "session.escalated"
+    st.values["new_webhook_secret"] = "sec123"
+    st.values["new_webhook_active"] = True
+    st.buttons["submit_new_webhook"] = True
+
+    created_args = []
+
+    def fake_create(url, events, secret, is_active):
+        created_args.append((url, events, secret, is_active))
+        return {"id": 2, "url": url}
+
+    monkeypatch.setattr(sidebar, "create_webhook", fake_create)
+
+    sidebar._render_webhook_manager()
+
+    assert len(created_args) == 1
+    assert created_args[0] == (
+        "https://example.com/webhook",
+        "session.escalated",
+        "sec123",
+        True,
+    )
+    assert any("Webhook #2 registered!" in s for s in st.successes)
+    assert st.reruns == 1
+
+

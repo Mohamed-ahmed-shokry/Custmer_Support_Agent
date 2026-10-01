@@ -162,11 +162,20 @@ class FakeStreamlit:
             return self.values[key]
         return list(default) if default else []
 
-    def text_input(self, label, value="", max_chars=None, key=None, placeholder=None):
+    def text_input(  # noqa: PLR0913, PLR0917
+        self, label, value="", max_chars=None, key=None, placeholder=None, type="default", **kwargs
+    ):
         self.calls.append(
             Call(
                 "st", "text_input", (label,),
-                {"value": value, "max_chars": max_chars, "key": key, "placeholder": placeholder},
+                {
+                    "value": value,
+                    "max_chars": max_chars,
+                    "key": key,
+                    "placeholder": placeholder,
+                    "type": type,
+                    **kwargs,
+                },
             )
         )
         return self.values.get(key, value)

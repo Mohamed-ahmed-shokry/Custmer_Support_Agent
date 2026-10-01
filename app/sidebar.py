@@ -4,11 +4,13 @@ from api.settings import settings
 
 from app.api_utils import (
     API_BASE_URL,
+    create_webhook,
     delete_collection,
     delete_document,
     delete_documents,
     delete_session,
     delete_sessions,
+    delete_webhook,
     export_session,
     get_collection_analytics,
     get_collections_details,
@@ -25,6 +27,9 @@ from app.api_utils import (
     list_documents,
     list_feedback,
     list_sessions,
+    list_webhook_deliveries,
+    list_webhooks,
+    ping_webhook,
     rechunk_collection,
     rechunk_document,
     rename_collection,
@@ -32,6 +37,7 @@ from app.api_utils import (
     search_sessions,
     summarize_session,
     update_session,
+    update_webhook,
     upload_document,
     upload_documents,
 )
@@ -862,6 +868,105 @@ def _render_support_triage_analytics():
             st.caption(f"Error loading triage analytics: {e}")
 
 
+def _render_webhook_subscriptions():
+    st.markdown("##### Subscriptions")
+    hooks = list_webhooks()
+    if not hooks:
+        st.caption("No webhooks registered.")
+        return
+
+    for wh in hooks:
+        wid = wh["id"]
+        active_icon = "🟢" if wh.get("is_active") else "⚪"
+        events_pill = wh.get("events", "*")
+        failures = wh.get("failure_count", 0)
+        fail_badge = f" · ⚠️ {failures} fails" if failures > 0 else ""
+        st.markdown(
+            f"**#{wid}** {active_icon} `{events_pill}`{fail_badge}  \n"
+            f"`{wh['url']}`"
+        )
+
+        col1, col2, col3 = st.columns(3)
+        if col1.button("Ping", key=f"ping_wh_{wid}"):
+            res = ping_webhook(wid)
+            if res and res.get("success"):
+                st.success("Ping delivered!")
+            else:
+                err = res.get("error") if res else "Failed"
+                st.error(f"Ping failed: {err}")
+
+        toggle_label = "Disable" if wh.get("is_active") else "Enable"
+        if col2.button(toggle_label, key=f"toggle_wh_{wid}"):
+            update_webhook(wid, is_active=not wh.get("is_active"))
+            st.rerun()
+
+        if col3.button("Delete", key=f"del_wh_{wid}") and delete_webhook(wid):
+            st.success("Deleted!")
+            st.rerun()
+
+
+def _render_webhook_register():
+    st.markdown("---")
+    st.markdown("##### Register Webhook")
+    new_url = st.text_input(
+        "Webhook URL",
+        key="new_webhook_url",
+        placeholder="https://example.com/alerts",
+    )
+    new_events = st.text_input(
+        "Events (*, session.escalated, ...)",
+        value="*",
+        key="new_webhook_events",
+    )
+    new_secret = st.text_input(
+        "Secret (HMAC-SHA256)",
+        type="password",
+        key="new_webhook_secret",
+    )
+    new_active = st.checkbox("Active", value=True, key="new_webhook_active")
+
+    if st.button("Register Webhook", key="submit_new_webhook"):
+        if not new_url.strip():
+            st.error("Webhook URL is required.")
+            return
+        created = create_webhook(
+            url=new_url.strip(),
+            events=new_events.strip() or "*",
+            secret=new_secret.strip() if new_secret else None,
+            is_active=new_active,
+        )
+        if created:
+            st.success(f"Webhook #{created['id']} registered!")
+            st.rerun()
+
+
+def _render_webhook_audit_log():
+    st.markdown("---")
+    st.markdown("##### Recent Deliveries")
+    deliveries_data = list_webhook_deliveries(limit=5)
+    items = deliveries_data.get("items", []) if deliveries_data else []
+    if not items:
+        st.caption("No delivery logs yet.")
+        return
+
+    for log in items:
+        status_icon = "✅" if log.get("success") else "❌"
+        code = log.get("status_code") or "ERR"
+        st.markdown(
+            f"{status_icon} **{log.get('event')}** (HTTP {code})  \n"
+            f"`{log.get('url')}`"
+        )
+        if log.get("error_message"):
+            st.caption(f"Error: {log['error_message']}")
+
+
+def _render_webhook_manager():
+    with st.sidebar.expander("Webhooks & Alerting"):
+        _render_webhook_subscriptions()
+        _render_webhook_register()
+        _render_webhook_audit_log()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -880,4 +985,6 @@ def display_sidebar():
     _render_feedback_analytics()
     _render_feedback_review()
     _render_support_triage_analytics()
+    _render_webhook_manager()
     _render_ops_metrics()
+
