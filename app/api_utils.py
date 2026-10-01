@@ -1,3 +1,5 @@
+from typing import Any
+
 import requests
 import streamlit as st
 from api.settings import settings
@@ -5,6 +7,7 @@ from api.settings import settings
 API_BASE_URL = settings.api_base_url
 
 HTTP_OK = 200
+HTTP_CREATED = 201
 
 
 def _request_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -733,4 +736,142 @@ def get_config():
     except Exception:
         return None
     return None
+
+
+def list_webhooks(active_only: bool = False, event: str | None = None):
+    params: dict[str, str | bool] = {}
+    if active_only:
+        params["active_only"] = True
+    if event:
+        params["event"] = event
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/webhooks",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error("Failed to list webhooks", response)
+        return []
+    except Exception as e:
+        st.error(f"An error occurred while listing webhooks: {str(e)}")
+        return []
+
+
+def create_webhook(
+    url: str,
+    events: str | list[str] | None = "*",
+    secret: str | None = None,
+    is_active: bool = True,
+):
+    payload = {
+        "url": url,
+        "events": events or "*",
+        "secret": secret or "",
+        "is_active": is_active,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/webhooks",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code in (HTTP_OK, HTTP_CREATED):
+            return response.json()
+        show_api_error("Failed to register webhook", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while registering webhook: {str(e)}")
+        return None
+
+
+def update_webhook(  # noqa: PLR0913, PLR0917
+    webhook_id: int,
+    url: str | None = None,
+    events: str | None = None,
+    secret: str | None = None,
+    is_active: bool | None = None,
+    reset_failures: bool = False,
+):
+    payload: dict[str, Any] = {"reset_failures": reset_failures}
+    if url is not None:
+        payload["url"] = url
+    if events is not None:
+        payload["events"] = events
+    if secret is not None:
+        payload["secret"] = secret
+    if is_active is not None:
+        payload["is_active"] = is_active
+
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/webhooks/{webhook_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to update webhook {webhook_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating webhook: {str(e)}")
+        return None
+
+
+def delete_webhook(webhook_id: int) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/webhooks/{webhook_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete webhook {webhook_id}", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting webhook: {str(e)}")
+        return False
+
+
+def ping_webhook(webhook_id: int):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/webhooks/{webhook_id}/ping",
+            headers=_request_headers(),
+            timeout=15,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to ping webhook {webhook_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while pinging webhook: {str(e)}")
+        return None
+
+
+def list_webhook_deliveries(webhook_id: int | None = None, limit: int = 50, offset: int = 0):
+    params: dict[str, int] = {"limit": limit, "offset": offset}
+    if webhook_id is not None:
+        params["webhook_id"] = webhook_id
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/webhooks/deliveries",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error("Failed to fetch webhook deliveries", response)
+        return {"items": [], "total": 0}
+    except Exception as e:
+        st.error(f"An error occurred while fetching webhook deliveries: {str(e)}")
+        return {"items": [], "total": 0}
+
 

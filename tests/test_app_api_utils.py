@@ -924,6 +924,116 @@ def test_get_support_triage_analytics_success_and_failure(monkeypatch, fake_requ
     assert api_utils.get_support_triage_analytics() is None
 
 
+def test_list_webhooks_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_list = [{"id": 1, "url": "https://example.com/alerts"}]
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_list)
+
+    res = api_utils.list_webhooks(active_only=True, event="session.escalated")
+    assert res == fake_list
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/webhooks")
+    assert kwargs["params"] == {"active_only": True, "event": "session.escalated"}
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.list_webhooks() == []
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_webhooks() == []
+
+
+def test_create_webhook_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_created = {"id": 1, "url": "https://example.com/hook", "events": "*"}
+    fake_requests.response = FakeResponse(status_code=201, payload=fake_created)
+
+    res = api_utils.create_webhook(url="https://example.com/hook", secret="whsec_123")
+    assert res == fake_created
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/webhooks")
+    assert kwargs["json"]["url"] == "https://example.com/hook"
+    assert kwargs["json"]["secret"] == "whsec_123"
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "bad url"})
+    assert api_utils.create_webhook(url="invalid") is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.create_webhook(url="https://example.com/hook") is None
+
+
+def test_update_webhook_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_updated = {"id": 1, "url": "https://example.com/hook2"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_updated)
+
+    res = api_utils.update_webhook(
+        webhook_id=1,
+        url="https://example.com/hook2",
+        reset_failures=True,
+    )
+    assert res == fake_updated
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/webhooks/1")
+    assert kwargs["json"]["url"] == "https://example.com/hook2"
+    assert kwargs["json"]["reset_failures"] is True
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "missing"})
+    assert api_utils.update_webhook(webhook_id=999) is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.update_webhook(webhook_id=1) is None
+
+
+def test_delete_webhook_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_requests.response = FakeResponse(status_code=200, payload={"message": "deleted"})
+    assert api_utils.delete_webhook(1) is True
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/webhooks/1")
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "missing"})
+    assert api_utils.delete_webhook(999) is False
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_webhook(1) is False
+
+
+def test_ping_webhook_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_ping = {"webhook_id": 1, "success": True}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_ping)
+
+    res = api_utils.ping_webhook(1)
+    assert res == fake_ping
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/webhooks/1/ping")
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "missing"})
+    assert api_utils.ping_webhook(999) is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.ping_webhook(1) is None
+
+
+def test_list_webhook_deliveries_success_and_failure(monkeypatch, fake_requests, fake_st):
+    fake_logs = {"items": [{"id": 1, "success": True}], "total": 1}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_logs)
+
+    res = api_utils.list_webhook_deliveries(webhook_id=1, limit=10, offset=0)
+    assert res == fake_logs
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/webhooks/deliveries")
+    assert kwargs["params"] == {"webhook_id": 1, "limit": 10, "offset": 0}
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.list_webhook_deliveries() == {"items": [], "total": 0}
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_webhook_deliveries() == {"items": [], "total": 0}
+
+
+
 
 
 
