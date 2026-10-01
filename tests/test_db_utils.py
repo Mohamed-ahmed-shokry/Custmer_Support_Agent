@@ -13,6 +13,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     db_utils.create_feedback()
+    db_utils.create_webhooks()
     return db_path
 
 
@@ -888,4 +889,258 @@ def test_get_support_triage_analytics(monkeypatch, tmp_path):
     assert tag_counts["lease"] == expected_lease_tag_count
     assert tag_counts["urgent"] == expected_urgent_tag_count
     assert tag_counts["billing"] == expected_billing_tag_count
+
+
+def test_normalize_webhook_url():
+    assert (
+        db_utils.normalize_webhook_url("  https://example.com/webhook  ")
+        == "https://example.com/webhook"
+    )
+    assert (
+        db_utils.normalize_webhook_url("http://localhost:8000/hook")
+        == "http://localhost:8000/hook"
+    )
+
+    with pytest.raises(ValueError, match="Webhook URL must not be blank"):
+        db_utils.normalize_webhook_url("")
+
+    with pytest.raises(ValueError, match="Webhook URL must not be blank"):
+        db_utils.normalize_webhook_url("   ")
+
+    with pytest.raises(ValueError, match="Webhook URL must not be blank"):
+        db_utils.normalize_webhook_url(None)
+
+    with pytest.raises(ValueError, match="must start with 'http://' or 'https://'"):
+        db_utils.normalize_webhook_url("ftp://example.com/hook")
+
+    with pytest.raises(ValueError, match="must start with 'http://' or 'https://'"):
+        db_utils.normalize_webhook_url("example.com/hook")
+
+    with pytest.raises(ValueError, match="must be at most"):
+        db_utils.normalize_webhook_url("https://example.com/" + "a" * 501)
+
+
+def test_normalize_webhook_events():
+    assert db_utils.normalize_webhook_events(None) == "*"
+    assert db_utils.normalize_webhook_events("") == "*"
+    assert db_utils.normalize_webhook_events([]) == "*"
+    assert db_utils.normalize_webhook_events(["*"]) == "*"
+    assert db_utils.normalize_webhook_events("session.escalated, *") == "*"
+    assert (
+        db_utils.normalize_webhook_events("session.resolved, session.escalated")
+        == "session.escalated, session.resolved"
+    )
+    assert (
+        db_utils.normalize_webhook_events(["session.resolved", "feedback.negative"])
+        == "feedback.negative, session.resolved"
+    )
+
+    with pytest.raises(ValueError, match="Invalid webhook event 'unknown.event'"):
+        db_utils.normalize_webhook_events("session.escalated, unknown.event")
+
+
+def test_normalize_webhook_secret():
+    assert db_utils.normalize_webhook_secret(None) == ""
+    assert db_utils.normalize_webhook_secret("") == ""
+    assert db_utils.normalize_webhook_secret("  my-secret-key  ") == "my-secret-key"
+
+    with pytest.raises(ValueError, match="must be at most"):
+        db_utils.normalize_webhook_secret("s" * 257)
+
+
+def test_create_and_get_webhook(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    hook = db_utils.create_webhook(
+        url="https://hooks.slack.com/services/123",
+        events="session.escalated, feedback.negative",
+        secret="whsec_123",
+        is_active=True,
+    )
+
+    assert hook["id"] == 1
+    assert hook["url"] == "https://hooks.slack.com/services/123"
+    assert hook["events"] == "feedback.negative, session.escalated"
+    assert hook["secret"] == "whsec_123"
+    assert hook["is_active"] is True
+    assert hook["failure_count"] == 0
+    assert hook["created_at"] is not None
+
+    fetched = db_utils.get_webhook(1)
+    assert fetched == hook
+
+    assert db_utils.get_webhook(999) is None
+
+
+def test_list_webhooks_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.create_webhook(
+        url="https://example.com/all",
+        events="*",
+        is_active=True,
+    )
+    db_utils.create_webhook(
+        url="https://example.com/escalated",
+        events="session.escalated",
+        is_active=True,
+    )
+    db_utils.create_webhook(
+        url="https://example.com/inactive",
+        events="feedback.negative",
+        is_active=False,
+    )
+
+    all_hooks = db_utils.list_webhooks()
+    expected_all_count = 3
+    assert len(all_hooks) == expected_all_count
+
+    active_hooks = db_utils.list_webhooks(active_only=True)
+    expected_active_count = 2
+    assert len(active_hooks) == expected_active_count
+    assert [h["id"] for h in active_hooks] == [1, 2]
+
+    escalated_hooks = db_utils.list_webhooks(event="session.escalated")
+    expected_escalated_count = 2
+    assert len(escalated_hooks) == expected_escalated_count
+    assert [h["id"] for h in escalated_hooks] == [1, 2]
+
+    feedback_hooks = db_utils.list_webhooks(active_only=True, event="feedback.negative")
+    assert len(feedback_hooks) == 1
+    assert feedback_hooks[0]["id"] == 1
+
+
+def test_update_webhook(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    hook = db_utils.create_webhook(
+        url="https://example.com/hook1",
+        events="session.escalated",
+        secret="secret1",
+        is_active=True,
+    )
+
+    db_utils.record_webhook_delivery(
+        webhook_id=hook["id"],
+        event="session.escalated",
+        url=hook["url"],
+        status_code=500,
+        success=False,
+        error_message="Internal Server Error",
+    )
+    hook_after_fail = db_utils.get_webhook(hook["id"])
+    assert hook_after_fail is not None
+    assert hook_after_fail["failure_count"] == 1
+
+    updated = db_utils.update_webhook(
+        webhook_id=hook["id"],
+        url="https://example.com/hook1-updated",
+        events="session.resolved",
+        secret="newsecret",
+        is_active=False,
+        reset_failures=True,
+    )
+
+    assert updated is not None
+    assert updated["url"] == "https://example.com/hook1-updated"
+    assert updated["events"] == "session.resolved"
+    assert updated["secret"] == "newsecret"
+    assert updated["is_active"] is False
+    assert updated["failure_count"] == 0
+
+    assert db_utils.update_webhook(999, url="https://example.com/nonexistent") is None
+
+
+def test_delete_webhook_and_cascade_logs(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    hook = db_utils.create_webhook(url="https://example.com/delete-me")
+    db_utils.record_webhook_delivery(
+        webhook_id=hook["id"],
+        event="ping",
+        url=hook["url"],
+        status_code=200,
+        success=True,
+    )
+
+    logs_before, total_before = db_utils.get_webhook_delivery_logs(webhook_id=hook["id"])
+    assert total_before == 1
+    assert len(logs_before) == 1
+
+    deleted = db_utils.delete_webhook(hook["id"])
+    assert deleted is True
+
+    assert db_utils.get_webhook(hook["id"]) is None
+    logs_after, total_after = db_utils.get_webhook_delivery_logs(webhook_id=hook["id"])
+    assert total_after == 0
+    assert len(logs_after) == 0
+
+    assert db_utils.delete_webhook(999) is False
+
+
+def test_record_and_get_webhook_delivery_logs(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    h1 = db_utils.create_webhook(url="https://example.com/h1")
+    h2 = db_utils.create_webhook(url="https://example.com/h2")
+
+    log_id1 = db_utils.record_webhook_delivery(
+        webhook_id=h1["id"],
+        event="session.escalated",
+        url=h1["url"],
+        status_code=200,
+        success=True,
+        payload_preview='{"session_id": "s1"}',
+    )
+    log_id2 = db_utils.record_webhook_delivery(
+        webhook_id=h1["id"],
+        event="feedback.negative",
+        url=h1["url"],
+        status_code=502,
+        success=False,
+        payload_preview='{"session_id": "s2"}',
+        error_message="Bad Gateway",
+    )
+    log_id3 = db_utils.record_webhook_delivery(
+        webhook_id=h2["id"],
+        event="session.resolved",
+        url=h2["url"],
+        status_code=200,
+        success=True,
+        payload_preview='{"session_id": "s3"}',
+    )
+
+    assert log_id1 > 0
+    assert log_id2 > 0
+    assert log_id3 > 0
+
+    h1_hook = db_utils.get_webhook(h1["id"])
+    h2_hook = db_utils.get_webhook(h2["id"])
+    assert h1_hook is not None and h1_hook["failure_count"] == 1
+    assert h2_hook is not None and h2_hook["failure_count"] == 0
+
+    # Successful delivery resets failure count
+    db_utils.record_webhook_delivery(
+        webhook_id=h1["id"],
+        event="ping",
+        url=h1["url"],
+        status_code=200,
+        success=True,
+    )
+    h1_hook_reset = db_utils.get_webhook(h1["id"])
+    assert h1_hook_reset is not None and h1_hook_reset["failure_count"] == 0
+
+    # Get logs pagination and filter
+    all_logs, total_count = db_utils.get_webhook_delivery_logs(limit=2, offset=0)
+    expected_logs_total = 4
+    expected_page_count = 2
+    assert total_count == expected_logs_total
+    assert len(all_logs) == expected_page_count
+
+    h2_logs, h2_total = db_utils.get_webhook_delivery_logs(webhook_id=h2["id"])
+    assert h2_total == 1
+    assert len(h2_logs) == 1
+    assert h2_logs[0]["event"] == "session.resolved"
+    assert h2_logs[0]["success"] is True
+
 

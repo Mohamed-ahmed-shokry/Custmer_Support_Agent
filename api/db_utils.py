@@ -83,6 +83,64 @@ _INSERT_FEEDBACK = "INSERT INTO feedback (session_id, rating, comment) VALUES (?
 
 _SELECT_FEEDBACK_COUNT = "SELECT COUNT(*) FROM feedback WHERE rating = ?"
 
+_CREATE_WEBHOOKS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS webhooks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "url TEXT NOT NULL, "
+    "events TEXT NOT NULL DEFAULT '*', "
+    "secret TEXT DEFAULT '', "
+    "is_active INTEGER NOT NULL DEFAULT 1, "
+    "failure_count INTEGER NOT NULL DEFAULT 0, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+_CREATE_WEBHOOK_DELIVERY_LOGS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS webhook_delivery_logs ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE, "
+    "event TEXT NOT NULL, "
+    "url TEXT NOT NULL, "
+    "status_code INTEGER, "
+    "success INTEGER NOT NULL, "
+    "payload_preview TEXT, "
+    "error_message TEXT, "
+    "delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+_INSERT_WEBHOOK = (
+    "INSERT INTO webhooks (url, events, secret, is_active, failure_count) "
+    "VALUES (?, ?, ?, ?, 0)"
+)
+_SELECT_WEBHOOK_BY_ID = (
+    "SELECT id, url, events, secret, is_active, failure_count, created_at "
+    "FROM webhooks WHERE id = ?"
+)
+_DELETE_WEBHOOK = "DELETE FROM webhooks WHERE id = ?"
+_DELETE_WEBHOOK_LOGS_BY_WEBHOOK = "DELETE FROM webhook_delivery_logs WHERE webhook_id = ?"
+_INSERT_WEBHOOK_DELIVERY = (
+    "INSERT INTO webhook_delivery_logs "
+    "(webhook_id, event, url, status_code, success, payload_preview, error_message) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?)"
+)
+_INCREMENT_WEBHOOK_FAILURE = (
+    "UPDATE webhooks SET failure_count = failure_count + 1 WHERE id = ?"
+)
+_RESET_WEBHOOK_FAILURE = (
+    "UPDATE webhooks SET failure_count = 0 WHERE id = ?"
+)
+
+VALID_WEBHOOK_EVENTS = {
+    "*",
+    "session.escalated",
+    "session.resolved",
+    "feedback.negative",
+    "ping",
+}
+MAX_WEBHOOK_URL_LENGTH = 500
+MAX_WEBHOOK_SECRET_LENGTH = 256
+MAX_DELIVERY_PREVIEW_LENGTH = 500
+MAX_DELIVERY_ERROR_LENGTH = 500
+
 MAX_SESSION_LABEL_LENGTH = 80
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
 MAX_SESSION_TAGS_LENGTH = 200
@@ -234,6 +292,53 @@ def normalize_resolution_notes(value: str | None) -> str:
             f"Resolution notes must be at most {MAX_RESOLUTION_NOTES_LENGTH} characters."
         )
     return cleaned
+
+
+def normalize_webhook_url(value: str | None) -> str:
+    """Validate webhook URL, ensuring http/https scheme and reasonable length."""
+    url = (value or "").strip()
+    if not url:
+        raise ValueError("Webhook URL must not be blank.")
+    if len(url) > MAX_WEBHOOK_URL_LENGTH:
+        raise ValueError(f"Webhook URL must be at most {MAX_WEBHOOK_URL_LENGTH} characters.")
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise ValueError("Webhook URL must start with 'http://' or 'https://'.")
+    return url
+
+
+def normalize_webhook_events(value: str | list[str] | None) -> str:
+    """Validate subscribed events, returning comma-separated canonical string."""
+    if value is None:
+        return "*"
+    if isinstance(value, list):
+        raw_events = [ev.strip().lower() for ev in value if ev and ev.strip()]
+    else:
+        raw_events = [ev.strip().lower() for ev in value.split(",") if ev and ev.strip()]
+
+    if not raw_events:
+        return "*"
+    if "*" in raw_events:
+        return "*"
+
+    for ev in raw_events:
+        if ev not in VALID_WEBHOOK_EVENTS:
+            raise ValueError(
+                f"Invalid webhook event '{ev}'. Valid events are: {sorted(VALID_WEBHOOK_EVENTS)}."
+            )
+
+    return ", ".join(sorted(set(raw_events)))
+
+
+def normalize_webhook_secret(value: str | None) -> str:
+    """Validate optional HMAC secret string."""
+    if value is None:
+        return ""
+    secret = value.strip()
+    if len(secret) > MAX_WEBHOOK_SECRET_LENGTH:
+        raise ValueError(
+            f"Webhook secret must be at most {MAX_WEBHOOK_SECRET_LENGTH} characters."
+        )
+    return secret
 
 
 PREVIEW_MAX_LENGTH = 80
@@ -906,6 +1011,226 @@ def rename_session(session_id, label):
     return update_session_metadata(session_id, label=label)
 
 
+def create_webhooks():
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_WEBHOOKS_TABLE)
+        conn.execute(_CREATE_WEBHOOK_DELIVERY_LOGS_TABLE)
+        conn.commit()
+
+
+def create_webhook(
+    url: str,
+    events: str | list[str] | None = "*",
+    secret: str | None = None,
+    is_active: bool = True,
+) -> dict:
+    """Register a new webhook subscription, returning the created webhook dict."""
+    clean_url = normalize_webhook_url(url)
+    clean_events = normalize_webhook_events(events)
+    clean_secret = normalize_webhook_secret(secret)
+    active_int = 1 if is_active else 0
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_INSERT_WEBHOOK, (clean_url, clean_events, clean_secret, active_int))
+        webhook_id = cursor.lastrowid
+        conn.commit()
+        row = conn.execute(_SELECT_WEBHOOK_BY_ID, (webhook_id,)).fetchone()
+        return {
+            "id": row["id"],
+            "url": row["url"],
+            "events": row["events"] or "*",
+            "secret": row["secret"] or "",
+            "is_active": bool(row["is_active"]),
+            "failure_count": row["failure_count"],
+            "created_at": row["created_at"],
+        }
+
+
+def get_webhook(webhook_id: int) -> dict | None:
+    """Retrieve a single webhook subscription by its ID."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(_SELECT_WEBHOOK_BY_ID, (webhook_id,)).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "url": row["url"],
+            "events": row["events"] or "*",
+            "secret": row["secret"] or "",
+            "is_active": bool(row["is_active"]),
+            "failure_count": row["failure_count"],
+            "created_at": row["created_at"],
+        }
+
+
+def list_webhooks(active_only: bool = False, event: str | None = None) -> list[dict]:
+    """List webhook subscriptions with optional active and event filters."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, url, events, secret, is_active, failure_count, created_at "
+            "FROM webhooks ORDER BY id ASC"
+        )
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            r_active = bool(row["is_active"])
+            if active_only and not r_active:
+                continue
+            r_events = row["events"] or "*"
+            if event is not None:
+                clean_event = event.strip().lower()
+                event_set = {e.strip() for e in r_events.split(",") if e.strip()}
+                if "*" not in event_set and clean_event not in event_set:
+                    continue
+            results.append(
+                {
+                    "id": row["id"],
+                    "url": row["url"],
+                    "events": r_events,
+                    "secret": row["secret"] or "",
+                    "is_active": r_active,
+                    "failure_count": row["failure_count"],
+                    "created_at": row["created_at"],
+                }
+            )
+        return results
+
+
+def update_webhook(  # noqa: PLR0913, PLR0917
+    webhook_id: int,
+    url: str | None = None,
+    events: str | list[str] | None = None,
+    secret: str | None = None,
+    is_active: bool | None = None,
+    reset_failures: bool = False,
+) -> dict | None:
+    """Update fields on an existing webhook subscription."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(_SELECT_WEBHOOK_BY_ID, (webhook_id,)).fetchone()
+        if row is None:
+            return None
+
+        new_url = normalize_webhook_url(url) if url is not None else row["url"]
+        new_events = normalize_webhook_events(events) if events is not None else row["events"]
+        new_secret = normalize_webhook_secret(secret) if secret is not None else row["secret"]
+        new_is_active = (
+            (1 if is_active else 0) if is_active is not None else row["is_active"]
+        )
+        new_failure_count = 0 if reset_failures else row["failure_count"]
+
+        conn.execute(
+            "UPDATE webhooks SET url = ?, events = ?, secret = ?, is_active = ?, "
+            "failure_count = ? WHERE id = ?",
+            (new_url, new_events, new_secret, new_is_active, new_failure_count, webhook_id),
+        )
+        conn.commit()
+
+        return {
+            "id": webhook_id,
+            "url": new_url,
+            "events": new_events,
+            "secret": new_secret,
+            "is_active": bool(new_is_active),
+            "failure_count": new_failure_count,
+            "created_at": row["created_at"],
+        }
+
+
+def delete_webhook(webhook_id: int) -> bool:
+    """Delete a webhook subscription and its delivery logs."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_DELETE_WEBHOOK_LOGS_BY_WEBHOOK, (webhook_id,))
+        cursor = conn.execute(_DELETE_WEBHOOK, (webhook_id,))
+        conn.commit()
+        return bool(cursor.rowcount > 0)
+
+
+def record_webhook_delivery(  # noqa: PLR0913, PLR0917
+    webhook_id: int,
+    event: str,
+    url: str,
+    status_code: int | None,
+    success: bool,
+    payload_preview: str = "",
+    error_message: str | None = None,
+) -> int:
+    """Record a delivery log attempt, updating failure_count on the webhook."""
+    clean_preview = (payload_preview or "")[:MAX_DELIVERY_PREVIEW_LENGTH]
+    clean_error = (error_message or "")[:MAX_DELIVERY_ERROR_LENGTH] if error_message else None
+    success_int = 1 if success else 0
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _INSERT_WEBHOOK_DELIVERY,
+            (
+                webhook_id,
+                event,
+                url,
+                status_code,
+                success_int,
+                clean_preview,
+                clean_error,
+            ),
+        )
+        log_id = cursor.lastrowid
+        if success:
+            conn.execute(_RESET_WEBHOOK_FAILURE, (webhook_id,))
+        else:
+            conn.execute(_INCREMENT_WEBHOOK_FAILURE, (webhook_id,))
+        conn.commit()
+        return int(log_id) if log_id is not None else 0
+
+
+def get_webhook_delivery_logs(
+    webhook_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Return paginated delivery audit logs, optionally filtered by webhook_id."""
+    query = (
+        "SELECT id, webhook_id, event, url, status_code, success, "
+        "payload_preview, error_message, delivered_at "
+        "FROM webhook_delivery_logs"
+    )
+    count_query = "SELECT COUNT(*) FROM webhook_delivery_logs"
+    clauses = []
+    params = []
+
+    if webhook_id is not None:
+        clauses.append("webhook_id = ?")
+        params.append(webhook_id)
+
+    if clauses:
+        where_clause = " WHERE " + " AND ".join(clauses)
+        query += where_clause
+        count_query += where_clause
+
+    query += " ORDER BY delivered_at DESC, id DESC LIMIT ? OFFSET ?"
+    query_params = list(params) + [limit, offset]
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(count_query, params).fetchone()[0]
+        rows = conn.execute(query, query_params).fetchall()
+        items = [
+            {
+                "id": row["id"],
+                "webhook_id": row["webhook_id"],
+                "event": row["event"],
+                "url": row["url"],
+                "status_code": row["status_code"],
+                "success": bool(row["success"]),
+                "payload_preview": row["payload_preview"] or "",
+                "error_message": row["error_message"],
+                "delivered_at": row["delivered_at"],
+            }
+            for row in rows
+        ]
+        return items, total
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -914,3 +1239,5 @@ create_session_labels()
 migrate_session_labels()
 create_feedback()
 migrate_feedback()
+create_webhooks()
+
