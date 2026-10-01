@@ -514,7 +514,7 @@ external notifications for escalated and resolved support sessions and negative 
 - [x] Task 1: `ROADMAP.md` v0.28.0 plan specification
 - [x] Task 2: Database schema migration and CRUD operations for webhooks and delivery logs in `api/db_utils.py` with unit tests
 - [x] Task 3: Webhook dispatcher engine in `api/webhooks.py` with unit tests
-- [ ] Task 4: Pydantic schemas in `api/pydantic_models.py` with unit tests
+- [x] Task 4: Pydantic schemas in `api/pydantic_models.py` with unit tests
 - [ ] Task 5: API routes in `api/main.py` and event trigger wiring with unit tests
 - [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests
 - [ ] Task 7: Streamlit UI webhook manager and delivery audit viewer in `app/sidebar.py` with unit tests
