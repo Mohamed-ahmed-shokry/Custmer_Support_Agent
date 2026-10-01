@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
+from api import db_utils
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.settings import settings
 
@@ -570,4 +571,92 @@ class ConfigResponse(BaseModel):
     supported_chunking_strategies: list[str] = Field(
         default_factory=lambda: ["recursive", "markdown"]
     )
+
+
+class WebhookCreateRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
+    events: str | list[str] | None = Field(default="*")
+    secret: str | None = Field(default="", max_length=256)
+    is_active: bool = Field(default=True)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return db_utils.normalize_webhook_url(v)
+
+    @field_validator("events")
+    @classmethod
+    def validate_events(cls, v: str | list[str] | None) -> str:
+        return db_utils.normalize_webhook_events(v)
+
+    @field_validator("secret", mode="before")
+    @classmethod
+    def validate_secret(cls, v: str | None) -> str:
+        return db_utils.normalize_webhook_secret(v)
+
+
+class WebhookUpdateRequest(BaseModel):
+    url: str | None = Field(default=None, max_length=500)
+    events: str | list[str] | None = Field(default=None)
+    secret: str | None = Field(default=None, max_length=256)
+    is_active: bool | None = Field(default=None)
+    reset_failures: bool = Field(default=False)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_webhook_url(v)
+
+    @field_validator("events")
+    @classmethod
+    def validate_events(cls, v: str | list[str] | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_webhook_events(v)
+
+    @field_validator("secret")
+    @classmethod
+    def validate_secret(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_webhook_secret(v)
+
+
+class WebhookResponse(BaseModel):
+    id: int
+    url: str
+    events: str
+    secret: str = ""
+    is_active: bool
+    failure_count: int
+    created_at: str | None = None
+
+
+class WebhookDeliveryLogItem(BaseModel):
+    id: int
+    webhook_id: int
+    event: str
+    url: str
+    status_code: int | None = None
+    success: bool
+    payload_preview: str = ""
+    error_message: str | None = None
+    delivered_at: str | None = None
+
+
+class WebhookDeliveryLogsResponse(BaseModel):
+    items: list[WebhookDeliveryLogItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class WebhookPingResponse(BaseModel):
+    webhook_id: int
+    url: str
+    event: str
+    status_code: int | None = None
+    success: bool
+    error: str | None = None
+
 

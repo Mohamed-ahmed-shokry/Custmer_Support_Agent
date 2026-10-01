@@ -20,6 +20,12 @@ from api.pydantic_models import (
     SupportTriageAnalyticsResponse,
     TagCount,
     UpdateSessionRequest,
+    WebhookCreateRequest,
+    WebhookDeliveryLogItem,
+    WebhookDeliveryLogsResponse,
+    WebhookPingResponse,
+    WebhookResponse,
+    WebhookUpdateRequest,
     model_from_value,
 )
 from pydantic import ValidationError
@@ -319,3 +325,97 @@ def test_support_triage_analytics_response():
     assert resp.resolution_rate == expected_res_rate
     assert resp.top_tags[0].tag == "lease"
     assert resp.top_tags[0].count == expected_tag_count
+
+
+def test_webhook_create_request_validation():
+    req = WebhookCreateRequest(url="https://example.com/alerts")
+    assert req.url == "https://example.com/alerts"
+    assert req.events == "*"
+    assert req.secret == ""
+    assert req.is_active is True
+
+    custom_req = WebhookCreateRequest(
+        url="http://localhost:9000/webhook",
+        events=["session.resolved", "session.escalated"],
+        secret="  secret-key  ",
+        is_active=False,
+    )
+    assert custom_req.events == "session.escalated, session.resolved"
+    assert custom_req.secret == "secret-key"
+    assert custom_req.is_active is False
+
+    with pytest.raises(ValidationError):
+        WebhookCreateRequest(url="not-a-valid-url")
+
+    with pytest.raises(ValidationError):
+        WebhookCreateRequest(url="https://example.com", events="unknown.event")
+
+
+def test_webhook_update_request_validation():
+    req = WebhookUpdateRequest(
+        url="https://example.com/new-url",
+        events="session.escalated",
+        secret="new-secret",
+        is_active=True,
+        reset_failures=True,
+    )
+    assert req.url == "https://example.com/new-url"
+    assert req.events == "session.escalated"
+    assert req.secret == "new-secret"
+    assert req.is_active is True
+    assert req.reset_failures is True
+
+    empty_update = WebhookUpdateRequest()
+    assert empty_update.url is None
+    assert empty_update.events is None
+    assert empty_update.secret is None
+    assert empty_update.is_active is None
+    assert empty_update.reset_failures is False
+
+    with pytest.raises(ValidationError):
+        WebhookUpdateRequest(url="ftp://example.com/hook")
+
+
+def test_webhook_response_models():
+    hook_id = 42
+    resp = WebhookResponse(
+        id=hook_id,
+        url="https://example.com/hook",
+        events="session.escalated",
+        secret="whsec_123",
+        is_active=True,
+        failure_count=0,
+        created_at="2026-10-01T00:00:00Z",
+    )
+    assert resp.id == hook_id
+    assert resp.url == "https://example.com/hook"
+    assert resp.is_active is True
+
+    log_id = 101
+    log_item = WebhookDeliveryLogItem(
+        id=log_id,
+        webhook_id=hook_id,
+        event="session.escalated",
+        url="https://example.com/hook",
+        status_code=200,
+        success=True,
+        payload_preview='{"session_id": "s1"}',
+        delivered_at="2026-10-01T00:00:05Z",
+    )
+    assert log_item.id == log_id
+    assert log_item.success is True
+
+    logs_resp = WebhookDeliveryLogsResponse(items=[log_item], total=1)
+    assert logs_resp.total == 1
+    assert len(logs_resp.items) == 1
+
+    ping_resp = WebhookPingResponse(
+        webhook_id=hook_id,
+        url="https://example.com/hook",
+        event="ping",
+        status_code=200,
+        success=True,
+    )
+    assert ping_resp.webhook_id == hook_id
+    assert ping_resp.success is True
+
