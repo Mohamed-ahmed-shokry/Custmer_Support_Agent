@@ -477,6 +477,49 @@ support triage analytics API and Streamlit operations dashboard.
 - [x] Task 8: Streamlit UI support triage analytics widget and session resolution/summary panel in `app/sidebar.py` with unit tests
 - [x] Task 9: Documentation updates (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`) and final verification gate
 
+## v0.28.0 plan — Webhook Dispatch & Escalation Alerting Engine
+
+Deliver an automated webhook event notification engine with secure HMAC-SHA256 signature verification, event filtering, delivery audit logging, and administrative management in the Streamlit UI:
+external notifications for escalated and resolved support sessions and negative CSAT feedback dispatched in real time to external systems (Slack, Zendesk, incident management, or custom HTTP endpoints).
+
+### Scope & Objectives
+- **Webhook Dispatcher Engine**: `api/webhooks.py` providing HMAC-SHA256 signature calculation (`X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Event`), structured event envelope construction (`id`, `event`, `timestamp`, `data`), synchronous and background dispatch execution with timeout resilience, delivery audit recording, and test pinging (`ping_webhook`).
+- **Database Persistence & Delivery Audit**:
+  - SQLite schema migration: add `webhooks` table (endpoint URL, subscribed events, optional secret, active flag, failure count) and `webhook_delivery_logs` table (webhook ID, event, HTTP status code, success flag, payload preview, error details, delivered timestamp).
+  - DB operations in `api/db_utils.py`: register, list, retrieve, update, and delete webhooks, record delivery attempts, and query delivery history.
+- **Pydantic Schemas**:
+  - `WebhookCreateRequest`, `WebhookUpdateRequest`, `WebhookResponse`, `WebhookDeliveryLogItem`, and `WebhookPingResponse` in `api/pydantic_models.py`.
+- **FastAPI Endpoints**:
+  - `POST /webhooks`: register a new webhook with URL validation and event filtering.
+  - `GET /webhooks`: list registered webhooks.
+  - `GET /webhooks/{webhook_id}`: get webhook details and recent delivery logs.
+  - `PATCH /webhooks/{webhook_id}`: update webhook URL, events, active flag, or secret.
+  - `DELETE /webhooks/{webhook_id}`: delete webhook and its delivery logs.
+  - `POST /webhooks/{webhook_id}/ping`: test dispatch a verification event.
+  - `GET /webhooks/deliveries`: query recent delivery audit logs across all webhooks.
+- **Event Trigger Wiring**:
+  - `session.escalated`: triggered on session status update to `escalated`.
+  - `session.resolved`: triggered on session status update to `resolved`.
+  - `feedback.negative`: triggered when user submits negative rating (`-1`).
+- **Client & Streamlit UI Integration**:
+  - Client methods in `app/api_utils.py`: `create_webhook()`, `list_webhooks()`, `update_webhook()`, `delete_webhook()`, `ping_webhook()`, `list_webhook_deliveries()`.
+  - Streamlit UI in `app/sidebar.py`: Webhooks & Alerts management panel with webhook listing, event pills, one-click test ping, registration form, and delivery audit log viewer.
+- **Quality Gates**: Maintain test coverage >= 80%, zero ruff errors, zero mypy errors.
+
+### Explicit Exclusions (Deferred to v0.29.0+)
+- Distributed Celery/RabbitMQ background queue brokers (runs in-process with FastAPI background tasks).
+- OAuth2 token exchange with third-party webhook receivers.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.28.0 plan specification
+- [ ] Task 2: Database schema migration and CRUD operations for webhooks and delivery logs in `api/db_utils.py` with unit tests
+- [ ] Task 3: Webhook dispatcher engine in `api/webhooks.py` with unit tests
+- [ ] Task 4: Pydantic schemas in `api/pydantic_models.py` with unit tests
+- [ ] Task 5: API routes in `api/main.py` and event trigger wiring with unit tests
+- [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests
+- [ ] Task 7: Streamlit UI webhook manager and delivery audit viewer in `app/sidebar.py` with unit tests
+- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.28.0, and final verification gate
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
