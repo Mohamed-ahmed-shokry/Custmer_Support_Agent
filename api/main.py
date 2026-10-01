@@ -9,9 +9,10 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+from api import webhooks
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -30,12 +31,14 @@ from api.chroma_utils import (
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     VALID_SESSION_STATUSES,
+    create_webhook,
     delete_document_record,
     delete_document_source,
     delete_document_sources_by_collection,
     delete_documents_by_collection,
     delete_session,
     delete_sessions,
+    delete_webhook,
     get_all_collections,
     get_all_documents,
     get_all_sessions,
@@ -49,10 +52,13 @@ from api.db_utils import (
     get_session_feedback,
     get_session_metadata,
     get_support_triage_analytics,
+    get_webhook,
+    get_webhook_delivery_logs,
     insert_application_logs,
     insert_document_record,
     insert_feedback,
     list_feedback,
+    list_webhooks,
     normalize_session_label,
     ping_db,
     prune_sessions_before,
@@ -62,6 +68,7 @@ from api.db_utils import (
     search_sessions,
     truncate_history,
     update_session_metadata,
+    update_webhook,
 )
 from api.observability import (
     estimate_tokens,
@@ -125,6 +132,12 @@ from api.pydantic_models import (
     TagCount,
     UpdateSessionRequest,
     UploadDocumentResponse,
+    WebhookCreateRequest,
+    WebhookDeliveryLogItem,
+    WebhookDeliveryLogsResponse,
+    WebhookPingResponse,
+    WebhookResponse,
+    WebhookUpdateRequest,
 )
 from api.security import (
     WINDOW_SECONDS,
@@ -1177,11 +1190,22 @@ def delete_many_sessions(request: BulkDeleteSessionRequest):
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
-def submit_feedback(feedback: FeedbackInput):
+def submit_feedback(feedback: FeedbackInput, background_tasks: BackgroundTasks):
     if not get_chat_history(feedback.session_id):
         raise HTTPException(status_code=404, detail=f"Session {feedback.session_id} was not found.")
     feedback_id = insert_feedback(feedback.session_id, feedback.rating, feedback.comment)
     increment("feedback_up" if feedback.rating == 1 else "feedback_down")
+    if feedback.rating == -1:
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "feedback.negative",
+            {
+                "session_id": feedback.session_id,
+                "feedback_id": feedback_id,
+                "rating": feedback.rating,
+                "comment": feedback.comment,
+            },
+        )
     return FeedbackResponse(message="Feedback recorded.", feedback_id=feedback_id)
 
 
@@ -1249,8 +1273,15 @@ def get_session_feedback_route(session_id: str):
 
 
 @app.patch("/sessions/{session_id}", response_model=SessionInfo)
-def update_session_route(session_id: str, request: UpdateSessionRequest):
+def update_session_route(
+    session_id: str,
+    request: UpdateSessionRequest,
+    background_tasks: BackgroundTasks,
+):
     _require_session_id(session_id)
+    prior_session = _get_session_summary_or_404(session_id)
+    prior_status = (prior_session.get("status") or "active").lower()
+
     try:
         if (
             request.status is None
@@ -1274,7 +1305,40 @@ def update_session_route(session_id: str, request: UpdateSessionRequest):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session {session_id} was not found.")
-    return SessionInfo(**_get_session_summary_or_404(session_id))
+
+    new_session = _get_session_summary_or_404(session_id)
+    new_status = (new_session.get("status") or "active").lower()
+
+    if new_status != prior_status:
+        if new_status == "escalated":
+            background_tasks.add_task(
+                webhooks.dispatch_event,
+                "session.escalated",
+                {
+                    "session_id": session_id,
+                    "previous_status": prior_status,
+                    "status": "escalated",
+                    "label": new_session.get("label"),
+                    "tags": new_session.get("tags"),
+                    "summary": new_session.get("summary"),
+                },
+            )
+        elif new_status == "resolved":
+            background_tasks.add_task(
+                webhooks.dispatch_event,
+                "session.resolved",
+                {
+                    "session_id": session_id,
+                    "previous_status": prior_status,
+                    "status": "resolved",
+                    "label": new_session.get("label"),
+                    "tags": new_session.get("tags"),
+                    "summary": new_session.get("summary"),
+                    "resolution_notes": new_session.get("resolution_notes"),
+                },
+            )
+
+    return SessionInfo(**new_session)
 
 
 @app.post("/sessions/{session_id}/summarize", response_model=SessionSummaryResponse)
@@ -1391,3 +1455,90 @@ def delete_many_documents(request: BulkDeleteFileRequest):
         deleted=deleted_count,
         failed=len(results) - deleted_count,
     )
+
+
+MAX_WEBHOOK_DELIVERIES_LIMIT = 100
+
+
+@app.post("/webhooks", response_model=WebhookResponse, status_code=201)
+def register_webhook(request: WebhookCreateRequest):
+    try:
+        created = create_webhook(
+            url=request.url,
+            events=request.events,
+            secret=request.secret,
+            is_active=request.is_active,
+        )
+        return WebhookResponse(**created)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/webhooks", response_model=list[WebhookResponse])
+def list_webhooks_route(active_only: bool = False, event: str | None = None):
+    hooks = list_webhooks(active_only=active_only, event=event)
+    return [WebhookResponse(**h) for h in hooks]
+
+
+@app.get("/webhooks/deliveries", response_model=WebhookDeliveryLogsResponse)
+def list_webhook_deliveries_route(
+    webhook_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    if limit <= 0 or limit > MAX_WEBHOOK_DELIVERIES_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query param 'limit' must be between 1 and {MAX_WEBHOOK_DELIVERIES_LIMIT}.",
+        )
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Query param 'offset' must be non-negative.")
+    items, total = get_webhook_delivery_logs(webhook_id=webhook_id, limit=limit, offset=offset)
+    return WebhookDeliveryLogsResponse(
+        items=[WebhookDeliveryLogItem(**item) for item in items],
+        total=total,
+    )
+
+
+@app.get("/webhooks/{webhook_id}", response_model=WebhookResponse)
+def get_webhook_route(webhook_id: int):
+    hook = get_webhook(webhook_id)
+    if hook is None:
+        raise HTTPException(status_code=404, detail=f"Webhook {webhook_id} was not found.")
+    return WebhookResponse(**hook)
+
+
+@app.patch("/webhooks/{webhook_id}", response_model=WebhookResponse)
+def update_webhook_route(webhook_id: int, request: WebhookUpdateRequest):
+    try:
+        updated = update_webhook(
+            webhook_id=webhook_id,
+            url=request.url,
+            events=request.events,
+            secret=request.secret,
+            is_active=request.is_active,
+            reset_failures=request.reset_failures,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Webhook {webhook_id} was not found.")
+    return WebhookResponse(**updated)
+
+
+@app.delete("/webhooks/{webhook_id}")
+def delete_webhook_route(webhook_id: int):
+    deleted = delete_webhook(webhook_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Webhook {webhook_id} was not found.")
+    return {"message": f"Webhook {webhook_id} deleted."}
+
+
+@app.post("/webhooks/{webhook_id}/ping", response_model=WebhookPingResponse)
+def ping_webhook_route(webhook_id: int):
+    try:
+        result = webhooks.ping_webhook(webhook_id)
+        return WebhookPingResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+

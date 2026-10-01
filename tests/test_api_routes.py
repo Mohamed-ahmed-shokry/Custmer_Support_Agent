@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 client = TestClient(main.app)
 
 HTTP_OK = 200
+HTTP_CREATED = 201
 HTTP_BAD_REQUEST = 400
 HTTP_UNAUTHORIZED = 401
 HTTP_NOT_FOUND = 404
@@ -2029,3 +2030,249 @@ def test_export_session_includes_resolution_details(monkeypatch):
     assert resp_csv.status_code == HTTP_OK
     assert "Move-out request" in resp_csv.text
     assert "Inspection scheduled for Friday." in resp_csv.text
+
+
+def test_register_webhook_route(monkeypatch):
+    fake_hook = {
+        "id": 1,
+        "url": "https://example.com/alerts",
+        "events": "*",
+        "secret": "whsec_123",
+        "is_active": True,
+        "failure_count": 0,
+        "created_at": "2026-10-01T00:00:00Z",
+    }
+    monkeypatch.setattr(main, "create_webhook", lambda **kwargs: fake_hook)
+
+    response = client.post(
+        "/webhooks",
+        json={"url": "https://example.com/alerts", "secret": "whsec_123"},
+    )
+    assert response.status_code == HTTP_CREATED
+    data = response.json()
+    assert data["id"] == 1
+    assert data["url"] == "https://example.com/alerts"
+    assert data["is_active"] is True
+
+    # Bad URL fails validation
+    bad_resp = client.post("/webhooks", json={"url": "invalid-url"})
+    assert bad_resp.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_list_webhooks_route(monkeypatch):
+    fake_hooks = [
+        {
+            "id": 1,
+            "url": "https://example.com/h1",
+            "events": "*",
+            "secret": "",
+            "is_active": True,
+            "failure_count": 0,
+            "created_at": "2026-10-01T00:00:00Z",
+        }
+    ]
+    monkeypatch.setattr(main, "list_webhooks", lambda **kwargs: fake_hooks)
+
+    response = client.get("/webhooks")
+    assert response.status_code == HTTP_OK
+    assert len(response.json()) == 1
+
+
+def test_get_and_delete_webhook_routes(monkeypatch):
+    fake_hook = {
+        "id": 1,
+        "url": "https://example.com/h1",
+        "events": "*",
+        "secret": "",
+        "is_active": True,
+        "failure_count": 0,
+        "created_at": "2026-10-01T00:00:00Z",
+    }
+    monkeypatch.setattr(main, "get_webhook", lambda wid: fake_hook if wid == 1 else None)
+    monkeypatch.setattr(main, "delete_webhook", lambda wid: wid == 1)
+
+    # Get found
+    resp = client.get("/webhooks/1")
+    assert resp.status_code == HTTP_OK
+    assert resp.json()["id"] == 1
+
+    # Get not found
+    resp_404 = client.get("/webhooks/999")
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+    # Delete found
+    del_resp = client.delete("/webhooks/1")
+    assert del_resp.status_code == HTTP_OK
+
+    # Delete not found
+    del_404 = client.delete("/webhooks/999")
+    assert del_404.status_code == HTTP_NOT_FOUND
+
+
+def test_update_webhook_route(monkeypatch):
+    fake_updated = {
+        "id": 1,
+        "url": "https://example.com/new",
+        "events": "session.escalated",
+        "secret": "new-sec",
+        "is_active": False,
+        "failure_count": 0,
+        "created_at": "2026-10-01T00:00:00Z",
+    }
+    monkeypatch.setattr(
+        main,
+        "update_webhook",
+        lambda webhook_id, **kwargs: fake_updated if webhook_id == 1 else None,
+    )
+
+    resp = client.patch(
+        "/webhooks/1",
+        json={
+            "url": "https://example.com/new",
+            "events": "session.escalated",
+            "reset_failures": True,
+        },
+    )
+    assert resp.status_code == HTTP_OK
+    assert resp.json()["url"] == "https://example.com/new"
+
+    # Not found
+    resp_404 = client.patch("/webhooks/999", json={"url": "https://example.com/new"})
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+
+def test_ping_webhook_route(monkeypatch):
+    fake_ping = {
+        "webhook_id": 1,
+        "url": "https://example.com/ping",
+        "event": "ping",
+        "status_code": 200,
+        "success": True,
+        "error": None,
+    }
+
+    def stub_ping(wid):
+        if wid == 1:
+            return fake_ping
+        raise ValueError("Webhook not found.")
+
+    monkeypatch.setattr(main.webhooks, "ping_webhook", stub_ping)
+
+    resp = client.post("/webhooks/1/ping")
+    assert resp.status_code == HTTP_OK
+    assert resp.json()["success"] is True
+
+    resp_404 = client.post("/webhooks/999/ping")
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+
+def test_list_webhook_deliveries_route(monkeypatch):
+    fake_logs = [
+        {
+            "id": 1,
+            "webhook_id": 1,
+            "event": "session.escalated",
+            "url": "https://example.com/hook",
+            "status_code": 200,
+            "success": True,
+            "payload_preview": "preview",
+            "error_message": None,
+            "delivered_at": "2026-10-01T00:00:00Z",
+        }
+    ]
+    monkeypatch.setattr(main, "get_webhook_delivery_logs", lambda **kwargs: (fake_logs, 1))
+
+    resp = client.get("/webhooks/deliveries?limit=10&offset=0")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+
+    # Bad limit
+    assert client.get("/webhooks/deliveries?limit=0").status_code == HTTP_BAD_REQUEST
+    assert client.get("/webhooks/deliveries?limit=101").status_code == HTTP_BAD_REQUEST
+    assert client.get("/webhooks/deliveries?offset=-1").status_code == HTTP_BAD_REQUEST
+
+
+def test_feedback_negative_triggers_webhook(monkeypatch):
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks,
+        "dispatch_event",
+        lambda ev, data: dispatched.append((ev, data)),
+    )
+    monkeypatch.setattr(
+        main, "get_chat_history", lambda sid: [{"role": "human", "content": "Hi"}]
+    )
+    monkeypatch.setattr(main, "insert_feedback", lambda sid, rating, comment: 42)
+
+    # Positive feedback does not dispatch
+    resp_pos = client.post("/feedback", json={"session_id": "s-1", "rating": 1})
+    assert resp_pos.status_code == HTTP_OK
+    assert len(dispatched) == 0
+
+    # Negative feedback dispatches feedback.negative
+    resp_neg = client.post(
+        "/feedback",
+        json={"session_id": "s-1", "rating": -1, "comment": "Unhelpful"},
+    )
+    assert resp_neg.status_code == HTTP_OK
+    assert len(dispatched) == 1
+    assert dispatched[0][0] == "feedback.negative"
+    assert dispatched[0][1]["session_id"] == "s-1"
+    assert dispatched[0][1]["rating"] == -1
+
+
+def test_session_status_update_triggers_webhooks(monkeypatch):
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks,
+        "dispatch_event",
+        lambda ev, data: dispatched.append((ev, data)),
+    )
+    monkeypatch.setattr(
+        main, "get_chat_history", lambda sid: [{"role": "human", "content": "Hi"}]
+    )
+
+    state = {"status": "active", "label": "Session 1", "session_id": "s-1"}
+
+    def fake_get_summary(sid):
+        return {
+            "session_id": sid,
+            "label": state.get("label"),
+            "status": state.get("status", "active"),
+            "tags": "",
+            "summary": "",
+            "resolution_notes": "",
+            "message_count": 1,
+            "last_active": "2026-10-01",
+            "preview": "Hi",
+        }
+
+    def fake_update(sid, **kwargs):
+        if kwargs.get("status"):
+            state["status"] = kwargs["status"]
+        if kwargs.get("label"):
+            state["label"] = kwargs["label"]
+        return True
+
+    monkeypatch.setattr(main, "_get_session_summary_or_404", fake_get_summary)
+    monkeypatch.setattr(main, "update_session_metadata", fake_update)
+
+    # Escalating triggers session.escalated
+    resp_esc = client.patch("/sessions/s-1", json={"status": "escalated"})
+    assert resp_esc.status_code == HTTP_OK
+    assert len(dispatched) == 1
+    assert dispatched[0][0] == "session.escalated"
+    assert dispatched[0][1]["status"] == "escalated"
+    assert dispatched[0][1]["previous_status"] == "active"
+
+    # Resolving triggers session.resolved
+    resp_res = client.patch("/sessions/s-1", json={"status": "resolved"})
+    assert resp_res.status_code == HTTP_OK
+    expected_dispatched_count = 2
+    assert len(dispatched) == expected_dispatched_count
+    assert dispatched[1][0] == "session.resolved"
+    assert dispatched[1][1]["status"] == "resolved"
+    assert dispatched[1][1]["previous_status"] == "escalated"
+
