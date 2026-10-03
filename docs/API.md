@@ -1,4 +1,4 @@
-# API Reference (v0.27.0)
+# API Reference (v0.29.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -215,6 +215,29 @@ Receivers can verify authenticity by computing `hmac.new(secret.encode(), f"{tim
 - `DELETE /webhooks/{webhook_id}`: Deletes the webhook subscription and its delivery logs. Returns `{"message": "Webhook deleted.", "id": <int>}` (`404` if not found).
 - `POST /webhooks/{webhook_id}/ping`: Dispatches a `test.ping` event to the webhook URL. Returns `{"success": bool, "status_code": int|null, "error": str|null}` (`404` if not found).
 - `GET /webhooks/deliveries?limit=50&offset=0`: Returns paginated audit logs of webhook delivery attempts across all webhooks: `{items: [{id, webhook_id, event, url, status_code, success, error_message, delivered_at}], total, limit, offset}`.
+
+## Canned Responses & Action Macros Engine
+
+The agent provides a pre-approved canned responses and action macro templates engine for real estate customer support operations. Templates support category classification, shortcut triggers (e.g., `/rent-pay`, `/emerg-maint`), dynamic variable substitution (`{customer_name}`, `{session_id}`, `{unit_id}`, `{agent_name}`, `{date}`, `{support_contact}`), and automated session actions (status transitions to `resolved` or `escalated` triggering webhooks, tag assignment, conversation injection).
+
+### Endpoints
+
+- `POST /macros`: Create a new macro template.
+  - Body: `{"title": "...", "shortcut": "/shortcut", "category": "General", "content": "...", "tags": ["tag1"], "status_action": "resolved|escalated|active|closed|null"}`.
+  - Returns `201` with created macro record. Returns `400` if shortcut is already registered.
+- `GET /macros?category=...&tag=...&search=...`: List macro templates with optional category, tag, or keyword search filtering.
+  - Returns array of macro records.
+- `GET /macros/categories`: Returns distinct categories across all templates.
+  - Returns `{"categories": ["General", "Billing", "Leasing", "Maintenance"]}`.
+- `GET /macros/{macro_id}`: Returns a macro by ID. Returns `404` if not found.
+- `PATCH /macros/{macro_id}`: Partially update a macro's title, shortcut, category, content, tags, or status_action. Returns `404` if not found.
+- `DELETE /macros/{macro_id}`: Delete a macro by ID. Returns `{"message": "Macro {macro_id} deleted."}` (`404` if not found).
+- `POST /macros/{macro_id}/render`: Preview a rendered template with provided variables without applying to session.
+  - Body: `{"variables": {"customer_name": "Alice"}, "fallback_defaults": true}`.
+  - Returns `{"macro_id": <int>, "rendered_content": "...", "unresolved_variables": [], "status_action": "..."}`.
+- `POST /sessions/{session_id}/apply-macro`: Apply a macro directly to an active session.
+  - Body: `{"macro_id": <int>, "shortcut": "/...", "variables": {...}, "update_status": true, "append_tags": true, "fallback_defaults": true}`.
+  - Automatically renders variables, logs the message into session chat history, updates session status and tags in SQLite, dispatches real-time webhooks (`session.resolved` or `session.escalated`), and returns the applied summary.
 
 ## Evaluation Harness
 

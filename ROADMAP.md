@@ -79,7 +79,11 @@
   - Database schema & CRUD: `webhooks` and `webhook_delivery_logs` tables with full registration, querying, and delivery logging
   - Real-time event triggers: automatic webhook dispatch on session escalation (`session.escalated`), resolution (`session.resolved`), and negative feedback (`feedback.negative`)
   - Streamlit Webhooks & Alerts management panel: register endpoints, custom event filtering, secret config, connectivity test pings, and delivery audit log viewer
-- 513 unit tests passing; 95.57% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.29.0 additions**:
+  - Support canned responses & action macro templates engine (`api/macros.py`, `api/db_utils.py`, `api/pydantic_models.py`, `api/main.py`): pre-approved templates with category organization, shortcut triggers (`/rent-pay`, `/emerg-maint`, `/lease-renew`, `/move-out`), dynamic variable substitution (`{customer_name}`, `{session_id}`, `{unit_id}`, `{agent_name}`, `{date}`, `{support_contact}`), and automated session actions (status transitions to `resolved` or `escalated` with webhook triggers, tag assignment, conversation injection)
+  - Dedicated FastAPI endpoints: `POST /macros`, `GET /macros`, `GET /macros/categories`, `GET /macros/{id}`, `PATCH /macros/{id}`, `DELETE /macros/{id}`, `POST /macros/{id}/render`, `POST /sessions/{id}/apply-macro`
+  - Client integration & Streamlit UI: `app/api_utils.py` helpers and Quick Responses & Macros expander panel in `app/sidebar.py` with category filter, template selector, dynamic variable inputs, preview, 1-click application to active session, and custom template creation form
+- Full test suite passing; total coverage floor >= 80% enforced in CI; ruff + mypy clean
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -525,7 +529,7 @@ external notifications for escalated and resolved support sessions and negative 
 - [x] Task 7: Streamlit UI webhook manager and delivery audit viewer in `app/sidebar.py` with unit tests
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.28.0, and final verification gate
 
-## v0.29.0 plan — Support Canned Responses & Action Macro Templates Engine (IN PROGRESS)
+## v0.29.0 plan — Support Canned Responses & Action Macro Templates Engine ✅ COMPLETED
 
 Deliver an enterprise-grade canned responses and action macro templates engine for real estate customer support operations:
 pre-approved response templates with category classification, shortcut triggers, dynamic variable substitution (`{customer_name}`, `{session_id}`, `{unit_id}`, `{agent_name}`, `{date}`, `{support_contact}`), safe template rendering, quick action execution (automated status transitions to `resolved` or `escalated` with webhook triggers, tag assignment, conversation injection), and an interactive Quick Responses & Macros panel in the Streamlit UI.
@@ -564,7 +568,7 @@ pre-approved response templates with category classification, shortcut triggers,
 - [x] Task 5: FastAPI routes in `api/main.py` and session macro application with webhook trigger wiring with unit tests
 - [x] Task 6: Client helpers in `app/api_utils.py` with unit tests
 - [x] Task 7: Streamlit UI Quick Responses & Macros panel in `app/sidebar.py` with unit tests
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.29.0, and final verification gate
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.29.0, and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
