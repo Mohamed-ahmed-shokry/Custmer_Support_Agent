@@ -1,15 +1,15 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.26.0, 2026-09-29)
+## Current State (v0.28.0, 2026-10-03)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
   use_hybrid)
 - Streamlit frontend with streaming toggle, chat interface, document
   management, past-sessions switcher, and backend metrics panel
-- SQLite for session history and document metadata
+- SQLite for session history, document metadata, feedback, and webhooks
 - Chroma vector store with OpenAI embeddings; configurable chunking
-  (recursive/markdown) and file types: pdf, docx, html, md, txt, csv;
+  (recursive/markdown/semantic) and file types: pdf, docx, html, md, txt, csv;
   indexing retries with exponential backoff; resilient loader fallbacks
 - Resilience: X-Request-ID middleware, chunk-param validation, upload cap
 - Security (opt-in): API_KEY auth across backend and Streamlit client, per-IP sliding-window rate limiting
@@ -74,7 +74,12 @@
   - Support triage analytics & operations dashboard: `GET /sessions/triage-analytics` and Streamlit card computing status counts, resolution rate (%), escalation rate (%), average turns, and top tags
   - Session resolution lifecycle management: `summary` and `resolution_notes` SQLite columns and migration, API route updating, and Streamlit session resolution panel
   - Enriched multi-format export: Markdown, JSON, and CSV exports embed session status, tags, summary, and resolution notes alongside conversation transcripts
-- 485 unit tests passing; 95%+ total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
+- **v0.28.0 additions**:
+  - Webhook dispatch & escalation alerting engine: HMAC-SHA256 signature verification (`X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Event`), structured event envelopes, delivery audit logs, and test pinging
+  - Database schema & CRUD: `webhooks` and `webhook_delivery_logs` tables with full registration, querying, and delivery logging
+  - Real-time event triggers: automatic webhook dispatch on session escalation (`session.escalated`), resolution (`session.resolved`), and negative feedback (`feedback.negative`)
+  - Streamlit Webhooks & Alerts management panel: register endpoints, custom event filtering, secret config, connectivity test pings, and delivery audit log viewer
+- 513 unit tests passing; 95.57% total coverage (80% coverage floor in CI config); ruff + mypy clean (CI gates)
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
 
@@ -519,6 +524,47 @@ external notifications for escalated and resolved support sessions and negative 
 - [x] Task 6: Client helpers in `app/api_utils.py` with unit tests
 - [x] Task 7: Streamlit UI webhook manager and delivery audit viewer in `app/sidebar.py` with unit tests
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.28.0, and final verification gate
+
+## v0.29.0 plan — Support Canned Responses & Action Macro Templates Engine (IN PROGRESS)
+
+Deliver an enterprise-grade canned responses and action macro templates engine for real estate customer support operations:
+pre-approved response templates with category classification, shortcut triggers, dynamic variable substitution (`{customer_name}`, `{session_id}`, `{unit_id}`, `{agent_name}`, `{date}`, `{support_contact}`), safe template rendering, quick action execution (automated status transitions to `resolved` or `escalated` with webhook triggers, tag assignment, conversation injection), and an interactive Quick Responses & Macros panel in the Streamlit UI.
+
+### Scope & Objectives
+- **Macro Template Rendering Engine**: `api/macros.py` providing template parsing, parameter extraction, and safe string substitution with fallback defaults for missing parameters, built-in system variables (`date`, `current_time`, `support_contact`), and domain-specific pre-seeded property management templates (Lease Renewal, Emergency Maintenance, Rent Payment Instructions, Move-Out Inspection).
+- **Database Persistence & Seed Migration**:
+  - SQLite schema migration: add `support_macros` table (`id`, `title`, `shortcut`, `category`, `content`, `tags` JSON, `status_action`, `created_at`, `updated_at`) with index on `category`.
+  - Auto-seed property management standard templates on empty table initialization.
+  - DB operations in `api/db_utils.py`: create macro, list macros (with optional `category`, `tag`, and `search` filters), get macro by ID or shortcut, update macro, delete macro, and list distinct categories.
+- **Pydantic Schemas**:
+  - `MacroCreateRequest`, `MacroUpdateRequest`, `MacroResponse`, `MacroRenderRequest`, `MacroRenderResponse`, `MacroApplyRequest`, and `MacroApplyResponse` in `api/pydantic_models.py`.
+- **FastAPI Endpoints**:
+  - `POST /macros`: register a new macro template with shortcut uniqueness validation.
+  - `GET /macros`: list macro templates with optional category, tag, or search filtering.
+  - `GET /macros/categories`: list distinct categories across all templates.
+  - `GET /macros/{macro_id}`: get macro template details.
+  - `PATCH /macros/{macro_id}`: update title, shortcut, category, content, tags, or status_action.
+  - `DELETE /macros/{macro_id}`: delete macro template.
+  - `POST /macros/{macro_id}/render`: preview rendered macro template with given variables without applying to session.
+  - `POST /sessions/{session_id}/apply-macro`: apply macro directly to an active session: render variables, insert agent response into chat history, apply status transition and tag updates, trigger webhooks (e.g. `session.resolved` or `session.escalated`), and return applied summary.
+- **Client & Streamlit UI Integration**:
+  - Client methods in `app/api_utils.py`: `create_macro()`, `list_macros()`, `list_macro_categories()`, `get_macro()`, `update_macro()`, `delete_macro()`, `render_macro()`, `apply_macro_to_session()`.
+  - Streamlit UI in `app/sidebar.py`: Quick Responses & Macros expander featuring category filtering, template selector with shortcut pill, interactive variable customization input, template preview, 1-click "Apply to Active Session" action button, and "Create New Template" form.
+- **Quality Gates**: Maintain test coverage >= 80%, zero ruff errors, zero mypy errors.
+
+### Explicit Exclusions (Deferred to v0.30.0+)
+- Role-based permissions on macro creation/deletion (requires multi-tenant identity model).
+- Automated AI macro suggestion matching incoming tenant queries using vector similarity.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.29.0 plan specification and current state update
+- [ ] Task 2: Database schema migration, CRUD operations, and domain seeding for `support_macros` in `api/db_utils.py` with unit tests
+- [ ] Task 3: Macro template rendering engine in `api/macros.py` with unit tests
+- [ ] Task 4: Pydantic schemas in `api/pydantic_models.py` with unit tests
+- [ ] Task 5: FastAPI routes in `api/main.py` and session macro application with webhook trigger wiring with unit tests
+- [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests
+- [ ] Task 7: Streamlit UI Quick Responses & Macros panel in `app/sidebar.py` with unit tests
+- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.29.0, and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
