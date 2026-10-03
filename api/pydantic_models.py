@@ -1,11 +1,12 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 from api import db_utils
 from api.collections import DEFAULT_COLLECTION, normalize_collection
+from api.macros import extract_template_variables
 from api.settings import settings
 
 
@@ -658,5 +659,149 @@ class WebhookPingResponse(BaseModel):
     status_code: int | None = None
     success: bool
     error: str | None = None
+
+
+class MacroCreateRequest(BaseModel):
+    title: str = Field(..., max_length=100)
+    shortcut: str = Field(..., max_length=50)
+    category: str = Field(default="General", max_length=50)
+    content: str = Field(..., max_length=4000)
+    tags: list[str] = Field(default_factory=list)
+    status_action: str | None = Field(default=None)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        return db_utils.normalize_macro_title(v)
+
+    @field_validator("shortcut")
+    @classmethod
+    def validate_shortcut(cls, v: str) -> str:
+        return db_utils.normalize_macro_shortcut(v)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        return db_utils.normalize_macro_category(v)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        return db_utils.normalize_macro_content(v)
+
+    @field_validator("status_action")
+    @classmethod
+    def validate_status_action(cls, v: str | None) -> str | None:
+        return db_utils.normalize_macro_status_action(v)
+
+
+class MacroUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=100)
+    shortcut: str | None = Field(default=None, max_length=50)
+    category: str | None = Field(default=None, max_length=50)
+    content: str | None = Field(default=None, max_length=4000)
+    tags: list[str] | None = Field(default=None)
+    status_action: str | None = Field(default=None)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_macro_title(v)
+
+    @field_validator("shortcut")
+    @classmethod
+    def validate_shortcut(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_macro_shortcut(v)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_macro_category(v)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_macro_content(v)
+
+    @field_validator("status_action")
+    @classmethod
+    def validate_status_action(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_macro_status_action(v)
+
+
+class MacroResponse(BaseModel):
+    id: int
+    title: str
+    shortcut: str
+    category: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    status_action: str | None = None
+    variables: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_variables(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            content = data.get("content", "")
+            if "variables" not in data or not data["variables"]:
+                data["variables"] = extract_template_variables(content)
+        return data
+
+
+class MacroRenderRequest(BaseModel):
+    variables: dict[str, Any] = Field(default_factory=dict)
+    fallback_defaults: bool = Field(default=True)
+
+
+class MacroRenderResponse(BaseModel):
+    macro_id: int
+    rendered_content: str
+    unresolved_variables: list[str] = Field(default_factory=list)
+    status_action: str | None = None
+
+
+class MacroApplyRequest(BaseModel):
+    macro_id: int | None = Field(default=None)
+    shortcut: str | None = Field(default=None)
+    variables: dict[str, Any] = Field(default_factory=dict)
+    fallback_defaults: bool = Field(default=True)
+    update_status: bool = Field(default=True)
+    append_tags: bool = Field(default=True)
+    model: str = Field(default="macro")
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "MacroApplyRequest":
+        if self.macro_id is None and not self.shortcut:
+            raise ValueError("Either macro_id or shortcut must be specified.")
+        return self
+
+
+class MacroApplyResponse(BaseModel):
+    session_id: str
+    macro_id: int
+    macro_title: str
+    rendered_content: str
+    applied_status: str | None = None
+    applied_tags: list[str] = Field(default_factory=list)
+    unresolved_variables: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+
+
+class MacroCategoriesResponse(BaseModel):
+    categories: list[str] = Field(default_factory=list)
+
 
 

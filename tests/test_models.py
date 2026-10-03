@@ -9,6 +9,14 @@ from api.pydantic_models import (
     CollectionRechunkResponse,
     DocumentDetailResponse,
     DocumentRechunkItem,
+    MacroApplyRequest,
+    MacroApplyResponse,
+    MacroCategoriesResponse,
+    MacroCreateRequest,
+    MacroRenderRequest,
+    MacroRenderResponse,
+    MacroResponse,
+    MacroUpdateRequest,
     ModelName,
     QueryInput,
     QueryResponse,
@@ -418,4 +426,131 @@ def test_webhook_response_models():
     )
     assert ping_resp.webhook_id == hook_id
     assert ping_resp.success is True
+
+
+def test_macro_create_request_validation():
+    req = MacroCreateRequest(
+        title="  Lease Renewal  ",
+        shortcut="lease-renewal",
+        category="  Leasing  ",
+        content="Hello {customer_name}, please renew.",
+        tags=["leasing", "renewal"],
+        status_action="active",
+    )
+    assert req.title == "Lease Renewal"
+    assert req.shortcut == "/lease-renewal"
+    assert req.category == "Leasing"
+    assert req.content == "Hello {customer_name}, please renew."
+    assert req.tags == ["leasing", "renewal"]
+    assert req.status_action == "active"
+
+    # Validation errors
+    with pytest.raises(ValidationError):
+        MacroCreateRequest(title="", shortcut="/valid", content="content")
+
+    with pytest.raises(ValidationError):
+        MacroCreateRequest(title="Valid", shortcut="", content="content")
+
+    with pytest.raises(ValidationError):
+        MacroCreateRequest(title="Valid", shortcut="/valid", content="")
+
+    with pytest.raises(ValidationError):
+        MacroCreateRequest(
+            title="Valid",
+            shortcut="/valid",
+            content="content",
+            status_action="invalid_status",
+        )
+
+
+def test_macro_update_request_validation():
+    req = MacroUpdateRequest(
+        title="  Updated Title  ",
+        shortcut="new-sc",
+        category="Billing",
+        content="New content",
+        tags=["billing"],
+        status_action="resolved",
+    )
+    assert req.title == "Updated Title"
+    assert req.shortcut == "/new-sc"
+    assert req.category == "Billing"
+    assert req.content == "New content"
+    assert req.status_action == "resolved"
+
+    empty_req = MacroUpdateRequest()
+    assert empty_req.title is None
+    assert empty_req.shortcut is None
+    assert empty_req.status_action is None
+
+
+def test_macro_response_auto_extracts_variables():
+    macro_id = 10
+    resp = MacroResponse(
+        id=macro_id,
+        title="Maintenance Notice",
+        shortcut="/maint",
+        category="Maintenance",
+        content="Hello {customer_name}, unit {unit_id} scheduled for {date}.",
+        tags=["maintenance"],
+        status_action="active",
+    )
+    assert resp.id == macro_id
+    assert resp.variables == ["customer_name", "date", "unit_id"]
+
+
+def test_macro_render_request_and_response():
+    req = MacroRenderRequest(variables={"customer_name": "Sarah"}, fallback_defaults=True)
+    assert req.variables["customer_name"] == "Sarah"
+    assert req.fallback_defaults is True
+
+    macro_id = 5
+    resp = MacroRenderResponse(
+        macro_id=macro_id,
+        rendered_content="Hello Sarah, your lease is ready.",
+        unresolved_variables=[],
+        status_action="active",
+    )
+    assert resp.macro_id == macro_id
+    assert "Hello Sarah" in resp.rendered_content
+    assert resp.status_action == "active"
+
+
+def test_macro_apply_request_validation():
+    # Valid with macro_id
+    macro_id = 7
+    req1 = MacroApplyRequest(macro_id=macro_id)
+    assert req1.macro_id == macro_id
+
+    # Valid with shortcut
+    req2 = MacroApplyRequest(shortcut="/rent-pay")
+    assert req2.shortcut == "/rent-pay"
+
+    # Invalid without either
+    with pytest.raises(ValidationError):
+        MacroApplyRequest()
+
+
+def test_macro_apply_response():
+    macro_id = 12
+    resp = MacroApplyResponse(
+        session_id="sess-abc",
+        macro_id=macro_id,
+        macro_title="Rent Payment",
+        rendered_content="Payment details...",
+        applied_status="resolved",
+        applied_tags=["billing"],
+    )
+    assert resp.session_id == "sess-abc"
+    assert resp.macro_id == macro_id
+    assert resp.applied_status == "resolved"
+    assert resp.applied_tags == ["billing"]
+
+
+def test_macro_categories_response():
+    expected_categories = 3
+    resp = MacroCategoriesResponse(categories=["Billing", "General", "Leasing"])
+    assert len(resp.categories) == expected_categories
+    assert "Billing" in resp.categories
+
 
