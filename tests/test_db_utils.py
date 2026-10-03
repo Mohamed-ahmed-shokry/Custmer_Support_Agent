@@ -14,6 +14,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.migrate_session_labels()
     db_utils.create_feedback()
     db_utils.create_webhooks()
+    db_utils.create_support_macros()
     return db_path
 
 
@@ -1142,5 +1143,170 @@ def test_record_and_get_webhook_delivery_logs(monkeypatch, tmp_path):
     assert len(h2_logs) == 1
     assert h2_logs[0]["event"] == "session.resolved"
     assert h2_logs[0]["success"] is True
+
+
+def test_support_macros_seeded_on_init(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    macros = db_utils.list_macros()
+    assert len(macros) == len(db_utils.DEFAULT_MACROS)
+    shortcuts = [m["shortcut"] for m in macros]
+    assert "/lease-renewal" in shortcuts
+    assert "/emerg-maint" in shortcuts
+    assert "/rent-pay" in shortcuts
+    assert "/move-out" in shortcuts
+
+    # Re-seeding does not duplicate
+    added = db_utils.seed_default_macros()
+    assert added == 0
+    assert len(db_utils.list_macros()) == len(db_utils.DEFAULT_MACROS)
+
+
+def test_create_and_get_macro(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    macro = db_utils.create_macro(
+        title="Parking Pass Request",
+        shortcut="/parking-pass",
+        content="Hello {customer_name}, your parking pass for unit {unit_id} is ready.",
+        category="Parking",
+        tags=["parking", "amenities"],
+        status_action="resolved",
+    )
+
+    assert macro["id"] > 0
+    assert macro["title"] == "Parking Pass Request"
+    assert macro["shortcut"] == "/parking-pass"
+    assert macro["category"] == "Parking"
+    assert "parking" in macro["tags"]
+    assert macro["status_action"] == "resolved"
+
+    by_id = db_utils.get_macro(macro["id"])
+    assert by_id == macro
+
+    by_shortcut = db_utils.get_macro_by_shortcut("/parking-pass")
+    assert by_shortcut == macro
+
+    # Case-insensitive shortcut lookup
+    by_shortcut_upper = db_utils.get_macro_by_shortcut("PARKING-PASS")
+    assert by_shortcut_upper == macro
+
+
+def test_create_macro_validations(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Duplicate shortcut raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_macro(
+            title="Duplicate",
+            shortcut="/lease-renewal",
+            content="Some text",
+        )
+
+    # Blank title
+    with pytest.raises(ValueError, match="Macro title must not be blank"):
+        db_utils.create_macro(title="", shortcut="/valid", content="Some text")
+
+    # Blank shortcut
+    with pytest.raises(ValueError, match="Macro shortcut must not be blank"):
+        db_utils.create_macro(title="Valid", shortcut="", content="Some text")
+
+    # Invalid shortcut characters
+    with pytest.raises(ValueError, match="alphanumeric"):
+        db_utils.create_macro(title="Valid", shortcut="/bad shortcut!", content="Some text")
+
+    # Blank content
+    with pytest.raises(ValueError, match="Macro content must not be blank"):
+        db_utils.create_macro(title="Valid", shortcut="/valid-shortcut", content="")
+
+    # Invalid status action
+    with pytest.raises(ValueError, match="Invalid status_action"):
+        db_utils.create_macro(
+            title="Valid",
+            shortcut="/valid-shortcut",
+            content="Text",
+            status_action="invalid_status",
+        )
+
+
+def test_list_macros_and_filters(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Filter by category
+    min_leasing_count = 2
+    leasing_macros = db_utils.list_macros(category="Leasing")
+    assert all(m["category"] == "Leasing" for m in leasing_macros)
+    assert len(leasing_macros) >= min_leasing_count
+
+    # Filter by tag
+    urgent_macros = db_utils.list_macros(tag="urgent")
+    assert any(m["shortcut"] == "/emerg-maint" for m in urgent_macros)
+
+    # Search filter across title, shortcut, or content
+    search_results = db_utils.list_macros(search="portal")
+    assert any(m["shortcut"] == "/rent-pay" for m in search_results)
+
+
+def test_list_macro_categories(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    categories = db_utils.list_macro_categories()
+    assert "Billing" in categories
+    assert "General" in categories
+    assert "Leasing" in categories
+    assert "Maintenance" in categories
+
+
+def test_update_macro(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    macro = db_utils.create_macro(
+        title="Original Title",
+        shortcut="/orig-sc",
+        content="Original content",
+        category="General",
+        tags="orig, test",
+        status_action="active",
+    )
+
+    updated = db_utils.update_macro(
+        macro["id"],
+        title="Updated Title",
+        shortcut="/new-sc",
+        category="UpdatedCat",
+        content="New content",
+        tags=["newtag1", "newtag2"],
+        status_action="resolved",
+    )
+
+    assert updated is not None
+    assert updated["title"] == "Updated Title"
+    assert updated["shortcut"] == "/new-sc"
+    assert updated["category"] == "UpdatedCat"
+    assert updated["content"] == "New content"
+    assert updated["tags"] == ["newtag1", "newtag2"]
+    assert updated["status_action"] == "resolved"
+
+    # Shortcut collision raises ValueError
+    with pytest.raises(ValueError, match="already taken"):
+        db_utils.update_macro(macro["id"], shortcut="/lease-renewal")
+
+    # Nonexistent macro returns None
+    assert db_utils.update_macro(99999, title="Nonexistent") is None
+
+
+def test_delete_macro(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    macro = db_utils.create_macro(
+        title="To Delete",
+        shortcut="/to-delete",
+        content="Will be deleted",
+    )
+
+    assert db_utils.delete_macro(macro["id"]) is True
+    assert db_utils.get_macro(macro["id"]) is None
+    assert db_utils.delete_macro(macro["id"]) is False
+
 
 

@@ -2,6 +2,7 @@ import sqlite3
 from collections import Counter
 from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.settings import settings
@@ -128,6 +129,48 @@ _INCREMENT_WEBHOOK_FAILURE = (
 _RESET_WEBHOOK_FAILURE = (
     "UPDATE webhooks SET failure_count = 0 WHERE id = ?"
 )
+
+_CREATE_SUPPORT_MACROS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS support_macros ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "title TEXT NOT NULL, "
+    "shortcut TEXT NOT NULL UNIQUE, "
+    "category TEXT NOT NULL DEFAULT 'General', "
+    "content TEXT NOT NULL, "
+    "tags TEXT NOT NULL DEFAULT '', "
+    "status_action TEXT, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_MACRO_CATEGORY_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_support_macros_category ON support_macros(category)"
+)
+_CREATE_MACRO_SHORTCUT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_support_macros_shortcut ON support_macros(shortcut)"
+)
+
+_INSERT_SUPPORT_MACRO = (
+    "INSERT INTO support_macros (title, shortcut, category, content, tags, status_action) "
+    "VALUES (?, ?, ?, ?, ?, ?)"
+)
+_SELECT_MACRO_BY_ID = (
+    "SELECT id, title, shortcut, category, content, tags, status_action, created_at, updated_at "
+    "FROM support_macros WHERE id = ?"
+)
+_SELECT_MACRO_BY_SHORTCUT = (
+    "SELECT id, title, shortcut, category, content, tags, status_action, created_at, updated_at "
+    "FROM support_macros WHERE LOWER(shortcut) = LOWER(?)"
+)
+_DELETE_SUPPORT_MACRO = "DELETE FROM support_macros WHERE id = ?"
+_SELECT_MACRO_CATEGORIES = (
+    "SELECT DISTINCT category FROM support_macros ORDER BY category ASC"
+)
+
+MAX_MACRO_TITLE_LENGTH = 100
+MAX_MACRO_SHORTCUT_LENGTH = 50
+MAX_MACRO_CATEGORY_LENGTH = 50
+MAX_MACRO_CONTENT_LENGTH = 4000
+MAX_MACRO_TAGS_LENGTH = 200
 
 VALID_WEBHOOK_EVENTS = {
     "*",
@@ -339,6 +382,69 @@ def normalize_webhook_secret(value: str | None) -> str:
             f"Webhook secret must be at most {MAX_WEBHOOK_SECRET_LENGTH} characters."
         )
     return secret
+
+
+def normalize_macro_title(value: str | None) -> str:
+    """Validate macro title, raising ValueError if blank or too long."""
+    title = (value or "").strip()
+    if not title:
+        raise ValueError("Macro title must not be blank.")
+    if len(title) > MAX_MACRO_TITLE_LENGTH:
+        raise ValueError(f"Macro title must be at most {MAX_MACRO_TITLE_LENGTH} characters.")
+    return title
+
+
+def normalize_macro_shortcut(value: str | None) -> str:
+    """Validate macro shortcut, ensuring slash prefix and alphanumeric characters."""
+    raw = (value or "").strip().lower()
+    if not raw:
+        raise ValueError("Macro shortcut must not be blank.")
+    shortcut = raw if raw.startswith("/") else f"/{raw}"
+    if len(shortcut) > MAX_MACRO_SHORTCUT_LENGTH:
+        raise ValueError(
+            f"Macro shortcut must be at most {MAX_MACRO_SHORTCUT_LENGTH} characters."
+        )
+    identifier = shortcut[1:]
+    if not identifier or not all(c.isalnum() or c in "-_" for c in identifier):
+        raise ValueError(
+            "Macro shortcut must contain only alphanumeric characters, hyphens, and underscores."
+        )
+    return shortcut
+
+
+def normalize_macro_category(value: str | None) -> str:
+    """Validate macro category, defaulting to 'General' if blank."""
+    category = (value or "").strip()
+    if not category:
+        return "General"
+    if len(category) > MAX_MACRO_CATEGORY_LENGTH:
+        raise ValueError(
+            f"Macro category must be at most {MAX_MACRO_CATEGORY_LENGTH} characters."
+        )
+    return category
+
+
+def normalize_macro_content(value: str | None) -> str:
+    """Validate macro content, raising ValueError if blank or too long."""
+    content = (value or "").strip()
+    if not content:
+        raise ValueError("Macro content must not be blank.")
+    if len(content) > MAX_MACRO_CONTENT_LENGTH:
+        raise ValueError(
+            f"Macro content must be at most {MAX_MACRO_CONTENT_LENGTH} characters."
+        )
+    return content
+
+
+def normalize_macro_status_action(value: str | None) -> str | None:
+    """Validate optional status action against valid session statuses."""
+    if not value or not str(value).strip():
+        return None
+    status = str(value).strip().lower()
+    if status not in VALID_SESSION_STATUSES:
+        valid_options = ", ".join(sorted(VALID_SESSION_STATUSES))
+        raise ValueError(f"Invalid status_action '{value}'. Must be one of: {valid_options}")
+    return status
 
 
 PREVIEW_MAX_LENGTH = 80
@@ -1231,6 +1337,303 @@ def get_webhook_delivery_logs(
         return items, total
 
 
+DEFAULT_MACROS: list[dict] = [
+    {
+        "title": "Lease Renewal Offer",
+        "shortcut": "/lease-renewal",
+        "category": "Leasing",
+        "content": (
+            "Hello {customer_name},\n\n"
+            "We would love to extend your stay with us! Your current lease is eligible "
+            "for renewal. Please review the renewal options sent to your email or let us know "
+            "if you would like to discuss custom lease terms.\n\n"
+            "Best regards,\n{agent_name}\nProperty Management Team"
+        ),
+        "tags": "leasing, renewal",
+        "status_action": "active",
+    },
+    {
+        "title": "Emergency Maintenance Dispatch",
+        "shortcut": "/emerg-maint",
+        "category": "Maintenance",
+        "content": (
+            "Hello {customer_name},\n\n"
+            "Thank you for alerting us regarding the urgent maintenance issue at unit {unit_id}. "
+            "An emergency work order has been created, and our on-call technician has been "
+            "dispatched.\n\n"
+            "If you experience active water flooding, gas odor, or total power loss, please "
+            "immediately call our 24/7 emergency dispatch line at {support_contact}.\n\n"
+            "Ticket Reference: {session_id}"
+        ),
+        "tags": "maintenance, urgent, emergency",
+        "status_action": "escalated",
+    },
+    {
+        "title": "Routine Maintenance Scheduled",
+        "shortcut": "/maint-scheduled",
+        "category": "Maintenance",
+        "content": (
+            "Hello {customer_name},\n\n"
+            "Your maintenance request for unit {unit_id} has been received and scheduled "
+            "with our facilities team. A technician is estimated to visit within 24-48 business "
+            "hours. You will receive an SMS update prior to arrival.\n\n"
+            "Thank you for your cooperation!"
+        ),
+        "tags": "maintenance, routine",
+        "status_action": "active",
+    },
+    {
+        "title": "Online Rent Payment Instructions",
+        "shortcut": "/rent-pay",
+        "category": "Billing",
+        "content": (
+            "Hello {customer_name},\n\n"
+            "Rent payments can be submitted securely online through our resident portal at "
+            "https://portal.propertymanager.com.\n\n"
+            "Accepted payment methods include ACH direct debit (no convenience fee), "
+            "credit card, and debit card. Rent is due on the 1st of each month with a grace "
+            "period through the 5th.\n\n"
+            "If you have any questions regarding your statement, please let us know."
+        ),
+        "tags": "billing, rent, payment",
+        "status_action": "resolved",
+    },
+    {
+        "title": "Move-Out Inspection & Deposit Timeline",
+        "shortcut": "/move-out",
+        "category": "Leasing",
+        "content": (
+            "Hello {customer_name},\n\n"
+            "As your move-out date approaches, please note that a final walkthrough inspection "
+            "will be conducted within 48 hours of key handover. Any refundable security deposit, "
+            "accompanied by an itemized deduction statement, will be processed within 21 business "
+            "days in accordance with state regulations.\n\n"
+            "Please ensure you provide your forwarding mailing address."
+        ),
+        "tags": "move-out, deposit, inspection",
+        "status_action": "resolved",
+    },
+    {
+        "title": "General Inquiry Resolution",
+        "shortcut": "/resolve",
+        "category": "General",
+        "content": (
+            "Hello {customer_name},\n\n"
+            "I am glad I could assist you with your inquiry today! Please don't hesitate to "
+            "reach back out if there is anything else we can help you with.\n\n"
+            "Have a wonderful day!\n{agent_name}"
+        ),
+        "tags": "general, closing",
+        "status_action": "resolved",
+    },
+]
+
+
+def _format_macro_row(row: sqlite3.Row) -> dict:
+    raw_tags = row["tags"] or ""
+    tags_list = [t.strip() for t in raw_tags.split(",") if t.strip()]
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "shortcut": row["shortcut"],
+        "category": row["category"],
+        "content": row["content"],
+        "tags": tags_list,
+        "status_action": row["status_action"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def seed_default_macros(force: bool = False) -> int:
+    """Seed standard property management default macros if table is empty."""
+    with closing(get_db_connection()) as conn:
+        if not force:
+            count = conn.execute("SELECT COUNT(*) FROM support_macros").fetchone()[0]
+            if count > 0:
+                return 0
+        inserted = 0
+        for item in DEFAULT_MACROS:
+            existing = conn.execute(
+                _SELECT_MACRO_BY_SHORTCUT, (item["shortcut"],)
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    _INSERT_SUPPORT_MACRO,
+                    (
+                        item["title"],
+                        item["shortcut"],
+                        item["category"],
+                        item["content"],
+                        normalize_session_tags(item.get("tags")),
+                        item.get("status_action"),
+                    ),
+                )
+                inserted += 1
+        conn.commit()
+        return inserted
+
+
+def create_support_macros() -> None:
+    """Create support_macros table and indices, seeding initial templates."""
+    db_path = Path(DB_NAME)
+    if db_path.parent != Path("."):
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_SUPPORT_MACROS_TABLE)
+        conn.execute(_CREATE_MACRO_CATEGORY_INDEX)
+        conn.execute(_CREATE_MACRO_SHORTCUT_INDEX)
+        conn.commit()
+    seed_default_macros()
+
+
+def create_macro(  # noqa: PLR0913, PLR0917
+    title: str,
+    shortcut: str,
+    content: str,
+    category: str = "General",
+    tags: str | list[str] | None = None,
+    status_action: str | None = None,
+) -> dict:
+    """Register a new macro template."""
+    norm_title = normalize_macro_title(title)
+    norm_shortcut = normalize_macro_shortcut(shortcut)
+    norm_category = normalize_macro_category(category)
+    norm_content = normalize_macro_content(content)
+    norm_tags = normalize_session_tags(tags)
+    norm_status = normalize_macro_status_action(status_action)
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(_SELECT_MACRO_BY_SHORTCUT, (norm_shortcut,)).fetchone()
+        if existing:
+            raise ValueError(f"Macro shortcut '{norm_shortcut}' already exists.")
+        cursor = conn.execute(
+            _INSERT_SUPPORT_MACRO,
+            (norm_title, norm_shortcut, norm_category, norm_content, norm_tags, norm_status),
+        )
+        macro_id = cursor.lastrowid
+        conn.commit()
+        row = conn.execute(_SELECT_MACRO_BY_ID, (macro_id,)).fetchone()
+        return _format_macro_row(row)
+
+
+def get_macro(macro_id: int) -> dict | None:
+    """Retrieve a macro by ID."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(_SELECT_MACRO_BY_ID, (macro_id,)).fetchone()
+        return _format_macro_row(row) if row else None
+
+
+def get_macro_by_shortcut(shortcut: str) -> dict | None:
+    """Retrieve a macro by its trigger shortcut."""
+    norm_shortcut = normalize_macro_shortcut(shortcut)
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(_SELECT_MACRO_BY_SHORTCUT, (norm_shortcut,)).fetchone()
+        return _format_macro_row(row) if row else None
+
+
+def list_macros(
+    category: str | None = None,
+    tag: str | None = None,
+    search: str | None = None,
+) -> list[dict]:
+    """List macros with optional filtering by category, tag, or search term."""
+    query = (
+        "SELECT id, title, shortcut, category, content, tags, "
+        "status_action, created_at, updated_at "
+        "FROM support_macros"
+    )
+    clauses = []
+    params = []
+    if category and category.strip():
+        clauses.append("LOWER(category) = LOWER(?)")
+        params.append(category.strip())
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        clauses.append("(title LIKE ? OR shortcut LIKE ? OR content LIKE ?)")
+        params.extend([term, term, term])
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY category ASC, title ASC"
+
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, params).fetchall()
+        macros = [_format_macro_row(row) for row in rows]
+        if tag and tag.strip():
+            target_tag = tag.strip().lower()
+            macros = [m for m in macros if any(target_tag == t.lower() for t in m["tags"])]
+        return macros
+
+
+def list_macro_categories() -> list[str]:
+    """Return distinct categories across all registered macros."""
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(_SELECT_MACRO_CATEGORIES).fetchall()
+        return [row["category"] for row in rows if row["category"]]
+
+
+def update_macro(  # noqa: PLR0913, PLR0917
+    macro_id: int,
+    title: str | None = None,
+    shortcut: str | None = None,
+    category: str | None = None,
+    content: str | None = None,
+    tags: str | list[str] | None = None,
+    status_action: str | None = None,
+) -> dict | None:
+    """Update macro template attributes."""
+    updates: list[str] = []
+    params: list[Any] = []
+    if title is not None:
+        updates.append("title = ?")
+        params.append(normalize_macro_title(title))
+    if shortcut is not None:
+        norm_sc = normalize_macro_shortcut(shortcut)
+        with closing(get_db_connection()) as conn:
+            existing = conn.execute(
+                "SELECT id FROM support_macros WHERE LOWER(shortcut) = LOWER(?) AND id != ?",
+                (norm_sc, macro_id),
+            ).fetchone()
+            if existing:
+                raise ValueError(f"Macro shortcut '{norm_sc}' is already taken.")
+        updates.append("shortcut = ?")
+        params.append(norm_sc)
+    if category is not None:
+        updates.append("category = ?")
+        params.append(normalize_macro_category(category))
+    if content is not None:
+        updates.append("content = ?")
+        params.append(normalize_macro_content(content))
+    if tags is not None:
+        updates.append("tags = ?")
+        params.append(normalize_session_tags(tags))
+    if status_action is not None:
+        updates.append("status_action = ?")
+        params.append(normalize_macro_status_action(status_action))
+
+    if not updates:
+        return get_macro(macro_id)
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    params.append(macro_id)
+    sql = f"UPDATE support_macros SET {', '.join(updates)} WHERE id = ?"
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(sql, params)
+        if cursor.rowcount == 0:
+            return None
+        conn.commit()
+        row = conn.execute(_SELECT_MACRO_BY_ID, (macro_id,)).fetchone()
+        return _format_macro_row(row) if row else None
+
+
+def delete_macro(macro_id: int) -> bool:
+    """Delete a macro template by ID."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(_DELETE_SUPPORT_MACRO, (macro_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -1240,4 +1643,6 @@ migrate_session_labels()
 create_feedback()
 migrate_feedback()
 create_webhooks()
+create_support_macros()
+
 
