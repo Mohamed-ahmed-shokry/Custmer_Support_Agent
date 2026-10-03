@@ -1,13 +1,17 @@
 import streamlit as st
+from api.macros import extract_template_variables
 from api.pydantic_models import ModelName, model_from_value
 from api.settings import settings
 
 from app.api_utils import (
     API_BASE_URL,
+    apply_macro_to_session,
+    create_macro,
     create_webhook,
     delete_collection,
     delete_document,
     delete_documents,
+    delete_macro,
     delete_session,
     delete_sessions,
     delete_webhook,
@@ -26,6 +30,8 @@ from app.api_utils import (
     list_collections,
     list_documents,
     list_feedback,
+    list_macro_categories,
+    list_macros,
     list_sessions,
     list_webhook_deliveries,
     list_webhooks,
@@ -34,6 +40,7 @@ from app.api_utils import (
     rechunk_document,
     rename_collection,
     rename_session,
+    render_macro,
     search_sessions,
     summarize_session,
     update_session,
@@ -960,6 +967,161 @@ def _render_webhook_audit_log():
             st.caption(f"Error: {log['error_message']}")
 
 
+def _render_macro_variable_inputs(macro_id: int, template_content: str) -> dict[str, str]:
+    vars_found = extract_template_variables(template_content)
+    var_values: dict[str, str] = {}
+    if not vars_found:
+        return var_values
+
+    st.markdown("###### Template Variables")
+    current_sid = st.session_state.get("session_id") or ""
+    for var in vars_found:
+        default_val = current_sid if var == "session_id" else ""
+        val = st.text_input(
+            f"{{{var}}}",
+            value=default_val,
+            key=f"macro_var_{macro_id}_{var}",
+            placeholder=f"Value for {var}",
+        )
+        if val.strip():
+            var_values[var] = val.strip()
+    return var_values
+
+
+def _render_macro_preview_and_apply(macro: dict, var_values: dict[str, str]):
+    col_preview, col_apply = st.columns(2)
+    if col_preview.button("Preview", key=f"preview_macro_{macro['id']}"):
+        res = render_macro(macro["id"], variables=var_values, fallback_defaults=True)
+        if res:
+            st.session_state[f"macro_preview_{macro['id']}"] = res.get("rendered_content", "")
+
+    preview_cached = st.session_state.get(f"macro_preview_{macro['id']}")
+    if preview_cached:
+        st.markdown("**Rendered Preview:**")
+        st.info(preview_cached)
+
+    if col_apply.button("Apply to Session", key=f"apply_macro_{macro['id']}"):
+        current_sid = st.session_state.get("session_id")
+        if not current_sid:
+            st.error("No active chat session. Please start or load a session first.")
+            return
+
+        with st.spinner("Applying macro to session..."):
+            res = apply_macro_to_session(
+                session_id=current_sid,
+                macro_id=macro["id"],
+                variables=var_values,
+                update_status=True,
+                append_tags=True,
+            )
+            if res:
+                if "messages" not in st.session_state:
+                    st.session_state.messages = []
+                st.session_state.messages.append(
+                    {"role": "user", "content": f"[Applied Macro: {macro['title']}]"}
+                )
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": res.get("rendered_content", "")}
+                )
+                st.session_state.sessions = list_sessions()
+                st.success("Macro applied!")
+                st.rerun()
+
+
+def _render_macro_browser():
+    st.markdown("##### Pre-approved Templates")
+    categories = list_macro_categories()
+    cat_filter_options = ["All Categories", *categories]
+    selected_cat = st.selectbox(
+        "Filter by category",
+        options=cat_filter_options,
+        key="macro_category_filter",
+    )
+    filter_arg = None if selected_cat == "All Categories" else selected_cat
+    macros_list = list_macros(category=filter_arg)
+    if not macros_list:
+        st.caption("No macro templates found.")
+        return
+
+    macro_options = {f"{m['title']} ({m['shortcut']})": m for m in macros_list}
+    chosen_label = st.selectbox(
+        "Select macro",
+        options=list(macro_options.keys()),
+        key="selected_macro_choice",
+    )
+    chosen_macro = macro_options[chosen_label]
+
+    status_str = (
+        f" · 🎯 Sets status to `{chosen_macro['status_action']}`"
+        if chosen_macro.get("status_action")
+        else ""
+    )
+    st.caption(f"Category: **{chosen_macro['category']}**{status_str}")
+    if chosen_macro.get("tags"):
+        tag_pills = " ".join([f"`{t}`" for t in chosen_macro["tags"]])
+        st.caption(f"Tags: {tag_pills}")
+
+    var_values = _render_macro_variable_inputs(chosen_macro["id"], chosen_macro["content"])
+    _render_macro_preview_and_apply(chosen_macro, var_values)
+
+    if st.button("Delete Macro", key=f"del_macro_{chosen_macro['id']}") and delete_macro(
+        chosen_macro["id"]
+    ):
+        st.success("Macro deleted.")
+        st.rerun()
+
+
+def _render_macro_creator():
+    st.markdown("---")
+    st.markdown("##### Create New Template")
+    new_title = st.text_input(
+        "Title", key="new_macro_title", placeholder="E.g., Move-in Instructions"
+    )
+    new_shortcut = st.text_input(
+        "Shortcut", key="new_macro_shortcut", placeholder="E.g., /move-in"
+    )
+    new_cat = st.text_input("Category", key="new_macro_category", value="General")
+    new_action = st.selectbox(
+        "Status Action",
+        options=["None", *SESSION_STATUS_OPTIONS],
+        key="new_macro_status_action",
+    )
+    new_tags = st.text_input(
+        "Tags (comma separated)",
+        key="new_macro_tags",
+        placeholder="e.g., leasing, onboarding",
+    )
+    new_content = st.text_area(
+        "Content Template",
+        key="new_macro_content",
+        placeholder="Hello {customer_name}, welcome to unit {unit_id}!\nContact: {support_contact}",
+    )
+
+    if st.button("Save Template", key="save_new_macro"):
+        if not new_title.strip() or not new_shortcut.strip() or not new_content.strip():
+            st.error("Title, shortcut, and content are required.")
+            return
+        tags_list = [t.strip() for t in new_tags.split(",") if t.strip()]
+        action_val = None if new_action == "None" else new_action
+        created = create_macro(
+            title=new_title.strip(),
+            shortcut=new_shortcut.strip(),
+            category=new_cat.strip() or "General",
+            content=new_content.strip(),
+            tags=tags_list,
+            status_action=action_val,
+        )
+        if created:
+            st.success(f"Macro '{created['title']}' created!")
+            st.rerun()
+
+
+def _render_quick_responses_panel():
+    with st.sidebar.expander("Quick Responses & Macros"):
+        _render_macro_browser()
+        _render_macro_creator()
+
+
 def _render_webhook_manager():
     with st.sidebar.expander("Webhooks & Alerting"):
         _render_webhook_subscriptions()
@@ -985,6 +1147,7 @@ def display_sidebar():
     _render_feedback_analytics()
     _render_feedback_review()
     _render_support_triage_analytics()
+    _render_quick_responses_panel()
     _render_webhook_manager()
     _render_ops_metrics()
 

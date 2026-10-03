@@ -83,6 +83,9 @@ class FakeStreamlit:
     def error(self, message):
         self.errors.append(message)
 
+    def warning(self, message):
+        self.calls.append(Call("st", "warning", (message,), {}))
+
     def success(self, message):
         self.successes.append(message)
 

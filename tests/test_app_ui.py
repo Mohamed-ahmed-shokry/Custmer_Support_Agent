@@ -731,6 +731,10 @@ def test_display_sidebar_complete(monkeypatch):
     monkeypatch.setattr(sidebar, "get_stats", lambda: None)
     monkeypatch.setattr(sidebar, "get_quota", lambda: None)
     monkeypatch.setattr(sidebar, "list_feedback", lambda **kw: {"items": [], "total": 0})
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: [])
+    monkeypatch.setattr(sidebar, "list_macros", lambda **kw: [])
+    monkeypatch.setattr(sidebar, "list_webhooks", lambda: [])
+    monkeypatch.setattr(sidebar, "list_webhook_deliveries", lambda **kw: {"items": [], "total": 0})
 
     sidebar.display_sidebar()
     assert any(c.fn == "caption" for c in st.calls)
@@ -1012,6 +1016,9 @@ def test_display_sidebar_initializes_config(monkeypatch):
     monkeypatch.setattr(sidebar, "_render_retrieval_filters", lambda: None)
     monkeypatch.setattr(sidebar, "_render_document_list", lambda: None)
     monkeypatch.setattr(sidebar, "_render_feedback_review", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_support_triage_analytics", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_quick_responses_panel", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_webhook_manager", lambda: None)
     monkeypatch.setattr(sidebar, "_render_ops_metrics", lambda: None)
 
     conf = {"version": "0.21.0"}
@@ -1567,5 +1574,193 @@ def test_render_webhook_manager_registration(monkeypatch):
     )
     assert any("Webhook #2 registered!" in s for s in st.successes)
     assert st.reruns == 1
+
+
+def test_render_quick_responses_panel_empty(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: [])
+    monkeypatch.setattr(sidebar, "list_macros", lambda category=None: [])
+
+    sidebar._render_quick_responses_panel()
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("No macro templates found." in cap for cap in captions)
+
+
+def test_render_quick_responses_panel_preview(monkeypatch):
+    target_macro_id = 1
+    fake_macro = {
+        "id": target_macro_id,
+        "title": "Rent Payment Instructions",
+        "shortcut": "/rent-pay",
+        "category": "Billing",
+        "content": "Hello {customer_name}, your balance is due.",
+        "tags": ["rent"],
+        "status_action": None,
+    }
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: ["Billing"])
+    monkeypatch.setattr(sidebar, "list_macros", lambda category=None: [fake_macro])
+
+    st.values["selected_macro_choice"] = "Rent Payment Instructions (/rent-pay)"
+    st.values[f"macro_var_{target_macro_id}_customer_name"] = "Alice"
+    st.buttons[f"preview_macro_{target_macro_id}"] = True
+
+    rendered_calls = []
+
+    def fake_render(mid, variables=None, fallback_defaults=True):
+        rendered_calls.append((mid, variables))
+        return {"macro_id": mid, "rendered_content": "Hello Alice, your balance is due."}
+
+    monkeypatch.setattr(sidebar, "render_macro", fake_render)
+
+    sidebar._render_quick_responses_panel()
+
+    assert len(rendered_calls) == 1
+    assert rendered_calls[0][0] == target_macro_id
+    assert rendered_calls[0][1]["customer_name"] == "Alice"
+    expected_preview = "Hello Alice, your balance is due."
+    assert st.session_state[f"macro_preview_{target_macro_id}"] == expected_preview
+
+
+def test_render_quick_responses_panel_apply(monkeypatch):
+    target_macro_id = 1
+    fake_macro = {
+        "id": target_macro_id,
+        "title": "Resolve Ticket",
+        "shortcut": "/resolve",
+        "category": "General",
+        "content": "Resolved for {session_id}.",
+        "tags": ["resolved"],
+        "status_action": "resolved",
+    }
+    st = FakeStreamlit()
+    st.session_state["session_id"] = "sess-abc"
+    st.session_state["messages"] = []
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: ["General"])
+    monkeypatch.setattr(sidebar, "list_macros", lambda category=None: [fake_macro])
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [{"session_id": "sess-abc"}])
+
+    st.values["selected_macro_choice"] = "Resolve Ticket (/resolve)"
+    st.buttons[f"apply_macro_{target_macro_id}"] = True
+
+    applied_calls = []
+
+    def fake_apply(session_id, macro_id, variables, update_status, append_tags):
+        applied_calls.append((session_id, macro_id, variables))
+        return {
+            "session_id": session_id,
+            "macro_id": macro_id,
+            "rendered_content": "Resolved for sess-abc.",
+            "applied_status": "resolved",
+            "applied_tags": ["resolved"],
+        }
+
+    monkeypatch.setattr(sidebar, "apply_macro_to_session", fake_apply)
+
+    sidebar._render_quick_responses_panel()
+
+    assert len(applied_calls) == 1
+    assert applied_calls[0][0] == "sess-abc"
+    assert applied_calls[0][1] == target_macro_id
+    expected_message_count = 2
+    assert len(st.session_state["messages"]) == expected_message_count
+    assert st.session_state["messages"][0]["content"] == "[Applied Macro: Resolve Ticket]"
+    assert st.session_state["messages"][1]["content"] == "Resolved for sess-abc."
+    assert st.reruns == 1
+
+
+def test_render_quick_responses_panel_apply_no_session(monkeypatch):
+    target_macro_id = 1
+    fake_macro = {
+        "id": target_macro_id,
+        "title": "Resolve Ticket",
+        "shortcut": "/resolve",
+        "category": "General",
+        "content": "Resolved.",
+        "tags": [],
+        "status_action": None,
+    }
+    st = FakeStreamlit()
+    st.session_state["session_id"] = None
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: ["General"])
+    monkeypatch.setattr(sidebar, "list_macros", lambda category=None: [fake_macro])
+
+    st.values["selected_macro_choice"] = "Resolve Ticket (/resolve)"
+    st.buttons[f"apply_macro_{target_macro_id}"] = True
+
+    sidebar._render_quick_responses_panel()
+
+    assert any("No active chat session" in err for err in st.errors)
+
+
+def test_render_quick_responses_panel_delete(monkeypatch):
+    target_macro_id = 1
+    fake_macro = {
+        "id": target_macro_id,
+        "title": "Temp",
+        "shortcut": "/temp",
+        "category": "General",
+        "content": "Temp",
+        "tags": [],
+        "status_action": None,
+    }
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: [])
+    monkeypatch.setattr(sidebar, "list_macros", lambda category=None: [fake_macro])
+
+    deleted_ids = []
+    monkeypatch.setattr(
+        sidebar,
+        "delete_macro",
+        lambda mid: deleted_ids.append(mid) or True,
+    )
+    st.buttons[f"del_macro_{target_macro_id}"] = True
+
+    sidebar._render_quick_responses_panel()
+
+    assert deleted_ids == [target_macro_id]
+    assert st.reruns == 1
+
+
+def test_render_quick_responses_panel_create_macro(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "list_macro_categories", lambda: [])
+    monkeypatch.setattr(sidebar, "list_macros", lambda category=None: [])
+
+    st.values["new_macro_title"] = "Move-Out Checklist"
+    st.values["new_macro_shortcut"] = "/move-out"
+    st.values["new_macro_category"] = "Leasing"
+    st.values["new_macro_status_action"] = "resolved"
+    st.values["new_macro_tags"] = "inspection, deposit"
+    st.values["new_macro_content"] = "Move out instructions for {unit_id}."
+    st.buttons["save_new_macro"] = True
+
+    created_args = []
+
+    def fake_create(title, shortcut, category, content, tags, status_action):  # noqa: PLR0913, PLR0917
+        created_args.append((title, shortcut, category, content, tags, status_action))
+        return {"id": 10, "title": title}
+
+    monkeypatch.setattr(sidebar, "create_macro", fake_create)
+
+    sidebar._render_quick_responses_panel()
+
+    assert len(created_args) == 1
+    assert created_args[0] == (
+        "Move-Out Checklist",
+        "/move-out",
+        "Leasing",
+        "Move out instructions for {unit_id}.",
+        ["inspection", "deposit"],
+        "resolved",
+    )
+    assert st.reruns == 1
+
 
 
