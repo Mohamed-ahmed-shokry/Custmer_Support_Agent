@@ -2276,3 +2276,249 @@ def test_session_status_update_triggers_webhooks(monkeypatch):
     assert dispatched[1][1]["status"] == "resolved"
     assert dispatched[1][1]["previous_status"] == "escalated"
 
+
+def test_create_macro_route(monkeypatch):
+    fake_macro = {
+        "id": 1,
+        "title": "Lease Renewal",
+        "shortcut": "/lease-renewal",
+        "category": "Leasing",
+        "content": "Hello {customer_name}, renewal info.",
+        "tags": ["leasing"],
+        "status_action": "active",
+        "created_at": "2026-10-01T00:00:00Z",
+        "updated_at": "2026-10-01T00:00:00Z",
+    }
+    monkeypatch.setattr(main, "create_macro", lambda **kwargs: fake_macro)
+
+    response = client.post(
+        "/macros",
+        json={
+            "title": "Lease Renewal",
+            "shortcut": "/lease-renewal",
+            "category": "Leasing",
+            "content": "Hello {customer_name}, renewal info.",
+            "tags": ["leasing"],
+            "status_action": "active",
+        },
+    )
+    assert response.status_code == HTTP_CREATED
+    data = response.json()
+    assert data["id"] == 1
+    assert data["shortcut"] == "/lease-renewal"
+    assert data["variables"] == ["customer_name"]
+
+    def fail_create(**kwargs):
+        raise ValueError("Macro shortcut '/lease-renewal' already exists.")
+
+    monkeypatch.setattr(main, "create_macro", fail_create)
+    fail_resp = client.post(
+        "/macros",
+        json={
+            "title": "Lease Renewal",
+            "shortcut": "/lease-renewal",
+            "content": "Hello {customer_name}",
+        },
+    )
+    assert fail_resp.status_code == HTTP_BAD_REQUEST
+
+
+def test_list_and_get_macros_routes(monkeypatch):
+    target_id = 10
+    fake_macro = {
+        "id": target_id,
+        "title": "Emergency Maintenance",
+        "shortcut": "/emerg-maint",
+        "category": "Maintenance",
+        "content": "Hello {customer_name}, unit {unit_id}.",
+        "tags": ["maintenance", "emergency"],
+        "status_action": "escalated",
+        "created_at": "2026-10-01T00:00:00Z",
+        "updated_at": "2026-10-01T00:00:00Z",
+    }
+    monkeypatch.setattr(main, "list_macros", lambda **kwargs: [fake_macro])
+    monkeypatch.setattr(main, "list_macro_categories", lambda: ["Maintenance", "Leasing"])
+    monkeypatch.setattr(
+        main, "get_macro", lambda mid: fake_macro if mid == target_id else None
+    )
+
+    resp_list = client.get("/macros?category=Maintenance")
+    assert resp_list.status_code == HTTP_OK
+    assert len(resp_list.json()) == 1
+
+    resp_cats = client.get("/macros/categories")
+    assert resp_cats.status_code == HTTP_OK
+    assert "Maintenance" in resp_cats.json()["categories"]
+
+    resp_get = client.get(f"/macros/{target_id}")
+    assert resp_get.status_code == HTTP_OK
+    assert resp_get.json()["id"] == target_id
+    assert resp_get.json()["shortcut"] == "/emerg-maint"
+
+    resp_404 = client.get("/macros/999")
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+
+def test_update_and_delete_macro_routes(monkeypatch):
+    target_id = 10
+    fake_macro = {
+        "id": target_id,
+        "title": "Updated Title",
+        "shortcut": "/new-sc",
+        "category": "General",
+        "content": "Updated content.",
+        "tags": ["tag1"],
+        "status_action": "resolved",
+        "created_at": "2026-10-01T00:00:00Z",
+        "updated_at": "2026-10-01T00:00:00Z",
+    }
+
+    def fake_update(macro_id, **kwargs):
+        if macro_id == target_id:
+            if kwargs.get("shortcut") == "/taken":
+                raise ValueError("Macro shortcut is already taken.")
+            return fake_macro
+        return None
+
+    monkeypatch.setattr(main, "update_macro", fake_update)
+    monkeypatch.setattr(main, "delete_macro", lambda mid: mid == target_id)
+
+    resp_up = client.patch(f"/macros/{target_id}", json={"title": "Updated Title"})
+    assert resp_up.status_code == HTTP_OK
+    assert resp_up.json()["title"] == "Updated Title"
+
+    resp_collision = client.patch(f"/macros/{target_id}", json={"shortcut": "/taken"})
+    assert resp_collision.status_code == HTTP_BAD_REQUEST
+
+    resp_up_404 = client.patch("/macros/999", json={"title": "No"})
+    assert resp_up_404.status_code == HTTP_NOT_FOUND
+
+    resp_del = client.delete(f"/macros/{target_id}")
+    assert resp_del.status_code == HTTP_OK
+
+    resp_del_404 = client.delete("/macros/999")
+    assert resp_del_404.status_code == HTTP_NOT_FOUND
+
+
+def test_render_macro_route(monkeypatch):
+    fake_macro = {
+        "id": 1,
+        "title": "Notice",
+        "shortcut": "/notice",
+        "category": "General",
+        "content": "Hello {customer_name}, unit {unit_id}.",
+        "tags": [],
+        "status_action": "active",
+        "created_at": "2026-10-01T00:00:00Z",
+        "updated_at": "2026-10-01T00:00:00Z",
+    }
+    monkeypatch.setattr(main, "get_macro", lambda mid: fake_macro if mid == 1 else None)
+
+    resp = client.post(
+        "/macros/1/render",
+        json={"variables": {"customer_name": "Dave", "unit_id": "3A"}},
+    )
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["macro_id"] == 1
+    assert data["rendered_content"] == "Hello Dave, unit 3A."
+    assert data["unresolved_variables"] == []
+
+    resp_404 = client.post("/macros/999/render", json={})
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+
+def test_apply_macro_to_session_route(monkeypatch):
+    target_macro_id = 5
+    dispatched = []
+    logged_messages = []
+    updated_metadata = []
+
+    fake_macro = {
+        "id": target_macro_id,
+        "title": "Resolve Ticket",
+        "shortcut": "/resolve",
+        "category": "General",
+        "content": "Hello {customer_name}, ticket resolved for {session_id}.",
+        "tags": ["resolved", "macro-tag"],
+        "status_action": "resolved",
+        "created_at": "2026-10-01T00:00:00Z",
+        "updated_at": "2026-10-01T00:00:00Z",
+    }
+
+    session_summary = {
+        "session_id": "sess-42",
+        "label": "Help request",
+        "status": "active",
+        "tags": ["initial"],
+        "summary": "Tenant asked about payment.",
+        "resolution_notes": "",
+    }
+
+    monkeypatch.setattr(
+        main,
+        "_get_session_summary_or_404",
+        lambda sid: session_summary if sid == "sess-42" else None,
+    )
+    monkeypatch.setattr(
+        main, "get_macro", lambda mid: fake_macro if mid == target_macro_id else None
+    )
+    monkeypatch.setattr(
+        main, "get_macro_by_shortcut", lambda sc: fake_macro if sc == "/resolve" else None
+    )
+    monkeypatch.setattr(
+        main,
+        "insert_application_logs",
+        lambda session_id, user_query, gpt_response, model: logged_messages.append(
+            (session_id, user_query, gpt_response)
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "update_session_metadata",
+        lambda session_id, status=None, tags=None: updated_metadata.append(
+            (session_id, status, tags)
+        ),
+    )
+    monkeypatch.setattr(
+        main.webhooks,
+        "dispatch_event",
+        lambda ev, data: dispatched.append((ev, data)),
+    )
+
+    resp = client.post(
+        "/sessions/sess-42/apply-macro",
+        json={
+            "macro_id": target_macro_id,
+            "variables": {"customer_name": "Alice"},
+            "update_status": True,
+            "append_tags": True,
+        },
+    )
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["macro_id"] == target_macro_id
+    assert data["session_id"] == "sess-42"
+    assert "Hello Alice, ticket resolved for sess-42." in data["rendered_content"]
+    assert data["applied_status"] == "resolved"
+    assert "resolved" in data["applied_tags"]
+
+    assert len(logged_messages) == 1
+    assert "[Applied Macro: Resolve Ticket]" in logged_messages[0][1]
+
+    assert len(updated_metadata) == 1
+    assert updated_metadata[0][1] == "resolved"
+    assert "initial" in updated_metadata[0][2]
+    assert "macro-tag" in updated_metadata[0][2]
+
+    assert len(dispatched) == 1
+    assert dispatched[0][0] == "session.resolved"
+    assert dispatched[0][1]["session_id"] == "sess-42"
+
+    resp_macro_404 = client.post(
+        "/sessions/sess-42/apply-macro",
+        json={"macro_id": 999},
+    )
+    assert resp_macro_404.status_code == HTTP_NOT_FOUND
+
+

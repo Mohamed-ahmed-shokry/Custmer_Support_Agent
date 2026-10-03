@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from api import webhooks
+from api import macros, webhooks
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -31,11 +31,13 @@ from api.chroma_utils import (
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     VALID_SESSION_STATUSES,
+    create_macro,
     create_webhook,
     delete_document_record,
     delete_document_source,
     delete_document_sources_by_collection,
     delete_documents_by_collection,
+    delete_macro,
     delete_session,
     delete_sessions,
     delete_webhook,
@@ -49,6 +51,8 @@ from api.db_utils import (
     get_document_source,
     get_feedback_analytics,
     get_library_stats,
+    get_macro,
+    get_macro_by_shortcut,
     get_session_feedback,
     get_session_metadata,
     get_support_triage_analytics,
@@ -58,6 +62,8 @@ from api.db_utils import (
     insert_document_record,
     insert_feedback,
     list_feedback,
+    list_macro_categories,
+    list_macros,
     list_webhooks,
     normalize_session_label,
     ping_db,
@@ -67,6 +73,7 @@ from api.db_utils import (
     save_document_source,
     search_sessions,
     truncate_history,
+    update_macro,
     update_session_metadata,
     update_webhook,
 )
@@ -113,6 +120,14 @@ from api.pydantic_models import (
     FeedbackListResponse,
     FeedbackResponse,
     HealthResponse,
+    MacroApplyRequest,
+    MacroApplyResponse,
+    MacroCategoriesResponse,
+    MacroCreateRequest,
+    MacroRenderRequest,
+    MacroRenderResponse,
+    MacroResponse,
+    MacroUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -1541,4 +1556,210 @@ def ping_webhook_route(webhook_id: int):
         return WebhookPingResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# Canned Responses & Action Macro endpoints
+@app.post("/macros", response_model=MacroResponse, status_code=201)
+def create_macro_route(request: MacroCreateRequest):
+    try:
+        created = create_macro(
+            title=request.title,
+            shortcut=request.shortcut,
+            category=request.category,
+            content=request.content,
+            tags=request.tags,
+            status_action=request.status_action,
+        )
+        return MacroResponse(**created)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/macros", response_model=list[MacroResponse])
+def list_macros_route(
+    category: str | None = None,
+    tag: str | None = None,
+    search: str | None = None,
+):
+    macros_list = list_macros(category=category, tag=tag, search=search)
+    return [MacroResponse(**m) for m in macros_list]
+
+
+@app.get("/macros/categories", response_model=MacroCategoriesResponse)
+def list_macro_categories_route():
+    categories = list_macro_categories()
+    return MacroCategoriesResponse(categories=categories)
+
+
+@app.get("/macros/{macro_id}", response_model=MacroResponse)
+def get_macro_route(macro_id: int):
+    macro = get_macro(macro_id)
+    if macro is None:
+        raise HTTPException(status_code=404, detail=f"Macro {macro_id} was not found.")
+    return MacroResponse(**macro)
+
+
+@app.patch("/macros/{macro_id}", response_model=MacroResponse)
+def update_macro_route(macro_id: int, request: MacroUpdateRequest):
+    try:
+        updated = update_macro(
+            macro_id=macro_id,
+            title=request.title,
+            shortcut=request.shortcut,
+            category=request.category,
+            content=request.content,
+            tags=request.tags,
+            status_action=request.status_action,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Macro {macro_id} was not found.")
+    return MacroResponse(**updated)
+
+
+@app.delete("/macros/{macro_id}")
+def delete_macro_route(macro_id: int):
+    deleted = delete_macro(macro_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Macro {macro_id} was not found.")
+    return {"message": f"Macro {macro_id} deleted."}
+
+
+@app.post("/macros/{macro_id}/render", response_model=MacroRenderResponse)
+def render_macro_route(macro_id: int, request: MacroRenderRequest):
+    macro = get_macro(macro_id)
+    if macro is None:
+        raise HTTPException(status_code=404, detail=f"Macro {macro_id} was not found.")
+    rendered, unresolved = macros.render_template(
+        macro["content"],
+        variables=request.variables,
+        fallback_defaults=request.fallback_defaults,
+    )
+    return MacroRenderResponse(
+        macro_id=macro_id,
+        rendered_content=rendered,
+        unresolved_variables=unresolved,
+        status_action=macro["status_action"],
+    )
+
+
+def _resolve_macro_from_request(request: MacroApplyRequest) -> dict | None:
+    if request.macro_id is not None:
+        return get_macro(request.macro_id)
+    if request.shortcut is not None:
+        return get_macro_by_shortcut(request.shortcut)
+    return None
+
+
+def _dispatch_macro_status_webhook(
+    background_tasks: BackgroundTasks,
+    session_id: str,
+    prior_session: dict,
+    new_status: str,
+    tags: list[str],
+) -> None:
+    prior_status = (prior_session.get("status") or "active").lower()
+    if new_status == prior_status:
+        return
+    if new_status == "escalated":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "session.escalated",
+            {
+                "session_id": session_id,
+                "previous_status": prior_status,
+                "status": "escalated",
+                "label": prior_session.get("label"),
+                "tags": tags,
+                "summary": prior_session.get("summary"),
+            },
+        )
+    elif new_status == "resolved":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "session.resolved",
+            {
+                "session_id": session_id,
+                "previous_status": prior_status,
+                "status": "resolved",
+                "label": prior_session.get("label"),
+                "tags": tags,
+                "summary": prior_session.get("summary"),
+                "resolution_notes": prior_session.get("resolution_notes"),
+            },
+        )
+
+
+@app.post("/sessions/{session_id}/apply-macro", response_model=MacroApplyResponse)
+def apply_macro_to_session_route(
+    session_id: str,
+    request: MacroApplyRequest,
+    background_tasks: BackgroundTasks,
+):
+    _require_session_id(session_id)
+    prior_session = _get_session_summary_or_404(session_id)
+
+    macro = _resolve_macro_from_request(request)
+    if macro is None:
+        target = request.macro_id if request.macro_id is not None else request.shortcut
+        raise HTTPException(status_code=404, detail=f"Macro {target} was not found.")
+
+    call_vars = {"session_id": session_id, **request.variables}
+    rendered, unresolved = macros.render_template(
+        macro["content"],
+        variables=call_vars,
+        fallback_defaults=request.fallback_defaults,
+    )
+
+    insert_application_logs(
+        session_id=session_id,
+        user_query=f"[Applied Macro: {macro['title']}]",
+        gpt_response=rendered,
+        model=request.model,
+    )
+
+    applied_status: str | None = None
+    applied_tags: list[str] = []
+
+    if request.update_status and macro["status_action"]:
+        applied_status = macro["status_action"]
+
+    if request.append_tags and macro["tags"]:
+        raw_existing_tags = prior_session.get("tags")
+        if isinstance(raw_existing_tags, list):
+            existing_tags = raw_existing_tags
+        elif isinstance(raw_existing_tags, str) and raw_existing_tags:
+            existing_tags = [t.strip() for t in raw_existing_tags.split(",") if t.strip()]
+        else:
+            existing_tags = []
+        applied_tags = list(dict.fromkeys(existing_tags + macro["tags"]))
+
+    if applied_status or applied_tags:
+        update_session_metadata(
+            session_id=session_id,
+            status=applied_status,
+            tags=applied_tags if applied_tags else None,
+        )
+
+        if applied_status:
+            _dispatch_macro_status_webhook(
+                background_tasks=background_tasks,
+                session_id=session_id,
+                prior_session=prior_session,
+                new_status=applied_status,
+                tags=applied_tags,
+            )
+
+    return MacroApplyResponse(
+        session_id=session_id,
+        macro_id=macro["id"],
+        macro_title=macro["title"],
+        rendered_content=rendered,
+        applied_status=applied_status,
+        applied_tags=macro["tags"] if request.append_tags else [],
+        unresolved_variables=unresolved,
+        created_at=datetime.now(UTC).isoformat(),
+    )
+
 
