@@ -559,7 +559,7 @@ pre-approved response templates with category classification, shortcut triggers,
 ### Granular Task Breakdown
 - [x] Task 1: `ROADMAP.md` v0.29.0 plan specification and current state update
 - [x] Task 2: Database schema migration, CRUD operations, and domain seeding for `support_macros` in `api/db_utils.py` with unit tests
-- [ ] Task 3: Macro template rendering engine in `api/macros.py` with unit tests
+- [x] Task 3: Macro template rendering engine in `api/macros.py` with unit tests
 - [ ] Task 4: Pydantic schemas in `api/pydantic_models.py` with unit tests
 - [ ] Task 5: FastAPI routes in `api/main.py` and session macro application with webhook trigger wiring with unit tests
 - [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests
