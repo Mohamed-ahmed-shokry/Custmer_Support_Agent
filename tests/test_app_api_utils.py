@@ -1033,6 +1033,204 @@ def test_list_webhook_deliveries_success_and_failure(monkeypatch, fake_requests,
     assert api_utils.list_webhook_deliveries() == {"items": [], "total": 0}
 
 
+def test_create_macro_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    created = {"id": target_id, "title": "Test Macro", "shortcut": "/test"}
+    fake_requests.response = FakeResponse(status_code=201, payload=created)
+
+    res = api_utils.create_macro(
+        title="Test Macro",
+        shortcut="/test",
+        category="General",
+        content="Hello {name}",
+        tags=["faq"],
+        status_action="resolved",
+    )
+    assert res == created
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/macros")
+    assert kwargs["json"]["shortcut"] == "/test"
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "Shortcut exists"})
+    assert api_utils.create_macro("T", "/test", "G", "C") is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.create_macro("T", "/test", "G", "C") is None
+
+
+def test_list_macros_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    macro_list = [{"id": target_id, "title": "Test"}]
+    fake_requests.response = FakeResponse(status_code=200, payload=macro_list)
+
+    res = api_utils.list_macros(category="General", tag="faq", search="test")
+    assert res == macro_list
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/macros")
+    assert kwargs["params"] == {"category": "General", "tag": "faq", "search": "test"}
+
+    # Fallback for non-list payload
+    fake_requests.response = FakeResponse(status_code=200, payload={"not": "a list"})
+    assert api_utils.list_macros() == []
+
+    # API error
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.list_macros() == []
+    assert fake_st.errors
+
+    # Network error
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_macros() == []
+
+
+def test_list_macro_categories_success_and_failure(monkeypatch, fake_requests, fake_st):
+    categories = ["General", "Maintenance", "Billing"]
+    fake_requests.response = FakeResponse(status_code=200, payload={"categories": categories})
+
+    res = api_utils.list_macro_categories()
+    assert res == categories
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/macros/categories")
+
+    # Non-dict payload fallback
+    fake_requests.response = FakeResponse(status_code=200, payload=["raw", "list"])
+    assert api_utils.list_macro_categories() == []
+
+    # API error
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.list_macro_categories() == []
+    assert fake_st.errors
+
+    # Network error
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_macro_categories() == []
+
+
+def test_get_macro_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    macro_data = {"id": target_id, "title": "Sample"}
+    fake_requests.response = FakeResponse(status_code=200, payload=macro_data)
+
+    res = api_utils.get_macro(target_id)
+    assert res == macro_data
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith(f"/macros/{target_id}")
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_macro(target_id) is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_macro(target_id) is None
+
+
+def test_update_macro_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    updated = {"id": target_id, "title": "Updated Title"}
+    fake_requests.response = FakeResponse(status_code=200, payload=updated)
+
+    res = api_utils.update_macro(
+        macro_id=target_id,
+        title="Updated Title",
+        shortcut="/updated",
+        category="Ops",
+        content="New content",
+        tags=["new"],
+        status_action="escalated",
+    )
+    assert res == updated
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith(f"/macros/{target_id}")
+    assert kwargs["json"]["title"] == "Updated Title"
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "bad request"})
+    assert api_utils.update_macro(macro_id=target_id) is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.update_macro(macro_id=target_id) is None
+
+
+def test_delete_macro_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    fake_requests.response = FakeResponse(status_code=200, payload={"message": "deleted"})
+    assert api_utils.delete_macro(target_id) is True
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith(f"/macros/{target_id}")
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.delete_macro(target_id) is False
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_macro(target_id) is False
+
+
+def test_render_macro_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    rendered_payload = {
+        "macro_id": target_id,
+        "rendered_content": "Hello Alice",
+        "unresolved_variables": [],
+        "status_action": None,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=rendered_payload)
+
+    res = api_utils.render_macro(
+        macro_id=target_id,
+        variables={"name": "Alice"},
+        fallback_defaults=True,
+    )
+    assert res == rendered_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith(f"/macros/{target_id}/render")
+    assert kwargs["json"]["variables"] == {"name": "Alice"}
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.render_macro(target_id) is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.render_macro(target_id) is None
+
+
+def test_apply_macro_to_session_success_and_failure(monkeypatch, fake_requests, fake_st):
+    target_id = 1
+    apply_payload = {
+        "session_id": "sess-abc",
+        "macro_id": target_id,
+        "macro_title": "Resolve Ticket",
+        "rendered_content": "Issue resolved.",
+        "applied_status": "resolved",
+        "applied_tags": ["resolved"],
+        "unresolved_variables": [],
+        "created_at": "2026-10-01T00:00:00Z",
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=apply_payload)
+
+    res = api_utils.apply_macro_to_session(
+        session_id="sess-abc",
+        macro_id=target_id,
+        variables={"customer_name": "Bob"},
+        update_status=True,
+        append_tags=True,
+    )
+    assert res == apply_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/sess-abc/apply-macro")
+    assert kwargs["json"]["macro_id"] == target_id
+    assert kwargs["json"]["variables"] == {"customer_name": "Bob"}
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.apply_macro_to_session(session_id="sess-abc", macro_id=target_id) is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.apply_macro_to_session(session_id="sess-abc", macro_id=target_id) is None
+
+
+
 
 
 

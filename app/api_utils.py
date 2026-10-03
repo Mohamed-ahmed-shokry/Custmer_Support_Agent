@@ -875,3 +875,219 @@ def list_webhook_deliveries(webhook_id: int | None = None, limit: int = 50, offs
         return {"items": [], "total": 0}
 
 
+def create_macro(  # noqa: PLR0913, PLR0917
+    title: str,
+    shortcut: str,
+    category: str,
+    content: str,
+    tags: list[str] | None = None,
+    status_action: str | None = None,
+):
+    payload: dict[str, Any] = {
+        "title": title,
+        "shortcut": shortcut,
+        "category": category,
+        "content": content,
+        "tags": tags or [],
+        "status_action": status_action,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/macros",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return response.json()
+        show_api_error("Failed to create macro", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating macro: {str(e)}")
+        return None
+
+
+def list_macros(
+    category: str | None = None,
+    tag: str | None = None,
+    search: str | None = None,
+):
+    params: dict[str, str] = {}
+    if category:
+        params["category"] = category
+    if tag:
+        params["tag"] = tag
+    if search:
+        params["search"] = search
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/macros",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            data = response.json()
+            if isinstance(data, list):
+                return data
+            return []
+        show_api_error("Failed to fetch macros", response)
+        return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching macros: {str(e)}")
+        return []
+
+
+def list_macro_categories() -> list[str]:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/macros/categories",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            data = response.json()
+            if isinstance(data, dict):
+                cats = data.get("categories", [])
+                return list(cats) if isinstance(cats, list) else []
+            return []
+        show_api_error("Failed to fetch macro categories", response)
+        return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching macro categories: {str(e)}")
+        return []
+
+
+def get_macro(macro_id: int):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/macros/{macro_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to fetch macro {macro_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching macro {macro_id}: {str(e)}")
+        return None
+
+
+def update_macro(  # noqa: PLR0913, PLR0917
+    macro_id: int,
+    title: str | None = None,
+    shortcut: str | None = None,
+    category: str | None = None,
+    content: str | None = None,
+    tags: list[str] | None = None,
+    status_action: str | None = None,
+):
+    payload: dict[str, Any] = {}
+    if title is not None:
+        payload["title"] = title
+    if shortcut is not None:
+        payload["shortcut"] = shortcut
+    if category is not None:
+        payload["category"] = category
+    if content is not None:
+        payload["content"] = content
+    if tags is not None:
+        payload["tags"] = tags
+    if status_action is not None:
+        payload["status_action"] = status_action
+
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/macros/{macro_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to update macro {macro_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating macro: {str(e)}")
+        return None
+
+
+def delete_macro(macro_id: int) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/macros/{macro_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete macro {macro_id}", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting macro: {str(e)}")
+        return False
+
+
+def render_macro(
+    macro_id: int,
+    variables: dict[str, str] | None = None,
+    fallback_defaults: bool = True,
+):
+    payload: dict[str, Any] = {
+        "variables": variables or {},
+        "fallback_defaults": fallback_defaults,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/macros/{macro_id}/render",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to render macro {macro_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while rendering macro: {str(e)}")
+        return None
+
+
+def apply_macro_to_session(  # noqa: PLR0913, PLR0917
+    session_id: str,
+    macro_id: int | None = None,
+    shortcut: str | None = None,
+    variables: dict[str, str] | None = None,
+    update_status: bool = True,
+    append_tags: bool = True,
+    model: str | None = None,
+    fallback_defaults: bool = True,
+):
+    payload: dict[str, Any] = {
+        "macro_id": macro_id,
+        "shortcut": shortcut,
+        "variables": variables or {},
+        "update_status": update_status,
+        "append_tags": append_tags,
+        "model": model,
+        "fallback_defaults": fallback_defaults,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/apply-macro",
+            json=payload,
+            headers=_request_headers(),
+            timeout=15,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to apply macro to session {session_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while applying macro: {str(e)}")
+        return None
+
+
+
