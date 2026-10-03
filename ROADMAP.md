@@ -561,7 +561,7 @@ pre-approved response templates with category classification, shortcut triggers,
 - [x] Task 2: Database schema migration, CRUD operations, and domain seeding for `support_macros` in `api/db_utils.py` with unit tests
 - [x] Task 3: Macro template rendering engine in `api/macros.py` with unit tests
 - [x] Task 4: Pydantic schemas in `api/pydantic_models.py` with unit tests
-- [ ] Task 5: FastAPI routes in `api/main.py` and session macro application with webhook trigger wiring with unit tests
+- [x] Task 5: FastAPI routes in `api/main.py` and session macro application with webhook trigger wiring with unit tests
 - [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests
 - [ ] Task 7: Streamlit UI Quick Responses & Macros panel in `app/sidebar.py` with unit tests
 - [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.29.0, and final verification gate
