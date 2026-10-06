@@ -16,12 +16,16 @@ from api.pydantic_models import (
     MacroRenderRequest,
     MacroRenderResponse,
     MacroResponse,
+    MacroSuggestionItem,
+    MacroSuggestRequest,
+    MacroSuggestResponse,
     MacroUpdateRequest,
     ModelName,
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
     SessionInfo,
+    SessionMacroSuggestionsResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
     SourceInfo,
@@ -552,5 +556,105 @@ def test_macro_categories_response():
     resp = MacroCategoriesResponse(categories=["Billing", "General", "Leasing"])
     assert len(resp.categories) == expected_categories
     assert "Billing" in resp.categories
+
+
+def test_macro_suggest_request_validation():
+    expected_top_k = 5
+    expected_min_score = 0.4
+    req = MacroSuggestRequest(
+        query="water leak in unit 4",
+        session_id="s123",
+        category="Maintenance",
+        top_k=expected_top_k,
+        min_score=expected_min_score,
+    )
+    assert req.query == "water leak in unit 4"
+    assert req.session_id == "s123"
+    assert req.category == "Maintenance"
+    assert req.top_k == expected_top_k
+    assert req.min_score == expected_min_score
+
+    # Strips whitespace
+    req_strip = MacroSuggestRequest(query="  urgent help  ")
+    assert req_strip.query == "urgent help"
+
+    # Reject empty or whitespace query
+    with pytest.raises(ValidationError):
+        MacroSuggestRequest(query="")
+
+    with pytest.raises(ValidationError):
+        MacroSuggestRequest(query="   ")
+
+    # Reject invalid top_k bounds
+    with pytest.raises(ValidationError):
+        MacroSuggestRequest(query="valid query", top_k=0)
+
+    with pytest.raises(ValidationError):
+        MacroSuggestRequest(query="valid query", top_k=11)
+
+    # Reject invalid min_score bounds
+    with pytest.raises(ValidationError):
+        MacroSuggestRequest(query="valid query", min_score=-0.1)
+
+    with pytest.raises(ValidationError):
+        MacroSuggestRequest(query="valid query", min_score=1.5)
+
+
+def test_macro_suggestion_item_and_response():
+    expected_score = 0.92
+    item = MacroSuggestionItem(
+        macro_id=1,
+        title="Emergency Dispatch",
+        shortcut="/emerg-maint",
+        category="Maintenance",
+        content="Dispatched for {unit_id}",
+        score=expected_score,
+        match_reasons=["Matched emergency intent"],
+        detected_intent="maintenance_emergency",
+        status_action="escalated",
+        tags=["urgent"],
+        suggested_variables={"unit_id": "Unit 4B"},
+        rendered_preview="Dispatched for Unit 4B",
+    )
+    assert item.macro_id == 1
+    assert item.score == expected_score
+    assert item.suggested_variables["unit_id"] == "Unit 4B"
+
+    # Reject score out of bounds
+    with pytest.raises(ValidationError):
+        MacroSuggestionItem(
+            macro_id=1,
+            title="T",
+            shortcut="/s",
+            category="C",
+            content="C",
+            score=1.2,
+        )
+
+    # Test MacroSuggestResponse
+    suggest_resp = MacroSuggestResponse(
+        query="Help leak",
+        detected_intent="maintenance_emergency",
+        intent_confidence=0.88,
+        extracted_variables={"unit_id": "Unit 4B"},
+        suggestions=[item],
+        total_matches=1,
+    )
+    assert suggest_resp.query == "Help leak"
+    assert suggest_resp.total_matches == 1
+    assert len(suggest_resp.suggestions) == 1
+
+    # Test SessionMacroSuggestionsResponse
+    sess_resp = SessionMacroSuggestionsResponse(
+        session_id="sess-xyz",
+        latest_query="Help leak",
+        detected_intent="maintenance_emergency",
+        extracted_variables={"unit_id": "Unit 4B"},
+        suggestions=[item],
+        total_matches=1,
+    )
+    assert sess_resp.session_id == "sess-xyz"
+    assert sess_resp.total_matches == 1
+    assert sess_resp.suggestions[0].shortcut == "/emerg-maint"
 
 

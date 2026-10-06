@@ -804,4 +804,54 @@ class MacroCategoriesResponse(BaseModel):
     categories: list[str] = Field(default_factory=list)
 
 
+class MacroSuggestionItem(BaseModel):
+    macro_id: int
+    title: str
+    shortcut: str
+    category: str
+    content: str
+    score: float = Field(ge=0.0, le=1.0)
+    match_reasons: list[str] = Field(default_factory=list)
+    detected_intent: str = "unknown"
+    status_action: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    suggested_variables: dict[str, str] = Field(default_factory=dict)
+    rendered_preview: str = ""
+
+
+class MacroSuggestRequest(BaseModel):
+    query: str
+    session_id: str | None = None
+    category: str | None = None
+    top_k: int = Field(default=3, ge=1, le=10)
+    min_score: float = Field(default=0.3, ge=0.0, le=1.0)
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        cleaned = v.strip() if v else ""
+        if not cleaned:
+            raise ValueError("Query string cannot be empty.")
+        return cleaned
+
+
+class MacroSuggestResponse(BaseModel):
+    query: str
+    detected_intent: str
+    intent_confidence: float
+    extracted_variables: dict[str, str] = Field(default_factory=dict)
+    suggestions: list[MacroSuggestionItem] = Field(default_factory=list)
+    total_matches: int = 0
+
+
+class SessionMacroSuggestionsResponse(BaseModel):
+    session_id: str
+    latest_query: str | None = None
+    detected_intent: str = "unknown"
+    extracted_variables: dict[str, str] = Field(default_factory=dict)
+    suggestions: list[MacroSuggestionItem] = Field(default_factory=list)
+    total_matches: int = 0
+
+
+
 
