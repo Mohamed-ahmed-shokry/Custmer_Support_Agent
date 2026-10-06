@@ -2522,3 +2522,122 @@ def test_apply_macro_to_session_route(monkeypatch):
     assert resp_macro_404.status_code == HTTP_NOT_FOUND
 
 
+def test_suggest_macros_route(monkeypatch):
+    fake_macros = [
+        {
+            "id": 1,
+            "title": "Emergency Maintenance Dispatch",
+            "shortcut": "/emerg-maint",
+            "category": "Maintenance",
+            "content": "Emergency dispatch for {unit_id}. Call {support_contact}.",
+            "tags": ["maintenance", "urgent", "emergency"],
+            "status_action": "escalated",
+        },
+        {
+            "id": 2,
+            "title": "Online Rent Payment",
+            "shortcut": "/rent-pay",
+            "category": "Billing",
+            "content": "Pay rent online via resident portal.",
+            "tags": ["billing", "rent"],
+            "status_action": "resolved",
+        },
+    ]
+
+    monkeypatch.setattr(main, "list_macros", lambda **kwargs: fake_macros)
+
+    # Valid suggest request
+    resp = client.post(
+        "/macros/suggest",
+        json={
+            "query": "Help, there is flooding in unit 402!",
+            "session_id": "sess-leak-1",
+            "top_k": 3,
+            "min_score": 0.3,
+        },
+    )
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["detected_intent"] == "maintenance_emergency"
+    assert data["extracted_variables"]["unit_id"] == "Unit 402"
+    assert data["extracted_variables"]["session_id"] == "sess-leak-1"
+    assert data["total_matches"] >= 1
+    assert data["suggestions"][0]["shortcut"] == "/emerg-maint"
+    assert "Unit 402" in data["suggestions"][0]["rendered_preview"]
+
+    # Category filter
+    resp_cat = client.post(
+        "/macros/suggest",
+        json={
+            "query": "Pay rent online",
+            "category": "Billing",
+        },
+    )
+    assert resp_cat.status_code == HTTP_OK
+
+    # Empty query validation failure
+    resp_bad = client.post("/macros/suggest", json={"query": "   "})
+    assert resp_bad.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_get_session_macro_suggestions_route(monkeypatch):
+    fake_macros = [
+        {
+            "id": 1,
+            "title": "Emergency Maintenance Dispatch",
+            "shortcut": "/emerg-maint",
+            "category": "Maintenance",
+            "content": "Dispatched for {unit_id}. Ref {session_id}.",
+            "tags": ["urgent"],
+            "status_action": "escalated",
+        }
+    ]
+
+    session_summary = {
+        "session_id": "sess-active-99",
+        "label": "Tenant question",
+        "status": "active",
+        "tags": [],
+        "summary": "",
+        "resolution_notes": "",
+    }
+
+    def stub_get_summary(sid):
+        if sid == "sess-active-99":
+            return session_summary
+        raise main.HTTPException(status_code=404, detail=f"Session {sid} was not found.")
+
+    monkeypatch.setattr(main, "_get_session_summary_or_404", stub_get_summary)
+    monkeypatch.setattr(main, "list_macros", lambda **kwargs: fake_macros)
+
+    # 1. Nonexistent session -> 404
+    resp_404 = client.get("/sessions/sess-missing/macro-suggestions")
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+    # 2. Session with no user queries
+    monkeypatch.setattr(main, "get_session_latest_user_query", lambda sid: None)
+    resp_empty = client.get("/sessions/sess-active-99/macro-suggestions")
+    assert resp_empty.status_code == HTTP_OK
+    data_empty = resp_empty.json()
+    assert data_empty["latest_query"] is None
+    assert data_empty["total_matches"] == 0
+    assert data_empty["suggestions"] == []
+
+    # 3. Session with user query
+    monkeypatch.setattr(
+        main,
+        "get_session_latest_user_query",
+        lambda sid: "Pipe broke in Apt 5B, water leaking",
+    )
+    resp_query = client.get("/sessions/sess-active-99/macro-suggestions?top_k=2&min_score=0.2")
+    assert resp_query.status_code == HTTP_OK
+    data_query = resp_query.json()
+    assert data_query["latest_query"] == "Pipe broke in Apt 5B, water leaking"
+    assert data_query["detected_intent"] == "maintenance_emergency"
+    assert data_query["extracted_variables"]["unit_id"] == "Unit 5B"
+    assert data_query["extracted_variables"]["session_id"] == "sess-active-99"
+    assert data_query["total_matches"] >= 1
+    assert data_query["suggestions"][0]["shortcut"] == "/emerg-maint"
+
+
+

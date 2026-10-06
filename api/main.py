@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from api import macros, webhooks
+from api import macro_suggestions, macros, webhooks
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -54,6 +54,7 @@ from api.db_utils import (
     get_macro,
     get_macro_by_shortcut,
     get_session_feedback,
+    get_session_latest_user_query,
     get_session_metadata,
     get_support_triage_analytics,
     get_webhook,
@@ -127,6 +128,9 @@ from api.pydantic_models import (
     MacroRenderRequest,
     MacroRenderResponse,
     MacroResponse,
+    MacroSuggestionItem,
+    MacroSuggestRequest,
+    MacroSuggestResponse,
     MacroUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
@@ -138,6 +142,7 @@ from api.pydantic_models import (
     SearchInput,
     SearchResponse,
     SessionInfo,
+    SessionMacroSuggestionsResponse,
     SessionSearchResponse,
     SessionSearchResult,
     SessionSummaryRequest,
@@ -1761,5 +1766,75 @@ def apply_macro_to_session_route(
         unresolved_variables=unresolved,
         created_at=datetime.now(UTC).isoformat(),
     )
+
+
+@app.post("/macros/suggest", response_model=MacroSuggestResponse)
+def suggest_macros_route(request: MacroSuggestRequest):
+    all_macros = list_macros(category=request.category)
+    suggestions = macro_suggestions.suggest_macros_for_query(
+        query=request.query,
+        macros=all_macros,
+        min_score=request.min_score,
+        limit=request.top_k,
+        category=request.category,
+        session_id=request.session_id,
+    )
+    detected_intent, intent_conf = macro_suggestions.detect_query_intent(request.query)
+    extracted_entities = macro_suggestions.extract_query_entities(request.query)
+    if request.session_id:
+        extracted_entities["session_id"] = request.session_id
+    return MacroSuggestResponse(
+        query=request.query,
+        detected_intent=detected_intent,
+        intent_confidence=intent_conf,
+        extracted_variables=extracted_entities,
+        suggestions=[MacroSuggestionItem(**s) for s in suggestions],
+        total_matches=len(suggestions),
+    )
+
+
+@app.get(
+    "/sessions/{session_id}/macro-suggestions",
+    response_model=SessionMacroSuggestionsResponse,
+)
+def get_session_macro_suggestions_route(
+    session_id: str,
+    top_k: int = 3,
+    min_score: float = 0.3,
+    category: str | None = None,
+):
+    _require_session_id(session_id)
+    _get_session_summary_or_404(session_id)
+    latest_query = get_session_latest_user_query(session_id)
+    if not latest_query:
+        return SessionMacroSuggestionsResponse(
+            session_id=session_id,
+            latest_query=None,
+            detected_intent="unknown",
+            extracted_variables={"session_id": session_id},
+            suggestions=[],
+            total_matches=0,
+        )
+    all_macros = list_macros(category=category)
+    suggestions = macro_suggestions.suggest_macros_for_query(
+        query=latest_query,
+        macros=all_macros,
+        min_score=min_score,
+        limit=top_k,
+        category=category,
+        session_id=session_id,
+    )
+    detected_intent, _ = macro_suggestions.detect_query_intent(latest_query)
+    extracted_entities = macro_suggestions.extract_query_entities(latest_query)
+    extracted_entities["session_id"] = session_id
+    return SessionMacroSuggestionsResponse(
+        session_id=session_id,
+        latest_query=latest_query,
+        detected_intent=detected_intent,
+        extracted_variables=extracted_entities,
+        suggestions=[MacroSuggestionItem(**s) for s in suggestions],
+        total_matches=len(suggestions),
+    )
+
 
 
