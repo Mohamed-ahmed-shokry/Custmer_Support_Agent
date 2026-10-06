@@ -1,10 +1,15 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.28.0, 2026-10-03)
+## Current State (v0.29.0, 2026-10-06)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
   use_hybrid)
+- Support canned responses & action macros engine (`POST /macros`, `GET /macros`, `GET /macros/categories`, `GET /macros/{id}`, `PATCH /macros/{id}`, `DELETE /macros/{id}`, `POST /macros/{id}/render`, `POST /sessions/{id}/apply-macro`)
+- Streamlit Quick Responses & Macros panel in sidebar with pre-seeded property management templates, variable auto-fill, and 1-click execution
+- Webhook dispatch & escalation alerting engine with HMAC signatures and audit logging
+- Support conversation summarization & sentiment classification engine
+- Support triage analytics & operations dashboard
 - Streamlit frontend with streaming toggle, chat interface, document
   management, past-sessions switcher, and backend metrics panel
 - SQLite for session history, document metadata, feedback, and webhooks
@@ -569,6 +574,46 @@ pre-approved response templates with category classification, shortcut triggers,
 - [x] Task 6: Client helpers in `app/api_utils.py` with unit tests
 - [x] Task 7: Streamlit UI Quick Responses & Macros panel in `app/sidebar.py` with unit tests
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.29.0, and final verification gate
+
+## v0.30.0 plan — Automated AI Macro Suggestions & Query Intent Classification Engine (IN PROGRESS)
+
+Deliver an automated AI macro suggestion and query intent classification engine that matches incoming tenant inquiries to relevant property management canned responses, scores relevance confidence, automatically extracts query variables (e.g., unit IDs, resident names, dates), and provides 1-click preview and application in both the API and Streamlit UI.
+
+### Scope & Objectives
+- **Intent Classification & Entity Extraction Engine**: `api/macro_suggestions.py`
+  - Detect property management customer intent taxonomies (`maintenance_emergency`, `maintenance_routine`, `rent_payment`, `lease_renewal`, `move_out`, `general_inquiry`) with confidence scores using hybrid heuristic pattern matching and domain triggers.
+  - Extract domain-specific template entities (`unit_id`, `customer_name`, `issue_description`) from raw tenant messages to pre-populate macro placeholder variables.
+  - Multi-factor macro recommendation scoring: evaluate candidate macros against user queries via shortcut triggers, intent category alignment, token/keyword overlap, and tag matching, normalizing confidence to `0.0` - `1.0`.
+  - Provide human-readable match explanations (e.g., `"Matched emergency maintenance intent"`, `"Keywords matched: leak, water"`) for explainable operator recommendations.
+- **Database Query Helper**:
+  - `get_session_latest_user_query(session_id)` in `api/db_utils.py` to inspect the most recent user turn from `application_logs` for an active session.
+- **Pydantic Schemas**:
+  - `MacroSuggestionItem`, `MacroSuggestRequest`, `MacroSuggestResponse`, and `SessionMacroSuggestionsResponse` in `api/pydantic_models.py`.
+- **FastAPI Endpoints**:
+  - `POST /macros/suggest`: evaluate arbitrary query text (with optional category, threshold, and limit filters), returning ranked macro suggestions with rendered previews and suggested variables.
+  - `GET /sessions/{session_id}/macro-suggestions`: inspect active session's latest turn, compute tailored suggestions, automatically filling `{session_id}` and extracted entities.
+- **Client & Streamlit UI Integration**:
+  - Client methods in `app/api_utils.py`: `suggest_macros()` and `get_session_macro_suggestions()` with error handling and API key forwarding.
+  - Streamlit UI in `app/sidebar.py`:
+    - Real-time "Smart Suggestions" card inside the Quick Responses & Macros expander when active sessions contain messages.
+    - Top recommendation pill with confidence score (e.g. `92% Match`), detected intent, and match reasons.
+    - One-click "Apply Suggestion" button that pre-fills template variables and loads the template for instant review and dispatch.
+    - Interactive "Query Match Tester" expander enabling support agents to test queries and see real-time matching suggestions.
+- **Quality Gates**: Maintain test coverage floor >= 80%, zero ruff lint errors, zero mypy type errors.
+
+### Explicit Exclusions (Deferred to v0.31.0+)
+- Role-based multi-tenant permissions on macro creation/deletion.
+- Fine-tuned transformer model training pipelines in background Celery workers.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.30.0 plan specification and current state update
+- [ ] Task 2: Core intent classification, entity extraction, and smart macro suggestion engine in `api/macro_suggestions.py` with unit tests in `tests/test_macro_suggestions.py`
+- [ ] Task 3: Pydantic schemas in `api/pydantic_models.py` with unit tests in `tests/test_models.py`
+- [ ] Task 4: Database helper `get_session_latest_user_query` in `api/db_utils.py` with unit tests in `tests/test_db_utils.py`
+- [ ] Task 5: FastAPI routes in `api/main.py` (`POST /macros/suggest`, `GET /sessions/{session_id}/macro-suggestions`) with unit tests in `tests/test_main.py`
+- [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py`
+- [ ] Task 7: Streamlit UI Smart Macro Suggestions and Query Tester in `app/sidebar.py` with unit tests in `tests/test_app_ui.py`
+- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.30.0, and final verification gate
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
