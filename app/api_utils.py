@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 import requests
 import streamlit as st
@@ -1112,7 +1112,7 @@ def suggest_macros(  # noqa: PLR0913, PLR0917
             timeout=10,
         )
         if response.status_code == HTTP_OK:
-            return response.json()
+            return cast(dict[str, Any], response.json())
         show_api_error("Failed to fetch macro suggestions", response)
         return None
     except Exception as e:
@@ -1140,7 +1140,7 @@ def get_session_macro_suggestions(
             timeout=10,
         )
         if response.status_code == HTTP_OK:
-            return response.json()
+            return cast(dict[str, Any], response.json())
         show_api_error(f"Failed to fetch macro suggestions for session {session_id}", response)
         return None
     except Exception as e:
