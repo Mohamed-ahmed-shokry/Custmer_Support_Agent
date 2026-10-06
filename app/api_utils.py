@@ -1090,4 +1090,59 @@ def apply_macro_to_session(  # noqa: PLR0913, PLR0917
         return None
 
 
+def suggest_macros(  # noqa: PLR0913, PLR0917
+    query: str,
+    session_id: str | None = None,
+    category: str | None = None,
+    top_k: int = 3,
+    min_score: float = 0.3,
+) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {
+        "query": query,
+        "session_id": session_id,
+        "category": category,
+        "top_k": top_k,
+        "min_score": min_score,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/macros/suggest",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error("Failed to fetch macro suggestions", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching macro suggestions: {str(e)}")
+        return None
 
+
+def get_session_macro_suggestions(
+    session_id: str,
+    top_k: int = 3,
+    min_score: float = 0.3,
+    category: str | None = None,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {
+        "top_k": top_k,
+        "min_score": min_score,
+    }
+    if category:
+        params["category"] = category
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/macro-suggestions",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        show_api_error(f"Failed to fetch macro suggestions for session {session_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching session macro suggestions: {str(e)}")
+        return None

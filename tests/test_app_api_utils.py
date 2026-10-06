@@ -1230,8 +1230,67 @@ def test_apply_macro_to_session_success_and_failure(monkeypatch, fake_requests, 
     assert api_utils.apply_macro_to_session(session_id="sess-abc", macro_id=target_id) is None
 
 
+def test_suggest_macros(fake_requests, fake_st, monkeypatch):
+    suggest_payload = {
+        "query": "leak in unit 4",
+        "detected_intent": "maintenance_emergency",
+        "intent_confidence": 0.9,
+        "extracted_variables": {"unit_id": "Unit 4"},
+        "suggestions": [],
+        "total_matches": 0,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=suggest_payload)
+
+    res = api_utils.suggest_macros(
+        query="leak in unit 4",
+        session_id="sess-xyz",
+        category="Maintenance",
+        top_k=5,
+        min_score=0.4,
+    )
+    assert res == suggest_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/macros/suggest")
+    assert kwargs["json"]["query"] == "leak in unit 4"
+    assert kwargs["json"]["session_id"] == "sess-xyz"
+    assert kwargs["json"]["category"] == "Maintenance"
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "bad request"})
+    assert api_utils.suggest_macros("query") is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.suggest_macros("query") is None
 
 
+def test_get_session_macro_suggestions(fake_requests, fake_st, monkeypatch):
+    sess_payload = {
+        "session_id": "sess-xyz",
+        "latest_query": "water leaking",
+        "detected_intent": "maintenance_emergency",
+        "extracted_variables": {"session_id": "sess-xyz"},
+        "suggestions": [],
+        "total_matches": 0,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=sess_payload)
+
+    res = api_utils.get_session_macro_suggestions(
+        session_id="sess-xyz",
+        top_k=4,
+        min_score=0.35,
+        category="Maintenance",
+    )
+    assert res == sess_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/sess-xyz/macro-suggestions")
+    assert kwargs["params"]["category"] == "Maintenance"
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_session_macro_suggestions("sess-missing") is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_session_macro_suggestions("sess-missing") is None
 
 
 
