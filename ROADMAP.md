@@ -1,10 +1,12 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.29.0, 2026-10-06)
+## Current State (v0.30.0, 2026-10-06)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
   use_hybrid)
+- Automated AI macro suggestions & query intent classification engine (`POST /macros/suggest`, `GET /sessions/{id}/macro-suggestions`) with domain entity extraction and multi-factor ranking
+- Streamlit Smart Suggestions card & Query Match Tester widget in sidebar
 - Support canned responses & action macros engine (`POST /macros`, `GET /macros`, `GET /macros/categories`, `GET /macros/{id}`, `PATCH /macros/{id}`, `DELETE /macros/{id}`, `POST /macros/{id}/render`, `POST /sessions/{id}/apply-macro`)
 - Streamlit Quick Responses & Macros panel in sidebar with pre-seeded property management templates, variable auto-fill, and 1-click execution
 - Webhook dispatch & escalation alerting engine with HMAC signatures and audit logging
@@ -88,6 +90,10 @@
   - Support canned responses & action macro templates engine (`api/macros.py`, `api/db_utils.py`, `api/pydantic_models.py`, `api/main.py`): pre-approved templates with category organization, shortcut triggers (`/rent-pay`, `/emerg-maint`, `/lease-renew`, `/move-out`), dynamic variable substitution (`{customer_name}`, `{session_id}`, `{unit_id}`, `{agent_name}`, `{date}`, `{support_contact}`), and automated session actions (status transitions to `resolved` or `escalated` with webhook triggers, tag assignment, conversation injection)
   - Dedicated FastAPI endpoints: `POST /macros`, `GET /macros`, `GET /macros/categories`, `GET /macros/{id}`, `PATCH /macros/{id}`, `DELETE /macros/{id}`, `POST /macros/{id}/render`, `POST /sessions/{id}/apply-macro`
   - Client integration & Streamlit UI: `app/api_utils.py` helpers and Quick Responses & Macros expander panel in `app/sidebar.py` with category filter, template selector, dynamic variable inputs, preview, 1-click application to active session, and custom template creation form
+- **v0.30.0 additions**:
+  - Automated AI macro suggestions & query intent classification engine (`api/macro_suggestions.py`): domain intent taxonomy detection (`maintenance_emergency`, `maintenance_routine`, `rent_payment`, `lease_renewal`, `move_out`, `general_inquiry`), entity extraction (`unit_id`, `customer_name`), and multi-factor ranking matching queries to canned responses
+  - Dedicated FastAPI endpoints: `POST /macros/suggest` and `GET /sessions/{session_id}/macro-suggestions`
+  - Client & Streamlit UI integration: `app/api_utils.py` helpers, proactive Smart Suggestions card with confidence scores, match reasons, and 1-click apply, plus interactive Query Match Tester widget
 - Full test suite passing; total coverage floor >= 80% enforced in CI; ruff + mypy clean
 
 ## v0.7.0 plan — Conversation management ✅ COMPLETED
@@ -575,7 +581,7 @@ pre-approved response templates with category classification, shortcut triggers,
 - [x] Task 7: Streamlit UI Quick Responses & Macros panel in `app/sidebar.py` with unit tests
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.29.0, and final verification gate
 
-## v0.30.0 plan — Automated AI Macro Suggestions & Query Intent Classification Engine (IN PROGRESS)
+## v0.30.0 plan — Automated AI Macro Suggestions & Query Intent Classification Engine ✅ COMPLETED
 
 Deliver an automated AI macro suggestion and query intent classification engine that matches incoming tenant inquiries to relevant property management canned responses, scores relevance confidence, automatically extracts query variables (e.g., unit IDs, resident names, dates), and provides 1-click preview and application in both the API and Streamlit UI.
 
@@ -607,13 +613,22 @@ Deliver an automated AI macro suggestion and query intent classification engine 
 
 ### Granular Task Breakdown
 - [x] Task 1: `ROADMAP.md` v0.30.0 plan specification and current state update
-- [ ] Task 2: Core intent classification, entity extraction, and smart macro suggestion engine in `api/macro_suggestions.py` with unit tests in `tests/test_macro_suggestions.py`
-- [ ] Task 3: Pydantic schemas in `api/pydantic_models.py` with unit tests in `tests/test_models.py`
-- [ ] Task 4: Database helper `get_session_latest_user_query` in `api/db_utils.py` with unit tests in `tests/test_db_utils.py`
-- [ ] Task 5: FastAPI routes in `api/main.py` (`POST /macros/suggest`, `GET /sessions/{session_id}/macro-suggestions`) with unit tests in `tests/test_main.py`
-- [ ] Task 6: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py`
-- [ ] Task 7: Streamlit UI Smart Macro Suggestions and Query Tester in `app/sidebar.py` with unit tests in `tests/test_app_ui.py`
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.30.0, and final verification gate
+- [x] Task 2: Core intent classification, entity extraction, and smart macro suggestion engine in `api/macro_suggestions.py` with unit tests in `tests/test_macro_suggestions.py`
+- [x] Task 3: Pydantic schemas in `api/pydantic_models.py` with unit tests in `tests/test_models.py`
+- [x] Task 4: Database helper `get_session_latest_user_query` in `api/db_utils.py` with unit tests in `tests/test_db_utils.py`
+- [x] Task 5: FastAPI routes in `api/main.py` (`POST /macros/suggest`, `GET /sessions/{session_id}/macro-suggestions`) with unit tests in `tests/test_main.py`
+- [x] Task 6: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py`
+- [x] Task 7: Streamlit UI Smart Macro Suggestions and Query Tester in `app/sidebar.py` with unit tests in `tests/test_app_ui.py`
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.30.0, and final verification gate
+
+## v0.31.0 plan — Customer Support SLA Policies, Priority Triage & Automated Escalation Alerts Engine
+
+Deliver an operational Service Level Agreement (SLA) policy and priority triage tracking engine for real estate support teams:
+- SLA policy management table (`sla_policies`) with configurable response and resolution target times per priority and category
+- Session priority assignment (`priority` column in `session_labels`: `urgent`, `high`, `medium`, `low`)
+- Automated SLA deadline calculations (`response_due_at`, `resolution_due_at`, `breach_status`)
+- Real-time webhook alerting triggers on approaching SLA breach (`sla.approaching_breach`) and breached deadlines (`sla.breached`)
+- Streamlit UI priority badges, SLA countdown timers, and operational SLA compliance analytics in sidebar.
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

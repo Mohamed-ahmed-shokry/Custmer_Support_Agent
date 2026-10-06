@@ -1,10 +1,12 @@
-# Customer Support RAG Agent (v0.29.0)
+# Customer Support RAG Agent (v0.30.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
 ## Features
 
 - Conversational customer support over uploaded PDF, DOCX, HTML, MD, TXT, and CSV documents.
+- Automated AI macro suggestions & query intent classification engine (`POST /macros/suggest`, `GET /sessions/{id}/macro-suggestions`): real-time intent taxonomy classification (`maintenance_emergency`, `maintenance_routine`, `rent_payment`, `lease_renewal`, `move_out`, `general_inquiry`), automated extraction of domain entities (`unit_id`, `customer_name`), and multi-factor ranking matching tenant inquiries to canned responses with confidence scores, match rationales, and variable auto-population.
+- Streamlit Smart Suggestions & Query Match Tester: real-time proactive macro recommendation cards surfaced in active support sessions with 1-click application, plus an interactive query testing widget for evaluating customer inquiry matching on the fly.
 - Support canned responses & action macros engine (`POST /macros`, `GET /macros`, `GET /macros/categories`, `GET /macros/{id}`, `PATCH /macros/{id}`, `DELETE /macros/{id}`, `POST /macros/{id}/render`, `POST /sessions/{id}/apply-macro`): pre-approved response templates with category organization, shortcut triggers (`/rent-pay`, `/emerg-maint`, `/lease-renew`, `/move-out`), dynamic variable substitution (`{customer_name}`, `{session_id}`, `{unit_id}`, `{agent_name}`, `{date}`, `{support_contact}`), and automated session actions (status transitions to `resolved` or `escalated` with webhook triggers, tag assignment, conversation injection).
 - Streamlit Quick Responses & Macros panel: browse pre-seeded property management templates with category filtering, fill dynamic template variables with auto-filled defaults, preview rendered output, apply responses into active chat sessions with 1 click, and create custom macro templates directly from the UI.
 - Webhook dispatch & escalation alerting engine (`POST /webhooks`, `GET /webhooks`, `PATCH /webhooks/{id}`, `DELETE /webhooks/{id}`, `POST /webhooks/{id}/ping`, `GET /webhooks/deliveries`): automated real-time dispatching with HMAC-SHA256 signature verification (`X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-Event`) and delivery audit logging on session escalations (`session.escalated`), resolutions (`session.resolved`), and negative CSAT feedback (`feedback.negative`).

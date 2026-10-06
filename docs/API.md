@@ -1,4 +1,4 @@
-# API Reference (v0.29.0)
+# API Reference (v0.30.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -238,6 +238,11 @@ The agent provides a pre-approved canned responses and action macro templates en
 - `POST /sessions/{session_id}/apply-macro`: Apply a macro directly to an active session.
   - Body: `{"macro_id": <int>, "shortcut": "/...", "variables": {...}, "update_status": true, "append_tags": true, "fallback_defaults": true}`.
   - Automatically renders variables, logs the message into session chat history, updates session status and tags in SQLite, dispatches real-time webhooks (`session.resolved` or `session.escalated`), and returns the applied summary.
+- `POST /macros/suggest`: Suggest matching macros for an arbitrary customer query or message.
+  - Body: `{"query": "Help, pipe leaking in Unit 402", "session_id": "optional-session", "category": null, "top_k": 3, "min_score": 0.3}`.
+  - Returns `{"query": "...", "detected_intent": "maintenance_emergency", "intent_confidence": 0.95, "extracted_variables": {"unit_id": "Unit 402"}, "suggestions": [...], "total_matches": 1}`.
+- `GET /sessions/{session_id}/macro-suggestions?top_k=3&min_score=0.3&category=...`: Real-time macro suggestions tailored to an active chat session's latest tenant inquiry.
+  - Automatically detects query intent, extracts entities (unit IDs, names), binds active `session_id`, and returns ranked recommendations with rendered previews. Returns `404` if session is not found.
 
 ## Evaluation Harness
 
