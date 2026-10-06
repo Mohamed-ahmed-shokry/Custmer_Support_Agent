@@ -198,6 +198,10 @@ _SELECT_CHAT_HISTORY = (
     "SELECT user_query, gpt_response FROM application_logs "
     "WHERE session_id = ? ORDER BY created_at ASC, id ASC"
 )
+_SELECT_LATEST_USER_QUERY = (
+    "SELECT user_query FROM application_logs "
+    "WHERE session_id = ? ORDER BY id DESC LIMIT 1"
+)
 
 _INSERT_DOC_RECORD = "INSERT INTO document_store (filename, collection, sha256) VALUES (?, ?, ?)"
 _SELECT_DOC_BY_HASH = (
@@ -491,6 +495,19 @@ def get_chat_history(session_id):
                 ]
             )
         return messages
+
+
+def get_session_latest_user_query(session_id: str | None) -> str | None:
+    """Return the most recent user query for a given session, or None if no queries exist."""
+    if not session_id or not session_id.strip():
+        return None
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_SELECT_LATEST_USER_QUERY, (session_id.strip(),))
+        row = cursor.fetchone()
+        if row and row["user_query"]:
+            return str(row["user_query"])
+    return None
 
 
 def truncate_history(messages, max_turns):

@@ -1309,4 +1309,20 @@ def test_delete_macro(monkeypatch, tmp_path):
     assert db_utils.delete_macro(macro["id"]) is False
 
 
+def test_get_session_latest_user_query(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
 
+    assert db_utils.get_session_latest_user_query(None) is None
+    assert db_utils.get_session_latest_user_query("") is None
+    assert db_utils.get_session_latest_user_query("   ") is None
+    assert db_utils.get_session_latest_user_query("nonexistent-session") is None
+
+    session_id = "sess-multi-turn"
+    db_utils.insert_application_logs(session_id, "First query: hello", "Hi there", "gpt-4o")
+    assert db_utils.get_session_latest_user_query(session_id) == "First query: hello"
+
+    second_query = "Second query: I need a leak repaired"
+    db_utils.insert_application_logs(
+        session_id, second_query, "Dispatching tech", "gpt-4o"
+    )
+    assert db_utils.get_session_latest_user_query(session_id) == second_query
