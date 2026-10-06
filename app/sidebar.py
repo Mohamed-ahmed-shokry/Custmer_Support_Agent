@@ -25,6 +25,7 @@ from app.api_utils import (
     get_metrics,
     get_quota,
     get_session_history,
+    get_session_macro_suggestions,
     get_stats,
     get_support_triage_analytics,
     list_collections,
@@ -42,6 +43,7 @@ from app.api_utils import (
     rename_session,
     render_macro,
     search_sessions,
+    suggest_macros,
     summarize_session,
     update_session,
     update_webhook,
@@ -1116,9 +1118,87 @@ def _render_macro_creator():
             st.rerun()
 
 
+def _render_smart_macro_suggestions():
+    current_sid = st.session_state.get("session_id")
+    if not current_sid:
+        return
+
+    res = get_session_macro_suggestions(current_sid, top_k=2, min_score=0.3)
+    if not res or not res.get("suggestions"):
+        return
+
+    st.markdown("##### 💡 Smart Suggestions")
+    detected_intent = res.get("detected_intent", "unknown")
+    if detected_intent and detected_intent != "unknown":
+        pretty_intent = detected_intent.replace("_", " ").title()
+        st.caption(f"🎯 Detected Intent: **{pretty_intent}**")
+
+    for sug in res.get("suggestions", []):
+        score_pct = int(sug.get("score", 0.0) * 100)
+        st.markdown(f"**{sug['title']}** (`{sug['shortcut']}`) — **{score_pct}% Match**")
+        reasons = sug.get("match_reasons", [])
+        if reasons:
+            st.caption(" · ".join(reasons))
+
+        if st.button("Apply Suggestion", key=f"apply_sug_{sug['macro_id']}"):
+            with st.spinner("Applying suggestion..."):
+                applied = apply_macro_to_session(
+                    session_id=current_sid,
+                    macro_id=sug["macro_id"],
+                    variables=sug.get("suggested_variables", {}),
+                    update_status=True,
+                    append_tags=True,
+                )
+                if applied:
+                    if "messages" not in st.session_state:
+                        st.session_state["messages"] = []
+                    st.session_state["messages"].append(
+                        {"role": "user", "content": f"[Applied Suggestion: {sug['title']}]"}
+                    )
+                    st.session_state["messages"].append(
+                        {"role": "assistant", "content": applied.get("rendered_content", "")}
+                    )
+                    st.session_state["sessions"] = list_sessions()
+                    st.success("Smart suggestion applied!")
+                    st.rerun()
+
+    st.markdown("---")
+
+
+def _render_macro_query_tester():
+    with st.expander("🔍 Test Query Intent & Matching"):
+        test_query = st.text_input(
+            "Test customer query",
+            key="macro_tester_query",
+            placeholder="e.g. pipe leaking in Apt 3B",
+        )
+        if test_query.strip():
+            res = suggest_macros(test_query.strip(), top_k=3, min_score=0.2)
+            if res:
+                detected_intent = res.get("detected_intent", "unknown")
+                intent_conf = res.get("intent_confidence", 0.0)
+                conf_pct = int(intent_conf * 100)
+                pretty_intent = detected_intent.replace("_", " ").title()
+                st.caption(f"Intent: **{pretty_intent}** ({conf_pct}% confidence)")
+                ext_vars = res.get("extracted_variables", {})
+                if ext_vars:
+                    vars_str = ", ".join([f"`{k}: {v}`" for k, v in ext_vars.items()])
+                    st.caption(f"Entities: {vars_str}")
+
+                suggestions = res.get("suggestions", [])
+                if suggestions:
+                    for s in suggestions:
+                        match_pct = int(s["score"] * 100)
+                        st.markdown(f"- **{s['title']}** (`{s['shortcut']}`) — {match_pct}%")
+                else:
+                    st.caption("No matching templates above threshold.")
+
+
 def _render_quick_responses_panel():
     with st.sidebar.expander("Quick Responses & Macros"):
+        _render_smart_macro_suggestions()
         _render_macro_browser()
+        _render_macro_query_tester()
         _render_macro_creator()
 
 

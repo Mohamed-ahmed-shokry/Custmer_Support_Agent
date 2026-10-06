@@ -1763,4 +1763,102 @@ def test_render_quick_responses_panel_create_macro(monkeypatch):
     assert st.reruns == 1
 
 
+def test_render_smart_macro_suggestions_no_session(monkeypatch):
+    st = FakeStreamlit()
+    st.session_state = {}
+    monkeypatch.setattr(sidebar, "st", st)
+    called = []
+    monkeypatch.setattr(
+        sidebar,
+        "get_session_macro_suggestions",
+        lambda *args, **kwargs: called.append(True),
+    )
+    sidebar._render_smart_macro_suggestions()
+    assert not called
+
+
+def test_render_smart_macro_suggestions_renders_and_applies(monkeypatch):
+    st = FakeStreamlit()
+    st.session_state = {
+        "session_id": "sess-active-1",
+        "messages": [],
+        "sessions": [],
+    }
+    st.buttons["apply_sug_1"] = True
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_resp = {
+        "session_id": "sess-active-1",
+        "detected_intent": "maintenance_emergency",
+        "suggestions": [
+            {
+                "macro_id": 1,
+                "title": "Emergency Dispatch",
+                "shortcut": "/emerg-maint",
+                "score": 0.95,
+                "match_reasons": ["Matched emergency intent"],
+                "suggested_variables": {"unit_id": "Unit 3B"},
+                "rendered_preview": "Dispatched for Unit 3B",
+            }
+        ],
+        "total_matches": 1,
+    }
+    monkeypatch.setattr(
+        sidebar,
+        "get_session_macro_suggestions",
+        lambda sid, **kwargs: fake_resp if sid == "sess-active-1" else None,
+    )
+
+    applied_calls = []
+
+    def fake_apply(session_id, macro_id, variables=None, **kwargs):
+        applied_calls.append((session_id, macro_id, variables))
+        return {
+            "session_id": session_id,
+            "macro_id": macro_id,
+            "rendered_content": "Dispatched for Unit 3B",
+        }
+
+    monkeypatch.setattr(sidebar, "apply_macro_to_session", fake_apply)
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [{"session_id": "sess-active-1"}])
+
+    sidebar._render_smart_macro_suggestions()
+
+    expected_messages_len = 2
+    assert len(applied_calls) == 1
+    assert applied_calls[0] == ("sess-active-1", 1, {"unit_id": "Unit 3B"})
+    assert any("Smart suggestion applied!" in s for s in st.successes)
+    assert st.reruns == 1
+    assert len(st.session_state["messages"]) == expected_messages_len
+
+
+def test_render_macro_query_tester(monkeypatch):
+    st = FakeStreamlit()
+    st.values["macro_tester_query"] = "leaking pipe in apt 4B"
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_suggest_resp = {
+        "query": "leaking pipe in apt 4B",
+        "detected_intent": "maintenance_emergency",
+        "intent_confidence": 0.92,
+        "extracted_variables": {"unit_id": "Unit 4B"},
+        "suggestions": [
+            {
+                "macro_id": 1,
+                "title": "Emergency Dispatch",
+                "shortcut": "/emerg-maint",
+                "score": 0.90,
+            }
+        ],
+        "total_matches": 1,
+    }
+    monkeypatch.setattr(sidebar, "suggest_macros", lambda *args, **kwargs: fake_suggest_resp)
+
+    sidebar._render_macro_query_tester()
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Emergency Dispatch" in m for m in markdowns)
+
+
+
 
