@@ -11,8 +11,8 @@
 - [x] **Task 1**: `ROADMAP.md` v0.31.0 plan specification and `docs/PROGRESS.md` record initialization
 - [x] **Task 2**: Database schema migration, `sla_policies` table & CRUD, and priority support in `api/db_utils.py`
 - [x] **Task 3**: Unit tests for database priority migration and SLA policy CRUD in `tests/test_db_utils.py`
-- [ ] **Task 4**: Pydantic schemas in `api/pydantic_models.py`
-- [ ] **Task 5**: Unit tests for SLA Pydantic models in `tests/test_models.py`
+- [x] **Task 4**: Pydantic schemas in `api/pydantic_models.py`
+- [x] **Task 5**: Unit tests for SLA Pydantic models in `tests/test_models.py`
 - [ ] **Task 6**: Core SLA calculation, breach detection, alert dispatching, and compliance analytics engine in `api/sla.py`
 - [ ] **Task 7**: Unit tests for SLA engine in `tests/test_sla.py`
 - [ ] **Task 8**: FastAPI routes in `api/main.py` and session priority update handling
