@@ -874,6 +874,7 @@ def test_list_sessions_returns_summaries(monkeypatch):
             "preview": "How do I request?",
             "label": None,
             "status": "active",
+            "priority": "medium",
             "tags": "",
             "summary": None,
             "resolution_notes": None,
