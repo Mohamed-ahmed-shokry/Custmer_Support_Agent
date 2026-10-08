@@ -2640,4 +2640,253 @@ def test_get_session_macro_suggestions_route(monkeypatch):
     assert data_query["suggestions"][0]["shortcut"] == "/emerg-maint"
 
 
+def test_sla_policies_crud_routes(monkeypatch):
+    fake_policy = {
+        "id": 1,
+        "name": "Emergency Maintenance",
+        "priority": "urgent",
+        "category": "maintenance",
+        "response_time_minutes": 15,
+        "resolution_time_minutes": 120,
+        "is_active": True,
+        "created_at": "2026-10-08 10:00:00",
+        "updated_at": "2026-10-08 10:00:00",
+    }
 
+    monkeypatch.setattr(main, "list_sla_policies", lambda **kwargs: [fake_policy])
+    monkeypatch.setattr(main, "create_sla_policy", lambda **kwargs: 1)
+    monkeypatch.setattr(
+        main, "get_sla_policy", lambda pid: fake_policy if pid == 1 else None
+    )
+    monkeypatch.setattr(main, "update_sla_policy", lambda pid, **kwargs: pid == 1)
+    monkeypatch.setattr(main, "delete_sla_policy", lambda pid: pid == 1)
+
+    # 1. List
+    resp_list = client.get("/sla/policies")
+    assert resp_list.status_code == HTTP_OK
+    data_list = resp_list.json()
+    expected_count = 1
+    assert data_list["total"] == expected_count
+    assert len(data_list["items"]) == expected_count
+    assert data_list["items"][0]["name"] == "Emergency Maintenance"
+
+    # 2. Create valid
+    payload_create = {
+        "name": "Emergency Maintenance",
+        "priority": "urgent",
+        "category": "maintenance",
+        "response_time_minutes": 15,
+        "resolution_time_minutes": 120,
+        "is_active": True,
+    }
+    resp_create = client.post("/sla/policies", json=payload_create)
+    assert resp_create.status_code == HTTP_CREATED
+    data_create = resp_create.json()
+    assert data_create["id"] == expected_count
+    assert data_create["priority"] == "urgent"
+
+    # 3. Create invalid (resolution < response)
+    invalid_create = dict(payload_create)
+    invalid_create["resolution_time_minutes"] = 5
+    resp_invalid = client.post("/sla/policies", json=invalid_create)
+    assert resp_invalid.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    # 4. Get by ID
+    resp_get = client.get("/sla/policies/1")
+    assert resp_get.status_code == HTTP_OK
+    assert resp_get.json()["id"] == expected_count
+
+    resp_get_404 = client.get("/sla/policies/999")
+    assert resp_get_404.status_code == HTTP_NOT_FOUND
+
+    # 5. Patch by ID
+    resp_patch = client.patch(
+        "/sla/policies/1",
+        json={"response_time_minutes": 20},
+    )
+    assert resp_patch.status_code == HTTP_OK
+
+    resp_patch_404 = client.patch(
+        "/sla/policies/999",
+        json={"response_time_minutes": 20},
+    )
+    assert resp_patch_404.status_code == HTTP_NOT_FOUND
+
+    # 6. Delete
+    resp_del = client.delete("/sla/policies/1")
+    assert resp_del.status_code == HTTP_OK
+
+    resp_del_404 = client.delete("/sla/policies/999")
+    assert resp_del_404.status_code == HTTP_NOT_FOUND
+
+
+def test_session_priority_update_route(monkeypatch):
+    session_data = {
+        "session_id": "sess-prio-1",
+        "label": "Water leak inquiry",
+        "status": "active",
+        "priority": "urgent",
+        "tags": "maintenance",
+        "summary": "Urgent leak",
+        "resolution_notes": None,
+        "created_at": "2026-10-08 10:00:00",
+        "message_count": 2,
+        "last_active": "2026-10-08 10:00:00",
+        "preview": "Water leak inquiry",
+    }
+
+    updated_called: dict[str, object] = {}
+
+    def fake_update(session_id, **kwargs):
+        updated_called.update(kwargs)
+        return True
+
+    monkeypatch.setattr(main, "get_all_sessions", lambda: [session_data])
+    monkeypatch.setattr(main, "update_session_metadata", fake_update)
+
+    # Valid priority patch
+    resp = client.patch(
+        "/sessions/sess-prio-1",
+        json={"priority": "urgent"},
+    )
+    assert resp.status_code == HTTP_OK
+    assert updated_called.get("priority") == "urgent"
+
+    # Invalid priority patch -> 422
+    resp_invalid = client.patch(
+        "/sessions/sess-prio-1",
+        json={"priority": "invalid-prio"},
+    )
+    assert resp_invalid.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_session_sla_route(monkeypatch):
+    session_data = {
+        "session_id": "sess-sla-1",
+        "label": "Tenant question",
+        "status": "active",
+        "priority": "high",
+        "tags": ["leasing"],
+        "summary": "",
+        "resolution_notes": "",
+        "created_at": "2026-10-08 10:00:00",
+        "message_count": 1,
+    }
+
+    fake_sla_status = {
+        "session_id": "sess-sla-1",
+        "priority": "high",
+        "category": "leasing",
+        "status": "active",
+        "policy_id": 2,
+        "policy_name": "High Priority Leasing",
+        "response_target_minutes": 60,
+        "resolution_target_minutes": 480,
+        "session_started_at": "2026-10-08 10:00:00",
+        "first_response_at": None,
+        "response_due_at": "2026-10-08 11:00:00",
+        "resolution_due_at": "2026-10-08 18:00:00",
+        "response_met": False,
+        "resolution_met": False,
+        "response_breached": False,
+        "resolution_breached": False,
+        "response_approaching": False,
+        "resolution_approaching": False,
+        "breach_status": "healthy",
+        "minutes_to_response_deadline": 45.0,
+        "minutes_to_resolution_deadline": 465.0,
+    }
+
+    def stub_summary(sid):
+        if sid == "sess-sla-1":
+            return session_data
+        raise main.HTTPException(status_code=404, detail="Not found")
+
+    monkeypatch.setattr(main, "_get_session_summary_or_404", stub_summary)
+    monkeypatch.setattr(
+        main.sla,
+        "calculate_session_sla_status",
+        lambda sid: fake_sla_status if sid == "sess-sla-1" else None,
+    )
+
+    # 1. Known session
+    resp = client.get("/sessions/sess-sla-1/sla")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["session_id"] == "sess-sla-1"
+    assert data["breach_status"] == "healthy"
+    expected_resp_target = 60
+    assert data["response_target_minutes"] == expected_resp_target
+
+    # 2. Unknown session
+    resp_404 = client.get("/sessions/unknown-sess/sla")
+    assert resp_404.status_code == HTTP_NOT_FOUND
+
+
+def test_evaluate_sla_alerts_route(monkeypatch):
+    fake_result = {
+        "total_sessions_checked": 5,
+        "alerts_triggered": 1,
+        "alerts": [
+            {
+                "session_id": "sess-breach-1",
+                "priority": "urgent",
+                "category": "maintenance",
+                "event": "sla.breached",
+                "breach_type": "response",
+                "deadline_due_at": "2026-10-08 10:15:00",
+                "minutes_remaining": -10.5,
+                "webhooks_dispatched": 1,
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        main.sla,
+        "evaluate_and_dispatch_sla_alerts",
+        lambda **kwargs: fake_result,
+    )
+
+    resp = client.post(
+        "/sla/evaluate-alerts",
+        json={"approaching_threshold_minutes": 20},
+    )
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    expected_checked = 5
+    expected_triggered = 1
+    assert data["total_sessions_checked"] == expected_checked
+    assert data["alerts_triggered"] == expected_triggered
+    assert len(data["alerts"]) == expected_triggered
+    assert data["alerts"][0]["event"] == "sla.breached"
+
+
+def test_sla_analytics_route(monkeypatch):
+    fake_analytics = {
+        "total_tracked_sessions": 10,
+        "compliance_rate": 90.0,
+        "met_sessions": 7,
+        "healthy_sessions": 2,
+        "approaching_breach_sessions": 0,
+        "breached_sessions": 1,
+        "avg_first_response_minutes": 12.4,
+        "priority_breakdown": {
+            "urgent": {"total": 3, "breached": 0},
+            "high": {"total": 4, "breached": 1},
+        },
+    }
+
+    monkeypatch.setattr(
+        main.sla,
+        "get_sla_compliance_analytics",
+        lambda: fake_analytics,
+    )
+
+    resp = client.get("/sla/analytics")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    expected_tracked = 10
+    expected_rate = 90.0
+    assert data["total_tracked_sessions"] == expected_tracked
+    assert data["compliance_rate"] == expected_rate
+    assert "urgent" in data["priority_breakdown"]

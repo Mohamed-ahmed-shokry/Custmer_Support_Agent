@@ -1036,6 +1036,10 @@ class SLAAlertItem(BaseModel):
     webhooks_dispatched: int = 0
 
 
+class SLAAlertEvaluateRequest(BaseModel):
+    approaching_threshold_minutes: int = Field(default=30, gt=0)
+
+
 class SLAAlertEvaluateResponse(BaseModel):
     total_sessions_checked: int
     alerts_triggered: int
