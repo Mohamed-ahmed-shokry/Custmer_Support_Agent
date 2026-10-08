@@ -350,6 +350,7 @@ def update_session(  # noqa: PLR0913, PLR0917
     session_id,
     label=None,
     status=None,
+    priority=None,
     tags=None,
     summary=None,
     resolution_notes=None,
@@ -359,6 +360,8 @@ def update_session(  # noqa: PLR0913, PLR0917
         payload["label"] = label
     if status is not None:
         payload["status"] = status
+    if priority is not None:
+        payload["priority"] = priority
     if tags is not None:
         payload["tags"] = tags
     if summary is not None:
@@ -1146,3 +1149,189 @@ def get_session_macro_suggestions(
     except Exception as e:
         st.error(f"An error occurred while fetching session macro suggestions: {str(e)}")
         return None
+
+
+# ============================================================================
+# SLA Policies & Escalation Alerts API Helpers
+# ============================================================================
+
+
+def list_sla_policies(
+    priority: str | None = None,
+    category: str | None = None,
+    active_only: bool = False,
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"active_only": active_only}
+    if priority:
+        params["priority"] = priority
+    if category:
+        params["category"] = category
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sla/policies",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            data = response.json()
+            return cast(list[dict[str, Any]], data.get("items", []))
+        show_api_error("Failed to list SLA policies", response)
+        return []
+    except Exception as e:
+        st.error(f"An error occurred while listing SLA policies: {str(e)}")
+        return []
+
+
+def create_sla_policy(  # noqa: PLR0913, PLR0917
+    name: str,
+    priority: str,
+    category: str = "general",
+    response_time_minutes: int = 60,
+    resolution_time_minutes: int = 480,
+    is_active: bool = True,
+) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {
+        "name": name,
+        "priority": priority,
+        "category": category,
+        "response_time_minutes": response_time_minutes,
+        "resolution_time_minutes": resolution_time_minutes,
+        "is_active": is_active,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sla/policies",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create SLA policy", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating SLA policy: {str(e)}")
+        return None
+
+
+def get_sla_policy(policy_id: int) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sla/policies/{policy_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch SLA policy {policy_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching SLA policy: {str(e)}")
+        return None
+
+
+def update_sla_policy(  # noqa: PLR0913, PLR0917
+    policy_id: int,
+    name: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    response_time_minutes: int | None = None,
+    resolution_time_minutes: int | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {}
+    if name is not None:
+        payload["name"] = name
+    if priority is not None:
+        payload["priority"] = priority
+    if category is not None:
+        payload["category"] = category
+    if response_time_minutes is not None:
+        payload["response_time_minutes"] = response_time_minutes
+    if resolution_time_minutes is not None:
+        payload["resolution_time_minutes"] = resolution_time_minutes
+    if is_active is not None:
+        payload["is_active"] = is_active
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/sla/policies/{policy_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update SLA policy {policy_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating SLA policy: {str(e)}")
+        return None
+
+
+def delete_sla_policy(policy_id: int) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/sla/policies/{policy_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete SLA policy {policy_id}", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting SLA policy: {str(e)}")
+        return False
+
+
+def get_session_sla_status(session_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/sla",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching SLA status: {str(e)}")
+        return None
+
+
+def evaluate_sla_alerts(
+    approaching_threshold_minutes: int = 30,
+) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {"approaching_threshold_minutes": approaching_threshold_minutes}
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sla/evaluate-alerts",
+            json=payload,
+            headers=_request_headers(),
+            timeout=15,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to evaluate SLA alerts", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while evaluating SLA alerts: {str(e)}")
+        return None
+
+
+def get_sla_compliance_analytics() -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sla/analytics",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch SLA analytics", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching SLA analytics: {str(e)}")
+        return None
+
