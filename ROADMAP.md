@@ -623,12 +623,82 @@ Deliver an automated AI macro suggestion and query intent classification engine 
 
 ## v0.31.0 plan — Customer Support SLA Policies, Priority Triage & Automated Escalation Alerts Engine
 
-Deliver an operational Service Level Agreement (SLA) policy and priority triage tracking engine for real estate support teams:
-- SLA policy management table (`sla_policies`) with configurable response and resolution target times per priority and category
-- Session priority assignment (`priority` column in `session_labels`: `urgent`, `high`, `medium`, `low`)
-- Automated SLA deadline calculations (`response_due_at`, `resolution_due_at`, `breach_status`)
-- Real-time webhook alerting triggers on approaching SLA breach (`sla.approaching_breach`) and breached deadlines (`sla.breached`)
-- Streamlit UI priority badges, SLA countdown timers, and operational SLA compliance analytics in sidebar.
+Deliver an operational Service Level Agreement (SLA) policy and priority triage tracking engine for real estate customer support operations:
+configurable SLA target times per priority and category, session priority assignment (`urgent`, `high`, `medium`, `low`), automated deadline and breach calculations (`response_due_at`, `resolution_due_at`, `breach_status`), real-time webhook alerting triggers on approaching SLA breach (`sla.approaching_breach`) and breached deadlines (`sla.breached`), and Streamlit UI priority badges, SLA countdown timers, and operational SLA compliance analytics.
+
+### Scope & Objectives
+- **SLA Policy Management**:
+  - SQLite table `sla_policies` (`id`, `name`, `priority`, `category`, `response_time_minutes`, `resolution_time_minutes`, `is_active`, `created_at`, `updated_at`) with unique index on `(priority, category)`.
+  - Default property management SLA policies seeded on initialization:
+    - Urgent Maintenance (priority: urgent, category: maintenance, response: 15m, resolution: 120m)
+    - Urgent General (priority: urgent, category: general, response: 30m, resolution: 240m)
+    - High Maintenance (priority: high, category: maintenance, response: 60m, resolution: 480m)
+    - High General (priority: high, category: general, response: 120m, resolution: 720m)
+    - Medium General (priority: medium, category: general, response: 240m, resolution: 1440m)
+    - Low General (priority: low, category: general, response: 1440m, resolution: 2880m)
+  - DB operations in `api/db_utils.py`: create, get, list, update, delete, and match best policy.
+- **Session Priority Triage**:
+  - Schema migration: add `priority TEXT NOT NULL DEFAULT 'medium'` to `session_labels`.
+  - Priority validation (`urgent`, `high`, `medium`, `low`) and default handling.
+  - Update `update_session_metadata()`, `get_session_metadata()`, and session queries to include priority.
+- **Core SLA Engine (`api/sla.py`)**:
+  - `calculate_session_sla_status(session_id, current_time=None)`:
+    - Inferred category from session tags or query, matching active SLA policy.
+    - Calculates `response_due_at`, `resolution_due_at`, `response_met`, `resolution_met`, `response_breached`, `resolution_breached`, `response_approaching`, `resolution_approaching`, `breach_status`, and remaining minutes.
+  - `evaluate_and_dispatch_sla_alerts(approaching_threshold_minutes=30)`:
+    - Evaluates all active sessions, dispatches `sla.approaching_breach` and `sla.breached` webhook events via `webhooks.dispatch_event`.
+  - `get_sla_compliance_analytics()`:
+    - Operational compliance rate (%), total tracked sessions, breached/approaching counts, priority breakdown.
+- **Webhook Event Integration**:
+  - Extend `VALID_WEBHOOK_EVENTS` in `api/db_utils.py` to allow `"sla.approaching_breach"` and `"sla.breached"`.
+- **FastAPI Endpoints (`api/main.py`)**:
+  - `GET /sla/policies`: list SLA policies with optional priority/category/active filters.
+  - `POST /sla/policies`: create a new SLA policy.
+  - `GET /sla/policies/{policy_id}`: get SLA policy by ID.
+  - `PATCH /sla/policies/{policy_id}`: update policy targets or status.
+  - `DELETE /sla/policies/{policy_id}`: delete SLA policy.
+  - `GET /sessions/{session_id}/sla`: get real-time SLA status and deadlines for a session.
+  - `POST /sla/evaluate-alerts`: scan sessions, evaluate deadlines, and dispatch webhook alerts.
+  - `GET /sla/analytics`: get SLA compliance analytics.
+  - Update session metadata routes to support updating `priority`.
+- **Client & Streamlit UI Integration**:
+  - Client methods in `app/api_utils.py`: `list_sla_policies()`, `create_sla_policy()`, `get_sla_policy()`, `update_sla_policy()`, `delete_sla_policy()`, `get_session_sla()`, `evaluate_sla_alerts()`, `get_sla_analytics()`.
+  - Streamlit UI in `app/sidebar.py`:
+    - Priority selector in session metadata panel with priority badges (🔴 Urgent, 🟠 High, 🟡 Medium, 🔵 Low).
+    - Real-time SLA Status card on active session showing policy, target response/resolution due times, countdowns, and breach status.
+    - "SLA Policies & Compliance" expander with compliance metrics, policy table/creator form, and one-click alert evaluation trigger.
+- **Quality Gates**: Maintain test coverage floor >= 80%, zero ruff errors, zero mypy errors.
+
+### Explicit Exclusions (Deferred to v0.32.0+)
+- Business hours / calendar schedule calculation (all targets currently 24/7 calendar minutes).
+- Multi-tier escalation re-assignment engine to specific agent user IDs (requires agent auth system).
+
+### Acceptance Criteria
+1. `sla_policies` table exists, auto-seeds default real estate policies on initialization, and supports CRUD with `(priority, category)` resolution.
+2. `session_labels` table migrates to include `priority TEXT NOT NULL DEFAULT 'medium'` column with validation for `urgent`, `high`, `medium`, `low`.
+3. `calculate_session_sla_status()` matches the best policy, calculates `response_due_at`, `resolution_due_at`, evaluates met/breached/approaching status based on message timestamps and session lifecycle status.
+4. Webhook events `sla.approaching_breach` and `sla.breached` are recognized and dispatched to registered webhooks when alerts are evaluated.
+5. FastAPI endpoints `/sla/policies`, `/sessions/{session_id}/sla`, `/sla/evaluate-alerts`, and `/sla/analytics` are functional and schema-validated.
+6. Client helpers in `app/api_utils.py` provide reliable access with authentication and error handling.
+7. Streamlit UI displays priority badges, active session SLA countdown card, and SLA Policies & Compliance analytics panel.
+8. Full test suite passes with >= 80% coverage and zero ruff / mypy errors.
+
+### Granular Task Breakdown
+- [ ] Task 1: `ROADMAP.md` v0.31.0 plan specification and `docs/PROGRESS.md` record initialization
+- [ ] Task 2: Database schema migration, `sla_policies` CRUD, and priority support in `api/db_utils.py`
+- [ ] Task 3: Unit tests for database priority migration and SLA policy CRUD in `tests/test_db_utils.py`
+- [ ] Task 4: Pydantic schemas in `api/pydantic_models.py`
+- [ ] Task 5: Unit tests for SLA Pydantic models in `tests/test_models.py`
+- [ ] Task 6: Core SLA calculation, breach detection, alert dispatching, and compliance analytics engine in `api/sla.py`
+- [ ] Task 7: Unit tests for SLA engine in `tests/test_sla.py`
+- [ ] Task 8: FastAPI routes in `api/main.py` and session priority update handling
+- [ ] Task 9: Integration and endpoint tests for FastAPI SLA routes in `tests/test_api_routes.py`
+- [ ] Task 10: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py`
+- [ ] Task 11: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
+- [ ] Task 12: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [ ] Task 13: Documentation updates in `docs/API.md` and `README.md`
+- [ ] Task 14: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
+- [ ] Task 15: Final verification, progress record completion, and review audit
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

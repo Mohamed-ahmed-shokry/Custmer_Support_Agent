@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from api import macro_suggestions, macros, webhooks
+from api import macro_suggestions, macros, sla, webhooks
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -32,6 +32,7 @@ from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.db_utils import (
     VALID_SESSION_STATUSES,
     create_macro,
+    create_sla_policy,
     create_webhook,
     delete_document_record,
     delete_document_source,
@@ -40,6 +41,7 @@ from api.db_utils import (
     delete_macro,
     delete_session,
     delete_sessions,
+    delete_sla_policy,
     delete_webhook,
     get_all_collections,
     get_all_documents,
@@ -56,6 +58,7 @@ from api.db_utils import (
     get_session_feedback,
     get_session_latest_user_query,
     get_session_metadata,
+    get_sla_policy,
     get_support_triage_analytics,
     get_webhook,
     get_webhook_delivery_logs,
@@ -65,6 +68,7 @@ from api.db_utils import (
     list_feedback,
     list_macro_categories,
     list_macros,
+    list_sla_policies,
     list_webhooks,
     normalize_session_label,
     ping_db,
@@ -76,6 +80,7 @@ from api.db_utils import (
     truncate_history,
     update_macro,
     update_session_metadata,
+    update_sla_policy,
     update_webhook,
 )
 from api.observability import (
@@ -145,8 +150,17 @@ from api.pydantic_models import (
     SessionMacroSuggestionsResponse,
     SessionSearchResponse,
     SessionSearchResult,
+    SessionSLAStatusResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
+    SLAAlertEvaluateRequest,
+    SLAAlertEvaluateResponse,
+    SLAAlertItem,
+    SLAComplianceAnalyticsResponse,
+    SLAPoliciesListResponse,
+    SLAPolicyCreateRequest,
+    SLAPolicyResponse,
+    SLAPolicyUpdateRequest,
     StatsResponse,
     SupportTriageAnalyticsResponse,
     TagCount,
@@ -1305,6 +1319,7 @@ def update_session_route(
     try:
         if (
             request.status is None
+            and request.priority is None
             and request.tags is None
             and request.summary is None
             and request.resolution_notes is None
@@ -1317,6 +1332,7 @@ def update_session_route(
                 session_id,
                 label=request.label,
                 status=request.status,
+                priority=request.priority,
                 tags=request.tags,
                 summary=request.summary,
                 resolution_notes=request.resolution_notes,
@@ -1837,4 +1853,127 @@ def get_session_macro_suggestions_route(
     )
 
 
+# ============================================================================
+# SLA Policies & Escalation Alerts Endpoints
+# ============================================================================
 
+
+@app.get("/sla/policies", response_model=SLAPoliciesListResponse)
+def list_sla_policies_route(
+    priority: str | None = None,
+    category: str | None = None,
+    active_only: bool = False,
+):
+    policies = list_sla_policies(
+        priority=priority,
+        category=category,
+        active_only=active_only,
+    )
+    return SLAPoliciesListResponse(
+        items=[SLAPolicyResponse(**p) for p in policies],
+        total=len(policies),
+    )
+
+
+@app.post("/sla/policies", response_model=SLAPolicyResponse, status_code=201)
+def create_sla_policy_route(request: SLAPolicyCreateRequest):
+    try:
+        policy_id = create_sla_policy(
+            name=request.name,
+            priority=request.priority,
+            category=request.category,
+            response_time_minutes=request.response_time_minutes,
+            resolution_time_minutes=request.resolution_time_minutes,
+            is_active=request.is_active,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    created = get_sla_policy(policy_id)
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to fetch created SLA policy.")
+    return SLAPolicyResponse(**created)
+
+
+@app.get("/sla/policies/{policy_id}", response_model=SLAPolicyResponse)
+def get_sla_policy_route(policy_id: int):
+    policy = get_sla_policy(policy_id)
+    if not policy:
+        raise HTTPException(
+            status_code=404,
+            detail=f"SLA policy {policy_id} was not found.",
+        )
+    return SLAPolicyResponse(**policy)
+
+
+@app.patch("/sla/policies/{policy_id}", response_model=SLAPolicyResponse)
+def update_sla_policy_route(policy_id: int, request: SLAPolicyUpdateRequest):
+    is_active_int = (
+        1 if request.is_active is True else (0 if request.is_active is False else None)
+    )
+    try:
+        updated = update_sla_policy(
+            policy_id,
+            name=request.name,
+            priority=request.priority,
+            category=request.category,
+            response_time_minutes=request.response_time_minutes,
+            resolution_time_minutes=request.resolution_time_minutes,
+            is_active=is_active_int,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=f"SLA policy {policy_id} was not found.",
+        )
+    policy = get_sla_policy(policy_id)
+    if not policy:
+        raise HTTPException(
+            status_code=404,
+            detail=f"SLA policy {policy_id} was not found.",
+        )
+    return SLAPolicyResponse(**policy)
+
+
+@app.delete("/sla/policies/{policy_id}")
+def delete_sla_policy_route(policy_id: int):
+    deleted = delete_sla_policy(policy_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"SLA policy {policy_id} was not found.",
+        )
+    return {"message": f"SLA policy {policy_id} deleted."}
+
+
+@app.get("/sessions/{session_id}/sla", response_model=SessionSLAStatusResponse)
+def get_session_sla_route(session_id: str):
+    _require_session_id(session_id)
+    _get_session_summary_or_404(session_id)
+    status = sla.calculate_session_sla_status(session_id)
+    if not status:
+        raise HTTPException(
+            status_code=404,
+            detail=f"SLA status not found for session {session_id}.",
+        )
+    return SessionSLAStatusResponse(**status)
+
+
+@app.post("/sla/evaluate-alerts", response_model=SLAAlertEvaluateResponse)
+def evaluate_sla_alerts_route(request: SLAAlertEvaluateRequest | None = None):
+    approaching_minutes = request.approaching_threshold_minutes if request else 30
+    eval_result = sla.evaluate_and_dispatch_sla_alerts(
+        approaching_threshold_minutes=approaching_minutes
+    )
+    return SLAAlertEvaluateResponse(
+        total_sessions_checked=eval_result["total_sessions_checked"],
+        alerts_triggered=eval_result["alerts_triggered"],
+        alerts=[SLAAlertItem(**a) for a in eval_result["alerts"]],
+    )
+
+
+@app.get("/sla/analytics", response_model=SLAComplianceAnalyticsResponse)
+def get_sla_analytics_route():
+    analytics = sla.get_sla_compliance_analytics()
+    return SLAComplianceAnalyticsResponse(**analytics)

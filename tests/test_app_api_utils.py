@@ -1293,4 +1293,205 @@ def test_get_session_macro_suggestions(fake_requests, fake_st, monkeypatch):
     assert api_utils.get_session_macro_suggestions("sess-missing") is None
 
 
+def test_list_sla_policies(fake_requests, fake_st, monkeypatch):
+    fake_items = [{"id": 1, "name": "Emergency", "priority": "urgent"}]
+    fake_requests.response = FakeResponse(
+        status_code=200, payload={"items": fake_items, "total": 1}
+    )
+
+    res = api_utils.list_sla_policies(priority="urgent", active_only=True)
+    expected_count = 1
+    assert len(res) == expected_count
+    assert res[0]["name"] == "Emergency"
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sla/policies")
+    assert kwargs["params"]["priority"] == "urgent"
+    assert kwargs["params"]["active_only"] is True
+
+    # 400 failure
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "bad request"})
+    assert api_utils.list_sla_policies() == []
+    assert fake_st.errors
+
+    # Network failure
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_sla_policies() == []
+
+
+def test_create_sla_policy(fake_requests, fake_st, monkeypatch):
+    fake_payload = {
+        "id": 1,
+        "name": "Emergency",
+        "priority": "urgent",
+        "category": "maintenance",
+        "response_time_minutes": 15,
+        "resolution_time_minutes": 120,
+        "is_active": True,
+    }
+    fake_requests.response = FakeResponse(status_code=201, payload=fake_payload)
+
+    res = api_utils.create_sla_policy(
+        name="Emergency",
+        priority="urgent",
+        category="maintenance",
+        response_time_minutes=15,
+        resolution_time_minutes=120,
+    )
+    assert res == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sla/policies")
+    assert kwargs["json"]["priority"] == "urgent"
+
+    # 422 failure
+    fake_requests.response = FakeResponse(
+        status_code=422, payload={"detail": "invalid parameters"}
+    )
+    assert (
+        api_utils.create_sla_policy(
+            name="Emergency",
+            priority="urgent",
+        )
+        is None
+    )
+    assert fake_st.errors
+
+    # Network failure
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert (
+        api_utils.create_sla_policy(
+            name="Emergency",
+            priority="urgent",
+        )
+        is None
+    )
+
+
+def test_get_and_delete_sla_policy(fake_requests, fake_st, monkeypatch):
+    fake_payload = {"id": 1, "name": "Emergency", "priority": "urgent"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    # Get
+    res = api_utils.get_sla_policy(1)
+    assert res == fake_payload
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/sla/policies/1")
+
+    # Get 404
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_sla_policy(999) is None
+    assert fake_st.errors
+
+    # Get Boom
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_sla_policy(1) is None
+
+    # Reset transport for delete
+    fake_requests.calls.clear()
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    fake_requests.response = FakeResponse(status_code=200, payload={"message": "deleted"})
+    assert api_utils.delete_sla_policy(1) is True
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.delete_sla_policy(999) is False
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_sla_policy(1) is False
+
+
+def test_update_sla_policy(fake_requests, fake_st, monkeypatch):
+    fake_payload = {"id": 1, "name": "Updated Emergency", "priority": "urgent"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    res = api_utils.update_sla_policy(1, name="Updated Emergency", response_time_minutes=20)
+    assert res == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sla/policies/1")
+    expected_resp = 20
+    assert kwargs["json"]["response_time_minutes"] == expected_resp
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.update_sla_policy(999, name="Test") is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.update_sla_policy(1, name="Test") is None
+
+
+def test_get_session_sla_status(fake_requests, fake_st, monkeypatch):
+    fake_payload = {
+        "session_id": "sess-1",
+        "priority": "urgent",
+        "breach_status": "healthy",
+        "minutes_to_response_deadline": 14.5,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    res = api_utils.get_session_sla_status("sess-1")
+    assert res == fake_payload
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/sessions/sess-1/sla")
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_session_sla_status("missing") is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_session_sla_status("sess-1") is None
+
+
+def test_evaluate_sla_alerts(fake_requests, fake_st, monkeypatch):
+    fake_payload = {
+        "total_sessions_checked": 3,
+        "alerts_triggered": 1,
+        "alerts": [{"session_id": "sess-1", "event": "sla.breached"}],
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    res = api_utils.evaluate_sla_alerts(approaching_threshold_minutes=25)
+    assert res == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sla/evaluate-alerts")
+    expected_thresh = 25
+    assert kwargs["json"]["approaching_threshold_minutes"] == expected_thresh
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.evaluate_sla_alerts() is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.evaluate_sla_alerts() is None
+
+
+def test_get_sla_compliance_analytics(fake_requests, fake_st, monkeypatch):
+    fake_payload = {
+        "total_tracked_sessions": 5,
+        "compliance_rate": 80.0,
+        "breached_sessions": 1,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    res = api_utils.get_sla_compliance_analytics()
+    assert res == fake_payload
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/sla/analytics")
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "error"})
+    assert api_utils.get_sla_compliance_analytics() is None
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_sla_compliance_analytics() is None
+
+
+def test_update_session_with_priority(fake_requests):
+    fake_payload = {"session_id": "s1", "priority": "urgent"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    res = api_utils.update_session("s1", priority="urgent")
+    assert res == fake_payload
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/s1")
+    assert kwargs["json"]["priority"] == "urgent"
+
+
+
 

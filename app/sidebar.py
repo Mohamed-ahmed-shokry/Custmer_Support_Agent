@@ -7,6 +7,7 @@ from app.api_utils import (
     API_BASE_URL,
     apply_macro_to_session,
     create_macro,
+    create_sla_policy,
     create_webhook,
     delete_collection,
     delete_document,
@@ -14,7 +15,9 @@ from app.api_utils import (
     delete_macro,
     delete_session,
     delete_sessions,
+    delete_sla_policy,
     delete_webhook,
+    evaluate_sla_alerts,
     export_session,
     get_collection_analytics,
     get_collections_details,
@@ -26,6 +29,8 @@ from app.api_utils import (
     get_quota,
     get_session_history,
     get_session_macro_suggestions,
+    get_session_sla_status,
+    get_sla_compliance_analytics,
     get_stats,
     get_support_triage_analytics,
     list_collections,
@@ -34,6 +39,7 @@ from app.api_utils import (
     list_macro_categories,
     list_macros,
     list_sessions,
+    list_sla_policies,
     list_webhook_deliveries,
     list_webhooks,
     ping_webhook,
@@ -59,6 +65,21 @@ SESSION_STATUS_ICONS = {
     "resolved": "✅",
     "escalated": "⚠️",
     "closed": "🔒",
+}
+
+SESSION_PRIORITY_OPTIONS = ["urgent", "high", "medium", "low"]
+SESSION_PRIORITY_FILTER_OPTIONS = ["All priorities", *SESSION_PRIORITY_OPTIONS]
+PRIORITY_BADGES = {
+    "urgent": "🔴 [Urgent]",
+    "high": "🟠 [High]",
+    "medium": "🟡 [Med]",
+    "low": "🔵 [Low]",
+}
+PRIORITY_EMOJIS = {
+    "urgent": "🔴 Urgent",
+    "high": "🟠 High",
+    "medium": "🟡 Medium",
+    "low": "🔵 Low",
 }
 
 
@@ -109,6 +130,14 @@ def _filter_sessions(sessions):
     )
     if status_filter != "All statuses":
         sessions = [s for s in sessions if (s.get("status") or "active") == status_filter]
+
+    priority_filter = st.sidebar.selectbox(
+        "Filter by priority",
+        options=SESSION_PRIORITY_FILTER_OPTIONS,
+        key="session_priority_filter",
+    )
+    if priority_filter != "All priorities":
+        sessions = [s for s in sessions if (s.get("priority") or "medium") == priority_filter]
 
     search_query = st.sidebar.text_input(
         "Search conversations", key="session_search_query", placeholder="Filter by keyword..."
@@ -171,10 +200,12 @@ def _render_session_history():
         title = session.get("label") or session.get("preview") or session["session_id"][:8]
         status = session.get("status") or "active"
         icon = SESSION_STATUS_ICONS.get(status, "🟢")
+        prio = session.get("priority") or "medium"
+        prio_badge = f" {PRIORITY_BADGES.get(prio, '')}" if prio != "medium" else ""
         tags = session.get("tags") or []
         tags_str = f" [{', '.join(tags)}]" if tags else ""
         labels[session["session_id"]] = (
-            f"{icon} {title} ({session['message_count']} msgs){tags_str}"
+            f"{icon}{prio_badge} {title} ({session['message_count']} msgs){tags_str}"
         )
 
     bulk_delete = st.sidebar.checkbox(
@@ -233,6 +264,21 @@ def _render_session_metadata(selected, sessions):
         index=status_idx,
         key=f"session_status_{selected}",
     )
+
+    curr_prio = (current.get("priority") or "medium") if current else "medium"
+    prio_idx = (
+        SESSION_PRIORITY_OPTIONS.index(curr_prio)
+        if curr_prio in SESSION_PRIORITY_OPTIONS
+        else 2
+    )
+    new_priority = st.sidebar.selectbox(
+        "Session priority",
+        options=SESSION_PRIORITY_OPTIONS,
+        index=prio_idx,
+        format_func=lambda p: PRIORITY_EMOJIS.get(p, p.title()),
+        key=f"session_priority_{selected}",
+    )
+
     raw_tags = current.get("tags") if current else ""
     if isinstance(raw_tags, list):
         curr_tags = ", ".join(raw_tags)
@@ -278,6 +324,7 @@ def _render_session_metadata(selected, sessions):
             if update_session(
                 selected,
                 status=new_status,
+                priority=new_priority,
                 tags=tag_list,
                 resolution_notes=new_notes.strip() if new_notes.strip() else None,
             ):
@@ -286,6 +333,46 @@ def _render_session_metadata(selected, sessions):
                 st.rerun()
             else:
                 st.sidebar.error("Failed to update session metadata.")
+
+    _render_session_sla_card(selected)
+
+
+def _render_session_sla_card(selected):
+    sla_info = get_session_sla_status(selected)
+    if not sla_info:
+        return
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⏱️ SLA Status")
+    breach_status = sla_info.get("breach_status", "healthy")
+    policy_name = sla_info.get("policy_name") or "Standard Policy"
+    st.sidebar.caption(f"**Policy:** {policy_name}")
+
+    if breach_status == "breached":
+        st.sidebar.error("🚨 **SLA Breached**")
+    elif breach_status == "approaching_breach":
+        st.sidebar.warning("⚠️ **Approaching Breach (<30m)**")
+    elif breach_status == "met":
+        st.sidebar.success("✅ **SLA Met**")
+    else:
+        st.sidebar.info("⏱️ **SLA Healthy**")
+
+    resp_rem = sla_info.get("minutes_to_response_deadline")
+    resp_text = (
+        f"{resp_rem:.0f}m remaining"
+        if resp_rem is not None and resp_rem > 0
+        else ("Met" if sla_info.get("response_met") else "Overdue")
+    )
+    resol_rem = sla_info.get("minutes_to_resolution_deadline")
+    resol_text = (
+        f"{resol_rem:.0f}m remaining"
+        if resol_rem is not None and resol_rem > 0
+        else ("Resolved" if sla_info.get("resolution_met") else "Overdue")
+    )
+
+    col1, col2 = st.sidebar.columns(2)
+    col1.metric("First Response", resp_text)
+    col2.metric("Resolution", resol_text)
 
 
 EXPORT_FORMAT_META = {
@@ -1209,6 +1296,111 @@ def _render_webhook_manager():
         _render_webhook_audit_log()
 
 
+def _render_sla_compliance_metrics():
+    analytics = get_sla_compliance_analytics()
+    if analytics:
+        st.markdown("#### SLA Performance")
+        col1, col2 = st.columns(2)
+        col1.metric("Compliance Rate", f"{analytics.get('compliance_rate', 100.0):.1f}%")
+        col2.metric("Breached", analytics.get("breached_sessions", 0))
+
+        m_col1, m_col2 = st.columns(2)
+        m_col1.metric("Met", analytics.get("met_sessions", 0))
+        m_col2.metric("Approaching", analytics.get("approaching_breach_sessions", 0))
+    else:
+        st.caption("No compliance analytics available yet.")
+
+
+def _render_sla_alerts_trigger():
+    if st.button("Evaluate Escalation Alerts", key="btn_eval_sla_alerts"):
+        with st.spinner("Evaluating SLA escalation alerts..."):
+            alert_res = evaluate_sla_alerts(approaching_threshold_minutes=30)
+            if alert_res:
+                n_alerts = alert_res.get("alerts_triggered", 0)
+                if n_alerts > 0:
+                    st.warning(
+                        f"Triggered {n_alerts} escalation alerts across active sessions!"
+                    )
+                else:
+                    st.success("All active sessions within SLA limits. Zero alerts triggered.")
+            else:
+                st.error("Failed to evaluate escalation alerts.")
+
+
+def _render_sla_policy_list():
+    st.markdown("#### Configured SLA Policies")
+    policies = list_sla_policies()
+    if not policies:
+        st.caption("No SLA policies configured.")
+        return
+
+    for p in policies:
+        p_id = p.get("id")
+        p_name = p.get("name")
+        p_prio = p.get("priority", "medium")
+        p_cat = p.get("category", "general")
+        p_resp = p.get("response_time_minutes", 60)
+        p_resol = p.get("resolution_time_minutes", 480)
+        st.caption(
+            f"**#{p_id} {p_name}** ({p_prio.upper()} / {p_cat})\n"
+            f"Response: {p_resp}m | Resolution: {p_resol}m"
+        )
+        if p_id is not None and st.button("Delete Policy", key=f"del_policy_{p_id}"):
+            if delete_sla_policy(int(p_id)):
+                st.success(f"Deleted policy #{p_id}")
+                st.rerun()
+            else:
+                st.error(f"Failed to delete policy #{p_id}")
+
+
+def _render_sla_policy_creator():
+    st.markdown("#### Add SLA Policy")
+    new_name = st.text_input("Policy Name", key="new_sla_name", placeholder="e.g. VIP Urgent")
+    new_prio = st.selectbox(
+        "Priority",
+        options=SESSION_PRIORITY_OPTIONS,
+        index=0,
+        format_func=lambda p: PRIORITY_EMOJIS.get(p, p.title()),
+        key="new_sla_prio",
+    )
+    new_cat = st.text_input("Category", value="general", key="new_sla_cat")
+    new_resp_min = st.number_input(
+        "Response Target (minutes)", min_value=1, value=30, key="new_sla_resp"
+    )
+    new_resol_min = st.number_input(
+        "Resolution Target (minutes)", min_value=1, value=240, key="new_sla_resol"
+    )
+
+    if st.button("Create SLA Policy", key="btn_create_sla_policy"):
+        if not new_name.strip():
+            st.error("Policy name is required.")
+        elif new_resol_min < new_resp_min:
+            st.error("Resolution target must be >= response target.")
+        else:
+            created = create_sla_policy(
+                name=new_name.strip(),
+                priority=new_prio,
+                category=new_cat.strip() or "general",
+                response_time_minutes=int(new_resp_min),
+                resolution_time_minutes=int(new_resol_min),
+            )
+            if created:
+                st.success(f"Created policy '{new_name}'")
+                st.rerun()
+            else:
+                st.error("Failed to create SLA policy.")
+
+
+def _render_sla_manager():
+    with st.sidebar.expander("SLA Policies & Compliance"):
+        _render_sla_compliance_metrics()
+        _render_sla_alerts_trigger()
+        st.markdown("---")
+        _render_sla_policy_list()
+        st.markdown("---")
+        _render_sla_policy_creator()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -1229,5 +1421,6 @@ def display_sidebar():
     _render_support_triage_analytics()
     _render_quick_responses_panel()
     _render_webhook_manager()
+    _render_sla_manager()
     _render_ops_metrics()
 

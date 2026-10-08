@@ -15,6 +15,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_feedback()
     db_utils.create_webhooks()
     db_utils.create_support_macros()
+    db_utils.create_sla_policies()
     return db_path
 
 
@@ -587,6 +588,7 @@ def test_update_session_metadata_and_retrieval(monkeypatch, tmp_path):
         "tags": "",
         "summary": "",
         "resolution_notes": "",
+        "priority": "medium",
     }
 
     # Update metadata incrementally
@@ -1326,3 +1328,209 @@ def test_get_session_latest_user_query(monkeypatch, tmp_path):
         session_id, second_query, "Dispatching tech", "gpt-4o"
     )
     assert db_utils.get_session_latest_user_query(session_id) == second_query
+
+
+def test_normalize_session_priority():
+    assert db_utils.normalize_session_priority(None) == "medium"
+    assert db_utils.normalize_session_priority("") == "medium"
+    assert db_utils.normalize_session_priority("  ") == "medium"
+    assert db_utils.normalize_session_priority("Urgent") == "urgent"
+    assert db_utils.normalize_session_priority("HIGH") == "high"
+    assert db_utils.normalize_session_priority("Medium") == "medium"
+    assert db_utils.normalize_session_priority("low") == "low"
+
+    with pytest.raises(ValueError, match="Invalid session priority"):
+        db_utils.normalize_session_priority("critical")
+
+
+def test_migrate_session_labels_adds_priority_column(monkeypatch, tmp_path):
+    db_path = tmp_path / "test_migrate.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+
+    # Create table without priority column
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(
+            "CREATE TABLE session_labels (session_id TEXT PRIMARY KEY, label TEXT NOT NULL)"
+        )
+        conn.commit()
+
+    db_utils.migrate_session_labels()
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(session_labels)").fetchall()]
+        assert "priority" in cols
+
+
+def test_update_and_get_session_metadata_with_priority(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    session_id = "sess-prio-test"
+    db_utils.insert_application_logs(session_id, "Need emergency fix", "On it", "gpt-4o")
+
+    # Default metadata has medium priority
+    meta = db_utils.get_session_metadata(session_id)
+    assert meta is not None
+    assert meta["priority"] == "medium"
+
+    # Update to urgent priority
+    updated = db_utils.update_session_metadata(session_id, priority="urgent")
+    assert updated is True
+    meta = db_utils.get_session_metadata(session_id)
+    assert meta is not None
+    assert meta["priority"] == "urgent"
+
+    # Appears in all sessions
+    all_sessions = db_utils.get_all_sessions()
+    target = next((s for s in all_sessions if s["session_id"] == session_id), None)
+    assert target is not None
+    assert target["priority"] == "urgent"
+
+    # Invalid priority raises ValueError
+    with pytest.raises(ValueError, match="Invalid session priority"):
+        db_utils.update_session_metadata(session_id, priority="extreme")
+
+
+def test_create_sla_policies_seeds_defaults(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    policies = db_utils.list_sla_policies()
+    assert len(policies) == len(db_utils.DEFAULT_SLA_POLICIES)
+
+    urgent_maint = next(
+        (p for p in policies if p["priority"] == "urgent" and p["category"] == "maintenance"),
+        None,
+    )
+    assert urgent_maint is not None
+    expected_resp = 15
+    expected_resol = 120
+    assert urgent_maint["response_time_minutes"] == expected_resp
+    assert urgent_maint["resolution_time_minutes"] == expected_resol
+    assert urgent_maint["is_active"] == 1
+
+
+def test_create_and_get_sla_policy(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    resp_time = 45
+    resol_time = 360
+    policy_id = db_utils.create_sla_policy(
+        name="Custom Billing SLA",
+        priority="high",
+        category="billing",
+        response_time_minutes=resp_time,
+        resolution_time_minutes=resol_time,
+    )
+    assert policy_id > 0
+
+    policy = db_utils.get_sla_policy(policy_id)
+    assert policy is not None
+    assert policy["name"] == "Custom Billing SLA"
+    assert policy["priority"] == "high"
+    assert policy["category"] == "billing"
+    assert policy["response_time_minutes"] == resp_time
+    assert policy["resolution_time_minutes"] == resol_time
+
+    # Validation errors
+    with pytest.raises(ValueError, match="name must not be blank"):
+        db_utils.create_sla_policy("", "high")
+
+    with pytest.raises(ValueError, match="greater than zero"):
+        db_utils.create_sla_policy("Test", "high", response_time_minutes=0)
+
+    with pytest.raises(ValueError, match="greater than or equal to response_time_minutes"):
+        db_utils.create_sla_policy(
+            "Test", "high", response_time_minutes=60, resolution_time_minutes=30
+        )
+
+
+def test_get_matching_sla_policy_with_fallbacks(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Exact match: urgent / maintenance
+    match1 = db_utils.get_matching_sla_policy("urgent", "maintenance")
+    assert match1 is not None
+    assert match1["priority"] == "urgent"
+    assert match1["category"] == "maintenance"
+    expected_resp_1 = 15
+    assert match1["response_time_minutes"] == expected_resp_1
+
+    # Fallback to general: urgent / unknown_cat -> urgent / general
+    match2 = db_utils.get_matching_sla_policy("urgent", "unknown_category")
+    assert match2 is not None
+    assert match2["priority"] == "urgent"
+    assert match2["category"] == "general"
+    expected_resp_2 = 30
+    assert match2["response_time_minutes"] == expected_resp_2
+
+    # Fallback to medium / general
+    match3 = db_utils.get_matching_sla_policy("medium", "random")
+    assert match3 is not None
+    assert match3["priority"] == "medium"
+    assert match3["category"] == "general"
+
+
+def test_list_and_update_and_delete_sla_policy(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    p_id = db_utils.create_sla_policy(
+        name="Escrow Review SLA",
+        priority="low",
+        category="escrow",
+        response_time_minutes=720,
+        resolution_time_minutes=1440,
+    )
+
+    filtered = db_utils.list_sla_policies(category="escrow")
+    assert len(filtered) == 1
+    assert filtered[0]["id"] == p_id
+
+    # Update
+    updated_resp = 600
+    updated_resol = 1200
+    updated = db_utils.update_sla_policy(
+        p_id,
+        name="Escrow Rapid Review",
+        response_time_minutes=updated_resp,
+        resolution_time_minutes=updated_resol,
+        is_active=0,
+    )
+    assert updated is True
+
+    pol = db_utils.get_sla_policy(p_id)
+    assert pol is not None
+    assert pol["name"] == "Escrow Rapid Review"
+    assert pol["response_time_minutes"] == updated_resp
+    assert pol["is_active"] == 0
+
+    # Active only filter excludes it
+    assert len(db_utils.list_sla_policies(category="escrow", active_only=True)) == 0
+
+    # Non-existent update
+    assert db_utils.update_sla_policy(99999, name="Nope") is False
+
+    # Delete
+    assert db_utils.delete_sla_policy(p_id) is True
+    assert db_utils.get_sla_policy(p_id) is None
+    assert db_utils.delete_sla_policy(p_id) is False
+
+
+def test_get_session_timestamps(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Empty session
+    empty_ts = db_utils.get_session_timestamps("empty-session")
+    assert empty_ts["session_start"] is None
+    assert empty_ts["first_response_at"] is None
+    assert empty_ts["total_turns"] == 0
+
+    # Multi-turn session
+    s_id = "sess-ts-1"
+    db_utils.insert_application_logs(s_id, "Q1", "A1", "gpt-4o")
+    db_utils.insert_application_logs(s_id, "Q2", "A2", "gpt-4o")
+
+    ts = db_utils.get_session_timestamps(s_id)
+    assert ts["session_start"] is not None
+    assert ts["first_response_at"] is not None
+    assert ts["last_activity"] is not None
+    expected_turns = 2
+    assert ts["total_turns"] == expected_turns

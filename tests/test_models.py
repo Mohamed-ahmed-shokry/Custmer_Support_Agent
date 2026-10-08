@@ -26,8 +26,16 @@ from api.pydantic_models import (
     RechunkDocumentRequest,
     SessionInfo,
     SessionMacroSuggestionsResponse,
+    SessionSLAStatusResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
+    SLAAlertEvaluateResponse,
+    SLAAlertItem,
+    SLAComplianceAnalyticsResponse,
+    SLAPoliciesListResponse,
+    SLAPolicyCreateRequest,
+    SLAPolicyResponse,
+    SLAPolicyUpdateRequest,
     SourceInfo,
     SupportTriageAnalyticsResponse,
     TagCount,
@@ -656,5 +664,189 @@ def test_macro_suggestion_item_and_response():
     assert sess_resp.session_id == "sess-xyz"
     assert sess_resp.total_matches == 1
     assert sess_resp.suggestions[0].shortcut == "/emerg-maint"
+
+
+def test_session_priority_validation_in_models():
+    # SessionInfo default priority is medium
+    now = datetime.now()
+    sess = SessionInfo(
+        session_id="s1",
+        message_count=1,
+        last_active=now,
+    )
+    assert sess.priority == "medium"
+
+    # UpdateSessionRequest accepts valid priority
+    req = UpdateSessionRequest(priority="urgent")
+    assert req.priority == "urgent"
+
+    # UpdateSessionRequest accepts uppercase and normalizes to lowercase
+    req_upper = UpdateSessionRequest(priority="HIGH")
+    assert req_upper.priority == "high"
+
+    # Reject invalid priority
+    with pytest.raises(ValidationError):
+        UpdateSessionRequest(priority="invalid_prio")
+
+
+def test_sla_policy_create_request_validation():
+    req = SLAPolicyCreateRequest(
+        name="Urgent Lease SLA",
+        priority="urgent",
+        category="lease",
+        response_time_minutes=30,
+        resolution_time_minutes=120,
+    )
+    assert req.name == "Urgent Lease SLA"
+    assert req.priority == "urgent"
+    assert req.category == "lease"
+    expected_resp = 30
+    expected_resol = 120
+    assert req.response_time_minutes == expected_resp
+    assert req.resolution_time_minutes == expected_resol
+    assert req.is_active is True
+
+    # Empty name rejected
+    with pytest.raises(ValidationError):
+        SLAPolicyCreateRequest(
+            name="",
+            priority="urgent",
+            response_time_minutes=30,
+            resolution_time_minutes=120,
+        )
+
+    # Invalid priority rejected
+    with pytest.raises(ValidationError):
+        SLAPolicyCreateRequest(
+            name="Test",
+            priority="emergency",
+            response_time_minutes=30,
+            resolution_time_minutes=120,
+        )
+
+    # Zero or negative response time rejected
+    with pytest.raises(ValidationError):
+        SLAPolicyCreateRequest(
+            name="Test",
+            priority="urgent",
+            response_time_minutes=0,
+            resolution_time_minutes=120,
+        )
+
+    # Resolution time < response time rejected
+    with pytest.raises(ValidationError):
+        SLAPolicyCreateRequest(
+            name="Test",
+            priority="urgent",
+            response_time_minutes=120,
+            resolution_time_minutes=30,
+        )
+
+
+def test_sla_policy_update_request_validation():
+    req = SLAPolicyUpdateRequest(
+        name="Updated Name",
+        response_time_minutes=45,
+    )
+    assert req.name == "Updated Name"
+    expected_resp = 45
+    assert req.response_time_minutes == expected_resp
+
+    # Empty update raises validation error
+    with pytest.raises(ValidationError):
+        SLAPolicyUpdateRequest()
+
+    # Resolution < response raises validation error
+    with pytest.raises(ValidationError):
+        SLAPolicyUpdateRequest(response_time_minutes=100, resolution_time_minutes=50)
+
+
+def test_sla_policy_response_models():
+    pol_id = 5
+    resp = SLAPolicyResponse(
+        id=pol_id,
+        name="General SLA",
+        priority="medium",
+        category="general",
+        response_time_minutes=240,
+        resolution_time_minutes=1440,
+        is_active=True,
+        created_at="2026-10-08T00:00:00Z",
+    )
+    assert resp.id == pol_id
+    assert resp.priority == "medium"
+    assert resp.is_active is True
+
+    list_resp = SLAPoliciesListResponse(items=[resp], total=1)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+
+def test_session_sla_status_response_model():
+    status_resp = SessionSLAStatusResponse(
+        session_id="sess-sla-1",
+        priority="urgent",
+        category="maintenance",
+        status="active",
+        policy_id=1,
+        policy_name="Urgent Maintenance SLA",
+        response_target_minutes=15,
+        resolution_target_minutes=120,
+        session_started_at="2026-10-08T10:00:00Z",
+        response_due_at="2026-10-08T10:15:00Z",
+        resolution_due_at="2026-10-08T12:00:00Z",
+        response_met=False,
+        resolution_met=False,
+        response_breached=False,
+        resolution_breached=False,
+        response_approaching=True,
+        resolution_approaching=False,
+        breach_status="approaching_breach",
+        minutes_to_response_deadline=5.0,
+        minutes_to_resolution_deadline=110.0,
+    )
+    assert status_resp.session_id == "sess-sla-1"
+    assert status_resp.breach_status == "approaching_breach"
+    assert status_resp.response_approaching is True
+
+
+def test_sla_alert_and_analytics_models():
+    item = SLAAlertItem(
+        session_id="sess-alert",
+        priority="urgent",
+        category="maintenance",
+        event="sla.approaching_breach",
+        breach_type="response",
+        deadline_due_at="2026-10-08T10:15:00Z",
+        minutes_remaining=4.5,
+        webhooks_dispatched=2,
+    )
+    assert item.event == "sla.approaching_breach"
+    expected_wh = 2
+    assert item.webhooks_dispatched == expected_wh
+
+    alert_eval = SLAAlertEvaluateResponse(
+        total_sessions_checked=5,
+        alerts_triggered=1,
+        alerts=[item],
+    )
+    expected_sessions_checked = 5
+    assert alert_eval.total_sessions_checked == expected_sessions_checked
+    assert alert_eval.alerts_triggered == 1
+
+    analytics = SLAComplianceAnalyticsResponse(
+        total_tracked_sessions=10,
+        compliance_rate=90.0,
+        met_sessions=7,
+        healthy_sessions=2,
+        approaching_breach_sessions=1,
+        breached_sessions=1,
+        avg_first_response_minutes=12.5,
+        priority_breakdown={"urgent": {"total": 2, "breached": 0}},
+    )
+    expected_total_sessions = 10
+    assert analytics.total_tracked_sessions == expected_total_sessions
+    expected_rate = 90.0
+    assert analytics.compliance_rate == expected_rate
 
 

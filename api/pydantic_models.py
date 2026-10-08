@@ -233,10 +233,14 @@ class CollectionAnalyticsResponse(BaseModel):
 
 
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
+VALID_SESSION_PRIORITIES = {"urgent", "high", "medium", "low"}
+DEFAULT_SESSION_PRIORITY = "medium"
 MAX_SESSION_LABEL_LENGTH = 80
 MAX_SESSION_TAGS_LENGTH = 200
 MAX_SESSION_SUMMARY_LENGTH = 2000
 MAX_RESOLUTION_NOTES_LENGTH = 2000
+MAX_SLA_POLICY_NAME_LENGTH = 100
+MAX_SLA_CATEGORY_LENGTH = 50
 
 
 class SessionInfo(BaseModel):
@@ -249,6 +253,7 @@ class SessionInfo(BaseModel):
     tags: str = ""
     summary: str | None = None
     resolution_notes: str | None = None
+    priority: str = DEFAULT_SESSION_PRIORITY
 
 
 class SessionSearchResult(BaseModel):
@@ -260,6 +265,7 @@ class SessionSearchResult(BaseModel):
     preview: str = ""
     last_active: datetime
     matched_queries: list[str] = Field(default_factory=list)
+    priority: str = DEFAULT_SESSION_PRIORITY
 
 
 class SessionSearchResponse(BaseModel):
@@ -273,6 +279,7 @@ class UpdateSessionRequest(BaseModel):
     tags: str | list[str] | None = None
     summary: str | None = None
     resolution_notes: str | None = None
+    priority: str | None = None
 
     @field_validator("label", mode="before")
     @classmethod
@@ -333,6 +340,21 @@ class UpdateSessionRequest(BaseModel):
             return cleaned
         return v
 
+    @field_validator("priority", mode="before")
+    @classmethod
+    def validate_priority(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            if cleaned not in VALID_SESSION_PRIORITIES:
+                raise ValueError(
+                    f"Invalid session priority '{cleaned}'. "
+                    f"Must be one of: {sorted(VALID_SESSION_PRIORITIES)}."
+                )
+            return cleaned
+        return v
+
     @model_validator(mode="after")
     def check_at_least_one_field(self) -> "UpdateSessionRequest":
         if (
@@ -341,10 +363,11 @@ class UpdateSessionRequest(BaseModel):
             and self.tags is None
             and self.summary is None
             and self.resolution_notes is None
+            and self.priority is None
         ):
             raise ValueError(
-                "At least one of 'label', 'status', 'tags', 'summary', or 'resolution_notes' "
-                "must be provided."
+                "At least one of 'label', 'status', 'tags', 'summary', 'resolution_notes', "
+                "or 'priority' must be provided."
             )
         return self
 
@@ -378,6 +401,7 @@ class SupportTriageAnalyticsResponse(BaseModel):
     escalation_rate: float
     avg_turns_per_session: float
     top_tags: list[TagCount] = Field(default_factory=list)
+    priority_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class RenameSessionRequest(UpdateSessionRequest):
@@ -851,6 +875,186 @@ class SessionMacroSuggestionsResponse(BaseModel):
     extracted_variables: dict[str, str] = Field(default_factory=dict)
     suggestions: list[MacroSuggestionItem] = Field(default_factory=list)
     total_matches: int = 0
+
+
+class SLAPolicyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=MAX_SLA_POLICY_NAME_LENGTH)
+    priority: str
+    category: str = Field(default="general", max_length=MAX_SLA_CATEGORY_LENGTH)
+    response_time_minutes: int = Field(gt=0)
+    resolution_time_minutes: int = Field(gt=0)
+    is_active: bool = True
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        cleaned = v.strip() if isinstance(v, str) else ""
+        if not cleaned:
+            raise ValueError("SLA policy name must not be blank.")
+        if len(cleaned) > MAX_SLA_POLICY_NAME_LENGTH:
+            raise ValueError(
+                f"SLA policy name exceeds max length {MAX_SLA_POLICY_NAME_LENGTH}."
+            )
+        return cleaned
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def validate_priority(cls, v: str) -> str:
+        cleaned = v.strip().lower() if isinstance(v, str) else ""
+        if cleaned not in VALID_SESSION_PRIORITIES:
+            raise ValueError(
+                f"Invalid priority '{cleaned}'. Must be one of: {sorted(VALID_SESSION_PRIORITIES)}."
+            )
+        return cleaned
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str:
+        if v is None:
+            return "general"
+        cleaned = v.strip().lower() if isinstance(v, str) else "general"
+        return cleaned or "general"
+
+    @model_validator(mode="after")
+    def validate_targets(self) -> "SLAPolicyCreateRequest":
+        if self.resolution_time_minutes < self.response_time_minutes:
+            raise ValueError(
+                "resolution_time_minutes must be greater than or equal to response_time_minutes."
+            )
+        return self
+
+
+class SLAPolicyUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=MAX_SLA_POLICY_NAME_LENGTH)
+    priority: str | None = None
+    category: str | None = Field(default=None, max_length=MAX_SLA_CATEGORY_LENGTH)
+    response_time_minutes: int | None = Field(default=None, gt=0)
+    resolution_time_minutes: int | None = Field(default=None, gt=0)
+    is_active: bool | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip() if isinstance(v, str) else ""
+        if not cleaned:
+            raise ValueError("SLA policy name must not be blank.")
+        return cleaned
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def validate_priority(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower() if isinstance(v, str) else ""
+        if cleaned not in VALID_SESSION_PRIORITIES:
+            raise ValueError(
+                f"Invalid priority '{cleaned}'. Must be one of: {sorted(VALID_SESSION_PRIORITIES)}."
+            )
+        return cleaned
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower() if isinstance(v, str) else ""
+        return cleaned or "general"
+
+    @model_validator(mode="after")
+    def validate_targets(self) -> "SLAPolicyUpdateRequest":
+        if (
+            self.name is None
+            and self.priority is None
+            and self.category is None
+            and self.response_time_minutes is None
+            and self.resolution_time_minutes is None
+            and self.is_active is None
+        ):
+            raise ValueError("At least one SLA policy field must be provided for update.")
+        if (
+            self.response_time_minutes is not None
+            and self.resolution_time_minutes is not None
+            and self.resolution_time_minutes < self.response_time_minutes
+        ):
+            raise ValueError(
+                "resolution_time_minutes must be greater than or equal to response_time_minutes."
+            )
+        return self
+
+
+class SLAPolicyResponse(BaseModel):
+    id: int
+    name: str
+    priority: str
+    category: str
+    response_time_minutes: int
+    resolution_time_minutes: int
+    is_active: bool
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class SLAPoliciesListResponse(BaseModel):
+    items: list[SLAPolicyResponse] = Field(default_factory=list)
+    total: int = 0
+
+
+class SessionSLAStatusResponse(BaseModel):
+    session_id: str
+    priority: str
+    category: str
+    status: str
+    policy_id: int | None = None
+    policy_name: str | None = None
+    response_target_minutes: int
+    resolution_target_minutes: int
+    session_started_at: str | None = None
+    first_response_at: str | None = None
+    response_due_at: str | None = None
+    resolution_due_at: str | None = None
+    response_met: bool = False
+    resolution_met: bool = False
+    response_breached: bool = False
+    resolution_breached: bool = False
+    response_approaching: bool = False
+    resolution_approaching: bool = False
+    breach_status: Literal["met", "healthy", "approaching_breach", "breached"] = "healthy"
+    minutes_to_response_deadline: float | None = None
+    minutes_to_resolution_deadline: float | None = None
+
+
+class SLAAlertItem(BaseModel):
+    session_id: str
+    priority: str
+    category: str
+    event: str
+    breach_type: str
+    deadline_due_at: str | None = None
+    minutes_remaining: float | None = None
+    webhooks_dispatched: int = 0
+
+
+class SLAAlertEvaluateRequest(BaseModel):
+    approaching_threshold_minutes: int = Field(default=30, gt=0)
+
+
+class SLAAlertEvaluateResponse(BaseModel):
+    total_sessions_checked: int
+    alerts_triggered: int
+    alerts: list[SLAAlertItem] = Field(default_factory=list)
+
+
+class SLAComplianceAnalyticsResponse(BaseModel):
+    total_tracked_sessions: int
+    compliance_rate: float
+    met_sessions: int
+    healthy_sessions: int
+    approaching_breach_sessions: int
+    breached_sessions: int
+    avg_first_response_minutes: float
+    priority_breakdown: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 
