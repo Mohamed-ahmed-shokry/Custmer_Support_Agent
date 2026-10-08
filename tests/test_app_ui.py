@@ -303,9 +303,9 @@ def test_render_session_history_builds_labels(monkeypatch, session):
     sidebar._render_session_history()
 
     selectbox_calls = [c for c in st.calls if c.fn == "selectbox"]
-    EXPECTED_SELECTBOX_COUNT = 2
+    EXPECTED_SELECTBOX_COUNT = 3
     assert len(selectbox_calls) == EXPECTED_SELECTBOX_COUNT
-    # The second one is the session picker
+    # The session picker is one of the selectbox calls
     session_picker_call = next(c for c in selectbox_calls if c.args[0] == "Open a session")
     labels = session_picker_call.kwargs["format_func"]
     assert labels(session["session_id"]).endswith("msgs)")
@@ -735,6 +735,8 @@ def test_display_sidebar_complete(monkeypatch):
     monkeypatch.setattr(sidebar, "list_macros", lambda **kw: [])
     monkeypatch.setattr(sidebar, "list_webhooks", lambda: [])
     monkeypatch.setattr(sidebar, "list_webhook_deliveries", lambda **kw: {"items": [], "total": 0})
+    monkeypatch.setattr(sidebar, "get_sla_compliance_analytics", lambda: None)
+    monkeypatch.setattr(sidebar, "list_sla_policies", lambda: [])
 
     sidebar.display_sidebar()
     assert any(c.fn == "caption" for c in st.calls)
@@ -1019,6 +1021,7 @@ def test_display_sidebar_initializes_config(monkeypatch):
     monkeypatch.setattr(sidebar, "_render_support_triage_analytics", lambda: None)
     monkeypatch.setattr(sidebar, "_render_quick_responses_panel", lambda: None)
     monkeypatch.setattr(sidebar, "_render_webhook_manager", lambda: None)
+    monkeypatch.setattr(sidebar, "_render_sla_manager", lambda: None)
     monkeypatch.setattr(sidebar, "_render_ops_metrics", lambda: None)
 
     conf = {"version": "0.21.0"}
@@ -1394,8 +1397,8 @@ def test_render_session_metadata_update_action(monkeypatch):
     monkeypatch.setattr(sidebar, "st", st)
     called = []
 
-    def fake_update(session_id, status=None, tags=None, resolution_notes=None):
-        called.append((session_id, status, tags, resolution_notes))
+    def fake_update(session_id, status=None, tags=None, resolution_notes=None, priority=None):
+        called.append((session_id, status, tags, resolution_notes, priority))
         return {"session_id": session_id}
 
     monkeypatch.setattr(sidebar, "update_session", fake_update)
@@ -1404,7 +1407,7 @@ def test_render_session_metadata_update_action(monkeypatch):
     sidebar._render_session_metadata("s1", [{"session_id": "s1"}])
 
     assert len(called) == 1
-    assert called[0] == ("s1", "resolved", ["billing", "urgent"], "Refund processed.")
+    assert called[0] == ("s1", "resolved", ["billing", "urgent"], "Refund processed.", "medium")
     assert any("Session metadata updated." in s for s in st.successes)
     assert st.reruns == 1
 
@@ -1860,5 +1863,177 @@ def test_render_macro_query_tester(monkeypatch):
     assert any("Emergency Dispatch" in m for m in markdowns)
 
 
+def test_render_session_metadata_with_priority(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "session_status_sess-1": "active",
+            "session_priority_sess-1": "urgent",
+            "session_tags_sess-1": "maintenance, urgent",
+            "session_notes_sess-1": "Urgent repair needed",
+        },
+        buttons={"btn_update_meta_sess-1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
 
+    updated_args: dict[str, object] = {}
+
+    def fake_update(session_id, **kwargs):
+        updated_args.update(kwargs)
+        return True
+
+    monkeypatch.setattr(sidebar, "update_session", fake_update)
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [{"session_id": "sess-1"}])
+    monkeypatch.setattr(sidebar, "get_session_sla_status", lambda sid: None)
+
+    sessions = [
+        {
+            "session_id": "sess-1",
+            "status": "active",
+            "priority": "urgent",
+            "tags": ["maintenance"],
+        }
+    ]
+
+    sidebar._render_session_metadata("sess-1", sessions)
+
+    assert updated_args.get("priority") == "urgent"
+    expected_reruns = 1
+    assert st.reruns == expected_reruns
+
+
+def test_render_session_sla_card(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # 1. Breached session
+    breached_info = {
+        "session_id": "sess-breached",
+        "breach_status": "breached",
+        "policy_name": "Emergency Maintenance",
+        "minutes_to_response_deadline": -15.0,
+        "minutes_to_resolution_deadline": 60.0,
+        "response_met": False,
+        "resolution_met": False,
+    }
+    monkeypatch.setattr(sidebar, "get_session_sla_status", lambda sid: breached_info)
+
+    sidebar._render_session_sla_card("sess-breached")
+
+    assert any("SLA Breached" in e for e in st.errors)
+
+    # 2. Approaching breach session
+    st2 = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st2)
+    approaching_info = {
+        "session_id": "sess-approaching",
+        "breach_status": "approaching_breach",
+        "policy_name": "High Priority",
+        "minutes_to_response_deadline": 12.0,
+        "minutes_to_resolution_deadline": 180.0,
+        "response_met": False,
+        "resolution_met": False,
+    }
+    monkeypatch.setattr(sidebar, "get_session_sla_status", lambda sid: approaching_info)
+
+    sidebar._render_session_sla_card("sess-approaching")
+
+    warnings = [c.args[0] for c in st2.calls if c.fn == "warning"]
+    assert any("Approaching Breach" in w for w in warnings)
+
+
+def test_render_sla_compliance_metrics(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_analytics = {
+        "total_tracked_sessions": 20,
+        "compliance_rate": 95.0,
+        "met_sessions": 15,
+        "healthy_sessions": 4,
+        "approaching_breach_sessions": 0,
+        "breached_sessions": 1,
+    }
+    monkeypatch.setattr(sidebar, "get_sla_compliance_analytics", lambda: fake_analytics)
+
+    sidebar._render_sla_compliance_metrics()
+
+    metric_calls = [c for c in st.calls if c.fn == "metric"]
+    assert any(c.args[0] == "Compliance Rate" and c.args[1] == "95.0%" for c in metric_calls)
+    expected_breached = 1
+    assert any(c.args[0] == "Breached" and c.args[1] == expected_breached for c in metric_calls)
+
+
+def test_render_sla_alerts_trigger(monkeypatch):
+    st = FakeStreamlit(buttons={"btn_eval_sla_alerts": True})
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_result = {
+        "total_sessions_checked": 5,
+        "alerts_triggered": 2,
+    }
+    monkeypatch.setattr(sidebar, "evaluate_sla_alerts", lambda **kwargs: fake_result)
+
+    sidebar._render_sla_alerts_trigger()
+
+    warnings = [c.args[0] for c in st.calls if c.fn == "warning"]
+    assert any("Triggered 2 escalation alerts" in w for w in warnings)
+
+
+def test_render_sla_policy_list_and_delete(monkeypatch):
+    st = FakeStreamlit(buttons={"del_policy_1": True})
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_policies = [
+        {
+            "id": 1,
+            "name": "Urgent Care",
+            "priority": "urgent",
+            "category": "maintenance",
+            "response_time_minutes": 15,
+            "resolution_time_minutes": 120,
+        }
+    ]
+    deleted_ids: list[int] = []
+    monkeypatch.setattr(sidebar, "list_sla_policies", lambda: fake_policies)
+    monkeypatch.setattr(
+        sidebar, "delete_sla_policy", lambda pid: deleted_ids.append(pid) or True
+    )
+
+    sidebar._render_sla_policy_list()
+
+    expected_pid = 1
+    assert deleted_ids == [expected_pid]
+    expected_reruns = 1
+    assert st.reruns == expected_reruns
+
+
+def test_render_sla_policy_creator(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "new_sla_name": "VIP Rapid",
+            "new_sla_prio": "urgent",
+            "new_sla_cat": "vip",
+            "new_sla_resp": 20,
+            "new_sla_resol": 180,
+        },
+        buttons={"btn_create_sla_policy": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_payloads: list[dict[str, object]] = []
+
+    def fake_create(**kwargs):
+        created_payloads.append(kwargs)
+        return {"id": 10, **kwargs}
+
+    monkeypatch.setattr(sidebar, "create_sla_policy", fake_create)
+
+    sidebar._render_sla_policy_creator()
+
+    expected_count = 1
+    assert len(created_payloads) == expected_count
+    assert created_payloads[0]["name"] == "VIP Rapid"
+    expected_resp = 20
+    assert created_payloads[0]["response_time_minutes"] == expected_resp
+    assert st.reruns == expected_count
 
