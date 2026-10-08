@@ -21,7 +21,7 @@
 - [x] **Task 11**: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
 - [x] **Task 12**: Streamlit UI unit tests in `tests/test_app_ui.py`
 - [x] **Task 13**: Documentation updates in `docs/API.md` and `README.md`
-- [ ] **Task 14**: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
+- [x] **Task 14**: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
 - [ ] **Task 15**: Final verification, progress record completion, and review audit
 
 ---
