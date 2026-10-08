@@ -69,8 +69,38 @@ _CREATE_SESSION_LABELS_TABLE = (
     "status TEXT NOT NULL DEFAULT 'active', "
     "tags TEXT NOT NULL DEFAULT '', "
     "summary TEXT DEFAULT '', "
-    "resolution_notes TEXT DEFAULT '')"
+    "resolution_notes TEXT DEFAULT '', "
+    "priority TEXT NOT NULL DEFAULT 'medium')"
 )
+
+_CREATE_SLA_POLICIES_TABLE = (
+    "CREATE TABLE IF NOT EXISTS sla_policies ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "name TEXT NOT NULL, "
+    "priority TEXT NOT NULL, "
+    "category TEXT NOT NULL DEFAULT 'general', "
+    "response_time_minutes INTEGER NOT NULL, "
+    "resolution_time_minutes INTEGER NOT NULL, "
+    "is_active INTEGER NOT NULL DEFAULT 1, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_SLA_POLICY_INDEX = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_sla_policies_prio_cat "
+    "ON sla_policies(priority, category)"
+)
+
+_INSERT_SLA_POLICY = (
+    "INSERT INTO sla_policies "
+    "(name, priority, category, response_time_minutes, resolution_time_minutes, is_active) "
+    "VALUES (?, ?, ?, ?, ?, ?)"
+)
+_SELECT_SLA_POLICY_BY_ID = (
+    "SELECT id, name, priority, category, response_time_minutes, "
+    "resolution_time_minutes, is_active, created_at, updated_at "
+    "FROM sla_policies WHERE id = ?"
+)
+_DELETE_SLA_POLICY = "DELETE FROM sla_policies WHERE id = ?"
 
 _CREATE_FEEDBACK_TABLE = (
     "CREATE TABLE IF NOT EXISTS feedback "
@@ -178,6 +208,8 @@ VALID_WEBHOOK_EVENTS = {
     "session.resolved",
     "feedback.negative",
     "ping",
+    "sla.approaching_breach",
+    "sla.breached",
 }
 MAX_WEBHOOK_URL_LENGTH = 500
 MAX_WEBHOOK_SECRET_LENGTH = 256
@@ -186,9 +218,23 @@ MAX_DELIVERY_ERROR_LENGTH = 500
 
 MAX_SESSION_LABEL_LENGTH = 80
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
+VALID_SESSION_PRIORITIES = {"urgent", "high", "medium", "low"}
+DEFAULT_SESSION_PRIORITY = "medium"
 MAX_SESSION_TAGS_LENGTH = 200
 MAX_SESSION_SUMMARY_LENGTH = 2000
 MAX_RESOLUTION_NOTES_LENGTH = 2000
+
+MAX_SLA_POLICY_NAME_LENGTH = 100
+MAX_SLA_CATEGORY_LENGTH = 50
+
+DEFAULT_SLA_POLICIES = [
+    ("Urgent Maintenance SLA", "urgent", "maintenance", 15, 120, 1),
+    ("Urgent General SLA", "urgent", "general", 30, 240, 1),
+    ("High Maintenance SLA", "high", "maintenance", 60, 480, 1),
+    ("High General SLA", "high", "general", 120, 720, 1),
+    ("Medium General SLA", "medium", "general", 240, 1440, 1),
+    ("Low General SLA", "low", "general", 1440, 2880, 1),
+]
 
 _INSERT_APP_LOG = (
     "INSERT INTO application_logs (session_id, user_query, gpt_response, model) VALUES (?, ?, ?, ?)"
@@ -241,7 +287,10 @@ _SELECT_ALL_SESSIONS_BASE = (
     ") AS summary, "
     "COALESCE("
     "(SELECT resolution_notes FROM session_labels WHERE session_id = l1.session_id), ''"
-    ") AS resolution_notes "
+    ") AS resolution_notes, "
+    "COALESCE("
+    "(SELECT priority FROM session_labels WHERE session_id = l1.session_id), 'medium'"
+    ") AS priority "
     "FROM application_logs l1 GROUP BY l1.session_id"
 )
 _SELECT_ALL_SESSIONS = _SELECT_ALL_SESSIONS_BASE + " ORDER BY last_active DESC"
@@ -261,7 +310,10 @@ _SEARCH_SESSIONS = (
     ") AS summary, "
     "COALESCE("
     "(SELECT resolution_notes FROM session_labels WHERE session_id = l1.session_id), ''"
-    ") AS resolution_notes "
+    ") AS resolution_notes, "
+    "COALESCE("
+    "(SELECT priority FROM session_labels WHERE session_id = l1.session_id), 'medium'"
+    ") AS priority "
     "FROM application_logs l1 "
     "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
     "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
@@ -339,6 +391,19 @@ def normalize_resolution_notes(value: str | None) -> str:
             f"Resolution notes must be at most {MAX_RESOLUTION_NOTES_LENGTH} characters."
         )
     return cleaned
+
+
+def normalize_session_priority(value: str | None) -> str:
+    """Validate a session priority, defaulting to 'medium' or raising ValueError if invalid."""
+    if value is None:
+        return DEFAULT_SESSION_PRIORITY
+    clean = str(value).strip().lower()
+    if not clean:
+        return DEFAULT_SESSION_PRIORITY
+    if clean not in VALID_SESSION_PRIORITIES:
+        valid_opts = sorted(VALID_SESSION_PRIORITIES)
+        raise ValueError(f"Invalid session priority '{value}'. Must be one of: {valid_opts}.")
+    return clean
 
 
 def normalize_webhook_url(value: str | None) -> str:
@@ -959,7 +1024,7 @@ def get_feedback_analytics(recent_comments_limit: int = 5) -> dict:
 
 
 def migrate_session_labels():
-    """Add newer columns (status, tags, summary, notes) to session_labels if missing."""
+    """Add newer columns (status, tags, summary, notes, priority) to session_labels if missing."""
     with closing(get_db_connection()) as conn:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(session_labels)")]
         if "status" not in columns:
@@ -972,6 +1037,10 @@ def migrate_session_labels():
             conn.execute("ALTER TABLE session_labels ADD COLUMN summary TEXT DEFAULT ''")
         if "resolution_notes" not in columns:
             conn.execute("ALTER TABLE session_labels ADD COLUMN resolution_notes TEXT DEFAULT ''")
+        if "priority" not in columns:
+            conn.execute(
+                "ALTER TABLE session_labels ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'"
+            )
         conn.commit()
 
 
@@ -982,8 +1051,9 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
     tags: str | list[str] | None = None,
     summary: str | None = None,
     resolution_notes: str | None = None,
+    priority: str | None = None,
 ) -> bool:
-    """Update metadata (label, status, tags, summary, notes) for a session with history."""
+    """Update metadata (label, status, tags, summary, notes, priority) for a session."""
     clean_label = normalize_session_label(label) if label is not None else None
     clean_status = normalize_session_status(status) if status is not None else None
     clean_tags = normalize_session_tags(tags) if tags is not None else None
@@ -991,6 +1061,7 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
     clean_notes = (
         normalize_resolution_notes(resolution_notes) if resolution_notes is not None else None
     )
+    clean_priority = normalize_session_priority(priority) if priority is not None else None
 
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
@@ -998,7 +1069,7 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             return False
 
         cur = conn.execute(
-            "SELECT label, status, tags, summary, resolution_notes FROM session_labels "
+            "SELECT label, status, tags, summary, resolution_notes, priority FROM session_labels "
             "WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -1008,11 +1079,20 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_tags = clean_tags or ""
             new_summary = clean_summary or ""
             new_notes = clean_notes or ""
+            new_priority = clean_priority or DEFAULT_SESSION_PRIORITY
             conn.execute(
                 "INSERT INTO session_labels "
-                "(session_id, label, status, tags, summary, resolution_notes) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (session_id, new_label, new_status, new_tags, new_summary, new_notes),
+                "(session_id, label, status, tags, summary, resolution_notes, priority) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    new_label,
+                    new_status,
+                    new_tags,
+                    new_summary,
+                    new_notes,
+                    new_priority,
+                ),
             )
         else:
             new_label = clean_label if clean_label is not None else cur["label"]
@@ -1020,24 +1100,26 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_tags = clean_tags if clean_tags is not None else cur["tags"]
             new_summary = clean_summary if clean_summary is not None else (cur["summary"] or "")
             new_notes = clean_notes if clean_notes is not None else (cur["resolution_notes"] or "")
+            cur_prio = cur["priority"] if cur["priority"] else DEFAULT_SESSION_PRIORITY
+            new_priority = clean_priority if clean_priority is not None else cur_prio
             conn.execute(
                 "UPDATE session_labels "
-                "SET label = ?, status = ?, tags = ?, summary = ?, resolution_notes = ? "
-                "WHERE session_id = ?",
-                (new_label, new_status, new_tags, new_summary, new_notes, session_id),
+                "SET label = ?, status = ?, tags = ?, summary = ?, resolution_notes = ?, "
+                "priority = ? WHERE session_id = ?",
+                (new_label, new_status, new_tags, new_summary, new_notes, new_priority, session_id),
             )
         conn.commit()
         return True
 
 
 def get_session_metadata(session_id: str) -> dict | None:
-    """Fetch label, status, tags, summary, and notes for a session, or None if unknown."""
+    """Fetch label, status, tags, summary, notes, and priority for a session, or None if unknown."""
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
         if not exists:
             return None
         row = conn.execute(
-            "SELECT label, status, tags, summary, resolution_notes FROM session_labels "
+            "SELECT label, status, tags, summary, resolution_notes, priority FROM session_labels "
             "WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -1049,7 +1131,9 @@ def get_session_metadata(session_id: str) -> dict | None:
                 "tags": "",
                 "summary": "",
                 "resolution_notes": "",
+                "priority": DEFAULT_SESSION_PRIORITY,
             }
+        prio_val = row["priority"] if row["priority"] else DEFAULT_SESSION_PRIORITY
         return {
             "session_id": session_id,
             "label": row["label"] if row["label"] else None,
@@ -1057,6 +1141,7 @@ def get_session_metadata(session_id: str) -> dict | None:
             "tags": row["tags"] if row["tags"] else "",
             "summary": row["summary"] if row["summary"] else "",
             "resolution_notes": row["resolution_notes"] if row["resolution_notes"] else "",
+            "priority": prio_val,
         }
 
 
@@ -1651,6 +1736,269 @@ def delete_macro(macro_id: int) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+def get_session_timestamps(session_id: str) -> dict:
+    """Return session start, first response, latest turn time, and turn counts."""
+    with closing(get_db_connection()) as conn:
+        query = (
+            "SELECT MIN(created_at) AS session_start, "
+            "MIN(CASE WHEN gpt_response IS NOT NULL AND TRIM(gpt_response) != '' "
+            "THEN created_at END) AS first_response_at, "
+            "MAX(created_at) AS last_activity, "
+            "COUNT(*) AS total_turns "
+            "FROM application_logs WHERE session_id = ?"
+        )
+        row = conn.execute(query, (session_id,)).fetchone()
+        if not row or not row["session_start"]:
+            return {
+                "session_start": None,
+                "first_response_at": None,
+                "last_activity": None,
+                "total_turns": 0,
+            }
+        return {
+            "session_start": row["session_start"],
+            "first_response_at": row["first_response_at"],
+            "last_activity": row["last_activity"],
+            "total_turns": row["total_turns"],
+        }
+
+
+def create_sla_policies():
+    """Create sla_policies table, unique index, and seed defaults if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_SLA_POLICIES_TABLE)
+        conn.execute(_CREATE_SLA_POLICY_INDEX)
+        count = conn.execute("SELECT COUNT(*) FROM sla_policies").fetchone()[0]
+        if count == 0:
+            for name, prio, cat, resp, resol, act in DEFAULT_SLA_POLICIES:
+                conn.execute(_INSERT_SLA_POLICY, (name, prio, cat, resp, resol, act))
+        conn.commit()
+
+
+def create_sla_policy(  # noqa: PLR0913, PLR0917
+    name: str,
+    priority: str,
+    category: str = "general",
+    response_time_minutes: int = 60,
+    resolution_time_minutes: int = 480,
+    is_active: int = 1,
+) -> int:
+    """Create a new SLA policy."""
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValueError("SLA policy name must not be blank.")
+    if len(clean_name) > MAX_SLA_POLICY_NAME_LENGTH:
+        raise ValueError(f"SLA policy name exceeds max length {MAX_SLA_POLICY_NAME_LENGTH}.")
+
+    clean_prio = normalize_session_priority(priority)
+    clean_cat = (category or "general").strip().lower()
+    if not clean_cat:
+        clean_cat = "general"
+    if len(clean_cat) > MAX_SLA_CATEGORY_LENGTH:
+        raise ValueError(f"SLA category exceeds max length {MAX_SLA_CATEGORY_LENGTH}.")
+
+    if response_time_minutes <= 0:
+        raise ValueError("response_time_minutes must be greater than zero.")
+    if resolution_time_minutes < response_time_minutes:
+        raise ValueError(
+            "resolution_time_minutes must be greater than or equal to response_time_minutes."
+        )
+
+    clean_active = 1 if is_active else 0
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _INSERT_SLA_POLICY,
+            (
+                clean_name,
+                clean_prio,
+                clean_cat,
+                response_time_minutes,
+                resolution_time_minutes,
+                clean_active,
+            ),
+        )
+        policy_id = cursor.lastrowid
+        conn.commit()
+        return int(policy_id or 0)
+
+
+def get_sla_policy(policy_id: int) -> dict | None:
+    """Fetch SLA policy by primary key ID, or None if not found."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(_SELECT_SLA_POLICY_BY_ID, (policy_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_matching_sla_policy(priority: str, category: str = "general") -> dict | None:
+    """Find the best active SLA policy matching priority and category with graceful fallbacks."""
+    clean_prio = normalize_session_priority(priority)
+    clean_cat = (category or "general").strip().lower()
+
+    with closing(get_db_connection()) as conn:
+        # 1. Exact priority & category match
+        q1 = (
+            "SELECT * FROM sla_policies "
+            "WHERE priority = ? AND category = ? AND is_active = 1 LIMIT 1"
+        )
+        row = conn.execute(q1, (clean_prio, clean_cat)).fetchone()
+        if row:
+            return dict(row)
+
+        # 2. Priority & 'general' fallback
+        q2 = (
+            "SELECT * FROM sla_policies "
+            "WHERE priority = ? AND category = 'general' AND is_active = 1 LIMIT 1"
+        )
+        row = conn.execute(q2, (clean_prio,)).fetchone()
+        if row:
+            return dict(row)
+
+        # 3. Any active policy with this priority
+        q3 = (
+            "SELECT * FROM sla_policies "
+            "WHERE priority = ? AND is_active = 1 ORDER BY id ASC LIMIT 1"
+        )
+        row = conn.execute(q3, (clean_prio,)).fetchone()
+        if row:
+            return dict(row)
+
+        # 4. Fallback to active 'medium' / 'general' or any active policy
+        q4 = (
+            "SELECT * FROM sla_policies "
+            "WHERE priority = 'medium' AND category = 'general' AND is_active = 1 LIMIT 1"
+        )
+        row = conn.execute(q4).fetchone()
+        if row:
+            return dict(row)
+
+        row = conn.execute("SELECT * FROM sla_policies WHERE is_active = 1 LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+
+def list_sla_policies(
+    priority: str | None = None,
+    category: str | None = None,
+    active_only: bool = False,
+) -> list[dict]:
+    """List SLA policies with optional priority, category, and active filters."""
+    query = (
+        "SELECT id, name, priority, category, response_time_minutes, "
+        "resolution_time_minutes, is_active, created_at, updated_at "
+        "FROM sla_policies"
+    )
+    clauses = []
+    params: list[object] = []
+
+    if priority:
+        clean_prio = normalize_session_priority(priority)
+        clauses.append("priority = ?")
+        params.append(clean_prio)
+
+    if category:
+        clean_cat = category.strip().lower()
+        clauses.append("category = ?")
+        params.append(clean_cat)
+
+    if active_only:
+        clauses.append("is_active = 1")
+
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+
+    query += (
+        " ORDER BY CASE priority "
+        "WHEN 'urgent' THEN 1 "
+        "WHEN 'high' THEN 2 "
+        "WHEN 'medium' THEN 3 "
+        "WHEN 'low' THEN 4 ELSE 5 END, id ASC"
+    )
+
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_sla_policy(  # noqa: PLR0912, PLR0913, PLR0917
+    policy_id: int,
+    name: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    response_time_minutes: int | None = None,
+    resolution_time_minutes: int | None = None,
+    is_active: int | None = None,
+) -> bool:
+    """Update an existing SLA policy; returns True if updated, False if not found."""
+    current = get_sla_policy(policy_id)
+    if current is None:
+        return False
+
+    new_name = current["name"]
+    if name is not None:
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("SLA policy name must not be blank.")
+        if len(clean_name) > MAX_SLA_POLICY_NAME_LENGTH:
+            raise ValueError(f"SLA policy name exceeds max length {MAX_SLA_POLICY_NAME_LENGTH}.")
+        new_name = clean_name
+
+    new_priority = current["priority"]
+    if priority is not None:
+        new_priority = normalize_session_priority(priority)
+
+    new_category = current["category"]
+    if category is not None:
+        clean_cat = category.strip().lower()
+        if not clean_cat:
+            clean_cat = "general"
+        if len(clean_cat) > MAX_SLA_CATEGORY_LENGTH:
+            raise ValueError(f"SLA category exceeds max length {MAX_SLA_CATEGORY_LENGTH}.")
+        new_category = clean_cat
+
+    new_resp = current["response_time_minutes"]
+    if response_time_minutes is not None:
+        if response_time_minutes <= 0:
+            raise ValueError("response_time_minutes must be greater than zero.")
+        new_resp = response_time_minutes
+
+    new_resol = current["resolution_time_minutes"]
+    if resolution_time_minutes is not None:
+        if resolution_time_minutes <= 0:
+            raise ValueError("resolution_time_minutes must be greater than zero.")
+        new_resol = resolution_time_minutes
+
+    if new_resol < new_resp:
+        raise ValueError(
+            "resolution_time_minutes must be greater than or equal to response_time_minutes."
+        )
+
+    new_active = current["is_active"]
+    if is_active is not None:
+        new_active = 1 if is_active else 0
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE sla_policies "
+            "SET name = ?, priority = ?, category = ?, response_time_minutes = ?, "
+            "resolution_time_minutes = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            (new_name, new_priority, new_category, new_resp, new_resol, new_active, policy_id),
+        )
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def delete_sla_policy(policy_id: int) -> bool:
+    """Delete an SLA policy by ID; returns True if deleted, False if not found."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_DELETE_SLA_POLICY, (policy_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -1661,5 +2009,6 @@ create_feedback()
 migrate_feedback()
 create_webhooks()
 create_support_macros()
+create_sla_policies()
 
 
