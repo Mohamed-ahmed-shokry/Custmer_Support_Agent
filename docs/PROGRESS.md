@@ -9,8 +9,8 @@
 ## 1. Task Breakdown & Execution Status
 
 - [x] **Task 1**: `ROADMAP.md` v0.31.0 plan specification and `docs/PROGRESS.md` record initialization
-- [ ] **Task 2**: Database schema migration, `sla_policies` table & CRUD, and priority support in `api/db_utils.py`
-- [ ] **Task 3**: Unit tests for database priority migration and SLA policy CRUD in `tests/test_db_utils.py`
+- [x] **Task 2**: Database schema migration, `sla_policies` table & CRUD, and priority support in `api/db_utils.py`
+- [x] **Task 3**: Unit tests for database priority migration and SLA policy CRUD in `tests/test_db_utils.py`
 - [ ] **Task 4**: Pydantic schemas in `api/pydantic_models.py`
 - [ ] **Task 5**: Unit tests for SLA Pydantic models in `tests/test_models.py`
 - [ ] **Task 6**: Core SLA calculation, breach detection, alert dispatching, and compliance analytics engine in `api/sla.py`
@@ -30,8 +30,8 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `sla_policies` table exists, auto-seeds default real estate policies on init, and supports CRUD with `(priority, category)` resolution | PENDING | Pending Task 2 & 3 |
-| AC2 | `session_labels` table migrates to include `priority TEXT NOT NULL DEFAULT 'medium'` column with validation for `urgent`, `high`, `medium`, `low` | PENDING | Pending Task 2 & 3 |
+| AC1 | `sla_policies` table exists, auto-seeds default real estate policies on init, and supports CRUD with `(priority, category)` resolution | VERIFIED | `tests/test_db_utils.py::test_create_sla_policies_seeds_defaults`, `test_create_and_get_sla_policy`, `test_get_matching_sla_policy_with_fallbacks`, `test_list_and_update_and_delete_sla_policy` |
+| AC2 | `session_labels` table migrates to include `priority TEXT NOT NULL DEFAULT 'medium'` column with validation for `urgent`, `high`, `medium`, `low` | VERIFIED | `tests/test_db_utils.py::test_migrate_session_labels_adds_priority_column`, `test_normalize_session_priority`, `test_update_and_get_session_metadata_with_priority` |
 | AC3 | `calculate_session_sla_status()` matches best policy, calculates `response_due_at`, `resolution_due_at`, evaluates met/breached/approaching status based on message timestamps and session lifecycle status | PENDING | Pending Task 6 & 7 |
 | AC4 | Webhook events `sla.approaching_breach` and `sla.breached` are recognized and dispatched to registered webhooks when alerts are evaluated | PENDING | Pending Task 2, 6 & 8 |
 | AC5 | FastAPI endpoints `/sla/policies`, `/sessions/{session_id}/sla`, `/sla/evaluate-alerts`, and `/sla/analytics` are functional and schema-validated | PENDING | Pending Task 8 & 9 |
