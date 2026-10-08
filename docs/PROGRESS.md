@@ -20,7 +20,7 @@
 - [x] **Task 10**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
 - [x] **Task 11**: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
 - [x] **Task 12**: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [ ] **Task 13**: Documentation updates in `docs/API.md` and `README.md`
+- [x] **Task 13**: Documentation updates in `docs/API.md` and `README.md`
 - [ ] **Task 14**: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
 - [ ] **Task 15**: Final verification, progress record completion, and review audit
 
