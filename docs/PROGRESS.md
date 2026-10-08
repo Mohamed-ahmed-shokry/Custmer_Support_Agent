@@ -18,8 +18,8 @@
 - [x] **Task 8**: FastAPI routes in `api/main.py` and session priority update handling
 - [x] **Task 9**: Integration and endpoint tests for FastAPI SLA routes in `tests/test_api_routes.py`
 - [x] **Task 10**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
-- [ ] **Task 11**: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
-- [ ] **Task 12**: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [x] **Task 11**: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
+- [x] **Task 12**: Streamlit UI unit tests in `tests/test_app_ui.py`
 - [ ] **Task 13**: Documentation updates in `docs/API.md` and `README.md`
 - [ ] **Task 14**: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
 - [ ] **Task 15**: Final verification, progress record completion, and review audit
@@ -36,7 +36,7 @@
 | AC4 | Webhook events `sla.approaching_breach` and `sla.breached` are recognized and dispatched to registered webhooks when alerts are evaluated | VERIFIED | `tests/test_sla.py::test_evaluate_and_dispatch_sla_alerts` |
 | AC5 | FastAPI endpoints `/sla/policies`, `/sessions/{session_id}/sla`, `/sla/evaluate-alerts`, and `/sla/analytics` are functional and schema-validated | VERIFIED | `tests/test_api_routes.py::test_sla_policies_crud_routes`, `test_session_priority_update_route`, `test_session_sla_route`, `test_evaluate_sla_alerts_route`, `test_sla_analytics_route` |
 | AC6 | Client helpers in `app/api_utils.py` provide reliable access with authentication and error handling | VERIFIED | `tests/test_app_api_utils.py::test_list_sla_policies`, `test_create_sla_policy`, `test_get_and_delete_sla_policy`, `test_update_sla_policy`, `test_get_session_sla_status`, `test_evaluate_sla_alerts`, `test_get_sla_compliance_analytics`, `test_update_session_with_priority` |
-| AC7 | Streamlit UI displays priority badges, active session SLA countdown card, and SLA Policies & Compliance analytics panel | PENDING | Pending Task 11 & 12 |
+| AC7 | Streamlit UI displays priority badges, active session SLA countdown card, and SLA Policies & Compliance analytics panel | VERIFIED | `tests/test_app_ui.py::test_render_session_metadata_with_priority`, `test_render_session_sla_card`, `test_render_sla_compliance_metrics`, `test_render_sla_alerts_trigger`, `test_render_sla_policy_list_and_delete`, `test_render_sla_policy_creator` |
 | AC8 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | PENDING | Pending Task 15 |
 
 ---
