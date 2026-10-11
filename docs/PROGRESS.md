@@ -11,8 +11,8 @@
 - [x] **Task 1**: `ROADMAP.md` v0.32.0 plan specification and `docs/PROGRESS.md` initialization
 - [x] **Task 2**: Database schema migration, `support_agents` CRUD, `session_assignment_history` in `api/db_utils.py`
 - [x] **Task 3**: Unit tests for database agent CRUD, assignment history, and migrations in `tests/test_db_utils.py`
-- [ ] **Task 4**: Operating business hours engine in `api/business_hours.py`
-- [ ] **Task 5**: Unit tests for business hours calculation in `tests/test_business_hours.py`
+- [x] **Task 4**: Operating business hours engine in `api/business_hours.py`
+- [x] **Task 5**: Unit tests for business hours calculation in `tests/test_business_hours.py`
 - [ ] **Task 6**: Pydantic schemas in `api/pydantic_models.py`
 - [ ] **Task 7**: Unit tests for new Pydantic models in `tests/test_models.py`
 - [ ] **Task 8**: Core assignment, tiered routing, workload analytics, and SLA business hours integration in `api/assignment.py` and `api/sla.py`
@@ -36,7 +36,7 @@
 | AC2 | `session_labels` table migrates to include `assigned_agent TEXT DEFAULT NULL` and `escalation_tier TEXT NOT NULL DEFAULT 'tier_1'` with validation for `tier_1`, `tier_2`, `tier_3` | VERIFIED | `tests/test_db_utils.py::test_migrate_session_labels_adds_agent_and_tier`, `test_update_and_get_session_metadata_agent_and_tier`, `test_get_all_sessions_agent_and_tier_filtering` |
 | AC3 | `session_assignment_history` table records audit log transitions for agent and tier re-assignments with timestamps, actors, and reasons | VERIFIED | `tests/test_db_utils.py::test_session_assignment_history` |
 | AC4 | `api/assignment.py` supports manual assignment and least-busy auto-assignment with webhook notifications (`session.assigned`, `session.tier_escalated`) | PENDING | Pending Task 8 & 9 |
-| AC5 | `api/business_hours.py` accurately evaluates business hours status and advances deadlines across nights and weekends for business-hours SLA policies | PENDING | Pending Task 4 & 5 |
+| AC5 | `api/business_hours.py` accurately evaluates business hours status and advances deadlines across nights and weekends for business-hours SLA policies | VERIFIED | `tests/test_business_hours.py::test_is_within_business_hours_standard_weekday`, `test_is_within_business_hours_weekend`, `test_get_next_business_window_start`, `test_add_business_minutes_same_day`, `test_add_business_minutes_crosses_evening_and_weekend`, `test_calculate_business_minutes_between`, `test_get_business_hours_status`, `test_custom_schedule_support` |
 | AC6 | FastAPI endpoints `/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`, and `/business-hours/status` are functional and schema-validated | PENDING | Pending Task 10 & 11 |
 | AC7 | Client helpers in `app/api_utils.py` provide typed API methods with error handling | PENDING | Pending Task 12 |
 | AC8 | Streamlit UI displays operating hours indicator, assignee/tier controls, auto-assign action, queue filters, and team workload panel | PENDING | Pending Task 13 & 14 |
