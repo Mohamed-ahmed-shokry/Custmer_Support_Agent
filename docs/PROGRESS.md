@@ -17,8 +17,8 @@
 - [x] **Task 7**: Unit tests for new Pydantic models in `tests/test_models.py`
 - [x] **Task 8**: Core assignment, tiered routing, workload analytics, and SLA business hours integration in `api/assignment.py` and `api/sla.py`
 - [x] **Task 9**: Unit tests for assignment and workload engine in `tests/test_assignment.py`
-- [ ] **Task 10**: FastAPI routes in `api/main.py`
-- [ ] **Task 11**: Integration and endpoint tests for FastAPI agent and assignment routes in `tests/test_api_routes.py`
+- [x] **Task 10**: FastAPI routes in `api/main.py`
+- [x] **Task 11**: Integration and endpoint tests for FastAPI agent and assignment routes in `tests/test_api_routes.py`
 - [ ] **Task 12**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
 - [ ] **Task 13**: Streamlit UI assignee/tier controls, auto-assign button, queue filters, and workload panel in `app/sidebar.py`
 - [ ] **Task 14**: Streamlit UI unit tests in `tests/test_app_ui.py`
