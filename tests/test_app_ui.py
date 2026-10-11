@@ -2037,3 +2037,221 @@ def test_render_sla_policy_creator(monkeypatch):
     assert created_payloads[0]["response_time_minutes"] == expected_resp
     assert st.reruns == expected_count
 
+
+# --- v0.32.0 Support Agents, Assignment & Business Hours UI tests ---------
+
+
+def test_render_health_status_with_business_hours(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.32.0"})
+    monkeypatch.setattr(
+        sidebar,
+        "get_business_hours_status",
+        lambda: {
+            "is_open": True,
+            "current_time": "2026-10-12T10:00:00",
+            "timezone": "UTC",
+        },
+    )
+
+    sidebar._render_health_status()
+    assert any("Support Hours:" in str(call.args) for call in st.calls)
+
+
+def test_render_health_status_after_hours(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_health", lambda: {"status": "ok", "version": "0.32.0"})
+    monkeypatch.setattr(
+        sidebar,
+        "get_business_hours_status",
+        lambda: {
+            "is_open": False,
+            "next_open_at": "2026-10-12T09:00:00",
+            "timezone": "UTC",
+        },
+    )
+
+    sidebar._render_health_status()
+    assert any("Closed / After-Hours" in str(call.args) for call in st.calls)
+
+
+def test_filter_sessions_queue_view(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "session_queue_filter": "Unassigned only",
+            "session_status_filter": "All statuses",
+            "session_priority_filter": "All priorities",
+            "session_search_query": "",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    sessions = [
+        {"session_id": "s1", "assigned_agent": "agent_sarah", "escalation_tier": "tier_1"},
+        {"session_id": "s2", "assigned_agent": None, "escalation_tier": "tier_1"},
+        {"session_id": "s3", "assigned_agent": None, "escalation_tier": "tier_2"},
+    ]
+
+    filtered = sidebar._filter_sessions(sessions)
+    expected_unassigned = 2
+    assert len(filtered) == expected_unassigned
+    assert all(s["assigned_agent"] is None for s in filtered)
+
+    # Test escalated queue filter
+    st.values["session_queue_filter"] = "Escalated only (Tier 2/3)"
+    filtered_escalated = sidebar._filter_sessions(sessions)
+    expected_escalated = 1
+    assert len(filtered_escalated) == expected_escalated
+    assert filtered_escalated[0]["session_id"] == "s3"
+
+
+def test_render_session_assignment_controls_manual(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "assign_agent_select_sess_1": "agent_david",
+            "escalation_tier_select_sess_1": "tier_2",
+        },
+        buttons={"btn_manual_assign_sess_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_agents = [
+        {
+            "agent_id": "agent_david",
+            "name": "David Kim",
+            "tier": "tier_2",
+            "department": "maintenance",
+        }
+    ]
+    monkeypatch.setattr(sidebar, "list_support_agents", lambda: fake_agents)
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
+    assigned_calls: list[dict[str, object]] = []
+
+    def fake_assign(sid, **kwargs):
+        assigned_calls.append({"sid": sid, **kwargs})
+        return {"session_id": sid, "assigned_agent": kwargs.get("agent_id")}
+
+    monkeypatch.setattr(sidebar, "assign_session", fake_assign)
+
+    current_sess = {
+        "session_id": "sess_1",
+        "assigned_agent": None,
+        "escalation_tier": "tier_1",
+    }
+    sidebar._render_session_assignment_controls("sess_1", current_sess)
+
+    assert len(assigned_calls) == 1
+    assert assigned_calls[0]["agent_id"] == "agent_david"
+    assert assigned_calls[0]["tier"] == "tier_2"
+    assert st.reruns == 1
+
+
+def test_render_session_assignment_controls_auto(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "assign_agent_select_sess_1": "(Unassigned)",
+            "escalation_tier_select_sess_1": "tier_1",
+        },
+        buttons={"btn_auto_assign_sess_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(sidebar, "list_support_agents", lambda: [])
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: [])
+    auto_calls: list[dict[str, object]] = []
+
+    def fake_auto_assign(sid, **kwargs):
+        auto_calls.append({"sid": sid, **kwargs})
+        return {
+            "session_id": sid,
+            "assigned_agent": "agent_sarah",
+            "escalation_tier": "tier_1",
+        }
+
+    monkeypatch.setattr(sidebar, "auto_assign_session", fake_auto_assign)
+
+    current_sess = {"session_id": "sess_1", "assigned_agent": None}
+    sidebar._render_session_assignment_controls("sess_1", current_sess)
+
+    assert len(auto_calls) == 1
+    assert auto_calls[0]["target_tier"] == "tier_1"
+    assert st.reruns == 1
+
+
+def test_render_session_assignment_history(monkeypatch):
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+
+    fake_history = [
+        {
+            "id": 1,
+            "session_id": "s1",
+            "from_agent_id": None,
+            "to_agent_id": "agent_sarah",
+            "escalation_tier": "tier_1",
+            "assigned_by": "dispatcher",
+            "reason": "initial triage",
+            "assigned_at": "2026-10-12T10:00:00",
+        }
+    ]
+    monkeypatch.setattr(
+        sidebar, "get_session_assignment_history", lambda sid: fake_history
+    )
+
+    sidebar._render_session_assignment_history("s1")
+    assert any("agent_sarah" in str(c.args) for c in st.calls)
+
+
+def test_render_support_agents_and_workload_panel(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "new_agent_id": "agent_tom",
+            "new_agent_name": "Tom Clark",
+            "new_agent_email": "tom@prop.com",
+            "new_agent_tier": "tier_1",
+            "new_agent_dept": "Customer Care",
+        },
+        buttons={"btn_create_support_agent": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    workload_payload = {
+        "active_agents": 3,
+        "total_assigned_sessions": 5,
+        "total_available_capacity": 10,
+        "tier_distribution": {"tier_1": 2, "tier_2": 1, "tier_3": 0},
+    }
+    monkeypatch.setattr(
+        sidebar, "get_agent_workload_analytics", lambda: workload_payload
+    )
+
+    fake_agents = [
+        {
+            "agent_id": "agent_sarah",
+            "name": "Sarah Connor",
+            "tier": "tier_1",
+            "department": "leasing",
+            "is_active": True,
+            "max_concurrent_chats": 5,
+        }
+    ]
+    monkeypatch.setattr(sidebar, "list_support_agents", lambda: fake_agents)
+
+    created_agents: list[dict[str, object]] = []
+
+    def fake_create(**kwargs):
+        created_agents.append(kwargs)
+        return {"agent_id": kwargs["agent_id"], **kwargs}
+
+    monkeypatch.setattr(sidebar, "create_support_agent", fake_create)
+
+    sidebar._render_support_agents_and_workload()
+
+    assert len(created_agents) == 1
+    assert created_agents[0]["agent_id"] == "agent_tom"
+    assert created_agents[0]["name"] == "Tom Clark"
+    assert st.reruns == 1
+
+
