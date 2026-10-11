@@ -20,8 +20,8 @@
 - [x] **Task 10**: FastAPI routes in `api/main.py`
 - [x] **Task 11**: Integration and endpoint tests for FastAPI agent and assignment routes in `tests/test_api_routes.py`
 - [x] **Task 12**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
-- [ ] **Task 13**: Streamlit UI assignee/tier controls, auto-assign button, queue filters, and workload panel in `app/sidebar.py`
-- [ ] **Task 14**: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [x] **Task 13**: Streamlit UI assignee/tier controls, auto-assign button, queue filters, and workload panel in `app/sidebar.py`
+- [x] **Task 14**: Streamlit UI unit tests in `tests/test_app_ui.py`
 - [ ] **Task 15**: Documentation updates in `docs/API.md` and `README.md`
 - [ ] **Task 16**: Version bump to 0.32.0 in `pyproject.toml` and `api/settings.py`
 - [ ] **Task 17**: Final verification gate, progress record completion, and self-review audit
@@ -35,12 +35,12 @@
 | AC1 | `support_agents` table exists, pre-seeds 5 default real estate agents on initialization, and supports full CRUD | VERIFIED | `tests/test_db_utils.py::test_create_support_agents_seeds_defaults`, `test_support_agent_crud_and_validation`, `test_list_support_agents_filters` |
 | AC2 | `session_labels` table migrates to include `assigned_agent TEXT DEFAULT NULL` and `escalation_tier TEXT NOT NULL DEFAULT 'tier_1'` with validation for `tier_1`, `tier_2`, `tier_3` | VERIFIED | `tests/test_db_utils.py::test_migrate_session_labels_adds_agent_and_tier`, `test_update_and_get_session_metadata_agent_and_tier`, `test_get_all_sessions_agent_and_tier_filtering` |
 | AC3 | `session_assignment_history` table records audit log transitions for agent and tier re-assignments with timestamps, actors, and reasons | VERIFIED | `tests/test_db_utils.py::test_session_assignment_history` |
-| AC4 | `api/assignment.py` supports manual assignment and least-busy auto-assignment with webhook notifications (`session.assigned`, `session.tier_escalated`) | PENDING | Pending Task 8 & 9 |
+| AC4 | `api/assignment.py` supports manual assignment and least-busy auto-assignment with webhook notifications (`session.assigned`, `session.tier_escalated`) | VERIFIED | `tests/test_assignment.py::test_assign_session_manual_and_history`, `test_auto_assign_session_least_busy_strategy`, `test_calculate_workload_analytics` |
 | AC5 | `api/business_hours.py` accurately evaluates business hours status and advances deadlines across nights and weekends for business-hours SLA policies | VERIFIED | `tests/test_business_hours.py::test_is_within_business_hours_standard_weekday`, `test_is_within_business_hours_weekend`, `test_get_next_business_window_start`, `test_add_business_minutes_same_day`, `test_add_business_minutes_crosses_evening_and_weekend`, `test_calculate_business_minutes_between`, `test_get_business_hours_status`, `test_custom_schedule_support` |
-| AC6 | FastAPI endpoints `/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`, and `/business-hours/status` are functional and schema-validated | PENDING | Pending Task 10 & 11 |
-| AC7 | Client helpers in `app/api_utils.py` provide typed API methods with error handling | PENDING | Pending Task 12 |
-| AC8 | Streamlit UI displays operating hours indicator, assignee/tier controls, auto-assign action, queue filters, and team workload panel | PENDING | Pending Task 13 & 14 |
-| AC9 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | PENDING | Baseline passed (629 passed, 94.72% coverage) |
+| AC6 | FastAPI endpoints `/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`, and `/business-hours/status` are functional and schema-validated | VERIFIED | `tests/test_api_routes.py::test_list_support_agents_endpoint`, `test_create_and_delete_support_agent_endpoint`, `test_assign_session_endpoint`, `test_auto_assign_session_endpoint`, `test_get_agent_workload_endpoint`, `test_get_business_hours_status_endpoint` |
+| AC7 | Client helpers in `app/api_utils.py` provide typed API methods with error handling | VERIFIED | `tests/test_app_api_utils.py::test_list_support_agents_success`, `test_create_support_agent_success`, `test_assign_session_success`, `test_auto_assign_session_success`, `test_get_agent_workload_analytics_success`, `test_get_business_hours_status_success` |
+| AC8 | Streamlit UI displays operating hours indicator, assignee/tier controls, auto-assign action, queue filters, and team workload panel | VERIFIED | `tests/test_app_ui.py::test_render_health_status_with_business_hours`, `test_render_health_status_after_hours`, `test_filter_sessions_queue_view`, `test_render_session_assignment_controls_manual`, `test_render_session_assignment_controls_auto`, `test_render_session_assignment_history`, `test_render_support_agents_and_workload_panel` |
+| AC9 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | PENDING | Suite verification pending final gate |
 
 ---
 
