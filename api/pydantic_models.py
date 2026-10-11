@@ -243,6 +243,15 @@ MAX_SLA_POLICY_NAME_LENGTH = 100
 MAX_SLA_CATEGORY_LENGTH = 50
 
 
+MAX_AGENT_ID_LENGTH = 50
+MAX_AGENT_NAME_LENGTH = 100
+MAX_AGENT_EMAIL_LENGTH = 150
+VALID_AGENT_TIERS = {"tier_1", "tier_2", "tier_3"}
+VALID_AGENT_DEPARTMENTS = {"general_leasing", "maintenance", "billing", "management"}
+DEFAULT_AGENT_TIER = "tier_1"
+DEFAULT_AGENT_DEPARTMENT = "general_leasing"
+
+
 class SessionInfo(BaseModel):
     session_id: str
     message_count: int
@@ -254,6 +263,8 @@ class SessionInfo(BaseModel):
     summary: str | None = None
     resolution_notes: str | None = None
     priority: str = DEFAULT_SESSION_PRIORITY
+    assigned_agent: str | None = None
+    escalation_tier: str = DEFAULT_AGENT_TIER
 
 
 class SessionSearchResult(BaseModel):
@@ -266,6 +277,8 @@ class SessionSearchResult(BaseModel):
     last_active: datetime
     matched_queries: list[str] = Field(default_factory=list)
     priority: str = DEFAULT_SESSION_PRIORITY
+    assigned_agent: str | None = None
+    escalation_tier: str = DEFAULT_AGENT_TIER
 
 
 class SessionSearchResponse(BaseModel):
@@ -280,6 +293,8 @@ class UpdateSessionRequest(BaseModel):
     summary: str | None = None
     resolution_notes: str | None = None
     priority: str | None = None
+    assigned_agent: str | None = None
+    escalation_tier: str | None = None
 
     @field_validator("label", mode="before")
     @classmethod
@@ -355,6 +370,31 @@ class UpdateSessionRequest(BaseModel):
             return cleaned
         return v
 
+    @field_validator("assigned_agent", mode="before")
+    @classmethod
+    def validate_assigned_agent(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            return cleaned or None
+        return v
+
+    @field_validator("escalation_tier", mode="before")
+    @classmethod
+    def validate_escalation_tier(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            if cleaned not in VALID_AGENT_TIERS:
+                raise ValueError(
+                    f"Invalid escalation tier '{cleaned}'. "
+                    f"Must be one of: {sorted(VALID_AGENT_TIERS)}."
+                )
+            return cleaned
+        return v
+
     @model_validator(mode="after")
     def check_at_least_one_field(self) -> "UpdateSessionRequest":
         if (
@@ -364,10 +404,12 @@ class UpdateSessionRequest(BaseModel):
             and self.summary is None
             and self.resolution_notes is None
             and self.priority is None
+            and self.assigned_agent is None
+            and self.escalation_tier is None
         ):
             raise ValueError(
                 "At least one of 'label', 'status', 'tags', 'summary', 'resolution_notes', "
-                "or 'priority' must be provided."
+                "'priority', 'assigned_agent', or 'escalation_tier' must be provided."
             )
         return self
 
@@ -884,6 +926,7 @@ class SLAPolicyCreateRequest(BaseModel):
     response_time_minutes: int = Field(gt=0)
     resolution_time_minutes: int = Field(gt=0)
     is_active: bool = True
+    use_business_hours: bool = False
 
     @field_validator("name", mode="before")
     @classmethod
@@ -931,6 +974,7 @@ class SLAPolicyUpdateRequest(BaseModel):
     response_time_minutes: int | None = Field(default=None, gt=0)
     resolution_time_minutes: int | None = Field(default=None, gt=0)
     is_active: bool | None = None
+    use_business_hours: bool | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -971,6 +1015,7 @@ class SLAPolicyUpdateRequest(BaseModel):
             and self.response_time_minutes is None
             and self.resolution_time_minutes is None
             and self.is_active is None
+            and self.use_business_hours is None
         ):
             raise ValueError("At least one SLA policy field must be provided for update.")
         if (
@@ -992,6 +1037,7 @@ class SLAPolicyResponse(BaseModel):
     response_time_minutes: int
     resolution_time_minutes: int
     is_active: bool
+    use_business_hours: bool = False
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -1008,6 +1054,7 @@ class SessionSLAStatusResponse(BaseModel):
     status: str
     policy_id: int | None = None
     policy_name: str | None = None
+    use_business_hours: bool = False
     response_target_minutes: int
     resolution_target_minutes: int
     session_started_at: str | None = None
@@ -1055,6 +1102,182 @@ class SLAComplianceAnalyticsResponse(BaseModel):
     breached_sessions: int
     avg_first_response_minutes: float
     priority_breakdown: dict[str, dict[str, int]] = Field(default_factory=dict)
+
+
+class SupportAgentCreateRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=MAX_AGENT_ID_LENGTH)
+    name: str = Field(min_length=1, max_length=MAX_AGENT_NAME_LENGTH)
+    email: str = Field(min_length=3, max_length=MAX_AGENT_EMAIL_LENGTH)
+    tier: str = Field(default=DEFAULT_AGENT_TIER)
+    department: str = Field(default=DEFAULT_AGENT_DEPARTMENT)
+    is_active: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str) -> str:
+        return db_utils.normalize_agent_id(v)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return db_utils.normalize_agent_name(v)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return db_utils.normalize_agent_email(v)
+
+    @field_validator("tier")
+    @classmethod
+    def validate_tier(cls, v: str) -> str:
+        return db_utils.normalize_agent_tier(v)
+
+    @field_validator("department")
+    @classmethod
+    def validate_department(cls, v: str) -> str:
+        return db_utils.normalize_agent_department(v)
+
+
+class SupportAgentUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=MAX_AGENT_NAME_LENGTH)
+    email: str | None = Field(default=None, max_length=MAX_AGENT_EMAIL_LENGTH)
+    tier: str | None = None
+    department: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_agent_name(v)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_agent_email(v)
+
+    @field_validator("tier")
+    @classmethod
+    def validate_tier(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_agent_tier(v)
+
+    @field_validator("department")
+    @classmethod
+    def validate_department(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_agent_department(v)
+
+    @model_validator(mode="after")
+    def check_at_least_one_field(self) -> "SupportAgentUpdateRequest":
+        if (
+            self.name is None
+            and self.email is None
+            and self.tier is None
+            and self.department is None
+            and self.is_active is None
+        ):
+            raise ValueError("At least one agent field must be provided for update.")
+        return self
+
+
+class SupportAgentResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    tier: str
+    department: str
+    is_active: bool
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class SupportAgentListResponse(BaseModel):
+    items: list[SupportAgentResponse] = Field(default_factory=list)
+    total: int = 0
+
+
+class SessionAssignmentRequest(BaseModel):
+    agent_id: str | None = None
+    tier: str | None = None
+    assigned_by: str = "system"
+    reason: str = ""
+
+    @field_validator("agent_id")
+    @classmethod
+    def validate_agent_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        return cleaned or None
+
+    @field_validator("tier")
+    @classmethod
+    def validate_tier(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_agent_tier(v)
+
+
+class AutoAssignRequest(BaseModel):
+    strategy: Literal["least_busy", "round_robin"] = "least_busy"
+    target_tier: str | None = None
+    department: str | None = None
+    assigned_by: str = "system"
+
+    @field_validator("target_tier")
+    @classmethod
+    def validate_target_tier(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return db_utils.normalize_agent_tier(v)
+
+
+class SessionAssignmentRecord(BaseModel):
+    id: int
+    session_id: str
+    assigned_by: str
+    previous_agent: str | None = None
+    new_agent: str | None = None
+    previous_tier: str
+    new_tier: str
+    reason: str = ""
+    assigned_at: str | None = None
+
+
+class SessionAssignmentHistoryResponse(BaseModel):
+    session_id: str
+    items: list[SessionAssignmentRecord] = Field(default_factory=list)
+    total: int = 0
+
+
+class AgentWorkloadItem(BaseModel):
+    agent: SupportAgentResponse
+    active_sessions_count: int = 0
+    resolved_sessions_count: int = 0
+    total_sessions_count: int = 0
+
+
+class AgentWorkloadResponse(BaseModel):
+    agents: list[AgentWorkloadItem] = Field(default_factory=list)
+    total_active_sessions: int = 0
+    unassigned_active_sessions: int = 0
+    tier_distribution: dict[str, int] = Field(default_factory=dict)
+
+
+class BusinessHoursStatusResponse(BaseModel):
+    is_open: bool
+    current_time: str
+    next_open_at: str | None = None
+    timezone: str = "UTC"
+    schedule: dict[str, str] = Field(default_factory=dict)
+    day_name: str
+
 
 
 
