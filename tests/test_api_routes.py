@@ -2891,3 +2891,247 @@ def test_sla_analytics_route(monkeypatch):
     assert data["total_tracked_sessions"] == expected_tracked
     assert data["compliance_rate"] == expected_rate
     assert "urgent" in data["priority_breakdown"]
+
+
+# =====================================================================
+# Tests: Support Agents, Assignment, Workload & Business Hours Routes
+# =====================================================================
+
+
+def test_support_agents_crud_routes(monkeypatch):
+    test_agent = {
+        "id": "agent_test_1",
+        "name": "Test Agent One",
+        "email": "test1@example.com",
+        "tier": "tier_1",
+        "department": "general_leasing",
+        "is_active": 1,
+        "created_at": "2026-10-11T12:00:00",
+        "updated_at": "2026-10-11T12:00:00",
+    }
+    store = {"agent_test_1": test_agent}
+
+    monkeypatch.setattr(
+        main,
+        "list_support_agents",
+        lambda tier=None, department=None, active_only=False: list(store.values()),
+    )
+    monkeypatch.setattr(main, "get_support_agent", store.get)
+    monkeypatch.setattr(
+        main,
+        "create_support_agent",
+        lambda agent_id, name, email, tier="tier_1", department="general_leasing", is_active=1: (
+            store.setdefault(
+                agent_id,
+                {
+                    "id": agent_id,
+                    "name": name,
+                    "email": email,
+                    "tier": tier,
+                    "department": department,
+                    "is_active": is_active,
+                    "created_at": "2026-10-11T12:00:00",
+                    "updated_at": "2026-10-11T12:00:00",
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "update_support_agent",
+        lambda agent_id, **kwargs: agent_id in store,
+    )
+    monkeypatch.setattr(
+        main,
+        "delete_support_agent",
+        lambda agent_id: bool(store.pop(agent_id, None)),
+    )
+
+    # 1. List agents
+    resp_list = client.get("/agents")
+    assert resp_list.status_code == HTTP_OK
+    data_list = resp_list.json()
+    assert data_list["total"] == 1
+    assert data_list["items"][0]["id"] == "agent_test_1"
+
+    # 2. Create agent
+    new_agent_payload = {
+        "id": "agent_test_2",
+        "name": "Test Agent Two",
+        "email": "test2@example.com",
+        "tier": "tier_2",
+        "department": "maintenance",
+        "is_active": True,
+    }
+    resp_create = client.post("/agents", json=new_agent_payload)
+    assert resp_create.status_code == HTTP_CREATED
+    data_created = resp_create.json()
+    assert data_created["id"] == "agent_test_2"
+    assert data_created["tier"] == "tier_2"
+
+    # 3. Conflict on duplicate agent
+    resp_dup = client.post("/agents", json=new_agent_payload)
+    assert resp_dup.status_code == HTTP_CONFLICT
+
+    # 4. Get specific agent
+    resp_get = client.get("/agents/agent_test_1")
+    assert resp_get.status_code == HTTP_OK
+    assert resp_get.json()["name"] == "Test Agent One"
+
+    # 5. Get missing agent
+    resp_miss = client.get("/agents/nonexistent")
+    assert resp_miss.status_code == HTTP_NOT_FOUND
+
+    # 6. Update agent
+    resp_up = client.patch(
+        "/agents/agent_test_1",
+        json={"tier": "tier_3", "is_active": False},
+    )
+    assert resp_up.status_code == HTTP_OK
+
+    # 7. Delete agent
+    resp_del = client.delete("/agents/agent_test_1")
+    assert resp_del.status_code == HTTP_OK
+    assert "deleted" in resp_del.json()["message"]
+
+
+def test_agents_workload_route(monkeypatch):
+    fake_workload = {
+        "agents": [
+            {
+                "agent": {
+                    "id": "agent_sarah",
+                    "name": "Sarah Connor",
+                    "email": "sarah@example.com",
+                    "tier": "tier_1",
+                    "department": "general_leasing",
+                    "is_active": True,
+                },
+                "active_sessions_count": 2,
+                "resolved_sessions_count": 5,
+                "total_sessions_count": 7,
+            }
+        ],
+        "total_active_sessions": 3,
+        "unassigned_active_sessions": 1,
+        "tier_distribution": {"tier_1": 2, "tier_2": 1, "tier_3": 0},
+    }
+    monkeypatch.setattr(
+        main.assignment,
+        "get_agent_workload_analytics",
+        lambda: fake_workload,
+    )
+
+    resp = client.get("/agents/workload")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    expected_active_sessions = 3
+    assert data["total_active_sessions"] == expected_active_sessions
+    assert data["unassigned_active_sessions"] == 1
+    assert data["agents"][0]["agent"]["id"] == "agent_sarah"
+
+
+def test_session_assign_and_auto_assign_routes(monkeypatch):
+    fake_session = {
+        "session_id": "sess-route-assign",
+        "message_count": 2,
+        "last_active": "2026-10-11T12:00:00",
+        "preview": "Test preview",
+        "label": "Test Label",
+        "status": "active",
+        "tags": "leasing",
+        "summary": None,
+        "resolution_notes": None,
+        "priority": "medium",
+        "assigned_agent": "agent_sarah",
+        "escalation_tier": "tier_1",
+    }
+
+    monkeypatch.setattr(main, "_get_session_summary_or_404", lambda sid: fake_session)
+    monkeypatch.setattr(
+        main.assignment,
+        "assign_session",
+        lambda **kwargs: {"session_id": kwargs["session_id"], "metadata": fake_session},
+    )
+    monkeypatch.setattr(
+        main.assignment,
+        "auto_assign_session",
+        lambda **kwargs: {"session_id": kwargs["session_id"], "metadata": fake_session},
+    )
+
+    # 1. Manual assign
+    resp_assign = client.post(
+        "/sessions/sess-route-assign/assign",
+        json={
+            "agent_id": "agent_sarah",
+            "tier": "tier_1",
+            "assigned_by": "test_user",
+            "reason": "Routing test",
+        },
+    )
+    assert resp_assign.status_code == HTTP_OK
+    assert resp_assign.json()["assigned_agent"] == "agent_sarah"
+
+    # 2. Auto assign
+    resp_auto = client.post(
+        "/sessions/sess-route-assign/auto-assign",
+        json={"strategy": "least_busy", "target_tier": "tier_1"},
+    )
+    assert resp_auto.status_code == HTTP_OK
+    assert resp_auto.json()["assigned_agent"] == "agent_sarah"
+
+
+def test_session_assignment_history_route(monkeypatch):
+    fake_history = [
+        {
+            "id": 1,
+            "session_id": "sess-hist",
+            "assigned_by": "dispatcher",
+            "previous_agent": None,
+            "new_agent": "agent_sarah",
+            "previous_tier": "tier_1",
+            "new_tier": "tier_1",
+            "reason": "Initial queue routing",
+            "assigned_at": "2026-10-11T12:00:00",
+        }
+    ]
+    monkeypatch.setattr(
+        main,
+        "_get_session_summary_or_404",
+        lambda sid: {"session_id": sid, "status": "active"},
+    )
+    monkeypatch.setattr(
+        main,
+        "get_session_assignment_history",
+        lambda session_id, limit=50: fake_history,
+    )
+
+    resp = client.get("/sessions/sess-hist/assignment-history")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["session_id"] == "sess-hist"
+    assert data["total"] == 1
+    assert data["items"][0]["new_agent"] == "agent_sarah"
+
+
+def test_business_hours_status_route(monkeypatch):
+    fake_status = {
+        "is_open": True,
+        "current_time": "2026-10-12T10:00:00",
+        "next_open_at": None,
+        "timezone": "UTC",
+        "schedule": {"monday": "09:00 - 18:00"},
+        "day_name": "Monday",
+    }
+    monkeypatch.setattr(
+        main.business_hours,
+        "get_business_hours_status",
+        lambda: fake_status,
+    )
+
+    resp = client.get("/business-hours/status")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["is_open"] is True
+    assert data["day_name"] == "Monday"
+
