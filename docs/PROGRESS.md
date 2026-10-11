@@ -15,8 +15,8 @@
 - [x] **Task 5**: Unit tests for business hours calculation in `tests/test_business_hours.py`
 - [x] **Task 6**: Pydantic schemas in `api/pydantic_models.py`
 - [x] **Task 7**: Unit tests for new Pydantic models in `tests/test_models.py`
-- [ ] **Task 8**: Core assignment, tiered routing, workload analytics, and SLA business hours integration in `api/assignment.py` and `api/sla.py`
-- [ ] **Task 9**: Unit tests for assignment and workload engine in `tests/test_assignment.py`
+- [x] **Task 8**: Core assignment, tiered routing, workload analytics, and SLA business hours integration in `api/assignment.py` and `api/sla.py`
+- [x] **Task 9**: Unit tests for assignment and workload engine in `tests/test_assignment.py`
 - [ ] **Task 10**: FastAPI routes in `api/main.py`
 - [ ] **Task 11**: Integration and endpoint tests for FastAPI agent and assignment routes in `tests/test_api_routes.py`
 - [ ] **Task 12**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
