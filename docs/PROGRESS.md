@@ -1,7 +1,7 @@
 # v0.32.0 Progress Record: Customer Support Agent Assignment, Tiered Escalation Routing & Operating Business Hours Engine
 
 **Phase Branch**: `phase/v0.32.0-agent-assignment-business-hours`  
-**Status**: IN PROGRESS  
+**Status**: COMPLETED  
 **Target Version**: 0.32.0  
 
 ---
@@ -22,9 +22,9 @@
 - [x] **Task 12**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
 - [x] **Task 13**: Streamlit UI assignee/tier controls, auto-assign button, queue filters, and workload panel in `app/sidebar.py`
 - [x] **Task 14**: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [ ] **Task 15**: Documentation updates in `docs/API.md` and `README.md`
-- [ ] **Task 16**: Version bump to 0.32.0 in `pyproject.toml` and `api/settings.py`
-- [ ] **Task 17**: Final verification gate, progress record completion, and self-review audit
+- [x] **Task 15**: Documentation updates in `docs/API.md` and `README.md`
+- [x] **Task 16**: Version bump to 0.32.0 in `pyproject.toml` and `api/settings.py`
+- [x] **Task 17**: Final verification gate, progress record completion, and self-review audit
 
 ---
 
@@ -40,7 +40,7 @@
 | AC6 | FastAPI endpoints `/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`, and `/business-hours/status` are functional and schema-validated | VERIFIED | `tests/test_api_routes.py::test_list_support_agents_endpoint`, `test_create_and_delete_support_agent_endpoint`, `test_assign_session_endpoint`, `test_auto_assign_session_endpoint`, `test_get_agent_workload_endpoint`, `test_get_business_hours_status_endpoint` |
 | AC7 | Client helpers in `app/api_utils.py` provide typed API methods with error handling | VERIFIED | `tests/test_app_api_utils.py::test_list_support_agents_success`, `test_create_support_agent_success`, `test_assign_session_success`, `test_auto_assign_session_success`, `test_get_agent_workload_analytics_success`, `test_get_business_hours_status_success` |
 | AC8 | Streamlit UI displays operating hours indicator, assignee/tier controls, auto-assign action, queue filters, and team workload panel | VERIFIED | `tests/test_app_ui.py::test_render_health_status_with_business_hours`, `test_render_health_status_after_hours`, `test_filter_sessions_queue_view`, `test_render_session_assignment_controls_manual`, `test_render_session_assignment_controls_auto`, `test_render_session_assignment_history`, `test_render_support_agents_and_workload_panel` |
-| AC9 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | PENDING | Suite verification pending final gate |
+| AC9 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | VERIFIED | `python -m pytest` -> 668 passed, 94% coverage; `python -m ruff check` -> 0 errors; `python -m mypy` -> 0 errors |
 
 ---
 
@@ -64,3 +64,9 @@
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (0 issues)
   - `python -m mypy api app scripts` -> ✅ Passed (0 issues in 25 source files)
   - `python -m pytest` -> ✅ Passed (629 passed, 21 deselected, 94.72% coverage, fail_under=80%)
+
+- **Completion Gate Check (v0.32.0)**:
+  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (0 issues)
+  - `python -m mypy api app scripts` -> ✅ Passed (0 issues in 27 source files)
+  - `python -m pytest` -> ✅ Passed (668 passed, 21 deselected, 94% total coverage across 3245 statements, fail_under=80%)
+
