@@ -1388,7 +1388,7 @@ def create_support_agent(  # noqa: PLR0913, PLR0917
     department: str = "general_leasing",
     is_active: bool = True,
 ) -> dict[str, Any] | None:
-    payload = {
+    payload: dict[str, Any] = {
         "id": agent_id,
         "name": name,
         "email": email,
