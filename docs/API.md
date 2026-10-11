@@ -1,4 +1,4 @@
-# API Reference (v0.30.0)
+# API Reference (v0.31.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -158,11 +158,11 @@ SQLite record (`404` when unknown).
 
 ## Sessions
 
-- `GET /sessions` → array of `{session_id, message_count, last_active, preview, label, status, tags, summary, resolution_notes}` ordered by most recent activity (`preview` is the truncated first question). Optional query params: `status` (one of `active`, `resolved`, `escalated`, `closed`) and `tag` (case-insensitive) to filter sessions.
+- `GET /sessions` → array of `{session_id, message_count, last_active, preview, label, status, priority, tags, summary, resolution_notes}` ordered by most recent activity (`preview` is the truncated first question). Optional query params: `status` (one of `active`, `resolved`, `escalated`, `closed`), `tag` (case-insensitive), and `priority` (one of `urgent`, `high`, `medium`, `low`) to filter sessions.
 - `GET /sessions/triage-analytics` → returns aggregated support operations KPIs: `{total_sessions, active_count, resolved_count, escalated_count, closed_count, resolution_rate, escalation_rate, avg_turns_per_session, top_tags: [{tag, count}]}`.
 - `GET /sessions/{session_id}/history` → array of `{role, content}` pairs for that session (`400` for a blank id). The Streamlit sidebar uses these to list and reload past conversations.
 - `POST /sessions/{session_id}/summarize` with `{"model": "gpt-4o-mini", "save_summary": true}` → generates conversation dialogue summary, key bullet points, detected sentiment (`positive`, `neutral`, `negative`), and suggested domain tags. When `save_summary` is true, persists the summary and merges suggested tags into session metadata. Returns `{session_id, summary, key_points, sentiment, suggested_tags, saved}` (`404` when session history is empty).
-- `PATCH /sessions/{session_id}` with `{"label": "...", "status": "...", "tags": [...], "summary": "...", "resolution_notes": "..."}` → updates session metadata. `label` (1–80 chars), `status` (`active`, `resolved`, `escalated`, `closed`), `tags` (string or array), `summary` (max 2000 chars), `resolution_notes` (max 2000 chars). Returns updated session info (`404` when unknown, `422` for invalid input).
+- `PATCH /sessions/{session_id}` with `{"label": "...", "status": "...", "priority": "urgent|high|medium|low|null", "tags": [...], "summary": "...", "resolution_notes": "..."}` → updates session metadata. `label` (1–80 chars), `status` (`active`, `resolved`, `escalated`, `closed`), `priority` (`urgent`, `high`, `medium`, `low`, or null/clear), `tags` (string or array), `summary` (max 2000 chars), `resolution_notes` (max 2000 chars). Returns updated session info (`404` when unknown, `422` for invalid input).
 - `DELETE /sessions/{session_id}` → removes the session history, label, and feedback (`400` for a blank id, `404` when unknown).
 - `POST /delete-sessions` with `{"session_ids": ["s1", "s2"]}` (up to 50 sessions) deletes multiple sessions with cascading removal of chat history and feedback, returning `{results: [{session_id, status, error}], deleted: int, failed: int}`.
 - `DELETE /sessions?before=<ISO datetime>` → prunes sessions inactive since the cutoff, including labels and feedback (`400` for a bad date).
@@ -204,6 +204,8 @@ Receivers can verify authenticity by computing `hmac.new(secret.encode(), f"{tim
 - `session.escalated`: Dispatched when a session status transitions to `escalated`. Payload data includes `session_id`, `status`, `previous_status`, `tags`, `summary`, and `resolution_notes`.
 - `session.resolved`: Dispatched when a session status transitions to `resolved`. Payload data includes `session_id`, `status`, `previous_status`, `tags`, `summary`, and `resolution_notes`.
 - `feedback.negative`: Dispatched when a user submits negative feedback (`rating: -1`). Payload data includes `session_id`, `feedback_id`, `rating`, `comment`, and `created_at`.
+- `sla.approaching_breach`: Dispatched when an active session's response or resolution SLA enters the warning window (`approaching_breach`). Payload includes `session_id`, `priority`, `policy_id`, `policy_name`, `target_type` (`first_response` or `resolution`), `time_remaining_minutes`, `breach_deadline`, and `escalate_on_breach`.
+- `sla.breached`: Dispatched when an active session's response or resolution SLA target deadline is missed. Payload includes `session_id`, `priority`, `policy_id`, `policy_name`, `target_type`, `breached_by_minutes`, `breach_deadline`, and `escalate_on_breach`.
 - `test.ping`: Dispatched on manual ping to verify connectivity.
 - `*`: Wildcard subscription receiving all events.
 
@@ -243,6 +245,35 @@ The agent provides a pre-approved canned responses and action macro templates en
   - Returns `{"query": "...", "detected_intent": "maintenance_emergency", "intent_confidence": 0.95, "extracted_variables": {"unit_id": "Unit 402"}, "suggestions": [...], "total_matches": 1}`.
 - `GET /sessions/{session_id}/macro-suggestions?top_k=3&min_score=0.3&category=...`: Real-time macro suggestions tailored to an active chat session's latest tenant inquiry.
   - Automatically detects query intent, extracts entities (unit IDs, names), binds active `session_id`, and returns ranked recommendations with rendered previews. Returns `404` if session is not found.
+
+## SLA Policies, Priority Triage & Escalation Engine
+
+The agent features a configurable Service Level Agreement (SLA) policy manager, real-time deadline calculation, session priority triage, automated escalation alerting, and compliance analytics engine for support operations.
+
+### Endpoints
+
+- `GET /sla/policies`: List all configured SLA policies.
+  - Returns array of `SLAPolicyResponse` objects (`id`, `name`, `priority`, `category`, `first_response_time_minutes`, `resolution_time_minutes`, `warning_threshold_percentage`, `escalate_on_breach`, `is_active`, `created_at`, `updated_at`).
+- `POST /sla/policies`: Create a new SLA policy.
+  - Body: `{"name": "Emergency SLA", "priority": "urgent", "category": "Maintenance", "first_response_time_minutes": 15, "resolution_time_minutes": 120, "warning_threshold_percentage": 75, "escalate_on_breach": true, "is_active": true}`.
+  - Returns `201` with created SLA policy record. Returns `400` on validation errors.
+- `GET /sla/policies/{policy_id}`: Retrieve a specific SLA policy by ID.
+  - Returns `SLAPolicyResponse` (`404` if not found).
+- `PATCH /sla/policies/{policy_id}`: Partially update an SLA policy's name, priority, category, response time, resolution time, warning threshold, escalation flag, or active status.
+  - Returns updated `SLAPolicyResponse` (`404` if not found).
+- `DELETE /sla/policies/{policy_id}`: Delete an SLA policy by ID.
+  - Returns `{"message": "SLA policy {policy_id} deleted.", "id": <int>}` (`404` if not found).
+- `GET /sessions/{session_id}/sla`: Calculate and return the real-time SLA status and countdown for an active support session.
+  - Resolves matching policy based on session priority (`urgent`, `high`, `medium`, `low`) and category.
+  - Calculates status for first response and resolution targets: `met`, `healthy`, `approaching_breach`, or `breached`.
+  - Returns `SessionSLAStatusResponse` (`session_id`, `priority`, `policy_id`, `policy_name`, `first_response_status`, `resolution_status`, `first_response_deadline`, `resolution_deadline`, `first_response_time_remaining_minutes`, `resolution_time_remaining_minutes`, `first_response_breached`, `resolution_breached`, `overall_status`, `escalation_triggered`). Returns `404` if session is not found.
+- `POST /sla/evaluate-alerts`: Run proactive background evaluation of SLA compliance across all active sessions.
+  - Identifies sessions entering the warning window (`approaching_breach`) or violating targets (`breached`).
+  - Dispatches `sla.approaching_breach` and `sla.breached` webhook notifications to registered subscribers.
+  - Automatically transitions breached sessions to `escalated` status when policy `escalate_on_breach` is true.
+  - Returns `SLAAlertEvaluationResponse` (`evaluated_sessions`, `alerts_dispatched`, `breaches_detected`, `warnings_detected`, `escalations_triggered`, `dispatched_events: [...]`).
+- `GET /sla/analytics`: Aggregated SLA compliance metrics across all historical and active sessions.
+  - Returns `SLAComplianceAnalyticsResponse` (`total_tracked_sessions`, `response_compliant_count`, `resolution_compliant_count`, `response_breached_count`, `resolution_breached_count`, `response_compliance_rate`, `resolution_compliance_rate`, `overall_compliance_rate`, `breach_distribution_by_priority: {"urgent": 0, "high": 0, "medium": 0, "low": 0}`, `active_at_risk_count`).
 
 ## Evaluation Harness
 

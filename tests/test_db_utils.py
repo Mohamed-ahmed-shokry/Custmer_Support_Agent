@@ -16,6 +16,8 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_webhooks()
     db_utils.create_support_macros()
     db_utils.create_sla_policies()
+    db_utils.create_support_agents()
+    db_utils.create_session_assignment_history()
     return db_path
 
 
@@ -589,6 +591,8 @@ def test_update_session_metadata_and_retrieval(monkeypatch, tmp_path):
         "summary": "",
         "resolution_notes": "",
         "priority": "medium",
+        "assigned_agent": None,
+        "escalation_tier": "tier_1",
     }
 
     # Update metadata incrementally
@@ -1534,3 +1538,243 @@ def test_get_session_timestamps(monkeypatch, tmp_path):
     assert ts["last_activity"] is not None
     expected_turns = 2
     assert ts["total_turns"] == expected_turns
+
+
+def test_create_support_agents_seeds_defaults(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    agents = db_utils.list_support_agents()
+    expected_default_count = 5
+    assert len(agents) == expected_default_count
+    sarah = db_utils.get_support_agent("agent_sarah")
+    assert sarah is not None
+    assert sarah["name"] == "Sarah Connor"
+    assert sarah["tier"] == "tier_1"
+    assert sarah["department"] == "general_leasing"
+    assert sarah["is_active"] == 1
+
+
+def test_support_agent_crud_and_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Validation checks
+    with pytest.raises(ValueError, match="Agent ID must not be blank"):
+        db_utils.create_support_agent("", "Name", "test@example.com")
+    with pytest.raises(ValueError, match="Agent name must not be blank"):
+        db_utils.create_support_agent("agent_x", "", "test@example.com")
+    with pytest.raises(ValueError, match="Agent email must be a valid email address"):
+        db_utils.create_support_agent("agent_x", "Name", "invalid-email")
+    with pytest.raises(ValueError, match="Invalid agent tier"):
+        db_utils.create_support_agent("agent_x", "Name", "x@test.com", tier="tier_99")
+    with pytest.raises(ValueError, match="Invalid agent department"):
+        db_utils.create_support_agent("agent_x", "Name", "x@test.com", department="invalid_dept")
+
+    # Create
+    created = db_utils.create_support_agent(
+        "agent_tom",
+        "Tom Holland",
+        "tom.holland@example.com",
+        tier="tier_2",
+        department="maintenance",
+        is_active=True,
+    )
+    assert created["id"] == "agent_tom"
+    assert created["name"] == "Tom Holland"
+    assert created["tier"] == "tier_2"
+    assert created["department"] == "maintenance"
+    assert created["is_active"] == 1
+
+    # Update
+    assert (
+        db_utils.update_support_agent(
+            "agent_tom",
+            name="Thomas Holland",
+            tier="tier_3",
+            is_active=False,
+        )
+        is True
+    )
+    updated = db_utils.get_support_agent("agent_tom")
+    assert updated is not None
+    assert updated["name"] == "Thomas Holland"
+    assert updated["tier"] == "tier_3"
+    assert updated["is_active"] == 0
+
+    # Delete
+    assert db_utils.delete_support_agent("agent_tom") is True
+    assert db_utils.get_support_agent("agent_tom") is None
+    assert db_utils.delete_support_agent("agent_tom") is False
+    assert db_utils.update_support_agent("non_existent", name="No") is False
+
+
+def test_list_support_agents_filters(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    tier1_agents = db_utils.list_support_agents(tier="tier_1")
+    assert all(a["tier"] == "tier_1" for a in tier1_agents)
+    expected_tier1_count = 2
+    assert len(tier1_agents) == expected_tier1_count
+
+    maint_agents = db_utils.list_support_agents(department="maintenance")
+    assert all(a["department"] == "maintenance" for a in maint_agents)
+    expected_maint_count = 2
+    assert len(maint_agents) == expected_maint_count
+
+    # Deactivate an agent and test active_only
+    db_utils.update_support_agent("agent_sarah", is_active=False)
+    active_tier1 = db_utils.list_support_agents(tier="tier_1", active_only=True)
+    assert len(active_tier1) == 1
+    assert active_tier1[0]["id"] == "agent_david"
+
+
+def test_session_assignment_history(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    sid = "sess-assign-1"
+    h1 = db_utils.record_session_assignment(
+        session_id=sid,
+        assigned_by="system",
+        previous_agent=None,
+        new_agent="agent_sarah",
+        previous_tier="tier_1",
+        new_tier="tier_1",
+        reason="Initial triage assignment",
+    )
+    assert h1["id"] is not None
+    assert h1["session_id"] == sid
+    assert h1["new_agent"] == "agent_sarah"
+    assert h1["reason"] == "Initial triage assignment"
+
+    h2 = db_utils.record_session_assignment(
+        session_id=sid,
+        assigned_by="agent_sarah",
+        previous_agent="agent_sarah",
+        new_agent="agent_elena",
+        previous_tier="tier_1",
+        new_tier="tier_2",
+        reason="Escalated HVAC leak requires senior engineer",
+    )
+    assert h2["previous_agent"] == "agent_sarah"
+    assert h2["new_agent"] == "agent_elena"
+    assert h2["new_tier"] == "tier_2"
+
+    history = db_utils.get_session_assignment_history(sid)
+    expected_history_len = 2
+    assert len(history) == expected_history_len
+    # History returned in DESC order
+    assert history[0]["new_tier"] == "tier_2"
+    assert history[1]["new_tier"] == "tier_1"
+
+
+def test_migrate_session_labels_adds_agent_and_tier(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+
+    # Create older table without assigned_agent and escalation_tier
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(
+            "CREATE TABLE session_labels ("
+            "session_id TEXT PRIMARY KEY, label TEXT NOT NULL, "
+            "status TEXT NOT NULL DEFAULT 'active', tags TEXT NOT NULL DEFAULT '', "
+            "priority TEXT NOT NULL DEFAULT 'medium')"
+        )
+        conn.commit()
+
+    db_utils.migrate_session_labels()
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(session_labels)").fetchall()]
+        assert "assigned_agent" in cols
+        assert "escalation_tier" in cols
+
+
+def test_update_and_get_session_metadata_agent_and_tier(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    sid = "sess-meta-agent"
+    db_utils.insert_application_logs(sid, "User question", "Agent answer", "gpt-4o")
+
+    # Initial metadata has None assigned_agent and tier_1 default
+    initial = db_utils.get_session_metadata(sid)
+    assert initial is not None
+    assert initial["assigned_agent"] is None
+    assert initial["escalation_tier"] == "tier_1"
+
+    # Update with assigned_agent and escalation_tier
+    success = db_utils.update_session_metadata(
+        sid,
+        label="Water Leak",
+        status="active",
+        priority="high",
+        assigned_agent="agent_david",
+        escalation_tier="tier_2",
+    )
+    assert success is True
+
+    updated = db_utils.get_session_metadata(sid)
+    assert updated is not None
+    assert updated["label"] == "Water Leak"
+    assert updated["priority"] == "high"
+    assert updated["assigned_agent"] == "agent_david"
+    assert updated["escalation_tier"] == "tier_2"
+
+    # Unassign agent
+    db_utils.update_session_metadata(sid, assigned_agent="unassigned")
+    unassigned_meta = db_utils.get_session_metadata(sid)
+    assert unassigned_meta is not None
+    assert unassigned_meta["assigned_agent"] is None
+
+
+def test_get_all_sessions_agent_and_tier_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    db_utils.insert_application_logs("s1", "Q1", "A1", "gpt-4o")
+    db_utils.insert_application_logs("s2", "Q2", "A2", "gpt-4o")
+    db_utils.insert_application_logs("s3", "Q3", "A3", "gpt-4o")
+
+    db_utils.update_session_metadata("s1", assigned_agent="agent_sarah", escalation_tier="tier_1")
+    db_utils.update_session_metadata("s2", assigned_agent="agent_elena", escalation_tier="tier_2")
+    db_utils.update_session_metadata("s3", assigned_agent=None, escalation_tier="tier_1")
+
+    # Filter by agent
+    sarah_sessions = db_utils.get_all_sessions(assigned_agent="agent_sarah")
+    assert len(sarah_sessions) == 1
+    assert sarah_sessions[0]["session_id"] == "s1"
+
+    # Filter unassigned
+    unassigned_sessions = db_utils.get_all_sessions(assigned_agent="unassigned")
+    assert len(unassigned_sessions) == 1
+    assert unassigned_sessions[0]["session_id"] == "s3"
+
+    # Filter by tier
+    tier2_sessions = db_utils.get_all_sessions(escalation_tier="tier_2")
+    assert len(tier2_sessions) == 1
+    assert tier2_sessions[0]["session_id"] == "s2"
+
+
+def test_sla_policy_use_business_hours_crud(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Check default seeded policies
+    policies = db_utils.list_sla_policies()
+    assert any(p["use_business_hours"] == 1 for p in policies)
+    assert any(p["use_business_hours"] == 0 for p in policies)
+
+    # Create policy with use_business_hours=True
+    pid = db_utils.create_sla_policy(
+        name="Custom Routine Policy",
+        priority="low",
+        category="custom_leasing",
+        response_time_minutes=120,
+        resolution_time_minutes=480,
+        use_business_hours=True,
+    )
+    pol = db_utils.get_sla_policy(pid)
+    assert pol is not None
+    assert pol["use_business_hours"] == 1
+
+    # Update use_business_hours
+    db_utils.update_sla_policy(pid, use_business_hours=False)
+    pol_updated = db_utils.get_sla_policy(pid)
+    assert pol_updated is not None
+    assert pol_updated["use_business_hours"] == 0
+

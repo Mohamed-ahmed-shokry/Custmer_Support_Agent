@@ -1,10 +1,12 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.30.0, 2026-10-06)
+## Current State (v0.31.0, 2026-10-08)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
   use_hybrid)
+- Customer support SLA policies & priority triage engine (`/sla/policies`, `/sessions/{id}/sla`, `/sla/evaluate-alerts`, `/sla/analytics`) with automated breach detection, approaching deadlines, and real-time escalation webhook alerting
+- Priority triage badges, active session SLA countdown card, and SLA policy manager & compliance analytics panel in Streamlit sidebar
 - Automated AI macro suggestions & query intent classification engine (`POST /macros/suggest`, `GET /sessions/{id}/macro-suggestions`) with domain entity extraction and multi-factor ranking
 - Streamlit Smart Suggestions card & Query Match Tester widget in sidebar
 - Support canned responses & action macros engine (`POST /macros`, `GET /macros`, `GET /macros/categories`, `GET /macros/{id}`, `PATCH /macros/{id}`, `DELETE /macros/{id}`, `POST /macros/{id}/render`, `POST /sessions/{id}/apply-macro`)
@@ -621,7 +623,7 @@ Deliver an automated AI macro suggestion and query intent classification engine 
 - [x] Task 7: Streamlit UI Smart Macro Suggestions and Query Tester in `app/sidebar.py` with unit tests in `tests/test_app_ui.py`
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`, `ROADMAP.md`, `pyproject.toml`, `api/settings.py`), version bump to 0.30.0, and final verification gate
 
-## v0.31.0 plan — Customer Support SLA Policies, Priority Triage & Automated Escalation Alerts Engine
+## v0.31.0 plan — Customer Support SLA Policies, Priority Triage & Automated Escalation Alerts Engine ✅ COMPLETED
 
 Deliver an operational Service Level Agreement (SLA) policy and priority triage tracking engine for real estate customer support operations:
 configurable SLA target times per priority and category, session priority assignment (`urgent`, `high`, `medium`, `low`), automated deadline and breach calculations (`response_due_at`, `resolution_due_at`, `breach_status`), real-time webhook alerting triggers on approaching SLA breach (`sla.approaching_breach`) and breached deadlines (`sla.breached`), and Streamlit UI priority badges, SLA countdown timers, and operational SLA compliance analytics.
@@ -669,10 +671,6 @@ configurable SLA target times per priority and category, session priority assign
     - "SLA Policies & Compliance" expander with compliance metrics, policy table/creator form, and one-click alert evaluation trigger.
 - **Quality Gates**: Maintain test coverage floor >= 80%, zero ruff errors, zero mypy errors.
 
-### Explicit Exclusions (Deferred to v0.32.0+)
-- Business hours / calendar schedule calculation (all targets currently 24/7 calendar minutes).
-- Multi-tier escalation re-assignment engine to specific agent user IDs (requires agent auth system).
-
 ### Acceptance Criteria
 1. `sla_policies` table exists, auto-seeds default real estate policies on initialization, and supports CRUD with `(priority, category)` resolution.
 2. `session_labels` table migrates to include `priority TEXT NOT NULL DEFAULT 'medium'` column with validation for `urgent`, `high`, `medium`, `low`.
@@ -684,21 +682,106 @@ configurable SLA target times per priority and category, session priority assign
 8. Full test suite passes with >= 80% coverage and zero ruff / mypy errors.
 
 ### Granular Task Breakdown
-- [ ] Task 1: `ROADMAP.md` v0.31.0 plan specification and `docs/PROGRESS.md` record initialization
-- [ ] Task 2: Database schema migration, `sla_policies` CRUD, and priority support in `api/db_utils.py`
-- [ ] Task 3: Unit tests for database priority migration and SLA policy CRUD in `tests/test_db_utils.py`
-- [ ] Task 4: Pydantic schemas in `api/pydantic_models.py`
-- [ ] Task 5: Unit tests for SLA Pydantic models in `tests/test_models.py`
-- [ ] Task 6: Core SLA calculation, breach detection, alert dispatching, and compliance analytics engine in `api/sla.py`
-- [ ] Task 7: Unit tests for SLA engine in `tests/test_sla.py`
-- [ ] Task 8: FastAPI routes in `api/main.py` and session priority update handling
-- [ ] Task 9: Integration and endpoint tests for FastAPI SLA routes in `tests/test_api_routes.py`
-- [ ] Task 10: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py`
-- [ ] Task 11: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
-- [ ] Task 12: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [ ] Task 13: Documentation updates in `docs/API.md` and `README.md`
-- [ ] Task 14: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
-- [ ] Task 15: Final verification, progress record completion, and review audit
+- [x] Task 1: `ROADMAP.md` v0.31.0 plan specification and `docs/PROGRESS.md` record initialization
+- [x] Task 2: Database schema migration, `sla_policies` CRUD, and priority support in `api/db_utils.py`
+- [x] Task 3: Unit tests for database priority migration and SLA policy CRUD in `tests/test_db_utils.py`
+- [x] Task 4: Pydantic schemas in `api/pydantic_models.py`
+- [x] Task 5: Unit tests for SLA Pydantic models in `tests/test_models.py`
+- [x] Task 6: Core SLA calculation, breach detection, alert dispatching, and compliance analytics engine in `api/sla.py`
+- [x] Task 7: Unit tests for SLA engine in `tests/test_sla.py`
+- [x] Task 8: FastAPI routes in `api/main.py` and session priority update handling
+- [x] Task 9: Integration and endpoint tests for FastAPI SLA routes in `tests/test_api_routes.py`
+- [x] Task 10: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py`
+- [x] Task 11: Streamlit UI priority triage, SLA countdown card, and compliance panel in `app/sidebar.py`
+- [x] Task 12: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [x] Task 13: Documentation updates in `docs/API.md` and `README.md`
+- [x] Task 14: Version bump to 0.31.0 in `pyproject.toml` and `api/settings.py`
+- [x] Task 15: Final verification, progress record completion, and review audit
+
+## v0.32.0 plan — Customer Support Agent Assignment, Tiered Escalation Routing & Operating Business Hours Engine
+
+Deliver an operational support agent directory, tiered session routing, workload balancing, and operating business hours engine:
+support agent profiles (`support_agents` table: ID, name, email, tier, department/specialty, status), session assignment and escalation tiers (`assigned_agent` and `escalation_tier` on `session_labels`), assignment audit tracking (`session_assignment_history` table), intelligent workload-balanced auto-assignment, real-time assignment and tier escalation webhook triggers (`session.assigned`, `session.tier_escalated`), operating business hours engine (`api/business_hours.py`) calculating business-minute aware SLA deadlines and operating state, and Streamlit UI assignment controls, agent workload dashboard, and queue filters.
+
+### Scope & Objectives
+- **Support Agent Directory & Profile Management**:
+  - SQLite table `support_agents` (`id`, `name`, `email`, `tier`, `department`, `is_active`, `created_at`, `updated_at`).
+  - Pre-seeded default property management agent profiles across tiers:
+    - Frontline (Tier 1): `agent_sarah` (Sarah Connor, general_leasing), `agent_david` (David Miller, maintenance)
+    - Senior Operations (Tier 2): `agent_elena` (Elena Vance, maintenance), `agent_marcus` (Marcus Brody, billing)
+    - Management & Legal (Tier 3): `agent_rachel` (Rachel Green, management)
+  - DB CRUD operations in `api/db_utils.py`: create, get, list, update, and delete support agents.
+- **Session Agent Assignment & Tiered Routing**:
+  - Schema migration on `session_labels`:
+    - Add `assigned_agent TEXT DEFAULT NULL`
+    - Add `escalation_tier TEXT NOT NULL DEFAULT 'tier_1'` (`tier_1`, `tier_2`, `tier_3`)
+  - Schema table `session_assignment_history` (`id`, `session_id`, `assigned_by`, `previous_agent`, `new_agent`, `previous_tier`, `new_tier`, `reason`, `assigned_at`).
+  - Core assignment module `api/assignment.py`:
+    - `assign_session(session_id, agent_id=None, tier=None, assigned_by=None, reason=None)`: validates agent, tier, updates session, logs history, and dispatches webhooks.
+    - `auto_assign_session(session_id, strategy="least_busy")`: assigns least-busy eligible active agent for the session's category and tier.
+    - `get_agent_workload_analytics()`: computes active sessions per agent, pending tickets per tier, and unassigned queue count.
+  - Webhook integration: extend `VALID_WEBHOOK_EVENTS` to support `"session.assigned"` and `"session.tier_escalated"`.
+- **Operating Business Hours Engine (`api/business_hours.py`)**:
+  - Configurable weekly schedule: Monday to Friday 09:00 - 18:00 (default), with weekend/holiday boundary crossing.
+  - `is_within_business_hours(dt, schedule=None) -> bool`.
+  - `get_next_business_window_start(dt, schedule=None) -> datetime`.
+  - `add_business_minutes(start_dt, minutes, schedule=None) -> datetime`: advances timestamps strictly through open business minutes.
+  - `get_business_hours_status(current_time=None) -> BusinessHoursStatus`: returns live open/closed indicator, next opening time, and schedule summary.
+  - SLA policy enhancement: add `use_business_hours INTEGER NOT NULL DEFAULT 0` column to `sla_policies` and wire into `calculate_session_sla_status()`.
+- **FastAPI Endpoints (`api/main.py`)**:
+  - `GET /agents`: list all agents with filters for `tier`, `department`, `is_active`.
+  - `POST /agents`: create a new support agent profile.
+  - `GET /agents/{agent_id}`: get agent profile.
+  - `PATCH /agents/{agent_id}`: update agent profile.
+  - `DELETE /agents/{agent_id}`: delete/deactivate agent.
+  - `GET /agents/workload`: get team workload analytics and queue distribution.
+  - `POST /sessions/{session_id}/assign`: assign or reassign session to agent / tier.
+  - `POST /sessions/{session_id}/auto-assign`: auto-assign least-busy eligible agent.
+  - `GET /sessions/{session_id}/assignment-history`: fetch assignment audit history.
+  - `GET /business-hours/status`: get current operating hours status and schedule.
+- **Client & Streamlit UI Integration**:
+  - Client methods in `app/api_utils.py`: `list_agents()`, `create_agent()`, `get_agent()`, `update_agent()`, `delete_agent()`, `get_agent_workload()`, `assign_session()`, `auto_assign_session()`, `get_session_assignment_history()`, `get_business_hours_status()`.
+  - Streamlit UI in `app/sidebar.py`:
+    - Operating Hours status badge (🟢 Open / 🌙 Closed) in sidebar header.
+    - Session Assignee & Escalation Tier controls in session metadata panel with 1-click Auto-Assign button.
+    - Assignment history audit viewer expander for active session.
+    - Past Sessions queue filters: All, Unassigned, Assigned to Me, Escalated (Tier 2/3).
+    - Team Workload & Agent Directory management expander.
+- **Quality Gates**: Maintain test coverage floor >= 80%, zero ruff errors, zero mypy errors.
+
+### Explicit Exclusions (Deferred to v0.33.0+)
+- Calendar holiday feed import (custom iCal / Google Calendar integration).
+- Real-time WebSocket agent presence / typing indicator sync across multiple browser sessions.
+
+### Acceptance Criteria
+1. `support_agents` table exists, pre-seeds 5 default real estate agents on initialization, and supports full CRUD.
+2. `session_labels` table migrates to include `assigned_agent TEXT DEFAULT NULL` and `escalation_tier TEXT NOT NULL DEFAULT 'tier_1'` with validation for `tier_1`, `tier_2`, `tier_3`.
+3. `session_assignment_history` table records audit log transitions for agent and tier re-assignments with timestamps, actors, and reasons.
+4. `api/assignment.py` supports manual assignment and least-busy auto-assignment with webhook notifications (`session.assigned`, `session.tier_escalated`).
+5. `api/business_hours.py` accurately evaluates business hours status and advances deadlines across nights and weekends for business-hours SLA policies.
+6. FastAPI endpoints `/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`, and `/business-hours/status` are functional and schema-validated.
+7. Client helpers in `app/api_utils.py` provide typed API methods with error handling.
+8. Streamlit UI displays operating hours indicator, assignee/tier controls, auto-assign action, queue filters, and team workload panel.
+9. Full test suite passes with >= 80% coverage and zero ruff / mypy errors.
+
+### Granular Task Breakdown
+- [ ] Task 1: `ROADMAP.md` v0.32.0 plan specification and `docs/PROGRESS.md` initialization
+- [ ] Task 2: Database schema migration, `support_agents` CRUD, `session_assignment_history` in `api/db_utils.py`
+- [ ] Task 3: Unit tests for database agent CRUD, assignment history, and migrations in `tests/test_db_utils.py`
+- [ ] Task 4: Operating business hours engine in `api/business_hours.py`
+- [ ] Task 5: Unit tests for business hours calculation in `tests/test_business_hours.py`
+- [ ] Task 6: Pydantic schemas in `api/pydantic_models.py`
+- [ ] Task 7: Unit tests for new Pydantic models in `tests/test_models.py`
+- [ ] Task 8: Core assignment, tiered routing, workload analytics, and SLA business hours integration in `api/assignment.py` and `api/sla.py`
+- [ ] Task 9: Unit tests for assignment and workload engine in `tests/test_assignment.py`
+- [ ] Task 10: FastAPI routes in `api/main.py`
+- [ ] Task 11: Integration and endpoint tests for FastAPI agent and assignment routes in `tests/test_api_routes.py`
+- [ ] Task 12: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
+- [ ] Task 13: Streamlit UI assignee/tier controls, auto-assign button, queue filters, and workload panel in `app/sidebar.py`
+- [ ] Task 14: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [ ] Task 15: Documentation updates in `docs/API.md` and `README.md`
+- [ ] Task 16: Version bump to 0.32.0 in `pyproject.toml` and `api/settings.py`
+- [ ] Task 17: Final verification gate, progress record completion, and self-review audit
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
