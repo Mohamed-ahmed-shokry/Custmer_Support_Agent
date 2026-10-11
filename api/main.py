@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from api import macro_suggestions, macros, sla, webhooks
+from api import assignment, business_hours, macro_suggestions, macros, sla, webhooks
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -33,6 +33,7 @@ from api.db_utils import (
     VALID_SESSION_STATUSES,
     create_macro,
     create_sla_policy,
+    create_support_agent,
     create_webhook,
     delete_document_record,
     delete_document_source,
@@ -42,6 +43,7 @@ from api.db_utils import (
     delete_session,
     delete_sessions,
     delete_sla_policy,
+    delete_support_agent,
     delete_webhook,
     get_all_collections,
     get_all_documents,
@@ -55,10 +57,12 @@ from api.db_utils import (
     get_library_stats,
     get_macro,
     get_macro_by_shortcut,
+    get_session_assignment_history,
     get_session_feedback,
     get_session_latest_user_query,
     get_session_metadata,
     get_sla_policy,
+    get_support_agent,
     get_support_triage_analytics,
     get_webhook,
     get_webhook_delivery_logs,
@@ -69,6 +73,7 @@ from api.db_utils import (
     list_macro_categories,
     list_macros,
     list_sla_policies,
+    list_support_agents,
     list_webhooks,
     normalize_session_label,
     ping_db,
@@ -81,6 +86,7 @@ from api.db_utils import (
     update_macro,
     update_session_metadata,
     update_sla_policy,
+    update_support_agent,
     update_webhook,
 )
 from api.observability import (
@@ -99,6 +105,8 @@ from api.presenters import (
     render_session_markdown,
 )
 from api.pydantic_models import (
+    AgentWorkloadResponse,
+    AutoAssignRequest,
     BulkDeleteFileRequest,
     BulkDeleteFileResult,
     BulkDeleteResponse,
@@ -107,6 +115,7 @@ from api.pydantic_models import (
     BulkDeleteSessionResult,
     BulkUploadItem,
     BulkUploadResponse,
+    BusinessHoursStatusResponse,
     ChatMessage,
     CollectionAnalyticsResponse,
     CollectionDetailResponse,
@@ -146,6 +155,9 @@ from api.pydantic_models import (
     RenameCollectionResponse,
     SearchInput,
     SearchResponse,
+    SessionAssignmentHistoryResponse,
+    SessionAssignmentRecord,
+    SessionAssignmentRequest,
     SessionInfo,
     SessionMacroSuggestionsResponse,
     SessionSearchResponse,
@@ -162,6 +174,10 @@ from api.pydantic_models import (
     SLAPolicyResponse,
     SLAPolicyUpdateRequest,
     StatsResponse,
+    SupportAgentCreateRequest,
+    SupportAgentListResponse,
+    SupportAgentResponse,
+    SupportAgentUpdateRequest,
     SupportTriageAnalyticsResponse,
     TagCount,
     UpdateSessionRequest,
@@ -1013,7 +1029,12 @@ def rechunk_collection_route(
 
 
 @app.get("/sessions", response_model=list[SessionInfo])
-def list_sessions(status: str | None = None, tag: str | None = None):
+def list_sessions(
+    status: str | None = None,
+    tag: str | None = None,
+    agent: str | None = None,
+    tier: str | None = None,
+):
     if status is not None:
         cleaned_status = status.strip().lower()
         if cleaned_status not in VALID_SESSION_STATUSES:
@@ -1028,9 +1049,19 @@ def list_sessions(status: str | None = None, tag: str | None = None):
     if tag is not None:
         cleaned_tag = tag.strip().lower()
         tag = cleaned_tag if cleaned_tag else None
-    if status is not None or tag is not None:
-        return get_all_sessions(status=status, tag=tag)
-    return get_all_sessions()
+    if agent is not None:
+        cleaned_agent = agent.strip().lower()
+        agent = cleaned_agent if cleaned_agent else None
+    if tier is not None:
+        cleaned_tier = tier.strip().lower()
+        tier = cleaned_tier if cleaned_tier else None
+
+    return get_all_sessions(
+        status=status,
+        tag=tag,
+        assigned_agent=agent,
+        escalation_tier=tier,
+    )
 
 
 MAX_SEARCH_LIMIT = 100
@@ -1323,6 +1354,8 @@ def update_session_route(
             and request.tags is None
             and request.summary is None
             and request.resolution_notes is None
+            and request.assigned_agent is None
+            and request.escalation_tier is None
             and request.label is not None
         ):
             label = normalize_session_label(request.label)
@@ -1336,6 +1369,8 @@ def update_session_route(
                 tags=request.tags,
                 summary=request.summary,
                 resolution_notes=request.resolution_notes,
+                assigned_agent=request.assigned_agent,
+                escalation_tier=request.escalation_tier,
             )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1977,3 +2012,153 @@ def evaluate_sla_alerts_route(request: SLAAlertEvaluateRequest | None = None):
 def get_sla_analytics_route():
     analytics = sla.get_sla_compliance_analytics()
     return SLAComplianceAnalyticsResponse(**analytics)
+
+
+# =====================================================================
+# Support Agents, Session Assignment & Business Hours Endpoints
+# =====================================================================
+
+
+@app.get("/agents", response_model=SupportAgentListResponse)
+def list_agents_route(
+    tier: str | None = None,
+    department: str | None = None,
+    active_only: bool = False,
+):
+    items = list_support_agents(tier=tier, department=department, active_only=active_only)
+    return SupportAgentListResponse(
+        items=[SupportAgentResponse(**item) for item in items],
+        total=len(items),
+    )
+
+
+@app.post("/agents", response_model=SupportAgentResponse, status_code=201)
+def create_agent_route(agent_in: SupportAgentCreateRequest):
+    existing = get_support_agent(agent_in.id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Support agent with id '{agent_in.id}' already exists.",
+        )
+    created = create_support_agent(
+        agent_id=agent_in.id,
+        name=agent_in.name,
+        email=agent_in.email,
+        tier=agent_in.tier,
+        department=agent_in.department,
+        is_active=1 if agent_in.is_active else 0,
+    )
+    return SupportAgentResponse(**created)
+
+
+@app.get("/agents/workload", response_model=AgentWorkloadResponse)
+def get_agents_workload_route():
+    analytics = assignment.get_agent_workload_analytics()
+    return AgentWorkloadResponse(**analytics)
+
+
+@app.get("/agents/{agent_id}", response_model=SupportAgentResponse)
+def get_agent_route(agent_id: str):
+    agent = get_support_agent(agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Support agent '{agent_id}' was not found.",
+        )
+    return SupportAgentResponse(**agent)
+
+
+@app.patch("/agents/{agent_id}", response_model=SupportAgentResponse)
+def update_agent_route(agent_id: str, agent_in: SupportAgentUpdateRequest):
+    existing = get_support_agent(agent_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Support agent '{agent_id}' was not found.",
+        )
+    update_support_agent(
+        agent_id=agent_id,
+        name=agent_in.name,
+        email=agent_in.email,
+        tier=agent_in.tier,
+        department=agent_in.department,
+        is_active=agent_in.is_active,
+    )
+    updated = get_support_agent(agent_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Agent update failed.")
+    return SupportAgentResponse(**updated)
+
+
+@app.delete("/agents/{agent_id}")
+def delete_agent_route(agent_id: str):
+    deleted = delete_support_agent(agent_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Support agent '{agent_id}' was not found.",
+        )
+    return {"message": f"Support agent '{agent_id}' deleted."}
+
+
+@app.post("/sessions/{session_id}/assign", response_model=SessionInfo)
+def assign_session_route(session_id: str, assign_in: SessionAssignmentRequest):
+    _require_session_id(session_id)
+    _get_session_summary_or_404(session_id)
+    try:
+        res = assignment.assign_session(
+            session_id=session_id,
+            agent_id=assign_in.agent_id,
+            tier=assign_in.tier,
+            assigned_by=assign_in.assigned_by,
+            reason=assign_in.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return SessionInfo(**res["metadata"])
+
+
+@app.post("/sessions/{session_id}/auto-assign", response_model=SessionInfo)
+def auto_assign_session_route(session_id: str, req: AutoAssignRequest | None = None):
+    _require_session_id(session_id)
+    _get_session_summary_or_404(session_id)
+    strategy = req.strategy if req else "least_busy"
+    target_tier = req.target_tier if req else None
+    department = req.department if req else None
+    assigned_by = req.assigned_by if req else "auto_dispatcher"
+
+    try:
+        res = assignment.auto_assign_session(
+            session_id=session_id,
+            strategy=strategy,
+            target_tier=target_tier,
+            department=department,
+            assigned_by=assigned_by,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return SessionInfo(**res["metadata"])
+
+
+@app.get(
+    "/sessions/{session_id}/assignment-history",
+    response_model=SessionAssignmentHistoryResponse,
+)
+def get_session_assignment_history_route(session_id: str, limit: int = 50):
+    _require_session_id(session_id)
+    _get_session_summary_or_404(session_id)
+    history = get_session_assignment_history(session_id=session_id, limit=limit)
+    return SessionAssignmentHistoryResponse(
+        session_id=session_id,
+        items=[SessionAssignmentRecord(**h) for h in history],
+        total=len(history),
+    )
+
+
+@app.get("/business-hours/status", response_model=BusinessHoursStatusResponse)
+def get_business_hours_status_route():
+    status = business_hours.get_business_hours_status()
+    return BusinessHoursStatusResponse(**status)
+
