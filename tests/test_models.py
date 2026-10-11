@@ -3,6 +3,10 @@ from datetime import datetime
 import pytest
 from api.pydantic_models import (
     DEFAULT_MODEL,
+    AgentWorkloadItem,
+    AgentWorkloadResponse,
+    AutoAssignRequest,
+    BusinessHoursStatusResponse,
     ChunkingStrategy,
     CollectionAnalyticsResponse,
     CollectionRechunkRequest,
@@ -24,6 +28,9 @@ from api.pydantic_models import (
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
+    SessionAssignmentHistoryResponse,
+    SessionAssignmentRecord,
+    SessionAssignmentRequest,
     SessionInfo,
     SessionMacroSuggestionsResponse,
     SessionSLAStatusResponse,
@@ -37,6 +44,10 @@ from api.pydantic_models import (
     SLAPolicyResponse,
     SLAPolicyUpdateRequest,
     SourceInfo,
+    SupportAgentCreateRequest,
+    SupportAgentListResponse,
+    SupportAgentResponse,
+    SupportAgentUpdateRequest,
     SupportTriageAnalyticsResponse,
     TagCount,
     UpdateSessionRequest,
@@ -848,5 +859,207 @@ def test_sla_alert_and_analytics_models():
     assert analytics.total_tracked_sessions == expected_total_sessions
     expected_rate = 90.0
     assert analytics.compliance_rate == expected_rate
+
+
+def test_session_info_and_update_with_assignment_fields():
+    now = datetime(2026, 10, 11, 10, 0, 0)
+    info = SessionInfo(
+        session_id="s-assign-1",
+        message_count=1,
+        last_active=now,
+        assigned_agent="sarah_concierge",
+        escalation_tier="tier_2",
+    )
+    assert info.assigned_agent == "sarah_concierge"
+    assert info.escalation_tier == "tier_2"
+
+    # UpdateSessionRequest validations
+    update_req = UpdateSessionRequest(
+        assigned_agent="david_maintenance",
+        escalation_tier="tier_1",
+    )
+    assert update_req.assigned_agent == "david_maintenance"
+    assert update_req.escalation_tier == "tier_1"
+
+    # Invalid escalation tier
+    with pytest.raises(ValidationError):
+        UpdateSessionRequest(escalation_tier="tier_99")
+
+
+def test_sla_policy_with_business_hours_field():
+    create_req = SLAPolicyCreateRequest(
+        name="Business Hours Tier 1",
+        priority="high",
+        category="leasing",
+        response_time_minutes=30,
+        resolution_time_minutes=120,
+        use_business_hours=True,
+    )
+    assert create_req.use_business_hours is True
+
+    update_req = SLAPolicyUpdateRequest(use_business_hours=False)
+    assert update_req.use_business_hours is False
+
+    policy_resp = SLAPolicyResponse(
+        id=1,
+        name="Policy 1",
+        priority="high",
+        category="leasing",
+        response_time_minutes=30,
+        resolution_time_minutes=120,
+        is_active=True,
+        use_business_hours=True,
+    )
+    assert policy_resp.use_business_hours is True
+
+    status_resp = SessionSLAStatusResponse(
+        session_id="sess-sla-biz",
+        priority="high",
+        category="leasing",
+        status="active",
+        response_target_minutes=30,
+        resolution_target_minutes=120,
+        use_business_hours=True,
+    )
+    assert status_resp.use_business_hours is True
+
+
+def test_support_agent_create_and_update_request():
+    agent_req = SupportAgentCreateRequest(
+        id="alex_turner",
+        name="Alex Turner",
+        email="alex@propertymanagement.test",
+        tier="tier_2",
+        department="maintenance",
+    )
+    assert agent_req.id == "alex_turner"
+    assert agent_req.tier == "tier_2"
+    assert agent_req.department == "maintenance"
+
+    # Validation errors: empty id, bad email, bad tier
+    with pytest.raises(ValidationError):
+        SupportAgentCreateRequest(
+            id="",
+            name="Alex",
+            email="alex@test.com",
+        )
+
+    with pytest.raises(ValidationError):
+        SupportAgentCreateRequest(
+            id="alex",
+            name="Alex",
+            email="invalid-email",
+        )
+
+    with pytest.raises(ValidationError):
+        SupportAgentCreateRequest(
+            id="alex",
+            name="Alex",
+            email="alex@test.com",
+            tier="tier_invalid",
+        )
+
+    # SupportAgentUpdateRequest
+    up_req = SupportAgentUpdateRequest(tier="tier_3", is_active=False)
+    assert up_req.tier == "tier_3"
+    assert up_req.is_active is False
+
+    with pytest.raises(ValidationError):
+        SupportAgentUpdateRequest()  # at least one field required
+
+
+def test_support_agent_response_and_list():
+    resp = SupportAgentResponse(
+        id="agent_1",
+        name="Agent One",
+        email="agent1@test.com",
+        tier="tier_1",
+        department="general_leasing",
+        is_active=True,
+    )
+    assert resp.id == "agent_1"
+    assert resp.is_active is True
+
+    list_resp = SupportAgentListResponse(items=[resp], total=1)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+
+def test_session_assignment_request_and_history():
+    assign_req = SessionAssignmentRequest(
+        agent_id="sarah_concierge",
+        tier="tier_2",
+        assigned_by="dispatcher",
+        reason="Resident requested supervisor",
+    )
+    assert assign_req.agent_id == "sarah_concierge"
+    assert assign_req.tier == "tier_2"
+    assert assign_req.assigned_by == "dispatcher"
+
+    with pytest.raises(ValidationError):
+        SessionAssignmentRequest(tier="invalid_tier")
+
+    auto_req = AutoAssignRequest(
+        strategy="least_busy",
+        target_tier="tier_1",
+        department="general_leasing",
+    )
+    assert auto_req.strategy == "least_busy"
+    assert auto_req.target_tier == "tier_1"
+
+    rec = SessionAssignmentRecord(
+        id=1,
+        session_id="s123",
+        assigned_by="system",
+        previous_agent=None,
+        new_agent="sarah_concierge",
+        previous_tier="tier_1",
+        new_tier="tier_2",
+        reason="Escalated to Tier 2",
+        assigned_at="2026-10-11T12:00:00",
+    )
+    hist_resp = SessionAssignmentHistoryResponse(session_id="s123", items=[rec], total=1)
+    assert hist_resp.total == 1
+    assert hist_resp.items[0].new_agent == "sarah_concierge"
+
+
+def test_agent_workload_and_business_hours_response():
+    agent = SupportAgentResponse(
+        id="agent_1",
+        name="Agent One",
+        email="agent1@test.com",
+        tier="tier_1",
+        department="general_leasing",
+        is_active=True,
+    )
+    workload_item = AgentWorkloadItem(
+        agent=agent,
+        active_sessions_count=3,
+        resolved_sessions_count=12,
+        total_sessions_count=15,
+    )
+    expected_active = 3
+    assert workload_item.active_sessions_count == expected_active
+
+    workload_resp = AgentWorkloadResponse(
+        agents=[workload_item],
+        total_active_sessions=3,
+        unassigned_active_sessions=1,
+        tier_distribution={"tier_1": 3},
+    )
+    assert workload_resp.total_active_sessions == expected_active
+    assert workload_resp.unassigned_active_sessions == 1
+
+    biz_resp = BusinessHoursStatusResponse(
+        is_open=True,
+        current_time="2026-10-12T10:00:00",
+        next_open_at=None,
+        timezone="UTC",
+        schedule={"monday": "09:00 - 18:00"},
+        day_name="Monday",
+    )
+    assert biz_resp.is_open is True
+    assert biz_resp.day_name == "Monday"
+
 
 
