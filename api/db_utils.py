@@ -70,7 +70,9 @@ _CREATE_SESSION_LABELS_TABLE = (
     "tags TEXT NOT NULL DEFAULT '', "
     "summary TEXT DEFAULT '', "
     "resolution_notes TEXT DEFAULT '', "
-    "priority TEXT NOT NULL DEFAULT 'medium')"
+    "priority TEXT NOT NULL DEFAULT 'medium', "
+    "assigned_agent TEXT DEFAULT NULL, "
+    "escalation_tier TEXT NOT NULL DEFAULT 'tier_1')"
 )
 
 _CREATE_SLA_POLICIES_TABLE = (
@@ -82,6 +84,7 @@ _CREATE_SLA_POLICIES_TABLE = (
     "response_time_minutes INTEGER NOT NULL, "
     "resolution_time_minutes INTEGER NOT NULL, "
     "is_active INTEGER NOT NULL DEFAULT 1, "
+    "use_business_hours INTEGER NOT NULL DEFAULT 0, "
     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
     "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
@@ -92,15 +95,67 @@ _CREATE_SLA_POLICY_INDEX = (
 
 _INSERT_SLA_POLICY = (
     "INSERT INTO sla_policies "
-    "(name, priority, category, response_time_minutes, resolution_time_minutes, is_active) "
-    "VALUES (?, ?, ?, ?, ?, ?)"
+    "(name, priority, category, response_time_minutes, resolution_time_minutes, "
+    "is_active, use_business_hours) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
 _SELECT_SLA_POLICY_BY_ID = (
     "SELECT id, name, priority, category, response_time_minutes, "
-    "resolution_time_minutes, is_active, created_at, updated_at "
+    "resolution_time_minutes, is_active, use_business_hours, created_at, updated_at "
     "FROM sla_policies WHERE id = ?"
 )
 _DELETE_SLA_POLICY = "DELETE FROM sla_policies WHERE id = ?"
+
+_CREATE_SUPPORT_AGENTS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS support_agents ("
+    "id TEXT PRIMARY KEY, "
+    "name TEXT NOT NULL, "
+    "email TEXT NOT NULL, "
+    "tier TEXT NOT NULL DEFAULT 'tier_1', "
+    "department TEXT NOT NULL DEFAULT 'general_leasing', "
+    "is_active INTEGER NOT NULL DEFAULT 1, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+_CREATE_SESSION_ASSIGNMENT_HISTORY_TABLE = (
+    "CREATE TABLE IF NOT EXISTS session_assignment_history ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "session_id TEXT NOT NULL, "
+    "assigned_by TEXT DEFAULT 'system', "
+    "previous_agent TEXT DEFAULT NULL, "
+    "new_agent TEXT DEFAULT NULL, "
+    "previous_tier TEXT DEFAULT 'tier_1', "
+    "new_tier TEXT NOT NULL DEFAULT 'tier_1', "
+    "reason TEXT DEFAULT '', "
+    "assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+
+_INSERT_SUPPORT_AGENT = (
+    "INSERT INTO support_agents "
+    "(id, name, email, tier, department, is_active) "
+    "VALUES (?, ?, ?, ?, ?, ?)"
+)
+
+_SELECT_SUPPORT_AGENT_BY_ID = (
+    "SELECT id, name, email, tier, department, is_active, created_at, updated_at "
+    "FROM support_agents WHERE id = ?"
+)
+
+_DELETE_SUPPORT_AGENT = "DELETE FROM support_agents WHERE id = ?"
+
+_INSERT_ASSIGNMENT_HISTORY = (
+    "INSERT INTO session_assignment_history "
+    "(session_id, assigned_by, previous_agent, new_agent, previous_tier, new_tier, reason) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?)"
+)
+
+_SELECT_ASSIGNMENT_HISTORY = (
+    "SELECT id, session_id, assigned_by, previous_agent, new_agent, "
+    "previous_tier, new_tier, reason, assigned_at "
+    "FROM session_assignment_history WHERE session_id = ? "
+    "ORDER BY id DESC LIMIT ?"
+)
 
 _CREATE_FEEDBACK_TABLE = (
     "CREATE TABLE IF NOT EXISTS feedback "
@@ -210,6 +265,8 @@ VALID_WEBHOOK_EVENTS = {
     "ping",
     "sla.approaching_breach",
     "sla.breached",
+    "session.assigned",
+    "session.tier_escalated",
 }
 MAX_WEBHOOK_URL_LENGTH = 500
 MAX_WEBHOOK_SECRET_LENGTH = 256
@@ -224,16 +281,33 @@ MAX_SESSION_TAGS_LENGTH = 200
 MAX_SESSION_SUMMARY_LENGTH = 2000
 MAX_RESOLUTION_NOTES_LENGTH = 2000
 
+VALID_AGENT_TIERS = {"tier_1", "tier_2", "tier_3"}
+DEFAULT_AGENT_TIER = "tier_1"
+VALID_AGENT_DEPARTMENTS = {"general_leasing", "maintenance", "billing", "management"}
+DEFAULT_AGENT_DEPARTMENT = "general_leasing"
+MAX_AGENT_ID_LENGTH = 50
+MAX_AGENT_NAME_LENGTH = 100
+MAX_AGENT_EMAIL_LENGTH = 150
+MAX_ASSIGNMENT_REASON_LENGTH = 500
+
+DEFAULT_SUPPORT_AGENTS = [
+    ("agent_sarah", "Sarah Connor", "sarah.connor@example.com", "tier_1", "general_leasing", 1),
+    ("agent_david", "David Miller", "david.miller@example.com", "tier_1", "maintenance", 1),
+    ("agent_elena", "Elena Vance", "elena.vance@example.com", "tier_2", "maintenance", 1),
+    ("agent_marcus", "Marcus Brody", "marcus.brody@example.com", "tier_2", "billing", 1),
+    ("agent_rachel", "Rachel Green", "rachel.green@example.com", "tier_3", "management", 1),
+]
+
 MAX_SLA_POLICY_NAME_LENGTH = 100
 MAX_SLA_CATEGORY_LENGTH = 50
 
 DEFAULT_SLA_POLICIES = [
-    ("Urgent Maintenance SLA", "urgent", "maintenance", 15, 120, 1),
-    ("Urgent General SLA", "urgent", "general", 30, 240, 1),
-    ("High Maintenance SLA", "high", "maintenance", 60, 480, 1),
-    ("High General SLA", "high", "general", 120, 720, 1),
-    ("Medium General SLA", "medium", "general", 240, 1440, 1),
-    ("Low General SLA", "low", "general", 1440, 2880, 1),
+    ("Urgent Maintenance SLA", "urgent", "maintenance", 15, 120, 1, 0),
+    ("Urgent General SLA", "urgent", "general", 30, 240, 1, 0),
+    ("High Maintenance SLA", "high", "maintenance", 60, 480, 1, 0),
+    ("High General SLA", "high", "general", 120, 720, 1, 1),
+    ("Medium General SLA", "medium", "general", 240, 1440, 1, 1),
+    ("Low General SLA", "low", "general", 1440, 2880, 1, 1),
 ]
 
 _INSERT_APP_LOG = (
@@ -290,7 +364,12 @@ _SELECT_ALL_SESSIONS_BASE = (
     ") AS resolution_notes, "
     "COALESCE("
     "(SELECT priority FROM session_labels WHERE session_id = l1.session_id), 'medium'"
-    ") AS priority "
+    ") AS priority, "
+    "(SELECT assigned_agent FROM session_labels "
+    "WHERE session_id = l1.session_id) AS assigned_agent, "
+    "COALESCE("
+    "(SELECT escalation_tier FROM session_labels WHERE session_id = l1.session_id), 'tier_1'"
+    ") AS escalation_tier "
     "FROM application_logs l1 GROUP BY l1.session_id"
 )
 _SELECT_ALL_SESSIONS = _SELECT_ALL_SESSIONS_BASE + " ORDER BY last_active DESC"
@@ -313,7 +392,12 @@ _SEARCH_SESSIONS = (
     ") AS resolution_notes, "
     "COALESCE("
     "(SELECT priority FROM session_labels WHERE session_id = l1.session_id), 'medium'"
-    ") AS priority "
+    ") AS priority, "
+    "(SELECT assigned_agent FROM session_labels "
+    "WHERE session_id = l1.session_id) AS assigned_agent, "
+    "COALESCE("
+    "(SELECT escalation_tier FROM session_labels WHERE session_id = l1.session_id), 'tier_1'"
+    ") AS escalation_tier "
     "FROM application_logs l1 "
     "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
     "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
@@ -404,6 +488,52 @@ def normalize_session_priority(value: str | None) -> str:
         valid_opts = sorted(VALID_SESSION_PRIORITIES)
         raise ValueError(f"Invalid session priority '{value}'. Must be one of: {valid_opts}.")
     return clean
+
+
+def normalize_agent_id(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        raise ValueError("Agent ID must not be blank.")
+    if len(cleaned) > MAX_AGENT_ID_LENGTH:
+        raise ValueError(f"Agent ID must be at most {MAX_AGENT_ID_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_agent_name(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Agent name must not be blank.")
+    if len(cleaned) > MAX_AGENT_NAME_LENGTH:
+        raise ValueError(f"Agent name must be at most {MAX_AGENT_NAME_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_agent_email(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        raise ValueError("Agent email must not be blank.")
+    if "@" not in cleaned or "." not in cleaned:
+        raise ValueError("Agent email must be a valid email address.")
+    if len(cleaned) > MAX_AGENT_EMAIL_LENGTH:
+        raise ValueError(f"Agent email must be at most {MAX_AGENT_EMAIL_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_agent_tier(value: str | None) -> str:
+    cleaned = (value or DEFAULT_AGENT_TIER).strip().lower()
+    if cleaned not in VALID_AGENT_TIERS:
+        raise ValueError(
+            f"Invalid agent tier '{value}'. Must be one of: {sorted(VALID_AGENT_TIERS)}."
+        )
+    return cleaned
+
+
+def normalize_agent_department(value: str | None) -> str:
+    cleaned = (value or DEFAULT_AGENT_DEPARTMENT).strip().lower()
+    if cleaned not in VALID_AGENT_DEPARTMENTS:
+        valid_depts = sorted(VALID_AGENT_DEPARTMENTS)
+        raise ValueError(f"Invalid agent department '{value}'. Must be one of: {valid_depts}.")
+    return cleaned
 
 
 def normalize_webhook_url(value: str | None) -> str:
@@ -794,7 +924,12 @@ def _truncate_preview(preview: str | None) -> str:
     return preview[: PREVIEW_MAX_LENGTH - 1].rstrip() + "…"
 
 
-def get_all_sessions(status: str | None = None, tag: str | None = None):
+def get_all_sessions(
+    status: str | None = None,
+    tag: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
+):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
         query = f"SELECT * FROM ({_SELECT_ALL_SESSIONS_BASE}) ORDER BY last_active DESC"
@@ -812,6 +947,19 @@ def get_all_sessions(status: str | None = None, tag: str | None = None):
                 raw_tags = s_dict.get("tags", "") or ""
                 row_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
                 if clean_tag not in row_tags:
+                    continue
+            if assigned_agent:
+                clean_assigned = assigned_agent.strip().lower()
+                row_assigned = (s_dict.get("assigned_agent") or "").strip().lower()
+                if clean_assigned == "unassigned":
+                    if row_assigned:
+                        continue
+                elif row_assigned != clean_assigned:
+                    continue
+            if escalation_tier:
+                clean_tier = escalation_tier.strip().lower()
+                row_tier = (s_dict.get("escalation_tier") or DEFAULT_AGENT_TIER).strip().lower()
+                if row_tier != clean_tier:
                     continue
             if not s_dict.get("label"):
                 s_dict["label"] = None
@@ -836,12 +984,22 @@ def search_sessions(query: str, limit: int = 20) -> list[dict]:
             q_cursor = conn.cursor()
             q_cursor.execute(_SELECT_MATCHED_QUERIES, (sid, pattern, pattern))
             matched_queries = [r["user_query"] for r in q_cursor.fetchall() if r["user_query"]]
+            prio_val = row["priority"] if row["priority"] else DEFAULT_SESSION_PRIORITY
+            agent_val = row["assigned_agent"] if row["assigned_agent"] else None
+            tier_val = (
+                row["escalation_tier"]
+                if row["escalation_tier"]
+                else DEFAULT_AGENT_TIER
+            )
             results.append(
                 {
                     "session_id": sid,
                     "label": row["label"] if row["label"] else None,
                     "status": row["status"] if row["status"] else "active",
                     "tags": row["tags"] if row["tags"] else "",
+                    "priority": prio_val,
+                    "assigned_agent": agent_val,
+                    "escalation_tier": tier_val,
                     "match_count": row["match_count"],
                     "preview": _truncate_preview(row["preview"]),
                     "last_active": row["last_active"],
@@ -1024,7 +1182,7 @@ def get_feedback_analytics(recent_comments_limit: int = 5) -> dict:
 
 
 def migrate_session_labels():
-    """Add newer columns (status, tags, summary, notes, priority) to session_labels if missing."""
+    """Add newer columns (status, tags, summary, notes, priority, agent, tier) if missing."""
     with closing(get_db_connection()) as conn:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(session_labels)")]
         if "status" not in columns:
@@ -1041,6 +1199,13 @@ def migrate_session_labels():
             conn.execute(
                 "ALTER TABLE session_labels ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'"
             )
+        if "assigned_agent" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN assigned_agent TEXT DEFAULT NULL")
+        if "escalation_tier" not in columns:
+            conn.execute(
+                "ALTER TABLE session_labels "
+                "ADD COLUMN escalation_tier TEXT NOT NULL DEFAULT 'tier_1'"
+            )
         conn.commit()
 
 
@@ -1052,8 +1217,10 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
     summary: str | None = None,
     resolution_notes: str | None = None,
     priority: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
 ) -> bool:
-    """Update metadata (label, status, tags, summary, notes, priority) for a session."""
+    """Update metadata (label, status, tags, summary, notes, priority, agent, tier)."""
     clean_label = normalize_session_label(label) if label is not None else None
     clean_status = normalize_session_status(status) if status is not None else None
     clean_tags = normalize_session_tags(tags) if tags is not None else None
@@ -1062,6 +1229,11 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
         normalize_resolution_notes(resolution_notes) if resolution_notes is not None else None
     )
     clean_priority = normalize_session_priority(priority) if priority is not None else None
+    clean_agent = None
+    if assigned_agent is not None:
+        raw_agent = assigned_agent.strip().lower()
+        clean_agent = None if (not raw_agent or raw_agent == "unassigned") else raw_agent
+    clean_tier = normalize_agent_tier(escalation_tier) if escalation_tier is not None else None
 
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
@@ -1069,8 +1241,9 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             return False
 
         cur = conn.execute(
-            "SELECT label, status, tags, summary, resolution_notes, priority FROM session_labels "
-            "WHERE session_id = ?",
+            "SELECT label, status, tags, summary, resolution_notes, "
+            "priority, assigned_agent, escalation_tier "
+            "FROM session_labels WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         if cur is None:
@@ -1080,10 +1253,13 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_summary = clean_summary or ""
             new_notes = clean_notes or ""
             new_priority = clean_priority or DEFAULT_SESSION_PRIORITY
+            new_agent = clean_agent
+            new_tier = clean_tier or DEFAULT_AGENT_TIER
             conn.execute(
                 "INSERT INTO session_labels "
-                "(session_id, label, status, tags, summary, resolution_notes, priority) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(session_id, label, status, tags, summary, resolution_notes, "
+                "priority, assigned_agent, escalation_tier) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     new_label,
@@ -1092,6 +1268,8 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
                     new_summary,
                     new_notes,
                     new_priority,
+                    new_agent,
+                    new_tier,
                 ),
             )
         else:
@@ -1102,25 +1280,40 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_notes = clean_notes if clean_notes is not None else (cur["resolution_notes"] or "")
             cur_prio = cur["priority"] if cur["priority"] else DEFAULT_SESSION_PRIORITY
             new_priority = clean_priority if clean_priority is not None else cur_prio
+            cur_agent = cur["assigned_agent"] if cur["assigned_agent"] else None
+            new_agent = clean_agent if assigned_agent is not None else cur_agent
+            cur_tier = cur["escalation_tier"] if cur["escalation_tier"] else DEFAULT_AGENT_TIER
+            new_tier = clean_tier if clean_tier is not None else cur_tier
             conn.execute(
                 "UPDATE session_labels "
                 "SET label = ?, status = ?, tags = ?, summary = ?, resolution_notes = ?, "
-                "priority = ? WHERE session_id = ?",
-                (new_label, new_status, new_tags, new_summary, new_notes, new_priority, session_id),
+                "priority = ?, assigned_agent = ?, escalation_tier = ? WHERE session_id = ?",
+                (
+                    new_label,
+                    new_status,
+                    new_tags,
+                    new_summary,
+                    new_notes,
+                    new_priority,
+                    new_agent,
+                    new_tier,
+                    session_id,
+                ),
             )
         conn.commit()
         return True
 
 
 def get_session_metadata(session_id: str) -> dict | None:
-    """Fetch label, status, tags, summary, notes, and priority for a session, or None if unknown."""
+    """Fetch label, status, tags, summary, notes, priority, agent, and tier for a session."""
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
         if not exists:
             return None
         row = conn.execute(
-            "SELECT label, status, tags, summary, resolution_notes, priority FROM session_labels "
-            "WHERE session_id = ?",
+            "SELECT label, status, tags, summary, resolution_notes, "
+            "priority, assigned_agent, escalation_tier "
+            "FROM session_labels WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         if row is None:
@@ -1132,8 +1325,12 @@ def get_session_metadata(session_id: str) -> dict | None:
                 "summary": "",
                 "resolution_notes": "",
                 "priority": DEFAULT_SESSION_PRIORITY,
+                "assigned_agent": None,
+                "escalation_tier": DEFAULT_AGENT_TIER,
             }
         prio_val = row["priority"] if row["priority"] else DEFAULT_SESSION_PRIORITY
+        cur_agent = row["assigned_agent"] if row["assigned_agent"] else None
+        cur_tier = row["escalation_tier"] if row["escalation_tier"] else DEFAULT_AGENT_TIER
         return {
             "session_id": session_id,
             "label": row["label"] if row["label"] else None,
@@ -1142,6 +1339,8 @@ def get_session_metadata(session_id: str) -> dict | None:
             "summary": row["summary"] if row["summary"] else "",
             "resolution_notes": row["resolution_notes"] if row["resolution_notes"] else "",
             "priority": prio_val,
+            "assigned_agent": cur_agent,
+            "escalation_tier": cur_tier,
         }
 
 
@@ -1764,14 +1963,19 @@ def get_session_timestamps(session_id: str) -> dict:
 
 
 def create_sla_policies():
-    """Create sla_policies table, unique index, and seed defaults if empty."""
+    """Create sla_policies table, unique index, migrate columns, seed defaults if empty."""
     with closing(get_db_connection()) as conn:
         conn.execute(_CREATE_SLA_POLICIES_TABLE)
         conn.execute(_CREATE_SLA_POLICY_INDEX)
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(sla_policies)").fetchall()]
+        if "use_business_hours" not in cols:
+            conn.execute(
+                "ALTER TABLE sla_policies ADD COLUMN use_business_hours INTEGER NOT NULL DEFAULT 0"
+            )
         count = conn.execute("SELECT COUNT(*) FROM sla_policies").fetchone()[0]
         if count == 0:
-            for name, prio, cat, resp, resol, act in DEFAULT_SLA_POLICIES:
-                conn.execute(_INSERT_SLA_POLICY, (name, prio, cat, resp, resol, act))
+            for item in DEFAULT_SLA_POLICIES:
+                conn.execute(_INSERT_SLA_POLICY, item)
         conn.commit()
 
 
@@ -1782,6 +1986,7 @@ def create_sla_policy(  # noqa: PLR0913, PLR0917
     response_time_minutes: int = 60,
     resolution_time_minutes: int = 480,
     is_active: int = 1,
+    use_business_hours: int | bool = 0,
 ) -> int:
     """Create a new SLA policy."""
     clean_name = (name or "").strip()
@@ -1805,6 +2010,7 @@ def create_sla_policy(  # noqa: PLR0913, PLR0917
         )
 
     clean_active = 1 if is_active else 0
+    clean_biz = 1 if use_business_hours else 0
 
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
@@ -1817,6 +2023,7 @@ def create_sla_policy(  # noqa: PLR0913, PLR0917
                 response_time_minutes,
                 resolution_time_minutes,
                 clean_active,
+                clean_biz,
             ),
         )
         policy_id = cursor.lastrowid
@@ -1885,7 +2092,7 @@ def list_sla_policies(
     """List SLA policies with optional priority, category, and active filters."""
     query = (
         "SELECT id, name, priority, category, response_time_minutes, "
-        "resolution_time_minutes, is_active, created_at, updated_at "
+        "resolution_time_minutes, is_active, use_business_hours, created_at, updated_at "
         "FROM sla_policies"
     )
     clauses = []
@@ -1928,6 +2135,7 @@ def update_sla_policy(  # noqa: PLR0912, PLR0913, PLR0917
     response_time_minutes: int | None = None,
     resolution_time_minutes: int | None = None,
     is_active: int | None = None,
+    use_business_hours: int | bool | None = None,
 ) -> bool:
     """Update an existing SLA policy; returns True if updated, False if not found."""
     current = get_sla_policy(policy_id)
@@ -1977,14 +2185,27 @@ def update_sla_policy(  # noqa: PLR0912, PLR0913, PLR0917
     if is_active is not None:
         new_active = 1 if is_active else 0
 
+    new_biz = current.get("use_business_hours", 0)
+    if use_business_hours is not None:
+        new_biz = 1 if use_business_hours else 0
+
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE sla_policies "
             "SET name = ?, priority = ?, category = ?, response_time_minutes = ?, "
-            "resolution_time_minutes = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP "
-            "WHERE id = ?",
-            (new_name, new_priority, new_category, new_resp, new_resol, new_active, policy_id),
+            "resolution_time_minutes = ?, is_active = ?, use_business_hours = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_name,
+                new_priority,
+                new_category,
+                new_resp,
+                new_resol,
+                new_active,
+                new_biz,
+                policy_id,
+            ),
         )
         conn.commit()
         return bool(cursor.rowcount and cursor.rowcount > 0)
@@ -1999,6 +2220,196 @@ def delete_sla_policy(policy_id: int) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+def create_support_agents() -> None:
+    """Create support_agents table and seed defaults if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_SUPPORT_AGENTS_TABLE)
+        count = conn.execute("SELECT COUNT(*) FROM support_agents").fetchone()[0]
+        if count == 0:
+            for aid, name, email, tier, dept, act in DEFAULT_SUPPORT_AGENTS:
+                conn.execute(_INSERT_SUPPORT_AGENT, (aid, name, email, tier, dept, act))
+        conn.commit()
+
+
+def create_session_assignment_history() -> None:
+    """Create session_assignment_history table."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_SESSION_ASSIGNMENT_HISTORY_TABLE)
+        conn.commit()
+
+
+def create_support_agent(  # noqa: PLR0913, PLR0917
+    agent_id: str,
+    name: str,
+    email: str,
+    tier: str = "tier_1",
+    department: str = "general_leasing",
+    is_active: bool | int = 1,
+) -> dict:
+    """Create a support agent profile."""
+    clean_id = normalize_agent_id(agent_id)
+    clean_name = normalize_agent_name(name)
+    clean_email = normalize_agent_email(email)
+    clean_tier = normalize_agent_tier(tier)
+    clean_dept = normalize_agent_department(department)
+    clean_active = 1 if is_active else 0
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            _INSERT_SUPPORT_AGENT,
+            (clean_id, clean_name, clean_email, clean_tier, clean_dept, clean_active),
+        )
+        conn.commit()
+    res = get_support_agent(clean_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created support agent.")
+    return res
+
+
+def get_support_agent(agent_id: str) -> dict | None:
+    """Fetch support agent by agent_id, or None if not found."""
+    clean_id = (agent_id or "").strip().lower()
+    if not clean_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(_SELECT_SUPPORT_AGENT_BY_ID, (clean_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_support_agents(
+    tier: str | None = None,
+    department: str | None = None,
+    active_only: bool = False,
+) -> list[dict]:
+    """List support agents with optional filters."""
+    query = (
+        "SELECT id, name, email, tier, department, is_active, created_at, updated_at "
+        "FROM support_agents"
+    )
+    clauses: list[str] = []
+    params: list[object] = []
+
+    if tier:
+        clean_tier = normalize_agent_tier(tier)
+        clauses.append("tier = ?")
+        params.append(clean_tier)
+
+    if department:
+        clean_dept = normalize_agent_department(department)
+        clauses.append("department = ?")
+        params.append(clean_dept)
+
+    if active_only:
+        clauses.append("is_active = 1")
+
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+
+    query += (
+        " ORDER BY CASE tier "
+        "WHEN 'tier_1' THEN 1 "
+        "WHEN 'tier_2' THEN 2 "
+        "WHEN 'tier_3' THEN 3 ELSE 4 END, name ASC"
+    )
+
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_support_agent(  # noqa: PLR0912, PLR0913, PLR0917
+    agent_id: str,
+    name: str | None = None,
+    email: str | None = None,
+    tier: str | None = None,
+    department: str | None = None,
+    is_active: bool | int | None = None,
+) -> bool:
+    """Update support agent profile; returns True if updated, False if not found."""
+    current = get_support_agent(agent_id)
+    if current is None:
+        return False
+
+    new_name = normalize_agent_name(name) if name is not None else current["name"]
+    new_email = normalize_agent_email(email) if email is not None else current["email"]
+    new_tier = normalize_agent_tier(tier) if tier is not None else current["tier"]
+    new_dept = (
+        normalize_agent_department(department) if department is not None else current["department"]
+    )
+    new_active = (1 if is_active else 0) if is_active is not None else current["is_active"]
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE support_agents "
+            "SET name = ?, email = ?, tier = ?, department = ?, is_active = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_name, new_email, new_tier, new_dept, new_active, current["id"]),
+        )
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def delete_support_agent(agent_id: str) -> bool:
+    """Delete support agent by ID; returns True if deleted, False if not found."""
+    clean_id = (agent_id or "").strip().lower()
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(_DELETE_SUPPORT_AGENT, (clean_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def record_session_assignment(  # noqa: PLR0913, PLR0917
+    session_id: str,
+    assigned_by: str = "system",
+    previous_agent: str | None = None,
+    new_agent: str | None = None,
+    previous_tier: str = "tier_1",
+    new_tier: str = "tier_1",
+    reason: str = "",
+) -> dict:
+    """Record a session assignment / tier transition in history."""
+    clean_by = (assigned_by or "system").strip()
+    clean_reason = (reason or "").strip()
+    if len(clean_reason) > MAX_ASSIGNMENT_REASON_LENGTH:
+        clean_reason = clean_reason[:MAX_ASSIGNMENT_REASON_LENGTH]
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _INSERT_ASSIGNMENT_HISTORY,
+            (
+                session_id,
+                clean_by,
+                previous_agent,
+                new_agent,
+                previous_tier,
+                new_tier,
+                clean_reason,
+            ),
+        )
+        entry_id = cursor.lastrowid
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, session_id, assigned_by, previous_agent, new_agent, "
+            "previous_tier, new_tier, reason, assigned_at "
+            "FROM session_assignment_history WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        return dict(row) if row else {}
+
+
+def get_session_assignment_history(session_id: str, limit: int = 50) -> list[dict]:
+    """Fetch assignment history for a session."""
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            _SELECT_ASSIGNMENT_HISTORY,
+            (session_id, max(1, limit)),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -2010,5 +2421,7 @@ migrate_feedback()
 create_webhooks()
 create_support_macros()
 create_sla_policies()
+create_support_agents()
+create_session_assignment_history()
 
 
