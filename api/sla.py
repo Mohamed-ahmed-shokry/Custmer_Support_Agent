@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from api import db_utils, webhooks
+from api import business_hours, db_utils, webhooks
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,7 @@ def calculate_session_sla_status(  # noqa: PLR0912, PLR0915
     category = infer_session_category(tags)
 
     policy = db_utils.get_matching_sla_policy(priority, category)
+    use_business_hours = False
     if policy is None:
         resp_target = 60
         resol_target = 480
@@ -95,6 +96,7 @@ def calculate_session_sla_status(  # noqa: PLR0912, PLR0915
         resol_target = int(policy["resolution_time_minutes"])
         pol_id = policy["id"]
         pol_name = policy["name"]
+        use_business_hours = bool(policy.get("use_business_hours", 0))
 
     now = current_time or datetime.now(UTC)
     if now.tzinfo is None:
@@ -106,8 +108,16 @@ def calculate_session_sla_status(  # noqa: PLR0912, PLR0915
     first_resp_raw = timestamps.get("first_response_at")
     first_resp_dt = parse_timestamp(first_resp_raw)
 
-    response_due_dt = start_dt + timedelta(minutes=resp_target)
-    resolution_due_dt = start_dt + timedelta(minutes=resol_target)
+    if use_business_hours:
+        # Convert start_dt to naive UTC for business hours calculations then restore UTC
+        naive_start = start_dt.replace(tzinfo=None)
+        naive_resp_due = business_hours.add_business_minutes(naive_start, resp_target)
+        naive_resol_due = business_hours.add_business_minutes(naive_start, resol_target)
+        response_due_dt = naive_resp_due.replace(tzinfo=UTC)
+        resolution_due_dt = naive_resol_due.replace(tzinfo=UTC)
+    else:
+        response_due_dt = start_dt + timedelta(minutes=resp_target)
+        resolution_due_dt = start_dt + timedelta(minutes=resol_target)
 
     # 1. First Response SLA
     response_met = False
@@ -161,6 +171,7 @@ def calculate_session_sla_status(  # noqa: PLR0912, PLR0915
         "status": session_status,
         "policy_id": pol_id,
         "policy_name": pol_name,
+        "use_business_hours": use_business_hours,
         "response_target_minutes": resp_target,
         "resolution_target_minutes": resol_target,
         "session_started_at": start_dt.isoformat(),
