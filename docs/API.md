@@ -1,4 +1,4 @@
-# API Reference (v0.31.0)
+# API Reference (v0.32.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -253,18 +253,19 @@ The agent features a configurable Service Level Agreement (SLA) policy manager, 
 ### Endpoints
 
 - `GET /sla/policies`: List all configured SLA policies.
-  - Returns array of `SLAPolicyResponse` objects (`id`, `name`, `priority`, `category`, `first_response_time_minutes`, `resolution_time_minutes`, `warning_threshold_percentage`, `escalate_on_breach`, `is_active`, `created_at`, `updated_at`).
+  - Returns array of `SLAPolicyResponse` objects (`id`, `name`, `priority`, `category`, `first_response_time_minutes`, `resolution_time_minutes`, `warning_threshold_percentage`, `escalate_on_breach`, `use_business_hours`, `is_active`, `created_at`, `updated_at`).
 - `POST /sla/policies`: Create a new SLA policy.
-  - Body: `{"name": "Emergency SLA", "priority": "urgent", "category": "Maintenance", "first_response_time_minutes": 15, "resolution_time_minutes": 120, "warning_threshold_percentage": 75, "escalate_on_breach": true, "is_active": true}`.
+  - Body: `{"name": "Emergency SLA", "priority": "urgent", "category": "Maintenance", "first_response_time_minutes": 15, "resolution_time_minutes": 120, "warning_threshold_percentage": 75, "escalate_on_breach": true, "use_business_hours": false, "is_active": true}`.
   - Returns `201` with created SLA policy record. Returns `400` on validation errors.
 - `GET /sla/policies/{policy_id}`: Retrieve a specific SLA policy by ID.
   - Returns `SLAPolicyResponse` (`404` if not found).
-- `PATCH /sla/policies/{policy_id}`: Partially update an SLA policy's name, priority, category, response time, resolution time, warning threshold, escalation flag, or active status.
+- `PATCH /sla/policies/{policy_id}`: Partially update an SLA policy's name, priority, category, response time, resolution time, warning threshold, escalation flag, business hours flag, or active status.
   - Returns updated `SLAPolicyResponse` (`404` if not found).
 - `DELETE /sla/policies/{policy_id}`: Delete an SLA policy by ID.
   - Returns `{"message": "SLA policy {policy_id} deleted.", "id": <int>}` (`404` if not found).
 - `GET /sessions/{session_id}/sla`: Calculate and return the real-time SLA status and countdown for an active support session.
   - Resolves matching policy based on session priority (`urgent`, `high`, `medium`, `low`) and category.
+  - Honors `use_business_hours` when computing first response and resolution deadlines across operating calendar windows.
   - Calculates status for first response and resolution targets: `met`, `healthy`, `approaching_breach`, or `breached`.
   - Returns `SessionSLAStatusResponse` (`session_id`, `priority`, `policy_id`, `policy_name`, `first_response_status`, `resolution_status`, `first_response_deadline`, `resolution_deadline`, `first_response_time_remaining_minutes`, `resolution_time_remaining_minutes`, `first_response_breached`, `resolution_breached`, `overall_status`, `escalation_triggered`). Returns `404` if session is not found.
 - `POST /sla/evaluate-alerts`: Run proactive background evaluation of SLA compliance across all active sessions.
@@ -274,6 +275,33 @@ The agent features a configurable Service Level Agreement (SLA) policy manager, 
   - Returns `SLAAlertEvaluationResponse` (`evaluated_sessions`, `alerts_dispatched`, `breaches_detected`, `warnings_detected`, `escalations_triggered`, `dispatched_events: [...]`).
 - `GET /sla/analytics`: Aggregated SLA compliance metrics across all historical and active sessions.
   - Returns `SLAComplianceAnalyticsResponse` (`total_tracked_sessions`, `response_compliant_count`, `resolution_compliant_count`, `response_breached_count`, `resolution_breached_count`, `response_compliance_rate`, `resolution_compliance_rate`, `overall_compliance_rate`, `breach_distribution_by_priority: {"urgent": 0, "high": 0, "medium": 0, "low": 0}`, `active_at_risk_count`).
+
+## Support Agents, Tiered Escalation Routing & Business Hours Engine
+
+The system provides agent directory management, tiered escalation routing (`tier_1`, `tier_2`, `tier_3`), assignment audit history, team workload analytics, and business hours schedule calculation.
+
+### Endpoints
+
+- `GET /agents?tier=...&department=...&is_active=...`: List support agents with optional tier, department, or active status filtering.
+  - Returns `SupportAgentListResponse` containing `items` and `total`.
+- `POST /agents`: Register a new support agent profile.
+  - Body: `{"id": "agent_alex", "name": "Alex Smith", "email": "alex@example.com", "tier": "tier_1", "department": "leasing", "is_active": true}`.
+  - Returns `201` with created `SupportAgentResponse`.
+- `GET /agents/{agent_id}`: Retrieve agent details. Returns `404` if not found.
+- `PATCH /agents/{agent_id}`: Partially update agent name, email, tier, department, or active status.
+- `DELETE /agents/{agent_id}`: Remove an agent profile. Returns `404` if not found.
+- `GET /agents/workload`: Comprehensive live workload distribution and capacity analytics across active support agents.
+  - Returns `AgentWorkloadResponse` (`agents: [ { agent: ..., active_sessions_count: int, resolved_sessions_count: int, total_sessions_count: int } ]`, `total_active_sessions`, `unassigned_active_sessions`, `tier_distribution`).
+- `POST /sessions/{session_id}/assign`: Manually assign or transfer a session to an agent or change its escalation tier.
+  - Body: `{"agent_id": "agent_sarah", "tier": "tier_1", "assigned_by": "operator", "reason": "Customer requested lease specialist"}`.
+  - Emits audit log to `session_assignment_history` and dispatches `session.assigned` or `session.tier_escalated` webhooks.
+- `POST /sessions/{session_id}/auto-assign`: Automatically assign session to the least-loaded active agent matching tier and department criteria.
+  - Body: `{"strategy": "least_busy", "target_tier": "tier_2", "department": "maintenance", "assigned_by": "auto_router"}`.
+  - Returns updated session metadata and assignee.
+- `GET /sessions/{session_id}/assignment-history`: Retrieve historical audit trail of agent assignments and tier escalations for a session.
+  - Returns `SessionAssignmentHistoryResponse` (`session_id`, `items: [ { id, session_id, previous_agent, new_agent, previous_tier, new_tier, assigned_by, reason, assigned_at } ]`, `total`).
+- `GET /business-hours/status`: Query operating business hours status for customer care.
+  - Returns `BusinessHoursStatusResponse` (`is_open: bool`, `current_time: ISO-8601`, `next_open_at: ISO-8601 | null`, `timezone: "UTC"`, `schedule: {...}`, `day_name: "Monday"`).
 
 ## Evaluation Harness
 
