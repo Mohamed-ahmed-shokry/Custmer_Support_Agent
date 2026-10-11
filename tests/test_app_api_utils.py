@@ -1493,5 +1493,178 @@ def test_update_session_with_priority(fake_requests):
     assert kwargs["json"]["priority"] == "urgent"
 
 
+# =====================================================================
+# Support Agents, Session Assignment & Business Hours Client Tests
+# =====================================================================
+
+
+def test_list_support_agents_client(fake_requests, fake_st, monkeypatch):
+    fake_payload = {
+        "items": [
+            {
+                "id": "agent_sarah",
+                "name": "Sarah Connor",
+                "email": "sarah@example.com",
+                "tier": "tier_1",
+                "department": "general_leasing",
+                "is_active": True,
+            }
+        ],
+        "total": 1,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_payload)
+
+    agents = api_utils.list_support_agents(tier="tier_1", active_only=True)
+    assert len(agents) == 1
+    assert agents[0]["id"] == "agent_sarah"
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/agents")
+    assert kwargs["params"]["tier"] == "tier_1"
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.list_support_agents() == []
+    assert fake_st.errors
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_support_agents() == []
+
+
+def test_create_and_get_support_agent_client(fake_requests, fake_st, monkeypatch):
+    fake_agent = {
+        "id": "agent_david",
+        "name": "David Miller",
+        "email": "david@example.com",
+        "tier": "tier_1",
+        "department": "maintenance",
+        "is_active": True,
+    }
+    fake_requests.response = FakeResponse(status_code=201, payload=fake_agent)
+
+    created = api_utils.create_support_agent(
+        agent_id="agent_david",
+        name="David Miller",
+        email="david@example.com",
+        tier="tier_1",
+        department="maintenance",
+        is_active=True,
+    )
+    assert created == fake_agent
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/agents")
+    assert kwargs["json"]["id"] == "agent_david"
+
+    # Get agent
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_agent)
+    got = api_utils.get_support_agent("agent_david")
+    assert got == fake_agent
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.get_support_agent("missing") is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_support_agent("err") is None
+
+
+def test_update_and_delete_support_agent_client(fake_requests, fake_st, monkeypatch):
+    fake_agent = {"id": "agent_sarah", "tier": "tier_2", "is_active": False}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_agent)
+
+    updated = api_utils.update_support_agent("agent_sarah", tier="tier_2", is_active=False)
+    assert updated == fake_agent
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/agents/agent_sarah")
+    assert kwargs["json"]["tier"] == "tier_2"
+
+    # Delete agent
+    fake_requests.response = FakeResponse(status_code=200, payload={"message": "deleted"})
+    assert api_utils.delete_support_agent("agent_sarah") is True
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.delete_support_agent("agent_sarah") is False
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_support_agent("agent_sarah") is False
+
+
+def test_get_agent_workload_analytics_client(fake_requests, fake_st, monkeypatch):
+    fake_workload = {
+        "agents": [],
+        "total_active_sessions": 2,
+        "unassigned_active_sessions": 1,
+        "tier_distribution": {"tier_1": 2},
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_workload)
+
+    res = api_utils.get_agent_workload_analytics()
+    assert res == fake_workload
+    _, url, _ = fake_requests.calls[0]
+    assert url.endswith("/agents/workload")
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.get_agent_workload_analytics() is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_agent_workload_analytics() is None
+
+
+def test_assign_and_auto_assign_session_client(fake_requests, fake_st, monkeypatch):
+    fake_session = {
+        "session_id": "sess-assign",
+        "assigned_agent": "agent_sarah",
+        "escalation_tier": "tier_1",
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_session)
+
+    res_manual = api_utils.assign_session("sess-assign", agent_id="agent_sarah", tier="tier_1")
+    assert res_manual == fake_session
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/sessions/sess-assign/assign")
+    assert kwargs["json"]["agent_id"] == "agent_sarah"
+
+    res_auto = api_utils.auto_assign_session("sess-assign", strategy="least_busy")
+    assert res_auto == fake_session
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.assign_session("s_err") is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.auto_assign_session("s_boom") is None
+
+
+def test_get_session_assignment_history_and_business_hours_client(
+    fake_requests, fake_st, monkeypatch
+):
+    fake_hist = {
+        "session_id": "sess-h",
+        "items": [{"id": 1, "session_id": "sess-h", "new_agent": "agent_sarah"}],
+        "total": 1,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_hist)
+
+    items = api_utils.get_session_assignment_history("sess-h")
+    assert len(items) == 1
+    assert items[0]["new_agent"] == "agent_sarah"
+
+    fake_biz = {
+        "is_open": True,
+        "current_time": "2026-10-12T10:00:00",
+        "next_open_at": None,
+        "timezone": "UTC",
+        "schedule": {"monday": "09:00 - 18:00"},
+        "day_name": "Monday",
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_biz)
+
+    biz_status = api_utils.get_business_hours_status()
+    assert biz_status == fake_biz
+
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "fail"})
+    assert api_utils.get_business_hours_status() is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_business_hours_status() is None
+
+
+
 
 
