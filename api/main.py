@@ -1068,7 +1068,7 @@ def list_sessions(
         cleaned_tier = tier.strip().lower()
         tier = cleaned_tier if cleaned_tier else None
 
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, str | None] = {}
     if status is not None or tag is not None:
         kwargs["status"] = status
         kwargs["tag"] = tag
