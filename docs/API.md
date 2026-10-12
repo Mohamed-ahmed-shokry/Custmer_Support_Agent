@@ -303,6 +303,28 @@ The system provides agent directory management, tiered escalation routing (`tier
 - `GET /business-hours/status`: Query operating business hours status for customer care.
   - Returns `BusinessHoursStatusResponse` (`is_open: bool`, `current_time: ISO-8601`, `next_open_at: ISO-8601 | null`, `timezone: "UTC"`, `schedule: {...}`, `day_name: "Monday"`).
 
+## Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine
+
+The agent provides a 1–5 star multi-criteria Customer Satisfaction (CSAT) survey system, an operator review & follow-up workflow queue, automated low-CSAT webhook alerting (`feedback.low_csat`), and per-agent / per-tier performance scorecards.
+
+### Endpoints
+
+- `POST /feedback/csat`: Submit a 1–5 star multi-criteria CSAT survey for a session.
+  - Body: `{"session_id": "sess-123", "score": 5, "resolution_satisfaction": 4, "agent_helpfulness": 5, "response_speed": 4, "comment": "Very helpful!"}`.
+  - Automatically links the active session's `assigned_agent` and `escalation_tier` at submission time.
+  - Scores `<= 2` automatically set `review_status = "followup_required"` and dispatch a `feedback.low_csat` webhook alert.
+  - Returns `201` with `FeedbackReviewItemResponse`.
+- `GET /feedback/queue?review_status=...&assigned_agent=...&escalation_tier=...&min_score=...&max_score=...&limit=50`: List feedback items in the operator review queue with filtering.
+  - `review_status` filter options: `pending_review`, `followup_required`, `reviewed`, `resolved`.
+  - Returns `FeedbackReviewQueueResponse` (`items`, `total`).
+- `PATCH /feedback/{feedback_id}/review`: Update operator review status and reviewer notes for a feedback item.
+  - Body: `{"review_status": "reviewed", "reviewer_notes": "Contacted tenant and resolved concern.", "reviewed_by": "supervisor_1"}`.
+  - Returns updated `FeedbackReviewItemResponse` (`404` if not found).
+- `GET /feedback/csat-summary`: Retrieve aggregated multi-criteria CSAT KPIs and star distribution.
+  - Returns `CSATSummaryResponse` (`total_feedback`, `total_scored_csat`, `avg_csat_score`, `avg_resolution_score`, `avg_helpfulness_score`, `avg_speed_score`, `positive_rate`, `low_csat_count`, `pending_review_count`, `followup_required_count`, `reviewed_count`, `resolved_count`, `star_distribution`).
+- `GET /feedback/agent-scorecards`: Retrieve per-agent and per-tier CSAT & operational performance scorecards.
+  - Returns `AgentPerformanceScorecardsResponse` (`scorecards: [ { agent_id, tier, total_ratings, avg_csat_score, avg_resolution_score, avg_helpfulness_score, avg_speed_score, positive_count, negative_count, satisfaction_rate, followup_required_count } ]`, `tier_averages: {"tier_1": 4.5, ...}`, `overall_avg_csat`).
+
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:
@@ -313,4 +335,3 @@ The system provides agent directory management, tiered escalation routing (`tier
 - `--collection <name>`: scope retrieval evaluation to a specific collection.
 - `--compare`: evaluate baseline vector search vs configured enhanced strategy side-by-side.
 - `--json-output <path>`: write structured evaluation metrics and per-case results to JSON.
-
