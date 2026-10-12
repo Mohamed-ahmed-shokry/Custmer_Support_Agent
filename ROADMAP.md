@@ -1,10 +1,12 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.32.0, 2026-10-12)
+## Current State (v0.33.0, 2026-10-13)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
   use_hybrid)
+- Multi-Criteria CSAT Feedback, Review Queues & Agent Performance Scorecards Engine (`POST /feedback/csat`, `GET /feedback/queue`, `PATCH /feedback/{id}/review`, `GET /feedback/csat-summary`, `GET /feedback/agent-scorecards`) with 1-5 star multi-criteria ratings, low-CSAT (`<= 2`) auto-triage and `feedback.low_csat` webhook alerting, operator review workflow, and per-agent / per-tier scorecards
+- Streamlit 5-Star CSAT Survey Widget in chat interface & CSAT Queue / Agent Scorecards dashboard in sidebar
 - Customer support agent assignment, tiered escalation routing (`tier_1`, `tier_2`, `tier_3`), assignment audit history, and team workload analytics (`/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`)
 - Operating business hours calendar calculation engine (`/business-hours/status`) with business-minute SLA deadline advancement
 - Streamlit Support Agents & Workload management panel, queue filtering (Unassigned, Escalated), and manual / auto-routing controls
@@ -782,7 +784,7 @@ support agent profiles (`support_agents` table: ID, name, email, tier, departmen
 - [x] Task 16: Version bump to 0.32.0 in `pyproject.toml` and `api/settings.py`
 - [x] Task 17: Final verification gate, progress record completion, and self-review audit
 
-## v0.33.0 plan — Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine
+## v0.33.0 plan — Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine ✅ COMPLETED
 
 Deliver an advanced Customer Satisfaction (CSAT) feedback rating, operator review queue, and agent performance scorecard engine for property management customer service:
 5-star multi-criteria CSAT ratings (overall score 1-5, resolution satisfaction 1-5, agent helpfulness 1-5, response speed 1-5), tenant feedback review queue with triage statuses (`pending_review`, `reviewed`, `followup_required`, `archived`) and resolution notes, automated alert triggers on low CSAT (`feedback.low_csat`), agent scorecard analytics attributing ratings to assigned agents and escalation tiers, and Streamlit UI 5-star rating widget and feedback management review panel.
@@ -838,22 +840,22 @@ Deliver an advanced Customer Satisfaction (CSAT) feedback rating, operator revie
 8. Full test suite passes with >= 80% coverage and zero ruff / mypy errors.
 
 ### Granular Task Breakdown
-- [ ] Task 1: `ROADMAP.md` v0.33.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] Task 2: Database schema migration and CRUD operations for CSAT & review queue in `api/db_utils.py`
-- [ ] Task 3: Unit tests for CSAT database schema, queries, and migrations in `tests/test_db_utils.py`
-- [ ] Task 4: Core CSAT calculation, agent scorecard analytics, and alert engine in `api/csat.py`
-- [ ] Task 5: Unit tests for CSAT calculation engine in `tests/test_csat.py`
-- [ ] Task 6: Pydantic schemas in `api/pydantic_models.py`
-- [ ] Task 7: Unit tests for CSAT Pydantic schemas in `tests/test_models.py`
-- [ ] Task 8: FastAPI routes in `api/main.py`
-- [ ] Task 9: Integration and endpoint tests for FastAPI CSAT routes in `tests/test_api_routes.py`
-- [ ] Task 10: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
-- [ ] Task 11: Streamlit chat interface 5-star CSAT survey widget in `app/chat_interface.py`
-- [ ] Task 12: Streamlit sidebar feedback review queue and agent performance scorecard in `app/sidebar.py`
-- [ ] Task 13: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [ ] Task 14: Documentation updates in `docs/API.md` and `README.md`
-- [ ] Task 15: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
-- [ ] Task 16: Final verification gate, progress record completion, and self-review audit
+- [x] Task 1: `ROADMAP.md` v0.33.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] Task 2: Database schema migration and CRUD operations for CSAT & review queue in `api/db_utils.py`
+- [x] Task 3: Unit tests for CSAT database schema, queries, and migrations in `tests/test_db_utils.py`
+- [x] Task 4: Core CSAT calculation, agent scorecard analytics, and alert engine in `api/csat.py`
+- [x] Task 5: Unit tests for CSAT calculation engine in `tests/test_csat.py`
+- [x] Task 6: Pydantic schemas in `api/pydantic_models.py`
+- [x] Task 7: Unit tests for CSAT Pydantic schemas in `tests/test_models.py`
+- [x] Task 8: FastAPI routes in `api/main.py`
+- [x] Task 9: Integration and endpoint tests for FastAPI CSAT routes in `tests/test_api_routes.py`
+- [x] Task 10: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
+- [x] Task 11: Streamlit chat interface 5-star CSAT survey widget in `app/chat_interface.py`
+- [x] Task 12: Streamlit sidebar feedback review queue and agent performance scorecard in `app/sidebar.py`
+- [x] Task 13: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [x] Task 14: Documentation updates in `docs/API.md` and `README.md`
+- [x] Task 15: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
+- [x] Task 16: Final verification gate, progress record completion, and self-review audit
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

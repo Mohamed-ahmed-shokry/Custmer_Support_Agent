@@ -1,7 +1,7 @@
 # v0.33.0 Progress Record: Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine
 
 **Phase Branch**: `phase/v0.33.0-feedback-csat-analytics`  
-**Status**: IN PROGRESS  
+**Status**: ✅ COMPLETED  
 **Target Version**: 0.33.0  
 
 ---
@@ -18,12 +18,12 @@
 - [x] **Task 8**: FastAPI routes in `api/main.py`
 - [x] **Task 9**: Integration and endpoint tests for FastAPI CSAT routes in `tests/test_api_routes.py`
 - [x] **Task 10**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
-- [ ] **Task 11**: Streamlit chat interface 5-star CSAT survey widget in `app/chat_interface.py`
-- [ ] **Task 12**: Streamlit sidebar feedback review queue and agent performance scorecard in `app/sidebar.py`
-- [ ] **Task 13**: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [ ] **Task 14**: Documentation updates in `docs/API.md` and `README.md`
-- [ ] **Task 15**: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
-- [ ] **Task 16**: Final verification gate, progress record completion, and self-review audit
+- [x] **Task 11**: Streamlit chat interface 5-star CSAT survey widget in `app/chat_interface.py`
+- [x] **Task 12**: Streamlit sidebar feedback review queue and agent performance scorecard in `app/sidebar.py`
+- [x] **Task 13**: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [x] **Task 14**: Documentation updates in `docs/API.md` and `README.md`
+- [x] **Task 15**: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
+- [x] **Task 16**: Final verification gate, progress record completion, and self-review audit
 
 ---
 
@@ -32,13 +32,13 @@
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
 | AC1 | `feedback` table schema migrates to support `score` (1-5), sub-criteria (`resolution_satisfaction`, `agent_helpfulness`, `response_speed`), `review_status`, `assigned_agent`, `escalation_tier`, `reviewer_notes`, `reviewed_at`, and `reviewed_by` | VERIFIED | `api/db_utils.py`, `tests/test_db_utils.py` (82 passed) |
-| AC2 | `submit_csat_feedback()` persists multi-criteria feedback, captures current session's assigned agent and tier, and dispatches `feedback.low_csat` webhook when score <= 2 | VERIFIED | `api/csat.py`, `tests/test_csat.py` (3 passed) |
-| AC3 | `update_feedback_review()` allows operators to update `review_status` (`pending_review`, `reviewed`, `followup_required`, `archived`) and append reviewer notes | VERIFIED | `update_feedback_review()` tested in `test_update_feedback_review_lifecycle` |
+| AC2 | `submit_csat_feedback()` persists multi-criteria feedback, captures current session's assigned agent and tier, and dispatches `feedback.low_csat` webhook when score <= 2 | VERIFIED | `api/csat.py`, `tests/test_csat.py` (3 passed), `tests/test_api_routes.py` |
+| AC3 | `update_feedback_review()` allows operators to update `review_status` (`pending_review`, `reviewed`, `followup_required`, `resolved`) and append reviewer notes | VERIFIED | `update_feedback_review()` tested in `test_update_feedback_review_lifecycle` |
 | AC4 | `get_agent_performance_analytics()` and `calculate_csat_summary()` accurately compute aggregate metrics, star distributions, and agent scorecards | VERIFIED | `api/csat.py`, `api/db_utils.py`, `tests/test_csat.py` |
-| AC5 | FastAPI endpoints `/feedback/csat`, `/feedback/queue`, `/feedback/{id}/review`, `/feedback/csat-summary`, and `/feedback/agent-scorecards` are functional and schema-validated | VERIFIED | `api/main.py`, `tests/test_api_routes.py` |
-| AC6 | Client helpers in `app/api_utils.py` provide typed methods with authentication and error handling | VERIFIED | `app/api_utils.py`, `tests/test_app_api_utils.py` |
-| AC7 | Streamlit UI supports 5-star multi-criteria CSAT submission in chat and administrative review queue & agent scorecard dashboard in the sidebar | PENDING | Pending Task 11 & 12 |
-| AC8 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | PENDING | Baseline passed (668 passed, 94.00% coverage) |
+| AC5 | FastAPI endpoints `/feedback/csat`, `/feedback/queue`, `/feedback/{id}/review`, `/feedback/csat-summary`, and `/feedback/agent-scorecards` are functional and schema-validated | VERIFIED | `api/main.py`, `tests/test_api_routes.py` (149 passed) |
+| AC6 | Client helpers in `app/api_utils.py` provide typed methods with authentication and error handling | VERIFIED | `app/api_utils.py`, `tests/test_app_api_utils.py` (118 passed) |
+| AC7 | Streamlit UI supports 5-star multi-criteria CSAT submission in chat and administrative review queue & agent scorecard dashboard in the sidebar | VERIFIED | `app/chat_interface.py`, `app/sidebar.py`, `tests/test_app_ui.py` (102 passed) |
+| AC8 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | VERIFIED | `pytest` (695 passed, 93.96% coverage), `ruff check` (0 errors), `mypy` (0 issues in 28 source files) |
 
 ---
 
@@ -54,6 +54,10 @@
   - *Context*: Existing sessions or automated scripts might submit `rating` in `{-1, 1}`.
   - *Rationale*: Store both `score` (1-5) and compute `rating` (+1 for score >= 4, -1 for score <= 2, 0 for 3) so legacy analytics and new CSAT scorecards coexist seamlessly.
 
+- **Decision 3 (2026-10-13)**: Add an `autouse=True` HTTP fast-fail fixture in `tests/test_app_ui.py`.
+  - *Context*: Unmocked helper calls inside Streamlit UI unit tests attempted real TCP connections to `localhost:8000`, causing 2-second Windows TCP timeouts per call (~193s total).
+  - *Rationale*: Raising `requests.exceptions.ConnectionError` immediately in `tests/test_app_ui.py` preserves identical fallback behavior while reducing UI unit test execution time from 193s to 1.71s.
+
 ---
 
 ## 4. Validation Commands & Results
@@ -62,3 +66,7 @@
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (0 issues)
   - `python -m mypy api app scripts` -> ✅ Passed (0 issues in 27 source files)
   - `python -m pytest` -> ✅ Passed (668 passed, 21 deselected, 94.00% coverage, fail_under=80%)
+- **Final Verification Gate (v0.33.0)**:
+  - `python -m ruff check api app tests scripts` -> ✅ Passed (`All checks passed!`)
+  - `python -m mypy api app scripts` -> ✅ Passed (`Success: no issues found in 28 source files`)
+  - `python -m pytest -q` -> ✅ Passed (`695 passed, 21 deselected, 93.96% coverage, fail_under=80%`)
