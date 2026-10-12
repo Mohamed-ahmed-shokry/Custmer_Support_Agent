@@ -518,6 +518,144 @@ def get_feedback_analytics(recent_comments_limit=5):
         return None
 
 
+def submit_csat_feedback(  # noqa: PLR0913, PLR0917
+    session_id,
+    score,
+    resolution_satisfaction=None,
+    agent_helpfulness=None,
+    response_speed=None,
+    comment=None,
+    assigned_agent=None,
+    escalation_tier=None,
+):
+    payload: dict[str, Any] = {"session_id": session_id, "score": score}
+    if resolution_satisfaction is not None:
+        payload["resolution_satisfaction"] = resolution_satisfaction
+    if agent_helpfulness is not None:
+        payload["agent_helpfulness"] = agent_helpfulness
+    if response_speed is not None:
+        payload["response_speed"] = response_speed
+    if comment:
+        payload["comment"] = comment
+    if assigned_agent:
+        payload["assigned_agent"] = assigned_agent
+    if escalation_tier:
+        payload["escalation_tier"] = escalation_tier
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/feedback/csat",
+            json=payload,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_CREATED:
+            return response.json()
+        else:
+            show_api_error("Failed to submit CSAT feedback", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while submitting CSAT feedback: {str(e)}")
+        return None
+
+
+def list_feedback_review_queue(  # noqa: PLR0913, PLR0917
+    review_status=None,
+    assigned_agent=None,
+    escalation_tier=None,
+    min_score=None,
+    max_score=None,
+    limit=50,
+    offset=0,
+):
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if review_status:
+        params["review_status"] = review_status
+    if assigned_agent:
+        params["assigned_agent"] = assigned_agent
+    if escalation_tier:
+        params["escalation_tier"] = escalation_tier
+    if min_score is not None:
+        params["min_score"] = min_score
+    if max_score is not None:
+        params["max_score"] = max_score
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback/queue",
+            params=params,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch feedback review queue", response)
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+    except Exception as e:
+        st.error(f"An error occurred while fetching feedback review queue: {str(e)}")
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+
+def update_feedback_review(feedback_id, review_status, reviewer_notes=None, reviewed_by=None):
+    payload: dict[str, Any] = {"review_status": review_status}
+    if reviewer_notes is not None:
+        payload["reviewer_notes"] = reviewer_notes
+    if reviewed_by is not None:
+        payload["reviewed_by"] = reviewed_by
+
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/feedback/{feedback_id}/review",
+            json=payload,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to update feedback review", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while updating feedback review: {str(e)}")
+        return None
+
+
+def get_csat_summary(limit=1000):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback/csat-summary",
+            params={"limit": limit},
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch CSAT summary", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching CSAT summary: {str(e)}")
+        return None
+
+
+def get_agent_scorecards():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback/agent-scorecards",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch agent performance scorecards", response)
+            return {"scorecards": [], "total_agents": 0}
+    except Exception as e:
+        st.error(f"An error occurred while fetching agent performance scorecards: {str(e)}")
+        return {"scorecards": [], "total_agents": 0}
+
+
 def get_support_triage_analytics():
     try:
         response = requests.get(
