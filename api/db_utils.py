@@ -3103,6 +3103,261 @@ def create_knowledge_articles() -> None:
         conn.commit()
 
 
+def normalize_knowledge_article_status(status: str | None) -> str:
+    """Validate and normalize knowledge article status."""
+    clean_status = (status or DEFAULT_KNOWLEDGE_ARTICLE_STATUS).strip().lower()
+    if not clean_status:
+        clean_status = DEFAULT_KNOWLEDGE_ARTICLE_STATUS
+    if clean_status not in VALID_KNOWLEDGE_ARTICLE_STATUSES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_ARTICLE_STATUSES))
+        raise ValueError(
+            f"Invalid knowledge article status '{clean_status}'. Allowed: {allowed}."
+        )
+    return clean_status
+
+
+def _normalize_article_tags(tags: str | list[str] | None) -> str:
+    if tags is None:
+        return ""
+    if isinstance(tags, list):
+        items = [str(t).strip().lower() for t in tags if str(t).strip()]
+    else:
+        items = [t.strip().lower() for t in str(tags).split(",") if t.strip()]
+    deduped = list(dict.fromkeys(items))
+    joined = ",".join(deduped)
+    if len(joined) > MAX_KNOWLEDGE_TAGS_LENGTH:
+        raise ValueError(
+            f"Knowledge article tags exceed max length {MAX_KNOWLEDGE_TAGS_LENGTH}."
+        )
+    return joined
+
+
+def _format_article_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    data = dict(row)
+    raw_tags = data.get("tags") or ""
+    if isinstance(raw_tags, list):
+        data["tags"] = [str(t).strip() for t in raw_tags if str(t).strip()]
+    else:
+        data["tags"] = [t.strip() for t in str(raw_tags).split(",") if t.strip()]
+    return data
+
+
+def create_knowledge_article(  # noqa: PLR0913, PLR0917
+    title: str,
+    content_markdown: str,
+    category: str = DEFAULT_KNOWLEDGE_CATEGORY,
+    question_pattern: str = "",
+    tags: str | list[str] | None = None,
+    source_session_id: str | None = None,
+    source_gap_id: int | None = None,
+    status: str = DEFAULT_KNOWLEDGE_ARTICLE_STATUS,
+    author: str = "support_agent",
+) -> dict[str, Any]:
+    """Create a new knowledge base article or draft."""
+    clean_title = (title or "").strip()
+    if not clean_title:
+        raise ValueError("Knowledge article title must not be blank.")
+    if len(clean_title) > MAX_KNOWLEDGE_TITLE_LENGTH:
+        raise ValueError(
+            f"Knowledge article title exceeds max length {MAX_KNOWLEDGE_TITLE_LENGTH}."
+        )
+
+    clean_content = (content_markdown or "").strip()
+    if not clean_content:
+        raise ValueError("Knowledge article content_markdown must not be blank.")
+    if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
+        raise ValueError(
+            f"Knowledge article content_markdown exceeds max length {MAX_KNOWLEDGE_CONTENT_LENGTH}."
+        )
+
+    clean_cat = normalize_knowledge_category(category)
+    clean_q_pat = (question_pattern or "").strip()[:MAX_KNOWLEDGE_QUERY_LENGTH]
+    clean_tags = _normalize_article_tags(tags)
+    clean_sid = (source_session_id or "").strip() or None
+    clean_status = normalize_knowledge_article_status(status)
+    clean_author = (author or "support_agent").strip() or "support_agent"
+    if len(clean_author) > MAX_KNOWLEDGE_AUTHOR_LENGTH:
+        raise ValueError(
+            f"Knowledge article author exceeds max length {MAX_KNOWLEDGE_AUTHOR_LENGTH}."
+        )
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO knowledge_articles "
+            "(title, category, question_pattern, content_markdown, tags, "
+            "source_session_id, source_gap_id, status, author) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                clean_title,
+                clean_cat,
+                clean_q_pat,
+                clean_content,
+                clean_tags,
+                clean_sid,
+                source_gap_id,
+                clean_status,
+                clean_author,
+            ),
+        )
+        article_id = int(cursor.lastrowid or 0)
+        conn.commit()
+
+    created = get_knowledge_article(article_id)
+    if created is None:
+        raise RuntimeError("Failed to retrieve created knowledge article.")
+    return created
+
+
+def get_knowledge_article(article_id: int) -> dict[str, Any] | None:
+    """Fetch a knowledge article by ID, or None if not found."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT * FROM knowledge_articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        return _format_article_row(row) if row else None
+
+
+def list_knowledge_articles(
+    status: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """List knowledge articles with optional status, category, or keyword search filtering."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if status:
+        clauses.append("status = ?")
+        params.append(normalize_knowledge_article_status(status))
+    if category:
+        clauses.append("category = ?")
+        params.append(normalize_knowledge_category(category))
+    if search and search.strip():
+        like_pat = f"%{search.strip()}%"
+        clauses.append(
+            "(title LIKE ? OR question_pattern LIKE ? OR content_markdown LIKE ? OR tags LIKE ?)"
+        )
+        params.extend([like_pat, like_pat, like_pat, like_pat])
+
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    count_sql = f"SELECT COUNT(*) FROM knowledge_articles{where_sql}"
+    select_sql = (
+        f"SELECT * FROM knowledge_articles{where_sql} "
+        "ORDER BY id DESC LIMIT ? OFFSET ?"
+    )
+
+    with closing(get_db_connection()) as conn:
+        total = int(conn.execute(count_sql, params).fetchone()[0])
+        rows = conn.execute(
+            select_sql, [*params, max(1, limit), max(0, offset)]
+        ).fetchall()
+        return [_format_article_row(r) for r in rows], total
+
+
+def update_knowledge_article(  # noqa: PLR0912, PLR0913, PLR0917
+    article_id: int,
+    title: str | None = None,
+    category: str | None = None,
+    question_pattern: str | None = None,
+    content_markdown: str | None = None,
+    tags: str | list[str] | None = None,
+    status: str | None = None,
+    published_file_id: int | None = None,
+    published_collection: str | None = None,
+) -> dict[str, Any] | None:
+    """Update a knowledge article; returns updated dict or None if not found."""
+    current = get_knowledge_article(article_id)
+    if current is None:
+        return None
+
+    new_title = current["title"]
+    if title is not None:
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("Knowledge article title must not be blank.")
+        if len(clean_title) > MAX_KNOWLEDGE_TITLE_LENGTH:
+            raise ValueError(
+                f"Knowledge article title exceeds max length {MAX_KNOWLEDGE_TITLE_LENGTH}."
+            )
+        new_title = clean_title
+
+    new_cat = (
+        normalize_knowledge_category(category)
+        if category is not None
+        else current["category"]
+    )
+    new_q_pat = (
+        question_pattern.strip()[:MAX_KNOWLEDGE_QUERY_LENGTH]
+        if question_pattern is not None
+        else current["question_pattern"]
+    )
+
+    new_content = current["content_markdown"]
+    if content_markdown is not None:
+        clean_content = content_markdown.strip()
+        if not clean_content:
+            raise ValueError("Knowledge article content_markdown must not be blank.")
+        if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
+            raise ValueError(
+                f"Knowledge article content_markdown exceeds max length {MAX_KNOWLEDGE_CONTENT_LENGTH}."
+            )
+        new_content = clean_content
+
+    new_tags = (
+        _normalize_article_tags(tags)
+        if tags is not None
+        else _normalize_article_tags(current["tags"])
+    )
+    new_status = (
+        normalize_knowledge_article_status(status)
+        if status is not None
+        else current["status"]
+    )
+    new_pub_fid = (
+        published_file_id
+        if published_file_id is not None
+        else current["published_file_id"]
+    )
+    new_pub_col = (
+        published_collection
+        if published_collection is not None
+        else current["published_collection"]
+    )
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE knowledge_articles "
+            "SET title = ?, category = ?, question_pattern = ?, content_markdown = ?, "
+            "tags = ?, status = ?, published_file_id = ?, published_collection = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_title,
+                new_cat,
+                new_q_pat,
+                new_content,
+                new_tags,
+                new_status,
+                new_pub_fid,
+                new_pub_col,
+                article_id,
+            ),
+        )
+        conn.commit()
+    return get_knowledge_article(article_id)
+
+
+def delete_knowledge_article(article_id: int) -> bool:
+    """Delete a knowledge article by ID; returns True if deleted, False if not found."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM knowledge_articles WHERE id = ?", (article_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -3118,3 +3373,4 @@ create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
+
