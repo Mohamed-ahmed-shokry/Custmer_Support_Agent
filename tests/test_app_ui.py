@@ -2,8 +2,22 @@ import importlib
 import sys
 
 import pytest
-from app import chat_interface, sidebar
+import requests
+from app import api_utils, chat_interface, sidebar
 from tests.fake_streamlit import FakeStreamlit
+
+
+@pytest.fixture(autouse=True)
+def _block_unmocked_http(monkeypatch):
+    """Fail fast on unmocked HTTP calls in UI unit tests instead of waiting for TCP timeouts."""
+
+    def _fail_fast(*args, **kwargs):
+        raise requests.exceptions.ConnectionError("Unmocked HTTP call in UI unit test")
+
+    monkeypatch.setattr(api_utils.requests, "get", _fail_fast)
+    monkeypatch.setattr(api_utils.requests, "post", _fail_fast)
+    monkeypatch.setattr(api_utils.requests, "patch", _fail_fast)
+    monkeypatch.setattr(api_utils.requests, "delete", _fail_fast)
 
 
 def _session_state(messages=None, session_id=None):
@@ -303,12 +317,12 @@ def test_render_session_history_builds_labels(monkeypatch, session):
     sidebar._render_session_history()
 
     selectbox_calls = [c for c in st.calls if c.fn == "selectbox"]
-    EXPECTED_SELECTBOX_COUNT = 3
+    EXPECTED_SELECTBOX_COUNT = 4
     assert len(selectbox_calls) == EXPECTED_SELECTBOX_COUNT
     # The session picker is one of the selectbox calls
     session_picker_call = next(c for c in selectbox_calls if c.args[0] == "Open a session")
     labels = session_picker_call.kwargs["format_func"]
-    assert labels(session["session_id"]).endswith("msgs)")
+    assert "msgs)" in labels(session["session_id"])
 
 
 def test_render_session_history_load_session(monkeypatch):
@@ -2255,3 +2269,116 @@ def test_render_support_agents_and_workload_panel(monkeypatch):
     assert st.reruns == 1
 
 
+# --- v0.33.0 Multi-Criteria CSAT Survey & Agent Scorecards UI tests --------
+
+
+def test_render_csat_survey_widget_submits_and_caches(monkeypatch):
+    st = _session_state(messages=[{"role": "human", "content": "q"}])
+    survey_key = "csat_sess-99_1"
+    st.values[f"{survey_key}_score"] = 5
+    st.values[f"{survey_key}_res"] = 4
+    st.values[f"{survey_key}_help"] = 5
+    st.values[f"{survey_key}_speed"] = 4
+    st.values[f"{survey_key}_comment"] = "Fast and accurate!"
+    st.buttons[f"{survey_key}_submit"] = True
+    monkeypatch.setattr(chat_interface, "st", st)
+
+    submitted_payloads: list[dict[str, object]] = []
+
+    def fake_submit_csat(**kwargs):
+        submitted_payloads.append(kwargs)
+        return {"id": 100, **kwargs}
+
+    monkeypatch.setattr(chat_interface, "submit_csat_feedback", fake_submit_csat)
+
+    chat_interface._render_csat_survey_widget("sess-99", 1)
+
+    assert len(submitted_payloads) == 1
+    expected_score = 5
+    assert submitted_payloads[0]["score"] == expected_score
+    assert submitted_payloads[0]["comment"] == "Fast and accurate!"
+    assert st.session_state["submitted_csat"][survey_key] is True
+    assert "CSAT survey submitted!" in st.toasts
+
+    # Second render should show thank-you message instead of re-submitting
+    chat_interface._render_csat_survey_widget("sess-99", 1)
+    assert len(submitted_payloads) == 1
+    assert any("Thank you for submitting" in s for s in st.successes)
+
+
+def test_render_csat_and_agent_scorecards_panel(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "csat_queue_status_filter": "All",
+            "rev_status_sel_42": "reviewed",
+            "rev_notes_in_42": "Followed up with tenant.",
+        },
+        buttons={"btn_save_rev_42": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_csat_summary",
+        lambda: {
+            "avg_csat_score": 4.35,
+            "pending_review_count": 2,
+            "followup_required_count": 1,
+            "avg_resolution_score": 4.2,
+            "avg_helpfulness_score": 4.6,
+            "avg_speed_score": 4.1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "get_agent_scorecards",
+        lambda: {
+            "scorecards": [
+                {
+                    "agent_id": "agent_sarah",
+                    "tier": "tier_2",
+                    "avg_csat_score": 4.8,
+                    "satisfaction_rate": 95.0,
+                    "total_ratings": 12,
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_feedback_review_queue",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": 42,
+                    "session_id": "sess-low-csat",
+                    "score": 2,
+                    "rating": -1,
+                    "review_status": "followup_required",
+                    "assigned_agent": "agent_sarah",
+                    "comment": "Wait time was long",
+                    "reviewer_notes": "",
+                }
+            ],
+            "total": 1,
+        },
+    )
+
+    updated_reviews: list[dict[str, object]] = []
+
+    def fake_update_review(fid, **kwargs):
+        updated_reviews.append({"fid": fid, **kwargs})
+        return {"id": fid, **kwargs}
+
+    monkeypatch.setattr(sidebar, "update_feedback_review", fake_update_review)
+
+    sidebar._render_csat_and_agent_scorecards()
+
+    assert any("4.35 ★" in str(c.args) for c in st.calls if c.fn == "metric")
+    assert any("agent_sarah" in str(c.args) for c in st.calls if c.fn == "markdown")
+    assert len(updated_reviews) == 1
+    expected_fid = 42
+    assert updated_reviews[0]["fid"] == expected_fid
+    assert updated_reviews[0]["review_status"] == "reviewed"
+    assert updated_reviews[0]["reviewer_notes"] == "Followed up with tenant."
+    assert st.reruns == 1
