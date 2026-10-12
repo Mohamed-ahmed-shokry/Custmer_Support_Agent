@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from api import assignment, business_hours, macro_suggestions, macros, sla, webhooks
+from api import assignment, business_hours, csat, macro_suggestions, macros, sla, webhooks
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -45,6 +45,7 @@ from api.db_utils import (
     delete_sla_policy,
     delete_support_agent,
     delete_webhook,
+    get_agent_performance_analytics,
     get_all_collections,
     get_all_documents,
     get_all_sessions,
@@ -54,6 +55,7 @@ from api.db_utils import (
     get_document_record,
     get_document_source,
     get_feedback_analytics,
+    get_feedback_by_id,
     get_library_stats,
     get_macro,
     get_macro_by_shortcut,
@@ -70,6 +72,7 @@ from api.db_utils import (
     insert_document_record,
     insert_feedback,
     list_feedback,
+    list_feedback_review_queue,
     list_macro_categories,
     list_macros,
     list_sla_policies,
@@ -82,7 +85,9 @@ from api.db_utils import (
     rename_session,
     save_document_source,
     search_sessions,
+    submit_csat_feedback,
     truncate_history,
+    update_feedback_review,
     update_macro,
     update_session_metadata,
     update_sla_policy,
@@ -105,6 +110,8 @@ from api.presenters import (
     render_session_markdown,
 )
 from api.pydantic_models import (
+    AgentPerformanceScorecardsResponse,
+    AgentScorecardItem,
     AgentWorkloadResponse,
     AutoAssignRequest,
     BulkDeleteFileRequest,
@@ -122,6 +129,8 @@ from api.pydantic_models import (
     CollectionRechunkRequest,
     CollectionRechunkResponse,
     ConfigResponse,
+    CSATFeedbackSubmitRequest,
+    CSATSummaryResponse,
     DeleteDocumentResponse,
     DeleteFileRequest,
     DeleteSessionResponse,
@@ -134,6 +143,9 @@ from api.pydantic_models import (
     FeedbackItem,
     FeedbackListResponse,
     FeedbackResponse,
+    FeedbackReviewItemResponse,
+    FeedbackReviewQueueResponse,
+    FeedbackReviewUpdateRequest,
     HealthResponse,
     MacroApplyRequest,
     MacroApplyResponse,
@@ -1325,6 +1337,131 @@ def feedback_analytics_route(recent_comments_limit: int = 5):
         total_comments=data["total_comments"],
         comment_rate=data["comment_rate"],
         recent_comments=[FeedbackItem(**item) for item in data["recent_comments"]],
+    )
+
+
+@app.post("/feedback/csat", response_model=FeedbackResponse, status_code=201)
+def submit_csat_feedback_route(
+    request: CSATFeedbackSubmitRequest,
+    background_tasks: BackgroundTasks,
+):
+    if not get_chat_history(request.session_id):
+        raise HTTPException(status_code=404, detail=f"Session {request.session_id} was not found.")
+
+    try:
+        feedback_item = submit_csat_feedback(
+            session_id=request.session_id,
+            score=request.score,
+            resolution_satisfaction=request.resolution_satisfaction,
+            agent_helpfulness=request.agent_helpfulness,
+            response_speed=request.response_speed,
+            comment=request.comment,
+            assigned_agent=request.assigned_agent,
+            escalation_tier=request.escalation_tier,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    fb_id = feedback_item["id"]
+    increment("feedback_up" if feedback_item.get("rating") == 1 else "feedback_down")
+
+    # If low CSAT (<= 2 stars), schedule low_csat alert webhook
+    if csat.is_low_csat(feedback_item):
+        background_tasks.add_task(csat.dispatch_low_csat_alert_if_needed, feedback_item)
+
+    return FeedbackResponse(
+        message="CSAT feedback recorded.",
+        feedback_id=fb_id,
+    )
+
+
+MAX_CSAT_SUMMARY_LIMIT = 10000
+
+
+@app.get("/feedback/queue", response_model=FeedbackReviewQueueResponse)
+def list_feedback_review_queue_route(  # noqa: PLR0913, PLR0917
+    review_status: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
+    min_score: int | None = None,
+    max_score: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    min_csat_star = 1
+    max_csat_star = 5
+    if min_score is not None and not (min_csat_star <= min_score <= max_csat_star):
+        raise HTTPException(status_code=400, detail="Query param 'min_score' must be 1 to 5.")
+    if max_score is not None and not (min_csat_star <= max_score <= max_csat_star):
+        raise HTTPException(status_code=400, detail="Query param 'max_score' must be 1 to 5.")
+    if limit <= 0 or limit > MAX_FEEDBACK_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query param 'limit' must be between 1 and {MAX_FEEDBACK_LIMIT}.",
+        )
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Query param 'offset' must be non-negative.")
+
+    try:
+        items, total = list_feedback_review_queue(
+            review_status=review_status,
+            assigned_agent=assigned_agent,
+            escalation_tier=escalation_tier,
+            min_score=min_score,
+            max_score=max_score,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return FeedbackReviewQueueResponse(
+        items=[FeedbackReviewItemResponse(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.patch("/feedback/{feedback_id}/review", response_model=FeedbackReviewItemResponse)
+def update_feedback_review_route(feedback_id: int, request: FeedbackReviewUpdateRequest):
+    existing = get_feedback_by_id(feedback_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} was not found.")
+
+    try:
+        updated = update_feedback_review(
+            feedback_id=feedback_id,
+            review_status=request.review_status,
+            reviewer_notes=request.reviewer_notes,
+            reviewed_by=request.reviewed_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} was not found.")
+
+    return FeedbackReviewItemResponse(**updated)
+
+
+@app.get("/feedback/csat-summary", response_model=CSATSummaryResponse)
+def get_csat_summary_route(limit: int = 1000):
+    if limit <= 0 or limit > MAX_CSAT_SUMMARY_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Query param 'limit' must be between 1 and {MAX_CSAT_SUMMARY_LIMIT}.",
+        )
+    summary_data = csat.calculate_csat_summary(limit=limit)
+    return CSATSummaryResponse(**summary_data)
+
+
+@app.get("/feedback/agent-scorecards", response_model=AgentPerformanceScorecardsResponse)
+def get_agent_scorecards_route():
+    scorecards_data = get_agent_performance_analytics()
+    return AgentPerformanceScorecardsResponse(
+        scorecards=[AgentScorecardItem(**item) for item in scorecards_data],
+        total_agents=len(scorecards_data),
     )
 
 
