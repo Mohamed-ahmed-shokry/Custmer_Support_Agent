@@ -9,6 +9,7 @@ from app.api_utils import (
     get_api_response,
     get_api_stream_response,
     parse_sse_line,
+    submit_csat_feedback,
     submit_feedback,
 )
 
@@ -41,8 +42,9 @@ def _render_assistant_message(answer, selected_model, session_id, sources):
 
 
 def _render_feedback_widget(session_id):
-    """Thumbs rating for a fresh answer; posts once per selection change."""
-    feedback_key = f"feedback_{session_id}_{len(st.session_state.messages)}"
+    """Thumbs rating and optional 5-star multi-criteria CSAT survey for a fresh answer."""
+    msg_idx = len(st.session_state.messages)
+    feedback_key = f"feedback_{session_id}_{msg_idx}"
     rated = st.session_state.setdefault("rated_feedback", {})
     selection = st.feedback("thumbs", key=feedback_key)
     if selection is not None and rated.get(feedback_key) != selection:
@@ -50,6 +52,57 @@ def _render_feedback_widget(session_id):
         if submit_feedback(session_id, rating):
             rated[feedback_key] = selection
             st.toast("Thanks for the feedback!")
+    _render_csat_survey_widget(session_id, msg_idx)
+
+
+def _render_csat_survey_widget(session_id, msg_idx):
+    """Expandable 5-star multi-criteria CSAT survey widget."""
+    csat_submitted = st.session_state.setdefault("submitted_csat", {})
+    survey_key = f"csat_{session_id}_{msg_idx}"
+    with st.expander("⭐ Rate Support Experience (1-5 Stars)"):
+        if csat_submitted.get(survey_key):
+            st.success("Thank you for submitting your detailed CSAT rating!")
+            return
+
+        score = st.selectbox(
+            "Overall Satisfaction (1-5 Stars)",
+            options=[5, 4, 3, 2, 1],
+            index=0,
+            key=f"{survey_key}_score",
+        )
+        res_sat = st.selectbox(
+            "Resolution Satisfaction (1-5)",
+            options=[5, 4, 3, 2, 1],
+            index=0,
+            key=f"{survey_key}_res",
+        )
+        helpfulness = st.selectbox(
+            "Agent Helpfulness (1-5)",
+            options=[5, 4, 3, 2, 1],
+            index=0,
+            key=f"{survey_key}_help",
+        )
+        speed = st.selectbox(
+            "Response Speed (1-5)",
+            options=[5, 4, 3, 2, 1],
+            index=0,
+            key=f"{survey_key}_speed",
+        )
+        comment = st.text_input(
+            "Additional Comments (optional)",
+            value="",
+            key=f"{survey_key}_comment",
+        )
+        if st.button("Submit CSAT Survey", key=f"{survey_key}_submit") and submit_csat_feedback(
+            session_id=session_id,
+            score=score,
+            resolution_satisfaction=res_sat,
+            agent_helpfulness=helpfulness,
+            response_speed=speed,
+            comment=comment,
+        ):
+            csat_submitted[survey_key] = True
+            st.toast("CSAT survey submitted!")
 
 
 def _handle_streaming_response(  # noqa: PLR0913, PLR0917 - explicit request options
