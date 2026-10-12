@@ -526,6 +526,130 @@ class FeedbackAnalyticsResponse(BaseModel):
     recent_comments: list[FeedbackItem] = Field(default_factory=list)
 
 
+class CSATFeedbackSubmitRequest(BaseModel):
+    session_id: NonEmptyString
+    score: int = Field(ge=1, le=5)
+    resolution_satisfaction: int | None = Field(default=None, ge=1, le=5)
+    agent_helpfulness: int | None = Field(default=None, ge=1, le=5)
+    response_speed: int | None = Field(default=None, ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=2000)
+    assigned_agent: str | None = Field(default=None, max_length=50)
+    escalation_tier: str | None = Field(default=None, max_length=20)
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def strip_session_id(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator("comment", mode="before")
+    @classmethod
+    def strip_comment(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            cleaned = v.strip()
+            return cleaned if cleaned else None
+        return None
+
+    @field_validator("assigned_agent", mode="before")
+    @classmethod
+    def strip_assigned_agent(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            return cleaned if cleaned and cleaned != "unassigned" else None
+        return None
+
+    @field_validator("escalation_tier", mode="before")
+    @classmethod
+    def validate_tier(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            return db_utils.normalize_agent_tier(cleaned)
+        return None
+
+
+class FeedbackReviewUpdateRequest(BaseModel):
+    review_status: str = Field(min_length=1, max_length=30)
+    reviewer_notes: str | None = Field(default=None, max_length=2000)
+    reviewed_by: str | None = Field(default="operator", max_length=100)
+
+    @field_validator("review_status", mode="before")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_feedback_review_status(v)
+
+    @field_validator("reviewer_notes", mode="before")
+    @classmethod
+    def strip_notes(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            cleaned = v.strip()
+            return cleaned if cleaned else None
+        return None
+
+    @field_validator("reviewed_by", mode="before")
+    @classmethod
+    def strip_reviewer(cls, v: str | None) -> str:
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:100]
+        return "operator"
+
+
+class CSATSummaryResponse(BaseModel):
+    total_responses: int
+    avg_csat_score: float
+    avg_resolution_score: float | None = None
+    avg_helpfulness_score: float | None = None
+    avg_speed_score: float | None = None
+    satisfaction_rate: float
+    dissatisfaction_rate: float
+    star_distribution: dict[int, int] = Field(default_factory=dict)
+    pending_review_count: int = 0
+    followup_required_count: int = 0
+
+
+class AgentScorecardItem(BaseModel):
+    agent_id: str
+    tier: str
+    total_ratings: int
+    avg_csat_score: float
+    avg_resolution_score: float | None = None
+    avg_helpfulness_score: float | None = None
+    avg_speed_score: float | None = None
+    positive_count: int = 0
+    negative_count: int = 0
+    satisfaction_rate: float = 0.0
+
+
+class AgentPerformanceScorecardsResponse(BaseModel):
+    scorecards: list[AgentScorecardItem] = Field(default_factory=list)
+    total_agents: int = 0
+
+
+class FeedbackReviewItemResponse(BaseModel):
+    id: int
+    session_id: str
+    score: int | None = None
+    rating: int
+    resolution_satisfaction: int | None = None
+    agent_helpfulness: int | None = None
+    response_speed: int | None = None
+    comment: str | None = None
+    review_status: str
+    assigned_agent: str | None = None
+    escalation_tier: str
+    reviewer_notes: str | None = None
+    reviewed_at: str | None = None
+    reviewed_by: str | None = None
+    created_at: str
+
+
+class FeedbackReviewQueueResponse(BaseModel):
+    items: list[FeedbackReviewItemResponse] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
 
 class QuotaInfo(BaseModel):
     budget: int
