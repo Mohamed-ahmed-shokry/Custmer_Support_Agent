@@ -278,7 +278,50 @@ VALID_WEBHOOK_EVENTS = {
     "sla.breached",
     "session.assigned",
     "session.tier_escalated",
+    "knowledge.gap_detected",
+    "knowledge.article_published",
 }
+
+_CREATE_KNOWLEDGE_GAPS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS knowledge_gaps ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "query TEXT NOT NULL, "
+    "normalized_query TEXT NOT NULL, "
+    "category TEXT NOT NULL DEFAULT 'general', "
+    "source_type TEXT NOT NULL DEFAULT 'unanswered_query', "
+    "session_id TEXT DEFAULT NULL, "
+    "frequency INTEGER NOT NULL DEFAULT 1, "
+    "priority TEXT NOT NULL DEFAULT 'medium', "
+    "status TEXT NOT NULL DEFAULT 'open', "
+    "linked_article_id INTEGER DEFAULT NULL, "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_KNOWLEDGE_GAP_NORM_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_gaps_norm_query "
+    "ON knowledge_gaps(normalized_query)"
+)
+
+VALID_KNOWLEDGE_GAP_STATUSES = {"open", "drafting", "resolved", "dismissed"}
+DEFAULT_KNOWLEDGE_GAP_STATUS = "open"
+VALID_KNOWLEDGE_GAP_SOURCES = {
+    "unanswered_query",
+    "low_csat",
+    "escalated_session",
+    "manual",
+}
+DEFAULT_KNOWLEDGE_GAP_SOURCE = "unanswered_query"
+VALID_KNOWLEDGE_CATEGORIES = {
+    "general",
+    "maintenance",
+    "lease",
+    "billing",
+    "policy",
+}
+DEFAULT_KNOWLEDGE_CATEGORY = "general"
+MAX_KNOWLEDGE_QUERY_LENGTH = 500
+MAX_KNOWLEDGE_NOTES_LENGTH = 2000
 MAX_WEBHOOK_URL_LENGTH = 500
 MAX_WEBHOOK_SECRET_LENGTH = 256
 MAX_DELIVERY_PREVIEW_LENGTH = 500
@@ -2763,6 +2806,14 @@ def get_session_assignment_history(session_id: str, limit: int = 50) -> list[dic
         return [dict(r) for r in rows]
 
 
+def create_knowledge_gaps() -> None:
+    """Create knowledge_gaps table and index."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_KNOWLEDGE_GAPS_TABLE)
+        conn.execute(_CREATE_KNOWLEDGE_GAP_NORM_INDEX)
+        conn.commit()
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -2776,5 +2827,4 @@ create_support_macros()
 create_sla_policies()
 create_support_agents()
 create_session_assignment_history()
-
-
+create_knowledge_gaps()
