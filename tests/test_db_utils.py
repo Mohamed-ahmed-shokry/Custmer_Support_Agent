@@ -18,6 +18,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_sla_policies()
     db_utils.create_support_agents()
     db_utils.create_session_assignment_history()
+    db_utils.create_knowledge_gaps()
     return db_path
 
 
@@ -2013,5 +2014,99 @@ def test_get_agent_performance_analytics(monkeypatch, tmp_path):
     assert bob_card["satisfaction_rate"] == 0.0
 
 
+def test_knowledge_gaps_crud_and_deduplication(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    gap1 = db_utils.record_knowledge_gap(
+        query="How do I reserve the freight elevator for moving?",
+        category="policy",
+        source_type="unanswered_query",
+        session_id="sess-gap-1",
+        priority="low",
+        notes="Tenant asked about freight elevator hours.",
+    )
+    assert gap1["id"] > 0
+    assert gap1["deduplicated"] is False
+    assert gap1["frequency"] == 1
+    assert gap1["category"] == "policy"
+    assert gap1["priority"] == "low"
+    assert gap1["status"] == "open"
+    assert gap1["normalized_query"] == "how do i reserve the freight elevator for moving"
+
+    # Duplicate query with different casing and punctuation increments frequency
+    gap2 = db_utils.record_knowledge_gap(
+        query="how do i reserve the freight elevator for moving?!",
+        category="policy",
+        source_type="low_csat",
+        session_id="sess-gap-2",
+        priority="medium",
+    )
+    assert gap2["id"] == gap1["id"]
+    assert gap2["deduplicated"] is True
+    assert gap2["frequency"] == 2  # noqa: PLR2004
+    assert gap2["priority"] == "medium"
+    assert gap2["session_id"] == "sess-gap-2"
+
+    # 3rd hit auto-promotes priority to high
+    gap3 = db_utils.record_knowledge_gap(
+        query="How do I reserve the freight elevator for moving",
+        category="policy",
+        priority="medium",
+    )
+    assert gap3["id"] == gap1["id"]
+    assert gap3["frequency"] == 3  # noqa: PLR2004
+    assert gap3["priority"] == "high"
+
+    # List & filter
+    items, total = db_utils.list_knowledge_gaps(status="open", category="policy")
+    assert total == 1
+    assert items[0]["id"] == gap1["id"]
+
+    # Update status and notes
+    updated = db_utils.update_knowledge_gap(
+        gap1["id"],
+        status="resolved",
+        linked_article_id=42,
+        notes="Created freight elevator FAQ article.",
+    )
+    assert updated is not None
+    assert updated["status"] == "resolved"
+    assert updated["linked_article_id"] == 42  # noqa: PLR2004
+    assert updated["notes"] == "Created freight elevator FAQ article."
+
+    # Once resolved, a new identical query opens a fresh gap
+    gap4 = db_utils.record_knowledge_gap(
+        query="How do I reserve the freight elevator for moving?",
+        category="policy",
+    )
+    assert gap4["id"] != gap1["id"]
+    assert gap4["deduplicated"] is False
+    assert gap4["frequency"] == 1
+
+    # Delete
+    assert db_utils.delete_knowledge_gap(gap4["id"]) is True
+    assert db_utils.get_knowledge_gap(gap4["id"]) is None
+    assert db_utils.delete_knowledge_gap(gap4["id"]) is False
+    assert db_utils.update_knowledge_gap(99999, status="resolved") is None
 
 
+def test_knowledge_gaps_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.record_knowledge_gap("")
+
+    with pytest.raises(ValueError, match="exceeds max length"):
+        db_utils.record_knowledge_gap("q" * 501)
+
+    with pytest.raises(ValueError, match="Invalid knowledge category"):
+        db_utils.record_knowledge_gap("Valid query", category="invalid_cat")
+
+    with pytest.raises(ValueError, match="Invalid knowledge gap source_type"):
+        db_utils.record_knowledge_gap("Valid query", source_type="invalid_src")
+
+    with pytest.raises(ValueError, match="Invalid knowledge gap status"):
+        db_utils.normalize_knowledge_gap_status("invalid_status")
+
+    with pytest.raises(ValueError, match="notes exceed max length"):
+        db_utils.record_knowledge_gap("Valid query", notes="n" * 2001)
