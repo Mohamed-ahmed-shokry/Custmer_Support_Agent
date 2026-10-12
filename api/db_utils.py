@@ -323,6 +323,35 @@ VALID_KNOWLEDGE_CATEGORIES = {
 DEFAULT_KNOWLEDGE_CATEGORY = "general"
 MAX_KNOWLEDGE_QUERY_LENGTH = 500
 MAX_KNOWLEDGE_NOTES_LENGTH = 2000
+
+_CREATE_KNOWLEDGE_ARTICLES_TABLE = (
+    "CREATE TABLE IF NOT EXISTS knowledge_articles ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "title TEXT NOT NULL, "
+    "category TEXT NOT NULL DEFAULT 'general', "
+    "question_pattern TEXT NOT NULL DEFAULT '', "
+    "content_markdown TEXT NOT NULL, "
+    "tags TEXT NOT NULL DEFAULT '', "
+    "source_session_id TEXT DEFAULT NULL, "
+    "source_gap_id INTEGER DEFAULT NULL, "
+    "status TEXT NOT NULL DEFAULT 'draft', "
+    "author TEXT NOT NULL DEFAULT 'support_agent', "
+    "published_file_id INTEGER DEFAULT NULL, "
+    "published_collection TEXT DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_articles_category "
+    "ON knowledge_articles(category)"
+)
+
+VALID_KNOWLEDGE_ARTICLE_STATUSES = {"draft", "published", "archived"}
+DEFAULT_KNOWLEDGE_ARTICLE_STATUS = "draft"
+MAX_KNOWLEDGE_TITLE_LENGTH = 200
+MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
+MAX_KNOWLEDGE_TAGS_LENGTH = 300
+MAX_KNOWLEDGE_AUTHOR_LENGTH = 100
 MAX_WEBHOOK_URL_LENGTH = 500
 MAX_WEBHOOK_SECRET_LENGTH = 256
 MAX_DELIVERY_PREVIEW_LENGTH = 500
@@ -3066,6 +3095,14 @@ def delete_knowledge_gap(gap_id: int) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+def create_knowledge_articles() -> None:
+    """Create knowledge_articles table and index."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_KNOWLEDGE_ARTICLES_TABLE)
+        conn.execute(_CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX)
+        conn.commit()
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -3080,4 +3117,4 @@ create_sla_policies()
 create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
-
+create_knowledge_articles()
