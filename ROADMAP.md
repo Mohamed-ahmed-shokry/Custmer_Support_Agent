@@ -948,7 +948,7 @@ Close the knowledge loop between customer support operations and the RAG retriev
 
 ### Granular Task Breakdown
 - [x] Task 1: `ROADMAP.md` v0.34.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] Task 2: Database schema & CRUD operations for `knowledge_gaps` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 2: Database schema & CRUD operations for `knowledge_gaps` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] Task 3: Database schema & CRUD operations for `knowledge_articles` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] Task 4: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
 - [ ] Task 5: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
