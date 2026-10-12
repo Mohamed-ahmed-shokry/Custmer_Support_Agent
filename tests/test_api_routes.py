@@ -3135,3 +3135,179 @@ def test_business_hours_status_route(monkeypatch):
     assert data["is_open"] is True
     assert data["day_name"] == "Monday"
 
+
+def test_submit_csat_feedback_route(monkeypatch):
+    # Session not found
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: [])
+    resp = client.post(
+        "/feedback/csat",
+        json={"session_id": "missing-s", "score": 5},
+    )
+    assert resp.status_code == HTTP_NOT_FOUND
+
+    # Valid submission
+    monkeypatch.setattr(
+        main,
+        "get_chat_history",
+        lambda sid: [{"role": "user", "content": "hi"}],
+    )
+    fake_item = {
+        "id": 101,
+        "session_id": "valid-s",
+        "score": 5,
+        "rating": 1,
+        "resolution_satisfaction": 5,
+        "agent_helpfulness": 5,
+        "response_speed": 4,
+        "comment": "Super helpful",
+        "review_status": "pending_review",
+        "assigned_agent": "agent_alice",
+        "escalation_tier": "tier_1",
+    }
+    monkeypatch.setattr(main, "submit_csat_feedback", lambda **kwargs: fake_item)
+
+    resp2 = client.post(
+        "/feedback/csat",
+        json={
+            "session_id": "valid-s",
+            "score": 5,
+            "resolution_satisfaction": 5,
+            "agent_helpfulness": 5,
+            "response_speed": 4,
+            "comment": "Super helpful",
+        },
+    )
+    assert resp2.status_code == HTTP_CREATED
+    data2 = resp2.json()
+    assert data2["message"] == "CSAT feedback recorded."
+    expected_fbid = 101
+    assert data2["feedback_id"] == expected_fbid
+
+
+def test_list_feedback_review_queue_route(monkeypatch):
+    fake_item = {
+        "id": 1,
+        "session_id": "s-1",
+        "score": 2,
+        "rating": -1,
+        "resolution_satisfaction": 2,
+        "agent_helpfulness": 2,
+        "response_speed": 1,
+        "comment": "Slow response",
+        "review_status": "pending_review",
+        "assigned_agent": "agent_bob",
+        "escalation_tier": "tier_1",
+        "reviewer_notes": None,
+        "reviewed_at": None,
+        "reviewed_by": None,
+        "created_at": "2026-10-12 12:00:00",
+    }
+    monkeypatch.setattr(
+        main,
+        "list_feedback_review_queue",
+        lambda **kwargs: ([fake_item], 1),
+    )
+
+    resp = client.get("/feedback/queue?review_status=pending_review&max_score=2")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["score"] == 2  # noqa: PLR2004
+
+    # Invalid query parameters
+    bad_resp = client.get("/feedback/queue?min_score=0")
+    assert bad_resp.status_code == HTTP_BAD_REQUEST
+
+
+def test_update_feedback_review_route(monkeypatch):
+    # Missing feedback
+    monkeypatch.setattr(main, "get_feedback_by_id", lambda fbid: None)
+    resp = client.patch(
+        "/feedback/999/review",
+        json={"review_status": "reviewed"},
+    )
+    assert resp.status_code == HTTP_NOT_FOUND
+
+    # Valid update
+    fake_item = {
+        "id": 42,
+        "session_id": "s-42",
+        "score": 1,
+        "rating": -1,
+        "resolution_satisfaction": 1,
+        "agent_helpfulness": 1,
+        "response_speed": 1,
+        "comment": "Bad",
+        "review_status": "reviewed",
+        "assigned_agent": "agent_bob",
+        "escalation_tier": "tier_1",
+        "reviewer_notes": "Handled with customer",
+        "reviewed_at": "2026-10-12 14:00:00",
+        "reviewed_by": "lead_qa",
+        "created_at": "2026-10-12 12:00:00",
+    }
+    monkeypatch.setattr(main, "get_feedback_by_id", lambda fbid: {"id": fbid})
+    monkeypatch.setattr(main, "update_feedback_review", lambda **kwargs: fake_item)
+
+    resp2 = client.patch(
+        "/feedback/42/review",
+        json={
+            "review_status": "reviewed",
+            "reviewer_notes": "Handled with customer",
+            "reviewed_by": "lead_qa",
+        },
+    )
+    assert resp2.status_code == HTTP_OK
+    data2 = resp2.json()
+    assert data2["review_status"] == "reviewed"
+    assert data2["reviewed_by"] == "lead_qa"
+
+
+def test_get_csat_summary_route(monkeypatch):
+    fake_summary = {
+        "total_responses": 15,
+        "avg_csat_score": 4.5,
+        "avg_resolution_score": 4.6,
+        "avg_helpfulness_score": 4.7,
+        "avg_speed_score": 4.3,
+        "satisfaction_rate": 86.7,
+        "dissatisfaction_rate": 6.7,
+        "star_distribution": {1: 1, 2: 0, 3: 1, 4: 3, 5: 10},
+        "pending_review_count": 3,
+        "followup_required_count": 1,
+    }
+    monkeypatch.setattr(main.csat, "calculate_csat_summary", lambda limit=1000: fake_summary)
+
+    resp = client.get("/feedback/csat-summary")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    expected_tot = 15
+    assert data["total_responses"] == expected_tot
+    expected_avg = 4.5
+    assert data["avg_csat_score"] == expected_avg
+
+
+def test_get_agent_scorecards_route(monkeypatch):
+    fake_cards = [
+        {
+            "agent_id": "agent_sarah",
+            "tier": "tier_1",
+            "total_ratings": 8,
+            "avg_csat_score": 4.9,
+            "avg_resolution_score": 4.8,
+            "avg_helpfulness_score": 5.0,
+            "avg_speed_score": 4.9,
+            "positive_count": 8,
+            "negative_count": 0,
+            "satisfaction_rate": 100.0,
+        }
+    ]
+    monkeypatch.setattr(main, "get_agent_performance_analytics", lambda: fake_cards)
+
+    resp = client.get("/feedback/agent-scorecards")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["total_agents"] == 1
+    assert data["scorecards"][0]["agent_id"] == "agent_sarah"
+
+
