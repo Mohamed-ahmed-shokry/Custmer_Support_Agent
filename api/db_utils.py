@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from collections import Counter
 from contextlib import closing
@@ -2814,6 +2815,257 @@ def create_knowledge_gaps() -> None:
         conn.commit()
 
 
+def normalize_knowledge_query(query: str | None) -> str:
+    """Normalize a customer query into a canonical lowercase alphanumeric form."""
+    cleaned = (query or "").strip()
+    if not cleaned:
+        raise ValueError("Knowledge gap query must not be blank.")
+    if len(cleaned) > MAX_KNOWLEDGE_QUERY_LENGTH:
+        raise ValueError(
+            f"Knowledge gap query exceeds max length {MAX_KNOWLEDGE_QUERY_LENGTH}."
+        )
+    tokens = re.findall(r"[a-z0-9]+", cleaned.lower())
+    return " ".join(tokens) if tokens else cleaned.lower()
+
+
+def normalize_knowledge_category(category: str | None) -> str:
+    """Validate and normalize knowledge category."""
+    clean_cat = (category or DEFAULT_KNOWLEDGE_CATEGORY).strip().lower()
+    if not clean_cat:
+        clean_cat = DEFAULT_KNOWLEDGE_CATEGORY
+    if clean_cat not in VALID_KNOWLEDGE_CATEGORIES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_CATEGORIES))
+        raise ValueError(f"Invalid knowledge category '{clean_cat}'. Allowed: {allowed}.")
+    return clean_cat
+
+
+def normalize_knowledge_gap_status(status: str | None) -> str:
+    """Validate and normalize knowledge gap status."""
+    clean_status = (status or DEFAULT_KNOWLEDGE_GAP_STATUS).strip().lower()
+    if not clean_status:
+        clean_status = DEFAULT_KNOWLEDGE_GAP_STATUS
+    if clean_status not in VALID_KNOWLEDGE_GAP_STATUSES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_GAP_STATUSES))
+        raise ValueError(f"Invalid knowledge gap status '{clean_status}'. Allowed: {allowed}.")
+    return clean_status
+
+
+def normalize_knowledge_gap_source(source_type: str | None) -> str:
+    """Validate and normalize knowledge gap source_type."""
+    clean_src = (source_type or DEFAULT_KNOWLEDGE_GAP_SOURCE).strip().lower()
+    if not clean_src:
+        clean_src = DEFAULT_KNOWLEDGE_GAP_SOURCE
+    if clean_src not in VALID_KNOWLEDGE_GAP_SOURCES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_GAP_SOURCES))
+        raise ValueError(
+            f"Invalid knowledge gap source_type '{clean_src}'. Allowed: {allowed}."
+        )
+    return clean_src
+
+
+_PRIORITY_RANK = {"urgent": 4, "high": 3, "medium": 2, "low": 1}
+
+
+def record_knowledge_gap(  # noqa: PLR0913, PLR0917
+    query: str,
+    category: str = DEFAULT_KNOWLEDGE_CATEGORY,
+    source_type: str = DEFAULT_KNOWLEDGE_GAP_SOURCE,
+    session_id: str | None = None,
+    priority: str = DEFAULT_SESSION_PRIORITY,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Record a knowledge gap, deduplicating and incrementing frequency on active matches."""
+    clean_query = (query or "").strip()
+    norm_query = normalize_knowledge_query(clean_query)
+    clean_cat = normalize_knowledge_category(category)
+    clean_src = normalize_knowledge_gap_source(source_type)
+    clean_prio = normalize_session_priority(priority)
+    clean_sid = (session_id or "").strip() or None
+    clean_notes = (notes or "").strip()
+    if len(clean_notes) > MAX_KNOWLEDGE_NOTES_LENGTH:
+        raise ValueError(
+            f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}."
+        )
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(
+            "SELECT * FROM knowledge_gaps "
+            "WHERE normalized_query = ? AND status IN ('open', 'drafting') "
+            "ORDER BY id DESC LIMIT 1",
+            (norm_query,),
+        ).fetchone()
+
+        if existing:
+            gap_id = int(existing["id"])
+            new_freq = int(existing["frequency"]) + 1
+            curr_prio = str(existing["priority"] or DEFAULT_SESSION_PRIORITY)
+            target_prio = (
+                clean_prio
+                if _PRIORITY_RANK.get(clean_prio, 2) > _PRIORITY_RANK.get(curr_prio, 2)
+                else curr_prio
+            )
+            if new_freq >= 3 and _PRIORITY_RANK.get(target_prio, 2) < _PRIORITY_RANK["high"]:  # noqa: PLR2004
+                target_prio = "high"
+
+            new_sid = clean_sid or existing["session_id"]
+            new_notes = clean_notes if clean_notes else existing["notes"]
+
+            conn.execute(
+                "UPDATE knowledge_gaps "
+                "SET frequency = ?, priority = ?, session_id = ?, notes = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (new_freq, target_prio, new_sid, new_notes, gap_id),
+            )
+            conn.commit()
+            updated_row = conn.execute(
+                "SELECT * FROM knowledge_gaps WHERE id = ?", (gap_id,)
+            ).fetchone()
+            res = dict(updated_row) if updated_row else {}
+            res["deduplicated"] = True
+            return res
+
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO knowledge_gaps "
+            "(query, normalized_query, category, source_type, session_id, "
+            "frequency, priority, status, notes) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?, 'open', ?)",
+            (
+                clean_query,
+                norm_query,
+                clean_cat,
+                clean_src,
+                clean_sid,
+                clean_prio,
+                clean_notes,
+            ),
+        )
+        new_id = int(cursor.lastrowid or 0)
+        conn.commit()
+        created_row = conn.execute(
+            "SELECT * FROM knowledge_gaps WHERE id = ?", (new_id,)
+        ).fetchone()
+        res = dict(created_row) if created_row else {}
+        res["deduplicated"] = False
+        return res
+
+
+def get_knowledge_gap(gap_id: int) -> dict[str, Any] | None:
+    """Fetch a knowledge gap by ID, or None if not found."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT * FROM knowledge_gaps WHERE id = ?", (gap_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_knowledge_gaps(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    source_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """List knowledge gaps with optional filtering and pagination."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if status:
+        clauses.append("status = ?")
+        params.append(normalize_knowledge_gap_status(status))
+    if category:
+        clauses.append("category = ?")
+        params.append(normalize_knowledge_category(category))
+    if priority:
+        clauses.append("priority = ?")
+        params.append(normalize_session_priority(priority))
+    if source_type:
+        clauses.append("source_type = ?")
+        params.append(normalize_knowledge_gap_source(source_type))
+
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    count_sql = f"SELECT COUNT(*) FROM knowledge_gaps{where_sql}"
+    select_sql = (
+        f"SELECT * FROM knowledge_gaps{where_sql} "
+        "ORDER BY CASE priority "
+        "WHEN 'urgent' THEN 1 "
+        "WHEN 'high' THEN 2 "
+        "WHEN 'medium' THEN 3 "
+        "WHEN 'low' THEN 4 ELSE 5 END, frequency DESC, id DESC "
+        "LIMIT ? OFFSET ?"
+    )
+
+    with closing(get_db_connection()) as conn:
+        total = int(conn.execute(count_sql, params).fetchone()[0])
+        rows = conn.execute(
+            select_sql, [*params, max(1, limit), max(0, offset)]
+        ).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_knowledge_gap(  # noqa: PLR0913, PLR0917
+    gap_id: int,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    linked_article_id: int | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Update a knowledge gap record; returns updated dict or None if not found."""
+    current = get_knowledge_gap(gap_id)
+    if current is None:
+        return None
+
+    new_status = (
+        normalize_knowledge_gap_status(status)
+        if status is not None
+        else current["status"]
+    )
+    new_prio = (
+        normalize_session_priority(priority)
+        if priority is not None
+        else current["priority"]
+    )
+    new_cat = (
+        normalize_knowledge_category(category)
+        if category is not None
+        else current["category"]
+    )
+    new_linked = (
+        linked_article_id
+        if linked_article_id is not None
+        else current["linked_article_id"]
+    )
+    new_notes = current["notes"]
+    if notes is not None:
+        clean_notes = notes.strip()
+        if len(clean_notes) > MAX_KNOWLEDGE_NOTES_LENGTH:
+            raise ValueError(
+                f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}."
+            )
+        new_notes = clean_notes
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE knowledge_gaps "
+            "SET status = ?, priority = ?, category = ?, linked_article_id = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_status, new_prio, new_cat, new_linked, new_notes, gap_id),
+        )
+        conn.commit()
+    return get_knowledge_gap(gap_id)
+
+
+def delete_knowledge_gap(gap_id: int) -> bool:
+    """Delete a knowledge gap by ID; returns True if deleted, False if not found."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM knowledge_gaps WHERE id = ?", (gap_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -2828,3 +3080,4 @@ create_sla_policies()
 create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
+
