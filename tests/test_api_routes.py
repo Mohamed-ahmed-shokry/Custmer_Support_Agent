@@ -878,6 +878,8 @@ def test_list_sessions_returns_summaries(monkeypatch):
             "tags": "",
             "summary": None,
             "resolution_notes": None,
+            "assigned_agent": None,
+            "escalation_tier": "tier_1",
         }
     ]
     monkeypatch.setattr(main, "get_all_sessions", lambda: sessions)
