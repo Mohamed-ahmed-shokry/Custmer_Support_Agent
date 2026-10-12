@@ -1203,10 +1203,13 @@ def submit_csat_feedback(  # noqa: PLR0913, PLR0917
     assigned_agent: str | None = None,
     escalation_tier: str | None = None,
 ) -> dict[str, Any]:
-    """Submit a multi-criteria 1-5 CSAT rating with sub-criteria and session attribution."""
+    if not session_id or not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("Session ID must not be empty.")
+    clean_session_id = session_id.strip()
+
     norm_score = normalize_csat_score(score, allow_none=False)
     if norm_score is None:
-        raise ValueError("Score cannot be None.")
+        raise ValueError("CSAT overall score is required.")
     norm_res = normalize_csat_score(resolution_satisfaction)
     norm_help = normalize_csat_score(agent_helpfulness)
     norm_speed = normalize_csat_score(response_speed)
@@ -1222,7 +1225,7 @@ def submit_csat_feedback(  # noqa: PLR0913, PLR0917
         legacy_rating = 0
 
     # Auto-resolve session assignee and tier if not explicitly passed
-    meta = get_session_metadata(session_id) or {}
+    meta = get_session_metadata(clean_session_id) or {}
     agent_val = assigned_agent if assigned_agent is not None else meta.get("assigned_agent")
     tier_val = (
         normalize_agent_tier(escalation_tier)
@@ -1242,7 +1245,7 @@ def submit_csat_feedback(  # noqa: PLR0913, PLR0917
         cursor.execute(
             insert_sql,
             (
-                session_id,
+                clean_session_id,
                 legacy_rating,
                 clean_comment,
                 norm_score,
@@ -1294,6 +1297,20 @@ def update_feedback_review(  # noqa: PLR0913, PLR0917
             return None
         conn.commit()
 
+        row = conn.execute(
+            "SELECT id, session_id, rating, comment, score, "
+            "resolution_satisfaction, agent_helpfulness, response_speed, "
+            "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+            "reviewed_at, reviewed_by, created_at "
+            "FROM feedback WHERE id = ?",
+            (feedback_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_feedback_by_id(feedback_id: int) -> dict[str, Any] | None:
+    """Fetch a single feedback record by primary key id."""
+    with closing(get_db_connection()) as conn:
         row = conn.execute(
             "SELECT id, session_id, rating, comment, score, "
             "resolution_satisfaction, agent_helpfulness, response_speed, "
