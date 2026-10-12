@@ -1,29 +1,25 @@
-# v0.33.0 Progress Record: Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine
+# v0.34.0 Progress Record: Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine
 
-**Phase Branch**: `phase/v0.33.0-feedback-csat-analytics`  
-**Status**: ✅ COMPLETED  
-**Target Version**: 0.33.0  
+**Phase Branch**: `phase/v0.34.0-knowledge-gaps-article-studio`  
+**Status**: 🚧 IN PROGRESS  
+**Target Version**: 0.34.0  
 
 ---
 
 ## 1. Task Breakdown & Execution Status
 
-- [x] **Task 1**: `ROADMAP.md` v0.33.0 plan specification and `docs/PROGRESS.md` initialization
-- [x] **Task 2**: Database schema migration and CRUD operations for CSAT & review queue in `api/db_utils.py`
-- [x] **Task 3**: Unit tests for CSAT database schema, queries, and migrations in `tests/test_db_utils.py`
-- [x] **Task 4**: Core CSAT calculation, agent scorecard analytics, and alert engine in `api/csat.py`
-- [x] **Task 5**: Unit tests for CSAT calculation engine in `tests/test_csat.py`
-- [x] **Task 6**: Pydantic schemas in `api/pydantic_models.py`
-- [x] **Task 7**: Unit tests for CSAT Pydantic schemas in `tests/test_models.py`
-- [x] **Task 8**: FastAPI routes in `api/main.py`
-- [x] **Task 9**: Integration and endpoint tests for FastAPI CSAT routes in `tests/test_api_routes.py`
-- [x] **Task 10**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
-- [x] **Task 11**: Streamlit chat interface 5-star CSAT survey widget in `app/chat_interface.py`
-- [x] **Task 12**: Streamlit sidebar feedback review queue and agent performance scorecard in `app/sidebar.py`
-- [x] **Task 13**: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [x] **Task 14**: Documentation updates in `docs/API.md` and `README.md`
-- [x] **Task 15**: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
-- [x] **Task 16**: Final verification gate, progress record completion, and self-review audit
+- [x] **Task 1**: `ROADMAP.md` v0.34.0 plan specification and `docs/PROGRESS.md` initialization
+- [ ] **Task 2**: Database schema & CRUD operations for `knowledge_gaps` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] **Task 3**: Database schema & CRUD operations for `knowledge_articles` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] **Task 4**: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [ ] **Task 5**: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [ ] **Task 6**: Pydantic request/response models for knowledge gaps, articles, publishing, and analytics in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [ ] **Task 7**: FastAPI endpoints for knowledge gaps (`/knowledge/gaps*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] **Task 8**: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] **Task 10**: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
+- [ ] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ---
 
@@ -31,42 +27,34 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `feedback` table schema migrates to support `score` (1-5), sub-criteria (`resolution_satisfaction`, `agent_helpfulness`, `response_speed`), `review_status`, `assigned_agent`, `escalation_tier`, `reviewer_notes`, `reviewed_at`, and `reviewed_by` | VERIFIED | `api/db_utils.py`, `tests/test_db_utils.py` (82 passed) |
-| AC2 | `submit_csat_feedback()` persists multi-criteria feedback, captures current session's assigned agent and tier, and dispatches `feedback.low_csat` webhook when score <= 2 | VERIFIED | `api/csat.py`, `tests/test_csat.py` (3 passed), `tests/test_api_routes.py` |
-| AC3 | `update_feedback_review()` allows operators to update `review_status` (`pending_review`, `reviewed`, `followup_required`, `resolved`) and append reviewer notes | VERIFIED | `update_feedback_review()` tested in `test_update_feedback_review_lifecycle` |
-| AC4 | `get_agent_performance_analytics()` and `calculate_csat_summary()` accurately compute aggregate metrics, star distributions, and agent scorecards | VERIFIED | `api/csat.py`, `api/db_utils.py`, `tests/test_csat.py` |
-| AC5 | FastAPI endpoints `/feedback/csat`, `/feedback/queue`, `/feedback/{id}/review`, `/feedback/csat-summary`, and `/feedback/agent-scorecards` are functional and schema-validated | VERIFIED | `api/main.py`, `tests/test_api_routes.py` (149 passed) |
-| AC6 | Client helpers in `app/api_utils.py` provide typed methods with authentication and error handling | VERIFIED | `app/api_utils.py`, `tests/test_app_api_utils.py` (118 passed) |
-| AC7 | Streamlit UI supports 5-star multi-criteria CSAT submission in chat and administrative review queue & agent scorecard dashboard in the sidebar | VERIFIED | `app/chat_interface.py`, `app/sidebar.py`, `tests/test_app_ui.py` (102 passed) |
-| AC8 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | VERIFIED | `pytest` (695 passed, 93.96% coverage), `ruff check` (0 errors), `mypy` (0 issues in 28 source files) |
+| AC1 | `knowledge_gaps` and `knowledge_articles` SQLite tables are created and support full CRUD, recurring query deduplication (`normalized_query` frequency incrementing), and validation | PENDING | `api/db_utils.py`, `tests/test_db_utils.py` |
+| AC2 | `api/knowledge_base.py` accurately detects unanswered/fallback responses, scans escalated/low-CSAT sessions for gaps, synthesizes structured Markdown KB drafts from sessions, publishes articles into `document_store`/`document_sources` (resolving linked gaps), and dispatches `knowledge.gap_detected` and `knowledge.article_published` webhooks | PENDING | `api/knowledge_base.py`, `tests/test_knowledge_base.py` |
+| AC3 | Pydantic schemas in `api/pydantic_models.py` validate all knowledge gap, article drafting, publishing, and analytics payloads | PENDING | `api/pydantic_models.py`, `tests/test_models.py` |
+| AC4 | FastAPI endpoints `/knowledge/gaps`, `/knowledge/gaps/scan`, `/knowledge/gaps/{id}`, `/knowledge/articles`, `/knowledge/articles/{id}`, `/knowledge/articles/{id}/publish`, `/sessions/{id}/draft-article`, and `/knowledge/analytics` are wired and verified | PENDING | `api/main.py`, `tests/test_api_routes.py` |
+| AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PENDING | `app/api_utils.py`, `tests/test_app_api_utils.py` |
+| AC6 | Streamlit UI in `app/sidebar.py` provides 1-click session KB article drafting and the "📚 Knowledge Gaps & Article Studio" management panel | PENDING | `app/sidebar.py`, `tests/test_app_ui.py` |
+| AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.34.0`) are updated and accurate | PENDING | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
+| AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
 
 ---
 
 ## 3. Decision Log
 
-- **Decision 1 (2026-10-12)**: Select v0.33.0 Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine as the next development phase.
-  - *Context*: Baseline tests, ruff, and mypy are completely green. v0.32.0 established support agent directory, tiered escalation, and session assignment. However, feedback was previously a simple binary rating (-1/1) without multi-criteria scoring, review workflows, or attribution to assigned agents and tiers.
-  - *Alternatives considered*: External CRM sync (Salesforce/HubSpot) or real-time voice call analytics.
-  - *Rationale*: Connecting customer satisfaction ratings (1 to 5 stars, resolution satisfaction, agent helpfulness, response speed) directly to assigned agents and escalation tiers closes the operational loop for quality assurance and supervisor reviews without requiring third-party credentials.
-  - *Blast radius & Reversibility*: Schema extensions to `feedback` table are additive and preserve backward compatibility with existing binary ratings.
+- **Decision 1 (2026-10-13)**: Select **v0.34.0 — Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine** as the development phase.
+  - *Context*: Baseline checks (`pytest`, `ruff`, `mypy`) are 100% green on `v0.33.0`. Previous phases built the RAG document store (`v0.6`–`v0.26`) and the customer support operational helpdesk (`v0.27`–`v0.33`: summarization, webhooks, macros, SLA triage, agent routing, and multi-criteria CSAT). However, there was no closed-loop mechanism connecting support escalations, unanswered tenant questions, and low-CSAT conversations back into the RAG knowledge base.
+  - *Alternatives considered*: External helpdesk CRM sync (requires third-party API credentials) or standalone RBAC auth overhaul (high blast radius across existing keyless routes).
+  - *Rationale*: Closing the loop between support operations and the RAG corpus—detecting knowledge gaps from unanswered/low-CSAT/escalated sessions, drafting structured Markdown FAQ articles from resolved conversations, and publishing them directly into `document_store`/`document_sources` + Chroma—delivers high product value, zero external dependencies, and complete end-to-end integration across DB, API, client SDK, and Streamlit UI.
+  - *Blast radius & Reversibility*: Additive SQLite tables (`knowledge_gaps`, `knowledge_articles`), dedicated `api/knowledge_base.py` domain module, and additive `/knowledge/*` + `/sessions/{id}/draft-article` routes.
 
-- **Decision 2 (2026-10-12)**: Preserve backward compatibility for binary rating while standardizing on 1-5 star score.
-  - *Context*: Existing sessions or automated scripts might submit `rating` in `{-1, 1}`.
-  - *Rationale*: Store both `score` (1-5) and compute `rating` (+1 for score >= 4, -1 for score <= 2, 0 for 3) so legacy analytics and new CSAT scorecards coexist seamlessly.
-
-- **Decision 3 (2026-10-13)**: Add an `autouse=True` HTTP fast-fail fixture in `tests/test_app_ui.py`.
-  - *Context*: Unmocked helper calls inside Streamlit UI unit tests attempted real TCP connections to `localhost:8000`, causing 2-second Windows TCP timeouts per call (~193s total).
-  - *Rationale*: Raising `requests.exceptions.ConnectionError` immediately in `tests/test_app_ui.py` preserves identical fallback behavior while reducing UI unit test execution time from 193s to 1.71s.
+- **Decision 2 (2026-10-13)**: Make KB article publishing resilient to offline/keyless environments during Chroma indexing.
+  - *Context*: Publishing a KB article writes the Markdown document to `document_store` and `document_sources` and indexes chunks into Chroma. In CI or local environments without OpenAI API keys, live embedding calls in Chroma may fail unless handled gracefully.
+  - *Rationale*: Persist `document_store` and `document_sources` deterministically first, attempt Chroma chunk indexing via `reindex_chunks_in_chroma`, and catch embedding provider errors gracefully (recording `indexed_in_vectorstore: bool` in the publish response) so publishing works 100% end-to-end both with and without external OpenAI credentials.
 
 ---
 
 ## 4. Validation Commands & Results
 
-- **Baseline Check (v0.32.0)**:
-  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (0 issues)
-  - `python -m mypy api app scripts` -> ✅ Passed (0 issues in 27 source files)
-  - `python -m pytest` -> ✅ Passed (668 passed, 21 deselected, 94.00% coverage, fail_under=80%)
-- **Final Verification Gate (v0.33.0)**:
-  - `python -m ruff check api app tests scripts` -> ✅ Passed (`All checks passed!`)
-  - `python -m mypy api app scripts` -> ✅ Passed (`Success: no issues found in 28 source files`)
-  - `python -m pytest -q` -> ✅ Passed (`695 passed, 21 deselected, 93.96% coverage, fail_under=80%`)
+- **Baseline Check (v0.33.0)**:
+  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
+  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 28 source files`)
+  - `python -m pytest -q` -> ✅ Passed (`695 passed, 21 deselected, 94.14% coverage, fail_under=80%`)
