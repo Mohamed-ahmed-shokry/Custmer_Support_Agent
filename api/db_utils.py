@@ -3167,7 +3167,8 @@ def create_knowledge_article(  # noqa: PLR0913, PLR0917
         raise ValueError("Knowledge article content_markdown must not be blank.")
     if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
         raise ValueError(
-            f"Knowledge article content_markdown exceeds max length {MAX_KNOWLEDGE_CONTENT_LENGTH}."
+            "Knowledge article content_markdown exceeds max length "
+            f"{MAX_KNOWLEDGE_CONTENT_LENGTH}."
         )
 
     clean_cat = normalize_knowledge_category(category)
@@ -3302,7 +3303,8 @@ def update_knowledge_article(  # noqa: PLR0912, PLR0913, PLR0917
             raise ValueError("Knowledge article content_markdown must not be blank.")
         if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
             raise ValueError(
-                f"Knowledge article content_markdown exceeds max length {MAX_KNOWLEDGE_CONTENT_LENGTH}."
+                "Knowledge article content_markdown exceeds max length "
+                f"{MAX_KNOWLEDGE_CONTENT_LENGTH}."
             )
         new_content = clean_content
 
