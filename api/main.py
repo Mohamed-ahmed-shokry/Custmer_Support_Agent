@@ -1068,12 +1068,12 @@ def list_sessions(
         cleaned_tier = tier.strip().lower()
         tier = cleaned_tier if cleaned_tier else None
 
-    return get_all_sessions(
-        status=status,
-        tag=tag,
-        assigned_agent=agent,
-        escalation_tier=tier,
-    )
+    kwargs: dict[str, Any] = {"status": status, "tag": tag}
+    if agent is not None:
+        kwargs["assigned_agent"] = agent
+    if tier is not None:
+        kwargs["escalation_tier"] = tier
+    return get_all_sessions(**kwargs)
 
 
 MAX_SEARCH_LIMIT = 100
