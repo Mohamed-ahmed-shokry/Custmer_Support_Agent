@@ -3,6 +3,8 @@ from datetime import datetime
 import pytest
 from api.pydantic_models import (
     DEFAULT_MODEL,
+    AgentPerformanceScorecardsResponse,
+    AgentScorecardItem,
     AgentWorkloadItem,
     AgentWorkloadResponse,
     AutoAssignRequest,
@@ -11,8 +13,13 @@ from api.pydantic_models import (
     CollectionAnalyticsResponse,
     CollectionRechunkRequest,
     CollectionRechunkResponse,
+    CSATFeedbackSubmitRequest,
+    CSATSummaryResponse,
     DocumentDetailResponse,
     DocumentRechunkItem,
+    FeedbackReviewItemResponse,
+    FeedbackReviewQueueResponse,
+    FeedbackReviewUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -1060,6 +1067,116 @@ def test_agent_workload_and_business_hours_response():
     )
     assert biz_resp.is_open is True
     assert biz_resp.day_name == "Monday"
+
+
+def test_csat_feedback_submit_request_validations():
+    # Valid model
+    req = CSATFeedbackSubmitRequest(
+        session_id="  sess-123  ",
+        score=5,
+        resolution_satisfaction=4,
+        agent_helpfulness=5,
+        response_speed=4,
+        comment="  Great support experience!  ",
+        assigned_agent="  agent_john  ",
+        escalation_tier="tier_2",
+    )
+    assert req.session_id == "sess-123"
+    assert req.score == 5  # noqa: PLR2004
+    assert req.comment == "Great support experience!"
+    assert req.assigned_agent == "agent_john"
+    assert req.escalation_tier == "tier_2"
+
+    # Unassigned agent turns into None
+    req_unassigned = CSATFeedbackSubmitRequest(
+        session_id="sess-456",
+        score=3,
+        assigned_agent="unassigned",
+    )
+    assert req_unassigned.assigned_agent is None
+
+    # Score out of bounds
+    with pytest.raises(ValidationError):
+        CSATFeedbackSubmitRequest(session_id="sess-1", score=0)
+    with pytest.raises(ValidationError):
+        CSATFeedbackSubmitRequest(session_id="sess-1", score=6)
+
+    # Empty session_id
+    with pytest.raises(ValidationError):
+        CSATFeedbackSubmitRequest(session_id="   ", score=5)
+
+
+def test_csat_review_and_scorecard_models():
+    # Review update request
+    rev_req = FeedbackReviewUpdateRequest(
+        review_status="followup_required",
+        reviewer_notes="Customer requested follow-up",
+        reviewed_by="supervisor_1",
+    )
+    assert rev_req.review_status == "followup_required"
+    assert rev_req.reviewer_notes == "Customer requested follow-up"
+    assert rev_req.reviewed_by == "supervisor_1"
+
+    # Invalid review status raises ValueError
+    with pytest.raises(ValueError):
+        FeedbackReviewUpdateRequest(review_status="invalid_status")
+
+    # Summary model
+    summary = CSATSummaryResponse(
+        total_responses=10,
+        avg_csat_score=4.2,
+        avg_resolution_score=4.0,
+        avg_helpfulness_score=4.5,
+        avg_speed_score=4.1,
+        satisfaction_rate=80.0,
+        dissatisfaction_rate=10.0,
+        star_distribution={1: 1, 2: 0, 3: 1, 4: 3, 5: 5},
+        pending_review_count=2,
+        followup_required_count=1,
+    )
+    expected_tot = 10
+    assert summary.total_responses == expected_tot
+    assert summary.star_distribution[5] == 5  # noqa: PLR2004
+
+    # Scorecard model
+    scorecard = AgentScorecardItem(
+        agent_id="agent_alice",
+        tier="tier_1",
+        total_ratings=5,
+        avg_csat_score=4.8,
+        avg_resolution_score=4.8,
+        avg_helpfulness_score=5.0,
+        avg_speed_score=4.6,
+        positive_count=5,
+        negative_count=0,
+        satisfaction_rate=100.0,
+    )
+    scorecards_resp = AgentPerformanceScorecardsResponse(
+        scorecards=[scorecard],
+        total_agents=1,
+    )
+    assert scorecards_resp.total_agents == 1
+    assert scorecards_resp.scorecards[0].agent_id == "agent_alice"
+
+    # Review queue item & list
+    item = FeedbackReviewItemResponse(
+        id=1,
+        session_id="sess-99",
+        score=1,
+        rating=-1,
+        resolution_satisfaction=1,
+        agent_helpfulness=2,
+        response_speed=1,
+        comment="Terrible speed",
+        review_status="pending_review",
+        assigned_agent="agent_bob",
+        escalation_tier="tier_1",
+        created_at="2026-10-12 10:00:00",
+    )
+    queue_resp = FeedbackReviewQueueResponse(items=[item], total=1, limit=50, offset=0)
+    assert queue_resp.total == 1
+    assert queue_resp.items[0].score == 1
+
 
 
 
