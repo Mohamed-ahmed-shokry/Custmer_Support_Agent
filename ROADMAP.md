@@ -857,6 +857,109 @@ Deliver an advanced Customer Satisfaction (CSAT) feedback rating, operator revie
 - [x] Task 15: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
 - [x] Task 16: Final verification gate, progress record completion, and self-review audit
 
+## v0.34.0 plan — Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine (IN PROGRESS)
+
+Deliver an end-to-end Knowledge Base Gap Detection, FAQ Article Drafting, and Self-Service Deflection Engine that closes the loop between customer support sessions/CSAT feedback and the RAG vector knowledge base:
+automated and manual tracking of unanswered or low-confidence tenant queries (`knowledge_gaps` table with recurring query deduplication and frequency tracking), automated gap scanning across escalated and low-CSAT (`<= 2` stars) sessions, 1-click structured Markdown Knowledge Base / FAQ article drafting from resolved support sessions or knowledge gaps (`knowledge_articles` table + `api/knowledge_base.py`), 1-click publishing of KB articles directly into the persistent document store (`document_store` / `document_sources` + Chroma indexing) with automatic gap resolution and webhook notifications (`knowledge.gap_detected`, `knowledge.article_published`), self-service coverage & deflection analytics, and Streamlit UI controls for drafting articles from sessions and managing the Knowledge Base Gaps & Article Studio panel.
+
+### Objective & Expected Outcome
+Close the knowledge loop between customer support operations and the RAG retrieval corpus so that recurring tenant questions, escalated tickets, and low-CSAT sessions are systematically identified as knowledge gaps, converted into structured Markdown FAQ / Knowledge Base articles, and published directly into the searchable document library to deflect future tickets.
+
+### Scope & Objectives
+- **Knowledge Base Gaps & Articles Persistence (`api/db_utils.py`)**:
+  - SQLite table `knowledge_gaps`:
+    - `id INTEGER PRIMARY KEY AUTOINCREMENT`
+    - `query TEXT NOT NULL`
+    - `normalized_query TEXT NOT NULL` (for recurring query deduplication & frequency incrementing)
+    - `category TEXT NOT NULL DEFAULT 'general'` (`general`, `maintenance`, `lease`, `billing`, `policy`)
+    - `source_type TEXT NOT NULL DEFAULT 'unanswered_query'` (`unanswered_query`, `low_csat`, `escalated_session`, `manual`)
+    - `session_id TEXT DEFAULT NULL`
+    - `frequency INTEGER NOT NULL DEFAULT 1`
+    - `priority TEXT NOT NULL DEFAULT 'medium'` (`urgent`, `high`, `medium`, `low`)
+    - `status TEXT NOT NULL DEFAULT 'open'` (`open`, `drafting`, `resolved`, `dismissed`)
+    - `linked_article_id INTEGER DEFAULT NULL`
+    - `notes TEXT DEFAULT ''`
+    - `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+    - `updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+  - SQLite table `knowledge_articles`:
+    - `id INTEGER PRIMARY KEY AUTOINCREMENT`
+    - `title TEXT NOT NULL`
+    - `category TEXT NOT NULL DEFAULT 'general'`
+    - `question_pattern TEXT NOT NULL DEFAULT ''`
+    - `content_markdown TEXT NOT NULL`
+    - `tags TEXT NOT NULL DEFAULT ''`
+    - `source_session_id TEXT DEFAULT NULL`
+    - `source_gap_id INTEGER DEFAULT NULL`
+    - `status TEXT NOT NULL DEFAULT 'draft'` (`draft`, `published`, `archived`)
+    - `author TEXT NOT NULL DEFAULT 'support_agent'`
+    - `published_file_id INTEGER DEFAULT NULL`
+    - `published_collection TEXT DEFAULT NULL`
+    - `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+    - `updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+  - DB CRUD operations in `api/db_utils.py`:
+    - `record_knowledge_gap()`, `get_knowledge_gap()`, `list_knowledge_gaps()`, `update_knowledge_gap()`, `delete_knowledge_gap()`
+    - `create_knowledge_article()`, `get_knowledge_article()`, `list_knowledge_articles()`, `update_knowledge_article()`, `delete_knowledge_article()`
+- **Knowledge Base Gap Detection, Article Synthesis & Publishing Engine (`api/knowledge_base.py`)**:
+  - `is_unanswered_or_fallback_response(answer: str, sources_count: int = 0) -> bool`: detects fallback/low-coverage answers.
+  - `scan_sessions_for_knowledge_gaps() -> dict`: scans escalated sessions, low-CSAT (`<= 2` stars or `rating == -1`) sessions, and unanswered chat logs to register/increment knowledge gaps and dispatch `knowledge.gap_detected` webhooks.
+  - `draft_article_from_session(session_id: str, author: str = 'support_agent', category: str | None = None, link_gap_id: int | None = None) -> dict`: synthesizes a structured Markdown FAQ / KB article from a session's tenant inquiry, assistant answers, `summary`, and `resolution_notes` (100% offline deterministic builder with optional LLM refinement), persists it in `knowledge_articles`, and links any associated knowledge gap (`status = 'drafting'`).
+  - `publish_knowledge_article(article_id: int, collection: str = 'default', chunking_strategy: str = 'markdown', chunk_size: int = 1000, chunk_overlap: int = 200) -> dict`: writes the article Markdown into `document_store` and `document_sources`, indexes chunks into Chroma (with graceful fallback if embeddings are offline), updates `status = 'published'` and `published_file_id`, transitions linked `knowledge_gaps` to `resolved`, and dispatches `knowledge.article_published` webhook.
+  - `get_knowledge_base_analytics() -> dict`: aggregates gap counts by status/priority/category, recurring frequency totals, article counts (`draft`, `published`, `archived`), gap resolution rate (%), and estimated self-service ticket deflection metrics.
+- **Webhook Integration (`api/db_utils.py`)**:
+  - Extend `VALID_WEBHOOK_EVENTS` with `"knowledge.gap_detected"` and `"knowledge.article_published"`.
+- **FastAPI Endpoints (`api/main.py` & `api/pydantic_models.py`)**:
+  - `POST /knowledge/gaps`: create/log a knowledge gap (or increment recurring match).
+  - `GET /knowledge/gaps`: list knowledge gaps with filters (`status`, `category`, `priority`, `source_type`, `limit`).
+  - `GET /knowledge/gaps/{gap_id}`: retrieve a knowledge gap by ID.
+  - `PATCH /knowledge/gaps/{gap_id}`: update gap status, priority, category, linked article, or notes.
+  - `DELETE /knowledge/gaps/{gap_id}`: delete a knowledge gap.
+  - `POST /knowledge/gaps/scan`: scan sessions & feedback for knowledge gaps.
+  - `POST /knowledge/articles`: create a new KB article draft.
+  - `POST /sessions/{session_id}/draft-article`: draft a KB article from a support session's dialogue and resolution notes.
+  - `GET /knowledge/articles`: list KB articles with filters (`status`, `category`, `search`).
+  - `GET /knowledge/articles/{article_id}`: get a KB article by ID.
+  - `PATCH /knowledge/articles/{article_id}`: update a KB article.
+  - `DELETE /knowledge/articles/{article_id}`: delete a KB article.
+  - `POST /knowledge/articles/{article_id}/publish`: publish a KB article into the RAG document store and resolve linked gaps.
+  - `GET /knowledge/analytics`: retrieve KB gap and self-service coverage analytics.
+- **Client & Streamlit UI Integration (`app/api_utils.py` & `app/sidebar.py`)**:
+  - Client helpers in `app/api_utils.py` for all `/knowledge/*` and `/sessions/{id}/draft-article` routes with `X-API-Key` propagation.
+  - Session Resolution Panel (`app/sidebar.py`): 1-click **"📝 Draft KB Article"** button to synthesize a KB draft from the selected session.
+  - Dedicated **"📚 Knowledge Gaps & Article Studio"** sidebar expander displaying coverage KPIs, 1-click gap scanner, knowledge gap triage queue, and KB article draft editor / 1-click RAG publisher.
+
+### Acceptance Criteria
+1. `knowledge_gaps` and `knowledge_articles` SQLite tables are created and support full CRUD, recurring query deduplication (`normalized_query` frequency incrementing), and validation (`tests/test_db_utils.py`).
+2. `api/knowledge_base.py` accurately detects unanswered/fallback responses, scans escalated/low-CSAT sessions for gaps, synthesizes structured Markdown KB drafts from sessions, publishes articles into `document_store`/`document_sources` (resolving linked gaps), and dispatches `knowledge.gap_detected` and `knowledge.article_published` webhooks (`tests/test_knowledge_base.py`).
+3. Pydantic schemas in `api/pydantic_models.py` validate all knowledge gap, article drafting, publishing, and analytics payloads (`tests/test_models.py`).
+4. FastAPI endpoints `/knowledge/gaps`, `/knowledge/gaps/scan`, `/knowledge/gaps/{id}`, `/knowledge/articles`, `/knowledge/articles/{id}`, `/knowledge/articles/{id}/publish`, `/sessions/{id}/draft-article`, and `/knowledge/analytics` are wired and verified (`tests/test_api_routes.py`).
+5. Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling (`tests/test_app_api_utils.py`).
+6. Streamlit UI in `app/sidebar.py` provides 1-click session KB article drafting and the "📚 Knowledge Gaps & Article Studio" management panel (`tests/test_app_ui.py`).
+7. Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.34.0`) are updated and accurate.
+8. Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions.
+
+### Validation Plan
+- Focused unit tests per micro-step (`tests/test_db_utils.py`, `tests/test_knowledge_base.py`, `tests/test_models.py`, `tests/test_api_routes.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`).
+- Full suite verification: `python -m pytest`, `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`.
+- End-to-end API workflow verification exercising gap detection -> session article drafting -> article publishing into `document_store` -> gap resolution -> analytics verification.
+
+### Exclusions
+- External third-party CMS synchronization (e.g., Confluence, Notion, Zendesk Guide APIs) — excluded to keep the system 100% local-first and keyless.
+- Automated unreviewed publishing of LLM-generated articles without operator trigger — excluded to preserve knowledge base curation safety.
+
+### Granular Task Breakdown
+- [ ] Task 1: `ROADMAP.md` v0.34.0 plan specification and `docs/PROGRESS.md` initialization
+- [ ] Task 2: Database schema & CRUD operations for `knowledge_gaps` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] Task 3: Database schema & CRUD operations for `knowledge_articles` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] Task 4: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [ ] Task 5: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [ ] Task 6: Pydantic request/response models for knowledge gaps, articles, publishing, and analytics in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [ ] Task 7: FastAPI endpoints for knowledge gaps (`/knowledge/gaps*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] Task 8: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] Task 9: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] Task 10: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
+- [ ] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
