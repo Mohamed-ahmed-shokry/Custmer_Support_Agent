@@ -22,11 +22,13 @@ from app.api_utils import (
     delete_webhook,
     evaluate_sla_alerts,
     export_session,
+    get_agent_scorecards,
     get_agent_workload_analytics,
     get_business_hours_status,
     get_collection_analytics,
     get_collections_details,
     get_config,
+    get_csat_summary,
     get_document_details,
     get_feedback_analytics,
     get_health,
@@ -42,6 +44,7 @@ from app.api_utils import (
     list_collections,
     list_documents,
     list_feedback,
+    list_feedback_review_queue,
     list_macro_categories,
     list_macros,
     list_sessions,
@@ -58,6 +61,7 @@ from app.api_utils import (
     search_sessions,
     suggest_macros,
     summarize_session,
+    update_feedback_review,
     update_session,
     update_support_agent,
     update_webhook,
@@ -1620,6 +1624,96 @@ def _render_support_agents_and_workload():
                     st.error("Failed to create agent. Check ID or connection.")
 
 
+REVIEW_STATUS_OPTIONS = ["pending_review", "reviewed", "followup_required", "archived"]
+
+
+def _render_csat_and_agent_scorecards():
+    with st.sidebar.expander("⭐ CSAT Queue & Agent Scorecards"):
+        st.markdown("#### Multi-Criteria CSAT Summary")
+        csat_sum = get_csat_summary()
+        if csat_sum:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Avg CSAT", f"{csat_sum.get('avg_csat_score', 0.0):.2f} ★")
+            c2.metric("Pending Review", csat_sum.get("pending_review_count", 0))
+            c3.metric("Follow-up", csat_sum.get("followup_required_count", 0))
+
+            res_avg = csat_sum.get("avg_resolution_score")
+            help_avg = csat_sum.get("avg_helpfulness_score")
+            speed_avg = csat_sum.get("avg_speed_score")
+            if res_avg is not None or help_avg is not None or speed_avg is not None:
+                st.caption(
+                    f"**Criteria:** Resolution: {res_avg or '-'} | "
+                    f"Helpfulness: {help_avg or '-'} | Speed: {speed_avg or '-'}"
+                )
+
+        st.markdown("---")
+        st.markdown("#### Agent Performance Scorecards")
+        cards_resp = get_agent_scorecards() or {}
+        scorecards = cards_resp.get("scorecards", [])
+        if not scorecards:
+            st.caption("No agent CSAT scorecards recorded yet.")
+        else:
+            for card in scorecards:
+                ag_id = card.get("agent_id", "unassigned")
+                tier = card.get("tier", "tier_1").upper()
+                avg_score = card.get("avg_csat_score", 0.0)
+                sat_rate = card.get("satisfaction_rate", 0.0)
+                tot_ratings = card.get("total_ratings", 0)
+                st.markdown(
+                    f"**`{ag_id}`** ({tier}) — **{avg_score:.2f} ★** "
+                    f"({sat_rate:.1f}% sat, {tot_ratings} ratings)"
+                )
+
+        st.markdown("---")
+        st.markdown("#### Operator Feedback Review Queue")
+        status_filter = st.selectbox(
+            "Filter Queue Status",
+            options=["All", *REVIEW_STATUS_OPTIONS],
+            key="csat_queue_status_filter",
+        )
+        q_status = None if status_filter == "All" else status_filter
+        queue_data = list_feedback_review_queue(review_status=q_status, limit=15) or {}
+        q_items = queue_data.get("items", [])
+        if not q_items:
+            st.caption("No feedback items in queue matching filter.")
+        else:
+            for q_item in q_items:
+                fid = q_item["id"]
+                sid = q_item.get("session_id", "")[:8]
+                score_val = q_item.get("score") or ("5" if q_item.get("rating") == 1 else "1")
+                cur_rev_status = q_item.get("review_status", "pending_review")
+                assigned = q_item.get("assigned_agent") or "unassigned"
+                comment_val = q_item.get("comment") or "*(no comment)*"
+                st.markdown(
+                    f"**#{fid} · `{sid}` · {score_val}★** [{cur_rev_status}] "
+                    f"(Agent: `{assigned}`)\n> {comment_val}"
+                )
+                new_rev_status = st.selectbox(
+                    f"Update Status #{fid}",
+                    options=REVIEW_STATUS_OPTIONS,
+                    index=(
+                        REVIEW_STATUS_OPTIONS.index(cur_rev_status)
+                        if cur_rev_status in REVIEW_STATUS_OPTIONS
+                        else 0
+                    ),
+                    key=f"rev_status_sel_{fid}",
+                )
+                rev_notes = st.text_input(
+                    f"Reviewer Notes #{fid}",
+                    value=q_item.get("reviewer_notes") or "",
+                    key=f"rev_notes_in_{fid}",
+                )
+                if st.button(f"Save Review #{fid}", key=f"btn_save_rev_{fid}") and (
+                    update_feedback_review(
+                        fid,
+                        review_status=new_rev_status,
+                        reviewer_notes=rev_notes,
+                    )
+                ):
+                    st.success(f"Feedback #{fid} review updated!")
+                    st.rerun()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -1637,10 +1731,12 @@ def display_sidebar():
     _render_document_list()
     _render_feedback_analytics()
     _render_feedback_review()
+    _render_csat_and_agent_scorecards()
     _render_support_triage_analytics()
     _render_quick_responses_panel()
     _render_webhook_manager()
     _render_sla_manager()
     _render_support_agents_and_workload()
     _render_ops_metrics()
+
 
