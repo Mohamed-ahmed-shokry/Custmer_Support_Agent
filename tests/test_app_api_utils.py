@@ -1665,6 +1665,96 @@ def test_get_session_assignment_history_and_business_hours_client(
     assert api_utils.get_business_hours_status() is None
 
 
+def test_submit_csat_feedback_client(fake_requests, fake_st, monkeypatch):
+    fake_payload = {"message": "CSAT feedback recorded.", "feedback_id": 77}
+    fake_requests.response = FakeResponse(status_code=201, payload=fake_payload)
+
+    res = api_utils.submit_csat_feedback(
+        session_id="sess-csat",
+        score=5,
+        resolution_satisfaction=4,
+        agent_helpfulness=5,
+        response_speed=5,
+        comment="Superb!",
+        assigned_agent="agent_alice",
+        escalation_tier="tier_1",
+    )
+    assert res == fake_payload
+    method, url, kwargs = fake_requests.calls[0]
+    assert method == "post"
+    assert url.endswith("/feedback/csat")
+    assert kwargs["json"]["score"] == 5  # noqa: PLR2004
+    assert kwargs["json"]["comment"] == "Superb!"
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.submit_csat_feedback("missing", score=5) is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.submit_csat_feedback("boom", score=5) is None
+
+
+def test_feedback_review_queue_and_update_client(fake_requests, fake_st, monkeypatch):
+    fake_queue = {
+        "items": [{"id": 10, "session_id": "s-10", "score": 2}],
+        "total": 1,
+        "limit": 50,
+        "offset": 0,
+    }
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_queue)
+
+    q_res = api_utils.list_feedback_review_queue(
+        review_status="pending_review",
+        assigned_agent="agent_bob",
+        escalation_tier="tier_2",
+        min_score=1,
+        max_score=2,
+    )
+    assert q_res == fake_queue
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/feedback/queue")
+    assert kwargs["params"]["review_status"] == "pending_review"
+    assert kwargs["params"]["max_score"] == 2  # noqa: PLR2004
+
+    fake_updated = {"id": 10, "review_status": "reviewed", "reviewed_by": "qa_lead"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_updated)
+    u_res = api_utils.update_feedback_review(
+        10,
+        review_status="reviewed",
+        reviewer_notes="Done",
+        reviewed_by="qa_lead",
+    )
+    assert u_res == fake_updated
+
+    # Error branches
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "bad"})
+    assert api_utils.list_feedback_review_queue()["total"] == 0
+    assert api_utils.update_feedback_review(10, "reviewed") is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_feedback_review_queue()["total"] == 0
+    assert api_utils.update_feedback_review(10, "reviewed") is None
+
+
+def test_csat_summary_and_scorecards_client(fake_requests, fake_st, monkeypatch):
+    fake_sum = {"total_responses": 12, "avg_csat_score": 4.4}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_sum)
+    assert api_utils.get_csat_summary() == fake_sum
+
+    fake_cards = {"scorecards": [{"agent_id": "agent_alice"}], "total_agents": 1}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_cards)
+    assert api_utils.get_agent_scorecards() == fake_cards
+
+    # Error branches
+    fake_requests.response = FakeResponse(status_code=500, payload={"detail": "err"})
+    assert api_utils.get_csat_summary() is None
+    assert api_utils.get_agent_scorecards()["total_agents"] == 0
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_csat_summary() is None
+    assert api_utils.get_agent_scorecards()["total_agents"] == 0
+
+
+
 
 
 
