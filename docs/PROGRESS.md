@@ -15,7 +15,7 @@
 - [x] **Task 5**: Core tenant context grounding engine and macro variable auto-resolution in `api/tenant_context.py` & `api/macros.py` + unit tests in `tests/test_tenant_context.py`
 - [x] **Task 6**: Pydantic request/response models for units, tenants, linking, and context in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [x] **Task 7**: FastAPI endpoints for property units (`/units*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [ ] **Task 8**: FastAPI endpoints for tenants, session linking, tenant context, and history (`/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] **Task 8**: FastAPI endpoints for tenants, session linking, tenant context, and history (`/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [ ] **Task 10**: Streamlit UI session tenant context card, tenant linking, and "🏢 Tenant & Property Directory" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
 - [ ] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
