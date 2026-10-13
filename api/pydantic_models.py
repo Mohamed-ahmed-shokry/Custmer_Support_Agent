@@ -1403,6 +1403,205 @@ class BusinessHoursStatusResponse(BaseModel):
     day_name: str
 
 
+# ============================================================================
+# Knowledge Base Gap Detection, FAQ Article Drafting & Deflection Models
+# ============================================================================
+
+
+class KnowledgeGapItem(BaseModel):
+    id: int
+    query: str
+    normalized_query: str
+    category: str = "general"
+    source_type: str = "unanswered_query"
+    session_id: str | None = None
+    frequency: int = 1
+    priority: str = "medium"
+    status: str = "open"
+    linked_article_id: int | None = None
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class KnowledgeGapCreateRequest(BaseModel):
+    query: NonEmptyString = Field(max_length=500)
+    category: str | None = Field(default=None, max_length=50)
+    source_type: str | None = Field(default="manual", max_length=50)
+    session_id: str | None = Field(default=None, max_length=100)
+    priority: str | None = Field(default="medium", max_length=20)
+    notes: str | None = Field(default="", max_length=2000)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_knowledge_category(v)
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_session_priority(v)
+        return v
+
+
+class KnowledgeGapUpdateRequest(BaseModel):
+    status: str | None = Field(default=None, max_length=20)
+    priority: str | None = Field(default=None, max_length=20)
+    category: str | None = Field(default=None, max_length=50)
+    linked_article_id: int | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_knowledge_gap_status(v)
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_session_priority(v)
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_knowledge_category(v)
+        return v
+
+
+class KnowledgeGapListResponse(BaseModel):
+    items: list[KnowledgeGapItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class KnowledgeGapScanResponse(BaseModel):
+    scanned_sessions_count: int = 0
+    gaps_created: int = 0
+    gaps_incremented: int = 0
+    total_gaps_identified: int = 0
+    gaps: list[KnowledgeGapItem] = Field(default_factory=list)
+
+
+class KnowledgeArticleItem(BaseModel):
+    id: int
+    title: str
+    category: str = "general"
+    question_pattern: str = ""
+    content_markdown: str
+    tags: list[str] = Field(default_factory=list)
+    source_session_id: str | None = None
+    source_gap_id: int | None = None
+    status: str = "draft"
+    author: str = "support_agent"
+    published_file_id: int | None = None
+    published_collection: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class KnowledgeArticleCreateRequest(BaseModel):
+    title: NonEmptyString = Field(max_length=200)
+    content_markdown: NonEmptyString = Field(max_length=15000)
+    category: str | None = Field(default="general", max_length=50)
+    question_pattern: str | None = Field(default="", max_length=500)
+    tags: list[str] | str | None = Field(default_factory=list)
+    source_session_id: str | None = Field(default=None, max_length=100)
+    source_gap_id: int | None = None
+    author: str | None = Field(default="support_agent", max_length=100)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str:
+        return db_utils.normalize_knowledge_category(v)
+
+
+class KnowledgeArticleUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    content_markdown: str | None = Field(default=None, max_length=15000)
+    category: str | None = Field(default=None, max_length=50)
+    question_pattern: str | None = Field(default=None, max_length=500)
+    tags: list[str] | str | None = None
+    status: str | None = Field(default=None, max_length=20)
+    author: str | None = Field(default=None, max_length=100)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_knowledge_category(v)
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_knowledge_article_status(v)
+        return v
+
+
+class KnowledgeArticleListResponse(BaseModel):
+    items: list[KnowledgeArticleItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class KnowledgeArticlePublishRequest(BaseModel):
+    collection: str = Field(default="default", max_length=100)
+    chunking_strategy: str = Field(default="markdown", max_length=50)
+    chunk_size: int = Field(default=1000, ge=100, le=5000)
+    chunk_overlap: int = Field(default=200, ge=0, le=1000)
+
+
+class KnowledgeArticlePublishResponse(BaseModel):
+    article: KnowledgeArticleItem
+    file_id: int
+    collection: str
+    indexed_in_vectorstore: bool = False
+    linked_gap_resolved: bool = False
+
+
+class SessionDraftArticleRequest(BaseModel):
+    author: str | None = Field(default="support_agent", max_length=100)
+    category: str | None = Field(default=None, max_length=50)
+    link_gap_id: int | None = None
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        if v is not None:
+            return db_utils.normalize_knowledge_category(v)
+        return v
+
+
+class KnowledgeBaseAnalyticsResponse(BaseModel):
+    total_gaps: int = 0
+    open_gaps_count: int = 0
+    drafting_gaps_count: int = 0
+    resolved_gaps_count: int = 0
+    dismissed_gaps_count: int = 0
+    gap_resolution_rate: float = 0.0
+    total_gap_queries_logged: int = 0
+    recurring_queries_count: int = 0
+    category_distribution: dict[str, int] = Field(default_factory=dict)
+    priority_distribution: dict[str, int] = Field(default_factory=dict)
+    total_articles: int = 0
+    draft_articles_count: int = 0
+    published_articles_count: int = 0
+    archived_articles_count: int = 0
+    estimated_deflected_queries: int = 0
+
+
+
 
 
 
