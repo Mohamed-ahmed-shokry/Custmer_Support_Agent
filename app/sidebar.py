@@ -6,8 +6,11 @@ from api.settings import settings
 from app.api_utils import (
     API_BASE_URL,
     apply_macro_to_session,
+    assign_session,
+    auto_assign_session,
     create_macro,
     create_sla_policy,
+    create_support_agent,
     create_webhook,
     delete_collection,
     delete_document,
@@ -19,14 +22,19 @@ from app.api_utils import (
     delete_webhook,
     evaluate_sla_alerts,
     export_session,
+    get_agent_scorecards,
+    get_agent_workload_analytics,
+    get_business_hours_status,
     get_collection_analytics,
     get_collections_details,
     get_config,
+    get_csat_summary,
     get_document_details,
     get_feedback_analytics,
     get_health,
     get_metrics,
     get_quota,
+    get_session_assignment_history,
     get_session_history,
     get_session_macro_suggestions,
     get_session_sla_status,
@@ -36,10 +44,12 @@ from app.api_utils import (
     list_collections,
     list_documents,
     list_feedback,
+    list_feedback_review_queue,
     list_macro_categories,
     list_macros,
     list_sessions,
     list_sla_policies,
+    list_support_agents,
     list_webhook_deliveries,
     list_webhooks,
     ping_webhook,
@@ -51,13 +61,26 @@ from app.api_utils import (
     search_sessions,
     suggest_macros,
     summarize_session,
+    update_feedback_review,
     update_session,
+    update_support_agent,
     update_webhook,
     upload_document,
     upload_documents,
 )
 
 MODEL_OPTIONS = [model.value for model in ModelName]
+AGENT_TIER_OPTIONS = ["tier_1", "tier_2", "tier_3"]
+AGENT_TIER_LABELS = {
+    "tier_1": "Tier 1: Frontline & Leasing Concierge",
+    "tier_2": "Tier 2: Maintenance & Operations Specialist",
+    "tier_3": "Tier 3: Property Leadership & Escalation Management",
+}
+TIER_BADGES = {
+    "tier_1": "T1",
+    "tier_2": "T2",
+    "tier_3": "T3",
+}
 SESSION_STATUS_OPTIONS = ["active", "resolved", "escalated", "closed"]
 SESSION_STATUS_FILTER_OPTIONS = ["All statuses", *SESSION_STATUS_OPTIONS]
 SESSION_STATUS_ICONS = {
@@ -114,6 +137,19 @@ def _render_health_status():
     else:
         st.sidebar.error("Backend unavailable")
 
+    biz_status = get_business_hours_status()
+    if biz_status:
+        if biz_status.get("is_open"):
+            st.sidebar.markdown(
+                "🟢 **Support Hours:** Open (Mon-Fri 09:00 - 18:00 UTC)"
+            )
+        else:
+            next_open = biz_status.get("next_open_at")
+            next_txt = f" (Opens: {next_open[:16].replace('T', ' ')})" if next_open else ""
+            st.sidebar.markdown(
+                f"🌙 **Support Hours:** Closed / After-Hours{next_txt}"
+            )
+
 
 def _render_reset_chat():
     if st.sidebar.button("Reset Chat"):
@@ -123,6 +159,18 @@ def _render_reset_chat():
 
 
 def _filter_sessions(sessions):
+    queue_filter = st.sidebar.selectbox(
+        "Queue view",
+        options=["All sessions", "Unassigned only", "Escalated only (Tier 2/3)"],
+        key="session_queue_filter",
+    )
+    if queue_filter == "Unassigned only":
+        sessions = [s for s in sessions if not s.get("assigned_agent")]
+    elif queue_filter == "Escalated only (Tier 2/3)":
+        sessions = [
+            s for s in sessions if s.get("escalation_tier") in ("tier_2", "tier_3")
+        ]
+
     status_filter = st.sidebar.selectbox(
         "Filter by status",
         options=SESSION_STATUS_FILTER_OPTIONS,
@@ -202,10 +250,15 @@ def _render_session_history():
         icon = SESSION_STATUS_ICONS.get(status, "🟢")
         prio = session.get("priority") or "medium"
         prio_badge = f" {PRIORITY_BADGES.get(prio, '')}" if prio != "medium" else ""
+        tier = session.get("escalation_tier") or "tier_1"
+        tier_tag = f" [{TIER_BADGES.get(tier, 'T1')}]"
+        assigned = session.get("assigned_agent")
+        assigned_tag = f" (@{assigned})" if assigned else " (Unassigned)"
         tags = session.get("tags") or []
         tags_str = f" [{', '.join(tags)}]" if tags else ""
+        msg_cnt = session["message_count"]
         labels[session["session_id"]] = (
-            f"{icon}{prio_badge} {title} ({session['message_count']} msgs){tags_str}"
+            f"{icon}{prio_badge}{tier_tag} {title} ({msg_cnt} msgs){assigned_tag}{tags_str}"
         )
 
     bulk_delete = st.sidebar.checkbox(
@@ -248,6 +301,101 @@ def _render_session_history():
     _handle_session_actions(selected, new_label)
     _render_session_metadata(selected, sessions)
     _render_session_export(selected)
+
+
+def _render_session_assignment_controls(selected, current):
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 👤 Agent Assignment & Tier")
+    curr_agent = current.get("assigned_agent") if current else None
+    curr_tier = (current.get("escalation_tier") or "tier_1") if current else "tier_1"
+
+    all_agents = list_support_agents() or []
+    agent_choices = ["(Unassigned)"] + [a["agent_id"] for a in all_agents]
+    agent_display_names = {"(Unassigned)": "Unassigned"}
+    for a in all_agents:
+        agent_display_names[a["agent_id"]] = (
+            f"{a['name']} ({a['tier'].upper()} - {a['department']})"
+        )
+
+    agent_idx = 0
+    if curr_agent and curr_agent in agent_choices:
+        agent_idx = agent_choices.index(curr_agent)
+
+    selected_agent = st.sidebar.selectbox(
+        "Assigned Agent",
+        options=agent_choices,
+        index=agent_idx,
+        format_func=lambda x: agent_display_names.get(x, x),
+        key=f"assign_agent_select_{selected}",
+    )
+
+    tier_idx = (
+        AGENT_TIER_OPTIONS.index(curr_tier) if curr_tier in AGENT_TIER_OPTIONS else 0
+    )
+    selected_tier = st.sidebar.selectbox(
+        "Escalation Tier",
+        options=AGENT_TIER_OPTIONS,
+        index=tier_idx,
+        format_func=lambda t: AGENT_TIER_LABELS.get(t, t),
+        key=f"escalation_tier_select_{selected}",
+    )
+
+    assign_col1, assign_col2 = st.sidebar.columns(2)
+    if assign_col1.button("Assign / Route", key=f"btn_manual_assign_{selected}"):
+        with st.spinner("Updating assignment..."):
+            target_agent = None if selected_agent == "(Unassigned)" else selected_agent
+            res = assign_session(
+                selected,
+                agent_id=target_agent,
+                tier=selected_tier,
+                reason="Manual assignment in sidebar UI",
+                assigned_by="operator",
+            )
+            if res:
+                st.sidebar.success("Assigned successfully!")
+                st.session_state.sessions = list_sessions()
+                st.rerun()
+            else:
+                st.sidebar.error("Failed to update assignment.")
+
+    if assign_col2.button("⚡ Auto-Assign", key=f"btn_auto_assign_{selected}"):
+        with st.spinner("Running auto-assignment routing..."):
+            res = auto_assign_session(
+                selected,
+                target_tier=selected_tier,
+                assigned_by="auto_router",
+            )
+            if res and res.get("assigned_agent"):
+                agent_name = res["assigned_agent"]
+                tier_val = res.get("escalation_tier")
+                st.sidebar.success(f"Assigned to {agent_name} ({tier_val})")
+                st.session_state.sessions = list_sessions()
+                st.rerun()
+            else:
+                st.sidebar.warning("No eligible active agent found for this tier.")
+
+    _render_session_assignment_history(selected)
+
+
+def _render_session_assignment_history(selected):
+    with st.sidebar.expander("📜 Assignment Audit History"):
+        history = get_session_assignment_history(selected)
+        if not history:
+            st.caption("No assignment events recorded.")
+            return
+
+        for item in history[:5]:
+            from_ag = item.get("from_agent_id") or "None"
+            to_ag = item.get("to_agent_id") or "Unassigned"
+            t_label = item.get("escalation_tier")
+            tier_info = f"[{t_label}]" if t_label else ""
+            ts = (item.get("assigned_at") or "")[:19].replace("T", " ")
+            st.markdown(f"**{ts}** {tier_info}")
+            assigned_by = item.get("assigned_by") or "system"
+            st.caption(f"{from_ag} ➔ **{to_ag}** ({assigned_by})")
+            if item.get("reason"):
+                st.caption(f"_{item['reason']}_")
+            st.markdown("---")
 
 
 def _render_session_metadata(selected, sessions):
@@ -334,6 +482,7 @@ def _render_session_metadata(selected, sessions):
             else:
                 st.sidebar.error("Failed to update session metadata.")
 
+    _render_session_assignment_controls(selected, current)
     _render_session_sla_card(selected)
 
 
@@ -1401,6 +1550,170 @@ def _render_sla_manager():
         _render_sla_policy_creator()
 
 
+def _render_support_agents_and_workload():
+    with st.sidebar.expander("👥 Support Agents & Workload"):
+        st.markdown("#### Team Workload Analytics")
+        workload = get_agent_workload_analytics()
+        if workload:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Active Agents", workload.get("active_agents", 0))
+            c2.metric("Assigned Sessions", workload.get("total_assigned_sessions", 0))
+            c3.metric("Available Capacity", workload.get("total_available_capacity", 0))
+
+            tier_counts = workload.get("tier_distribution", {})
+            st.caption(
+                f"**Tier Distribution:** T1: {tier_counts.get('tier_1', 0)} | "
+                f"T2: {tier_counts.get('tier_2', 0)} | "
+                f"T3: {tier_counts.get('tier_3', 0)}"
+            )
+
+        st.markdown("---")
+        st.markdown("#### Agent Directory")
+        agents = list_support_agents() or []
+        if not agents:
+            st.caption("No agents configured.")
+        else:
+            for ag in agents:
+                status_dot = "🟢" if ag.get("is_active") else "⚪"
+                tier_badge = ag.get("tier", "tier_1").upper()
+                max_chats = ag.get("max_concurrent_chats", 5)
+                st.markdown(
+                    f"**{status_dot} {ag.get('name')}** (`{ag.get('agent_id')}`)\n"
+                    f"- {tier_badge} | {ag.get('department')} | Max: {max_chats} chats"
+                )
+                toggle_btn_label = "Deactivate" if ag.get("is_active") else "Activate"
+                agent_id_str = str(ag.get("agent_id") or "")
+                if agent_id_str and st.button(
+                    f"{toggle_btn_label} {ag.get('name')}",
+                    key=f"btn_toggle_agent_{agent_id_str}",
+                ):
+                    new_active = not ag.get("is_active")
+                    update_support_agent(agent_id_str, is_active=new_active)
+                    st.rerun()
+
+        st.markdown("---")
+        st.markdown("#### Add Support Agent")
+        new_ag_id = st.text_input("Agent ID", placeholder="agent_alex", key="new_agent_id")
+        new_ag_name = st.text_input("Full Name", placeholder="Alex Smith", key="new_agent_name")
+        new_ag_email = st.text_input("Email", placeholder="alex@example.com", key="new_agent_email")
+        new_ag_tier = st.selectbox(
+            "Agent Tier",
+            options=AGENT_TIER_OPTIONS,
+            format_func=lambda t: AGENT_TIER_LABELS.get(t, t),
+            key="new_agent_tier",
+        )
+        new_ag_dept = st.text_input(
+            "Department", value="Customer Care", key="new_agent_dept"
+        )
+
+        if st.button("Add Support Agent", key="btn_create_support_agent"):
+            if not new_ag_id.strip() or not new_ag_name.strip() or not new_ag_email.strip():
+                st.error("Agent ID, Name, and Email are required.")
+            else:
+                created = create_support_agent(
+                    agent_id=new_ag_id.strip(),
+                    name=new_ag_name.strip(),
+                    email=new_ag_email.strip(),
+                    tier=new_ag_tier,
+                    department=new_ag_dept.strip() or "Customer Care",
+                )
+                if created:
+                    st.success(f"Agent '{new_ag_name}' created successfully!")
+                    st.rerun()
+                else:
+                    st.error("Failed to create agent. Check ID or connection.")
+
+
+REVIEW_STATUS_OPTIONS = ["pending_review", "reviewed", "followup_required", "archived"]
+
+
+def _render_csat_and_agent_scorecards():
+    with st.sidebar.expander("⭐ CSAT Queue & Agent Scorecards"):
+        st.markdown("#### Multi-Criteria CSAT Summary")
+        csat_sum = get_csat_summary()
+        if csat_sum:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Avg CSAT", f"{csat_sum.get('avg_csat_score', 0.0):.2f} ★")
+            c2.metric("Pending Review", csat_sum.get("pending_review_count", 0))
+            c3.metric("Follow-up", csat_sum.get("followup_required_count", 0))
+
+            res_avg = csat_sum.get("avg_resolution_score")
+            help_avg = csat_sum.get("avg_helpfulness_score")
+            speed_avg = csat_sum.get("avg_speed_score")
+            if res_avg is not None or help_avg is not None or speed_avg is not None:
+                st.caption(
+                    f"**Criteria:** Resolution: {res_avg or '-'} | "
+                    f"Helpfulness: {help_avg or '-'} | Speed: {speed_avg or '-'}"
+                )
+
+        st.markdown("---")
+        st.markdown("#### Agent Performance Scorecards")
+        cards_resp = get_agent_scorecards() or {}
+        scorecards = cards_resp.get("scorecards", [])
+        if not scorecards:
+            st.caption("No agent CSAT scorecards recorded yet.")
+        else:
+            for card in scorecards:
+                ag_id = card.get("agent_id", "unassigned")
+                tier = card.get("tier", "tier_1").upper()
+                avg_score = card.get("avg_csat_score", 0.0)
+                sat_rate = card.get("satisfaction_rate", 0.0)
+                tot_ratings = card.get("total_ratings", 0)
+                st.markdown(
+                    f"**`{ag_id}`** ({tier}) — **{avg_score:.2f} ★** "
+                    f"({sat_rate:.1f}% sat, {tot_ratings} ratings)"
+                )
+
+        st.markdown("---")
+        st.markdown("#### Operator Feedback Review Queue")
+        status_filter = st.selectbox(
+            "Filter Queue Status",
+            options=["All", *REVIEW_STATUS_OPTIONS],
+            key="csat_queue_status_filter",
+        )
+        q_status = None if status_filter == "All" else status_filter
+        queue_data = list_feedback_review_queue(review_status=q_status, limit=15) or {}
+        q_items = queue_data.get("items", [])
+        if not q_items:
+            st.caption("No feedback items in queue matching filter.")
+        else:
+            for q_item in q_items:
+                fid = q_item["id"]
+                sid = q_item.get("session_id", "")[:8]
+                score_val = q_item.get("score") or ("5" if q_item.get("rating") == 1 else "1")
+                cur_rev_status = q_item.get("review_status", "pending_review")
+                assigned = q_item.get("assigned_agent") or "unassigned"
+                comment_val = q_item.get("comment") or "*(no comment)*"
+                st.markdown(
+                    f"**#{fid} · `{sid}` · {score_val}★** [{cur_rev_status}] "
+                    f"(Agent: `{assigned}`)\n> {comment_val}"
+                )
+                new_rev_status = st.selectbox(
+                    f"Update Status #{fid}",
+                    options=REVIEW_STATUS_OPTIONS,
+                    index=(
+                        REVIEW_STATUS_OPTIONS.index(cur_rev_status)
+                        if cur_rev_status in REVIEW_STATUS_OPTIONS
+                        else 0
+                    ),
+                    key=f"rev_status_sel_{fid}",
+                )
+                rev_notes = st.text_input(
+                    f"Reviewer Notes #{fid}",
+                    value=q_item.get("reviewer_notes") or "",
+                    key=f"rev_notes_in_{fid}",
+                )
+                if st.button(f"Save Review #{fid}", key=f"btn_save_rev_{fid}") and (
+                    update_feedback_review(
+                        fid,
+                        review_status=new_rev_status,
+                        reviewer_notes=rev_notes,
+                    )
+                ):
+                    st.success(f"Feedback #{fid} review updated!")
+                    st.rerun()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -1418,9 +1731,12 @@ def display_sidebar():
     _render_document_list()
     _render_feedback_analytics()
     _render_feedback_review()
+    _render_csat_and_agent_scorecards()
     _render_support_triage_analytics()
     _render_quick_responses_panel()
     _render_webhook_manager()
     _render_sla_manager()
+    _render_support_agents_and_workload()
     _render_ops_metrics()
+
 

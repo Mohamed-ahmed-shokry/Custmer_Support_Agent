@@ -290,13 +290,17 @@ def list_documents(collection=None):
         return []
 
 
-def list_sessions(status=None, tag=None):
+def list_sessions(status=None, tag=None, agent=None, tier=None):
     try:
         params = {}
         if status:
             params["status"] = status
         if tag:
             params["tag"] = tag
+        if agent:
+            params["agent"] = agent
+        if tier:
+            params["tier"] = tier
         response = requests.get(
             f"{API_BASE_URL}/sessions",
             params=params or None,
@@ -354,6 +358,8 @@ def update_session(  # noqa: PLR0913, PLR0917
     tags=None,
     summary=None,
     resolution_notes=None,
+    assigned_agent=None,
+    escalation_tier=None,
 ):
     payload = {}
     if label is not None:
@@ -368,6 +374,10 @@ def update_session(  # noqa: PLR0913, PLR0917
         payload["summary"] = summary
     if resolution_notes is not None:
         payload["resolution_notes"] = resolution_notes
+    if assigned_agent is not None:
+        payload["assigned_agent"] = assigned_agent
+    if escalation_tier is not None:
+        payload["escalation_tier"] = escalation_tier
     try:
         response = requests.patch(
             f"{API_BASE_URL}/sessions/{session_id}",
@@ -506,6 +516,144 @@ def get_feedback_analytics(recent_comments_limit=5):
     except Exception as e:
         st.error(f"An error occurred while fetching feedback analytics: {str(e)}")
         return None
+
+
+def submit_csat_feedback(  # noqa: PLR0913, PLR0917
+    session_id,
+    score,
+    resolution_satisfaction=None,
+    agent_helpfulness=None,
+    response_speed=None,
+    comment=None,
+    assigned_agent=None,
+    escalation_tier=None,
+):
+    payload: dict[str, Any] = {"session_id": session_id, "score": score}
+    if resolution_satisfaction is not None:
+        payload["resolution_satisfaction"] = resolution_satisfaction
+    if agent_helpfulness is not None:
+        payload["agent_helpfulness"] = agent_helpfulness
+    if response_speed is not None:
+        payload["response_speed"] = response_speed
+    if comment:
+        payload["comment"] = comment
+    if assigned_agent:
+        payload["assigned_agent"] = assigned_agent
+    if escalation_tier:
+        payload["escalation_tier"] = escalation_tier
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/feedback/csat",
+            json=payload,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_CREATED:
+            return response.json()
+        else:
+            show_api_error("Failed to submit CSAT feedback", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while submitting CSAT feedback: {str(e)}")
+        return None
+
+
+def list_feedback_review_queue(  # noqa: PLR0913, PLR0917
+    review_status=None,
+    assigned_agent=None,
+    escalation_tier=None,
+    min_score=None,
+    max_score=None,
+    limit=50,
+    offset=0,
+):
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if review_status:
+        params["review_status"] = review_status
+    if assigned_agent:
+        params["assigned_agent"] = assigned_agent
+    if escalation_tier:
+        params["escalation_tier"] = escalation_tier
+    if min_score is not None:
+        params["min_score"] = min_score
+    if max_score is not None:
+        params["max_score"] = max_score
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback/queue",
+            params=params,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch feedback review queue", response)
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+    except Exception as e:
+        st.error(f"An error occurred while fetching feedback review queue: {str(e)}")
+        return {"items": [], "total": 0, "limit": limit, "offset": offset}
+
+
+def update_feedback_review(feedback_id, review_status, reviewer_notes=None, reviewed_by=None):
+    payload: dict[str, Any] = {"review_status": review_status}
+    if reviewer_notes is not None:
+        payload["reviewer_notes"] = reviewer_notes
+    if reviewed_by is not None:
+        payload["reviewed_by"] = reviewed_by
+
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/feedback/{feedback_id}/review",
+            json=payload,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to update feedback review", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while updating feedback review: {str(e)}")
+        return None
+
+
+def get_csat_summary(limit=1000):
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback/csat-summary",
+            params={"limit": limit},
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch CSAT summary", response)
+            return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching CSAT summary: {str(e)}")
+        return None
+
+
+def get_agent_scorecards():
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/feedback/agent-scorecards",
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return response.json()
+        else:
+            show_api_error("Failed to fetch agent performance scorecards", response)
+            return {"scorecards": [], "total_agents": 0}
+    except Exception as e:
+        st.error(f"An error occurred while fetching agent performance scorecards: {str(e)}")
+        return {"scorecards": [], "total_agents": 0}
 
 
 def get_support_triage_analytics():
@@ -1334,4 +1482,248 @@ def get_sla_compliance_analytics() -> dict[str, Any] | None:
     except Exception as e:
         st.error(f"An error occurred while fetching SLA analytics: {str(e)}")
         return None
+
+
+# =====================================================================
+# Support Agents, Session Assignment & Business Hours Client Helpers
+# =====================================================================
+
+
+def list_support_agents(
+    tier: str | None = None,
+    department: str | None = None,
+    active_only: bool = False,
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {}
+    if tier:
+        params["tier"] = tier
+    if department:
+        params["department"] = department
+    if active_only:
+        params["active_only"] = "true"
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/agents",
+            params=params or None,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(list[dict[str, Any]], response.json().get("items", []))
+        show_api_error("Failed to list support agents", response)
+        return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching support agents: {str(e)}")
+        return []
+
+
+def create_support_agent(  # noqa: PLR0913, PLR0917
+    agent_id: str,
+    name: str,
+    email: str,
+    tier: str = "tier_1",
+    department: str = "general_leasing",
+    is_active: bool = True,
+) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {
+        "id": agent_id,
+        "name": name,
+        "email": email,
+        "tier": tier,
+        "department": department,
+        "is_active": is_active,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agents",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create support agent", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating support agent: {str(e)}")
+        return None
+
+
+def get_support_agent(agent_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/agents/{agent_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch support agent {agent_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching support agent: {str(e)}")
+        return None
+
+
+def update_support_agent(  # noqa: PLR0913, PLR0917
+    agent_id: str,
+    name: str | None = None,
+    email: str | None = None,
+    tier: str | None = None,
+    department: str | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any] | None:
+    payload: dict[str, Any] = {}
+    if name is not None:
+        payload["name"] = name
+    if email is not None:
+        payload["email"] = email
+    if tier is not None:
+        payload["tier"] = tier
+    if department is not None:
+        payload["department"] = department
+    if is_active is not None:
+        payload["is_active"] = is_active
+
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/agents/{agent_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update support agent {agent_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating support agent: {str(e)}")
+        return None
+
+
+def delete_support_agent(agent_id: str) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/agents/{agent_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete support agent {agent_id}", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting support agent: {str(e)}")
+        return False
+
+
+def get_agent_workload_analytics() -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/agents/workload",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch agent workload", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching agent workload: {str(e)}")
+        return None
+
+
+def assign_session(
+    session_id: str,
+    agent_id: str | None = None,
+    tier: str | None = None,
+    assigned_by: str = "dispatcher",
+    reason: str = "",
+) -> dict[str, Any] | None:
+    payload = {
+        "agent_id": agent_id,
+        "tier": tier,
+        "assigned_by": assigned_by,
+        "reason": reason,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/assign",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to assign session {session_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while assigning session: {str(e)}")
+        return None
+
+
+def auto_assign_session(
+    session_id: str,
+    strategy: str = "least_busy",
+    target_tier: str | None = None,
+    department: str | None = None,
+    assigned_by: str = "auto_dispatcher",
+) -> dict[str, Any] | None:
+    payload = {
+        "strategy": strategy,
+        "target_tier": target_tier,
+        "department": department,
+        "assigned_by": assigned_by,
+    }
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/auto-assign",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to auto-assign session {session_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while auto-assigning session: {str(e)}")
+        return None
+
+
+def get_session_assignment_history(
+    session_id: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/assignment-history",
+            params={"limit": limit},
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(list[dict[str, Any]], response.json().get("items", []))
+        show_api_error(f"Failed to fetch assignment history for {session_id}", response)
+        return []
+    except Exception as e:
+        st.error(f"An error occurred while fetching assignment history: {str(e)}")
+        return []
+
+
+def get_business_hours_status() -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/business-hours/status",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch business hours status", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching business hours status: {str(e)}")
+        return None
+
 

@@ -205,3 +205,44 @@ def test_get_sla_compliance_analytics(monkeypatch, tmp_path):
     assert analytics["compliance_rate"] >= min_compliance
     assert "urgent" in analytics["priority_breakdown"]
     assert "high" in analytics["priority_breakdown"]
+
+
+def test_calculate_session_sla_status_with_business_hours(monkeypatch, tmp_path):
+    setup_temp_db(monkeypatch, tmp_path)
+
+    # Create policy with use_business_hours=True for low / lease
+    policy_id = db_utils.create_sla_policy(
+        name="Lease Routine Business Hours",
+        priority="low",
+        category="lease",
+        response_time_minutes=60,
+        resolution_time_minutes=240,
+        use_business_hours=True,
+    )
+    pol_data = db_utils.get_sla_policy(policy_id)
+    assert pol_data is not None
+    assert pol_data["use_business_hours"] == 1
+
+    # Start session on Friday afternoon at 17:30 UTC
+    friday_start = datetime(2026, 10, 9, 17, 30, 0, tzinfo=UTC)
+    s_id = "sess-biz-sla"
+    db_utils.insert_application_logs(s_id, "Inquiry about lease", "", "gpt-4o")
+    db_utils.update_session_metadata(s_id, priority="low", tags="lease")
+    with db_utils.closing(db_utils.get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE application_logs SET created_at = ? WHERE session_id = ?",
+            (friday_start.strftime("%Y-%m-%d %H:%M:%S"), s_id),
+        )
+        conn.commit()
+
+    # Calculate status at Saturday morning 11:00 UTC (during closed weekend)
+    saturday_now = datetime(2026, 10, 10, 11, 0, 0, tzinfo=UTC)
+    status = sla.calculate_session_sla_status(s_id, current_time=saturday_now)
+    assert status is not None
+    assert status["use_business_hours"] is True
+    # 30 min Friday (17:30 to 18:00) + 30 min Monday (09:00 to 09:30) => due Monday at 09:30 UTC
+    assert status["response_due_at"].startswith("2026-10-12T09:30:00")
+    # Because it is Saturday, deadline has NOT breached yet
+    assert status["response_breached"] is False
+    assert status["breach_status"] in ("healthy", "approaching_breach")
+

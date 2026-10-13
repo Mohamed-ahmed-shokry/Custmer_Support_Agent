@@ -158,10 +158,20 @@ _SELECT_ASSIGNMENT_HISTORY = (
 )
 
 _CREATE_FEEDBACK_TABLE = (
-    "CREATE TABLE IF NOT EXISTS feedback "
-    "(id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "CREATE TABLE IF NOT EXISTS feedback ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
     "session_id TEXT NOT NULL, rating INTEGER NOT NULL, "
     "comment TEXT, "
+    "score INTEGER DEFAULT NULL, "
+    "resolution_satisfaction INTEGER DEFAULT NULL, "
+    "agent_helpfulness INTEGER DEFAULT NULL, "
+    "response_speed INTEGER DEFAULT NULL, "
+    "review_status TEXT NOT NULL DEFAULT 'pending_review', "
+    "assigned_agent TEXT DEFAULT NULL, "
+    "escalation_tier TEXT NOT NULL DEFAULT 'tier_1', "
+    "reviewer_notes TEXT DEFAULT NULL, "
+    "reviewed_at TEXT DEFAULT NULL, "
+    "reviewed_by TEXT DEFAULT NULL, "
     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 
@@ -262,6 +272,7 @@ VALID_WEBHOOK_EVENTS = {
     "session.escalated",
     "session.resolved",
     "feedback.negative",
+    "feedback.low_csat",
     "ping",
     "sla.approaching_breach",
     "sla.breached",
@@ -272,6 +283,16 @@ MAX_WEBHOOK_URL_LENGTH = 500
 MAX_WEBHOOK_SECRET_LENGTH = 256
 MAX_DELIVERY_PREVIEW_LENGTH = 500
 MAX_DELIVERY_ERROR_LENGTH = 500
+
+VALID_FEEDBACK_REVIEW_STATUSES = {
+    "pending_review",
+    "reviewed",
+    "followup_required",
+    "archived",
+}
+DEFAULT_FEEDBACK_REVIEW_STATUS = "pending_review"
+MAX_REVIEWER_NOTES_LENGTH = 2000
+MAX_REVIEWED_BY_LENGTH = 100
 
 MAX_SESSION_LABEL_LENGTH = 80
 VALID_SESSION_STATUSES = {"active", "resolved", "escalated", "closed"}
@@ -533,6 +554,44 @@ def normalize_agent_department(value: str | None) -> str:
     if cleaned not in VALID_AGENT_DEPARTMENTS:
         valid_depts = sorted(VALID_AGENT_DEPARTMENTS)
         raise ValueError(f"Invalid agent department '{value}'. Must be one of: {valid_depts}.")
+    return cleaned
+
+
+def normalize_feedback_review_status(value: str | None) -> str:
+    cleaned = (value or DEFAULT_FEEDBACK_REVIEW_STATUS).strip().lower()
+    if cleaned not in VALID_FEEDBACK_REVIEW_STATUSES:
+        valid_statuses = sorted(VALID_FEEDBACK_REVIEW_STATUSES)
+        raise ValueError(
+            f"Invalid review status '{value}'. Must be one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_csat_score(value: int | None, allow_none: bool = True) -> int | None:
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError("CSAT score must not be None.")
+    try:
+        score_int = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("CSAT score must be an integer between 1 and 5.") from exc
+
+    min_csat_score = 1
+    max_csat_score = 5
+    if not (min_csat_score <= score_int <= max_csat_score):
+        raise ValueError("CSAT score must be between 1 and 5.")
+    return score_int
+
+
+def normalize_reviewer_notes(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = value.strip()
+    if len(cleaned) > MAX_REVIEWER_NOTES_LENGTH:
+        raise ValueError(
+            f"Reviewer notes must be at most {MAX_REVIEWER_NOTES_LENGTH} characters."
+        )
     return cleaned
 
 
@@ -1072,6 +1131,35 @@ def migrate_feedback():
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(feedback)")]
         if "comment" not in columns:
             conn.execute("ALTER TABLE feedback ADD COLUMN comment TEXT")
+        if "score" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN score INTEGER DEFAULT NULL")
+        if "resolution_satisfaction" not in columns:
+            conn.execute(
+                "ALTER TABLE feedback ADD COLUMN resolution_satisfaction INTEGER DEFAULT NULL"
+            )
+        if "agent_helpfulness" not in columns:
+            conn.execute(
+                "ALTER TABLE feedback ADD COLUMN agent_helpfulness INTEGER DEFAULT NULL"
+            )
+        if "response_speed" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN response_speed INTEGER DEFAULT NULL")
+        if "review_status" not in columns:
+            conn.execute(
+                "ALTER TABLE feedback ADD COLUMN review_status TEXT "
+                "NOT NULL DEFAULT 'pending_review'"
+            )
+        if "assigned_agent" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN assigned_agent TEXT DEFAULT NULL")
+        if "escalation_tier" not in columns:
+            conn.execute(
+                "ALTER TABLE feedback ADD COLUMN escalation_tier TEXT NOT NULL DEFAULT 'tier_1'"
+            )
+        if "reviewer_notes" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN reviewer_notes TEXT DEFAULT NULL")
+        if "reviewed_at" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN reviewed_at TEXT DEFAULT NULL")
+        if "reviewed_by" not in columns:
+            conn.execute("ALTER TABLE feedback ADD COLUMN reviewed_by TEXT DEFAULT NULL")
         conn.commit()
 
 
@@ -1080,12 +1168,208 @@ def insert_feedback(session_id, rating, comment=None):
     if rating not in (1, -1):
         raise ValueError("Rating must be 1 or -1.")
     clean_comment = comment.strip() if comment and isinstance(comment, str) else None
+
+    # Infer score from binary rating: 1 -> 5 stars, -1 -> 1 star
+    score = 5 if rating == 1 else 1
+
+    # Fetch active session metadata to capture assignee and escalation tier
+    meta = get_session_metadata(session_id) or {}
+    assigned_agent = meta.get("assigned_agent")
+    escalation_tier = meta.get("escalation_tier") or DEFAULT_AGENT_TIER
+
+    insert_sql = (
+        "INSERT INTO feedback ("
+        "session_id, rating, comment, score, review_status, assigned_agent, escalation_tier"
+        ") VALUES (?, ?, ?, ?, 'pending_review', ?, ?)"
+    )
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
-        cursor.execute(_INSERT_FEEDBACK, (session_id, rating, clean_comment))
+        cursor.execute(
+            insert_sql,
+            (session_id, rating, clean_comment, score, assigned_agent, escalation_tier),
+        )
         feedback_id = cursor.lastrowid
         conn.commit()
         return feedback_id
+
+
+def submit_csat_feedback(  # noqa: PLR0913, PLR0917
+    session_id: str,
+    score: int,
+    resolution_satisfaction: int | None = None,
+    agent_helpfulness: int | None = None,
+    response_speed: int | None = None,
+    comment: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
+) -> dict[str, Any]:
+    if not session_id or not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("Session ID must not be empty.")
+    clean_session_id = session_id.strip()
+
+    norm_score = normalize_csat_score(score, allow_none=False)
+    if norm_score is None:
+        raise ValueError("CSAT overall score is required.")
+    norm_res = normalize_csat_score(resolution_satisfaction)
+    norm_help = normalize_csat_score(agent_helpfulness)
+    norm_speed = normalize_csat_score(response_speed)
+    clean_comment = comment.strip() if comment and isinstance(comment, str) else None
+
+    # Derive binary rating for legacy backward compatibility: >=4 is +1, <=2 is -1, 3 is 0
+    neutral_score_threshold = 3
+    if norm_score > neutral_score_threshold:
+        legacy_rating = 1
+    elif norm_score < neutral_score_threshold:
+        legacy_rating = -1
+    else:
+        legacy_rating = 0
+
+    # Auto-resolve session assignee and tier if not explicitly passed
+    meta = get_session_metadata(clean_session_id) or {}
+    agent_val = assigned_agent if assigned_agent is not None else meta.get("assigned_agent")
+    tier_val = (
+        normalize_agent_tier(escalation_tier)
+        if escalation_tier is not None
+        else (meta.get("escalation_tier") or DEFAULT_AGENT_TIER)
+    )
+
+    insert_sql = (
+        "INSERT INTO feedback ("
+        "session_id, rating, comment, score, "
+        "resolution_satisfaction, agent_helpfulness, response_speed, "
+        "review_status, assigned_agent, escalation_tier"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?)"
+    )
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            insert_sql,
+            (
+                clean_session_id,
+                legacy_rating,
+                clean_comment,
+                norm_score,
+                norm_res,
+                norm_help,
+                norm_speed,
+                agent_val,
+                tier_val,
+            ),
+        )
+        feedback_id = cursor.lastrowid
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT id, session_id, rating, comment, score, "
+            "resolution_satisfaction, agent_helpfulness, response_speed, "
+            "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+            "reviewed_at, reviewed_by, created_at "
+            "FROM feedback WHERE id = ?",
+            (feedback_id,),
+        ).fetchone()
+        return dict(row) if row else {}
+
+
+def update_feedback_review(  # noqa: PLR0913, PLR0917
+    feedback_id: int,
+    review_status: str,
+    reviewer_notes: str | None = None,
+    reviewed_by: str | None = "operator",
+) -> dict[str, Any] | None:
+    """Update operator review status, reviewer notes, and review timestamp."""
+    norm_status = normalize_feedback_review_status(review_status)
+    norm_notes = normalize_reviewer_notes(reviewer_notes)
+    norm_by = (reviewed_by or "operator").strip()
+    if len(norm_by) > MAX_REVIEWED_BY_LENGTH:
+        norm_by = norm_by[:MAX_REVIEWED_BY_LENGTH]
+
+    update_sql = (
+        "UPDATE feedback SET "
+        "review_status = ?, "
+        "reviewer_notes = ?, "
+        "reviewed_by = ?, "
+        "reviewed_at = CURRENT_TIMESTAMP "
+        "WHERE id = ?"
+    )
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(update_sql, (norm_status, norm_notes, norm_by, feedback_id))
+        if cursor.rowcount == 0:
+            return None
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT id, session_id, rating, comment, score, "
+            "resolution_satisfaction, agent_helpfulness, response_speed, "
+            "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+            "reviewed_at, reviewed_by, created_at "
+            "FROM feedback WHERE id = ?",
+            (feedback_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_feedback_by_id(feedback_id: int) -> dict[str, Any] | None:
+    """Fetch a single feedback record by primary key id."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT id, session_id, rating, comment, score, "
+            "resolution_satisfaction, agent_helpfulness, response_speed, "
+            "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+            "reviewed_at, reviewed_by, created_at "
+            "FROM feedback WHERE id = ?",
+            (feedback_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_feedback_review_queue(  # noqa: PLR0913, PLR0917
+    review_status: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
+    min_score: int | None = None,
+    max_score: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """Query feedback queue for operator review with filters and pagination."""
+    query = (
+        "SELECT id, session_id, rating, comment, score, "
+        "resolution_satisfaction, agent_helpfulness, response_speed, "
+        "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+        "reviewed_at, reviewed_by, created_at FROM feedback"
+    )
+    count_query = "SELECT COUNT(*) FROM feedback"
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if review_status:
+        clauses.append("review_status = ?")
+        params.append(normalize_feedback_review_status(review_status))
+    if assigned_agent:
+        clauses.append("assigned_agent = ?")
+        params.append(assigned_agent.strip().lower())
+    if escalation_tier:
+        clauses.append("escalation_tier = ?")
+        params.append(normalize_agent_tier(escalation_tier))
+    if min_score is not None:
+        clauses.append("score >= ?")
+        params.append(int(min_score))
+    if max_score is not None:
+        clauses.append("score <= ?")
+        params.append(int(max_score))
+
+    if clauses:
+        where_clause = " WHERE " + " AND ".join(clauses)
+        query += where_clause
+        count_query += where_clause
+
+    query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+    query_params = list(params) + [max(1, limit), max(0, offset)]
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(count_query, params).fetchone()[0]
+        rows = conn.execute(query, query_params).fetchall()
+        return [dict(row) for row in rows], total
 
 
 def list_feedback(
@@ -1095,7 +1379,12 @@ def list_feedback(
     offset=0,
 ):
     """List feedback with optional filters and pagination, returning (items, total)."""
-    query = "SELECT id, session_id, rating, comment, created_at FROM feedback"
+    query = (
+        "SELECT id, session_id, rating, comment, score, "
+        "resolution_satisfaction, agent_helpfulness, response_speed, "
+        "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+        "reviewed_at, reviewed_by, created_at FROM feedback"
+    )
 
     count_query = "SELECT COUNT(*) FROM feedback"
     clauses = []
@@ -1126,12 +1415,76 @@ def list_feedback(
 def get_session_feedback(session_id):
     """Return all feedback records for a specific session ordered by created_at."""
     query = (
-        "SELECT id, session_id, rating, comment, created_at FROM feedback "
+        "SELECT id, session_id, rating, comment, score, "
+        "resolution_satisfaction, agent_helpfulness, response_speed, "
+        "review_status, assigned_agent, escalation_tier, reviewer_notes, "
+        "reviewed_at, reviewed_by, created_at FROM feedback "
         "WHERE session_id = ? ORDER BY created_at ASC, id ASC"
     )
     with closing(get_db_connection()) as conn:
         rows = conn.execute(query, (session_id,)).fetchall()
         return [dict(row) for row in rows]
+
+
+def get_agent_performance_analytics() -> list[dict[str, Any]]:
+    """Compute aggregate CSAT scorecards attributed per agent and tier."""
+    query = (
+        "SELECT "
+        "COALESCE(assigned_agent, 'unassigned') AS agent_id, "
+        "COALESCE(escalation_tier, 'tier_1') AS tier, "
+        "COUNT(*) AS total_ratings, "
+        "ROUND(AVG(CASE WHEN score IS NOT NULL THEN score "
+        "               WHEN rating = 1 THEN 5 "
+        "               WHEN rating = -1 THEN 1 "
+        "               ELSE 3 END), 2) AS avg_csat_score, "
+        "ROUND(AVG(resolution_satisfaction), 2) AS avg_resolution_score, "
+        "ROUND(AVG(agent_helpfulness), 2) AS avg_helpfulness_score, "
+        "ROUND(AVG(response_speed), 2) AS avg_speed_score, "
+        "SUM(CASE WHEN (score >= 4 OR (score IS NULL AND rating = 1)) "
+        "     THEN 1 ELSE 0 END) AS positive_count, "
+        "SUM(CASE WHEN (score <= 2 OR (score IS NULL AND rating = -1)) "
+        "     THEN 1 ELSE 0 END) AS negative_count "
+        "FROM feedback "
+        "GROUP BY assigned_agent, escalation_tier "
+        "ORDER BY avg_csat_score DESC, total_ratings DESC"
+    )
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query).fetchall()
+        scorecards: list[dict[str, Any]] = []
+        for r in rows:
+            tot = r["total_ratings"]
+            pos = r["positive_count"]
+            satisfaction_pct = round((pos / tot * 100), 1) if tot > 0 else 0.0
+            avg_res = (
+                float(r["avg_resolution_score"])
+                if r["avg_resolution_score"] is not None
+                else None
+            )
+            avg_help = (
+                float(r["avg_helpfulness_score"])
+                if r["avg_helpfulness_score"] is not None
+                else None
+            )
+            avg_speed = (
+                float(r["avg_speed_score"])
+                if r["avg_speed_score"] is not None
+                else None
+            )
+            scorecards.append(
+                {
+                    "agent_id": r["agent_id"],
+                    "tier": r["tier"],
+                    "total_ratings": tot,
+                    "avg_csat_score": float(r["avg_csat_score"] or 0.0),
+                    "avg_resolution_score": avg_res,
+                    "avg_helpfulness_score": avg_help,
+                    "avg_speed_score": avg_speed,
+                    "positive_count": pos,
+                    "negative_count": r["negative_count"],
+                    "satisfaction_rate": satisfaction_pct,
+                }
+            )
+        return scorecards
 
 
 def count_feedback(rating):

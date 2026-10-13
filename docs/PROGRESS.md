@@ -1,30 +1,29 @@
-# v0.32.0 Progress Record: Customer Support Agent Assignment, Tiered Escalation Routing & Operating Business Hours Engine
+# v0.33.0 Progress Record: Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine
 
-**Phase Branch**: `phase/v0.32.0-agent-assignment-business-hours`  
-**Status**: IN PROGRESS  
-**Target Version**: 0.32.0  
+**Phase Branch**: `phase/v0.33.0-feedback-csat-analytics`  
+**Status**: ✅ COMPLETED  
+**Target Version**: 0.33.0  
 
 ---
 
 ## 1. Task Breakdown & Execution Status
 
-- [x] **Task 1**: `ROADMAP.md` v0.32.0 plan specification and `docs/PROGRESS.md` initialization
-- [x] **Task 2**: Database schema migration, `support_agents` CRUD, `session_assignment_history` in `api/db_utils.py`
-- [x] **Task 3**: Unit tests for database agent CRUD, assignment history, and migrations in `tests/test_db_utils.py`
-- [ ] **Task 4**: Operating business hours engine in `api/business_hours.py`
-- [ ] **Task 5**: Unit tests for business hours calculation in `tests/test_business_hours.py`
-- [ ] **Task 6**: Pydantic schemas in `api/pydantic_models.py`
-- [ ] **Task 7**: Unit tests for new Pydantic models in `tests/test_models.py`
-- [ ] **Task 8**: Core assignment, tiered routing, workload analytics, and SLA business hours integration in `api/assignment.py` and `api/sla.py`
-- [ ] **Task 9**: Unit tests for assignment and workload engine in `tests/test_assignment.py`
-- [ ] **Task 10**: FastAPI routes in `api/main.py`
-- [ ] **Task 11**: Integration and endpoint tests for FastAPI agent and assignment routes in `tests/test_api_routes.py`
-- [ ] **Task 12**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
-- [ ] **Task 13**: Streamlit UI assignee/tier controls, auto-assign button, queue filters, and workload panel in `app/sidebar.py`
-- [ ] **Task 14**: Streamlit UI unit tests in `tests/test_app_ui.py`
-- [ ] **Task 15**: Documentation updates in `docs/API.md` and `README.md`
-- [ ] **Task 16**: Version bump to 0.32.0 in `pyproject.toml` and `api/settings.py`
-- [ ] **Task 17**: Final verification gate, progress record completion, and self-review audit
+- [x] **Task 1**: `ROADMAP.md` v0.33.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] **Task 2**: Database schema migration and CRUD operations for CSAT & review queue in `api/db_utils.py`
+- [x] **Task 3**: Unit tests for CSAT database schema, queries, and migrations in `tests/test_db_utils.py`
+- [x] **Task 4**: Core CSAT calculation, agent scorecard analytics, and alert engine in `api/csat.py`
+- [x] **Task 5**: Unit tests for CSAT calculation engine in `tests/test_csat.py`
+- [x] **Task 6**: Pydantic schemas in `api/pydantic_models.py`
+- [x] **Task 7**: Unit tests for CSAT Pydantic schemas in `tests/test_models.py`
+- [x] **Task 8**: FastAPI routes in `api/main.py`
+- [x] **Task 9**: Integration and endpoint tests for FastAPI CSAT routes in `tests/test_api_routes.py`
+- [x] **Task 10**: Client helpers in `app/api_utils.py` with unit tests in `tests/test_api_utils.py` and `tests/test_app_api_utils.py`
+- [x] **Task 11**: Streamlit chat interface 5-star CSAT survey widget in `app/chat_interface.py`
+- [x] **Task 12**: Streamlit sidebar feedback review queue and agent performance scorecard in `app/sidebar.py`
+- [x] **Task 13**: Streamlit UI unit tests in `tests/test_app_ui.py`
+- [x] **Task 14**: Documentation updates in `docs/API.md` and `README.md`
+- [x] **Task 15**: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
+- [x] **Task 16**: Final verification gate, progress record completion, and self-review audit
 
 ---
 
@@ -32,35 +31,42 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `support_agents` table exists, pre-seeds 5 default real estate agents on initialization, and supports full CRUD | VERIFIED | `tests/test_db_utils.py::test_create_support_agents_seeds_defaults`, `test_support_agent_crud_and_validation`, `test_list_support_agents_filters` |
-| AC2 | `session_labels` table migrates to include `assigned_agent TEXT DEFAULT NULL` and `escalation_tier TEXT NOT NULL DEFAULT 'tier_1'` with validation for `tier_1`, `tier_2`, `tier_3` | VERIFIED | `tests/test_db_utils.py::test_migrate_session_labels_adds_agent_and_tier`, `test_update_and_get_session_metadata_agent_and_tier`, `test_get_all_sessions_agent_and_tier_filtering` |
-| AC3 | `session_assignment_history` table records audit log transitions for agent and tier re-assignments with timestamps, actors, and reasons | VERIFIED | `tests/test_db_utils.py::test_session_assignment_history` |
-| AC4 | `api/assignment.py` supports manual assignment and least-busy auto-assignment with webhook notifications (`session.assigned`, `session.tier_escalated`) | PENDING | Pending Task 8 & 9 |
-| AC5 | `api/business_hours.py` accurately evaluates business hours status and advances deadlines across nights and weekends for business-hours SLA policies | PENDING | Pending Task 4 & 5 |
-| AC6 | FastAPI endpoints `/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`, and `/business-hours/status` are functional and schema-validated | PENDING | Pending Task 10 & 11 |
-| AC7 | Client helpers in `app/api_utils.py` provide typed API methods with error handling | PENDING | Pending Task 12 |
-| AC8 | Streamlit UI displays operating hours indicator, assignee/tier controls, auto-assign action, queue filters, and team workload panel | PENDING | Pending Task 13 & 14 |
-| AC9 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | PENDING | Baseline passed (629 passed, 94.72% coverage) |
+| AC1 | `feedback` table schema migrates to support `score` (1-5), sub-criteria (`resolution_satisfaction`, `agent_helpfulness`, `response_speed`), `review_status`, `assigned_agent`, `escalation_tier`, `reviewer_notes`, `reviewed_at`, and `reviewed_by` | VERIFIED | `api/db_utils.py`, `tests/test_db_utils.py` (82 passed) |
+| AC2 | `submit_csat_feedback()` persists multi-criteria feedback, captures current session's assigned agent and tier, and dispatches `feedback.low_csat` webhook when score <= 2 | VERIFIED | `api/csat.py`, `tests/test_csat.py` (3 passed), `tests/test_api_routes.py` |
+| AC3 | `update_feedback_review()` allows operators to update `review_status` (`pending_review`, `reviewed`, `followup_required`, `resolved`) and append reviewer notes | VERIFIED | `update_feedback_review()` tested in `test_update_feedback_review_lifecycle` |
+| AC4 | `get_agent_performance_analytics()` and `calculate_csat_summary()` accurately compute aggregate metrics, star distributions, and agent scorecards | VERIFIED | `api/csat.py`, `api/db_utils.py`, `tests/test_csat.py` |
+| AC5 | FastAPI endpoints `/feedback/csat`, `/feedback/queue`, `/feedback/{id}/review`, `/feedback/csat-summary`, and `/feedback/agent-scorecards` are functional and schema-validated | VERIFIED | `api/main.py`, `tests/test_api_routes.py` (149 passed) |
+| AC6 | Client helpers in `app/api_utils.py` provide typed methods with authentication and error handling | VERIFIED | `app/api_utils.py`, `tests/test_app_api_utils.py` (118 passed) |
+| AC7 | Streamlit UI supports 5-star multi-criteria CSAT submission in chat and administrative review queue & agent scorecard dashboard in the sidebar | VERIFIED | `app/chat_interface.py`, `app/sidebar.py`, `tests/test_app_ui.py` (102 passed) |
+| AC8 | Full test suite passes with >= 80% coverage and zero ruff / mypy errors | VERIFIED | `pytest` (695 passed, 93.96% coverage), `ruff check` (0 errors), `mypy` (0 issues in 28 source files) |
 
 ---
 
 ## 3. Decision Log
 
-- **Decision 1 (2026-10-11)**: Select v0.32.0 Customer Support Agent Assignment, Tiered Escalation Routing & Operating Business Hours Engine as the next development phase.
-  - *Context*: Baseline tests, ruff, and mypy are fully green. v0.31.0 delivered priority triage and SLA tracking, and explicitly deferred business hours schedule calculations and agent-specific escalation assignment.
-  - *Alternatives considered*: Direct multi-tenant database isolation or external calendar syncing.
-  - *Rationale*: Agent ownership, tiered routing (Tier 1 Frontline -> Tier 2 Operations/Specialist -> Tier 3 Management), and business hours calculation complete the core operational workflow needed for property management support desks without requiring heavy external dependencies.
-  - *Blast radius & Reversibility*: High cohesion with existing session metadata, webhooks, and SLA policies. Database schema additions are backward-compatible with default values.
+- **Decision 1 (2026-10-12)**: Select v0.33.0 Multi-Criteria CSAT Feedback, Review Queues & Performance Analytics Engine as the next development phase.
+  - *Context*: Baseline tests, ruff, and mypy are completely green. v0.32.0 established support agent directory, tiered escalation, and session assignment. However, feedback was previously a simple binary rating (-1/1) without multi-criteria scoring, review workflows, or attribution to assigned agents and tiers.
+  - *Alternatives considered*: External CRM sync (Salesforce/HubSpot) or real-time voice call analytics.
+  - *Rationale*: Connecting customer satisfaction ratings (1 to 5 stars, resolution satisfaction, agent helpfulness, response speed) directly to assigned agents and escalation tiers closes the operational loop for quality assurance and supervisor reviews without requiring third-party credentials.
+  - *Blast radius & Reversibility*: Schema extensions to `feedback` table are additive and preserve backward compatibility with existing binary ratings.
 
-- **Decision 2 (2026-10-11)**: Design Business Hours as a deterministic schedule engine in `api/business_hours.py` supporting opt-in SLA policies via `use_business_hours` flag.
-  - *Context*: Emergency maintenance requests must track 24/7 calendar minutes, whereas routine leasing or billing inquiries must not breach SLA over weekends or after 18:00.
-  - *Rationale*: Adding `use_business_hours` to `sla_policies` provides fine-grained control per policy, allowing urgent policies to run 24/7 while routine policies respect operating hours.
+- **Decision 2 (2026-10-12)**: Preserve backward compatibility for binary rating while standardizing on 1-5 star score.
+  - *Context*: Existing sessions or automated scripts might submit `rating` in `{-1, 1}`.
+  - *Rationale*: Store both `score` (1-5) and compute `rating` (+1 for score >= 4, -1 for score <= 2, 0 for 3) so legacy analytics and new CSAT scorecards coexist seamlessly.
+
+- **Decision 3 (2026-10-13)**: Add an `autouse=True` HTTP fast-fail fixture in `tests/test_app_ui.py`.
+  - *Context*: Unmocked helper calls inside Streamlit UI unit tests attempted real TCP connections to `localhost:8000`, causing 2-second Windows TCP timeouts per call (~193s total).
+  - *Rationale*: Raising `requests.exceptions.ConnectionError` immediately in `tests/test_app_ui.py` preserves identical fallback behavior while reducing UI unit test execution time from 193s to 1.71s.
 
 ---
 
 ## 4. Validation Commands & Results
 
-- **Baseline Check (v0.31.0)**:
+- **Baseline Check (v0.32.0)**:
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (0 issues)
-  - `python -m mypy api app scripts` -> ✅ Passed (0 issues in 25 source files)
-  - `python -m pytest` -> ✅ Passed (629 passed, 21 deselected, 94.72% coverage, fail_under=80%)
+  - `python -m mypy api app scripts` -> ✅ Passed (0 issues in 27 source files)
+  - `python -m pytest` -> ✅ Passed (668 passed, 21 deselected, 94.00% coverage, fail_under=80%)
+- **Final Verification Gate (v0.33.0)**:
+  - `python -m ruff check api app tests scripts` -> ✅ Passed (`All checks passed!`)
+  - `python -m mypy api app scripts` -> ✅ Passed (`Success: no issues found in 28 source files`)
+  - `python -m pytest -q` -> ✅ Passed (`695 passed, 21 deselected, 93.96% coverage, fail_under=80%`)

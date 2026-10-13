@@ -1778,3 +1778,240 @@ def test_sla_policy_use_business_hours_crud(monkeypatch, tmp_path):
     assert pol_updated is not None
     assert pol_updated["use_business_hours"] == 0
 
+
+def test_csat_normalizers():
+    assert db_utils.normalize_feedback_review_status("PENDING_REVIEW") == "pending_review"
+    assert db_utils.normalize_feedback_review_status("reviewed") == "reviewed"
+    assert db_utils.normalize_feedback_review_status("followup_required") == "followup_required"
+    assert db_utils.normalize_feedback_review_status("archived") == "archived"
+
+    with pytest.raises(ValueError, match="Invalid review status"):
+        db_utils.normalize_feedback_review_status("unknown_status")
+
+    assert db_utils.normalize_csat_score(5) == 5  # noqa: PLR2004
+    assert db_utils.normalize_csat_score(1) == 1
+    assert db_utils.normalize_csat_score(None) is None
+
+    with pytest.raises(ValueError, match="CSAT score must be between 1 and 5"):
+        db_utils.normalize_csat_score(0)
+    with pytest.raises(ValueError, match="CSAT score must be between 1 and 5"):
+        db_utils.normalize_csat_score(6)
+
+    assert db_utils.normalize_reviewer_notes("  test note  ") == "test note"
+    assert db_utils.normalize_reviewer_notes("") == ""
+    assert db_utils.normalize_reviewer_notes(None) == ""
+
+
+def test_submit_csat_feedback_and_retrieval(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Insert log so session exists for metadata
+    db_utils.insert_application_logs("sess-csat-1", "Hello", "Hi", "model")
+    db_utils.update_session_metadata(
+        "sess-csat-1",
+        assigned_agent="agent_alice",
+        escalation_tier="tier_2",
+    )
+
+    item = db_utils.submit_csat_feedback(
+        session_id="sess-csat-1",
+        score=5,
+        resolution_satisfaction=4,
+        agent_helpfulness=5,
+        response_speed=5,
+        comment="Outstanding customer support!",
+    )
+    assert item["id"] > 0
+    assert item["session_id"] == "sess-csat-1"
+    assert item["score"] == 5  # noqa: PLR2004
+    assert item["rating"] == 1
+    assert item["resolution_satisfaction"] == 4  # noqa: PLR2004
+    assert item["agent_helpfulness"] == 5  # noqa: PLR2004
+    assert item["response_speed"] == 5  # noqa: PLR2004
+    assert item["comment"] == "Outstanding customer support!"
+    assert item["review_status"] == "pending_review"
+    assert item["assigned_agent"] == "agent_alice"
+    assert item["escalation_tier"] == "tier_2"
+
+    fetched = db_utils.get_feedback_by_id(item["id"])
+    assert fetched == item
+
+
+def test_submit_csat_feedback_negative_rating_and_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    item = db_utils.submit_csat_feedback(
+        session_id="sess-csat-2",
+        score=1,
+        comment="Agent was unhelpful and slow",
+    )
+    assert item["score"] == 1
+    assert item["rating"] == -1
+
+    # Neutral score (3) maps to rating 0
+    item3 = db_utils.submit_csat_feedback(
+        session_id="sess-csat-3",
+        score=3,
+    )
+    assert item3["score"] == 3  # noqa: PLR2004
+    assert item3["rating"] == 0
+
+    # Validation errors
+    with pytest.raises(ValueError, match="Session ID must not be empty"):
+        db_utils.submit_csat_feedback(session_id="", score=5)
+    with pytest.raises(ValueError, match="CSAT score must not be None"):
+        db_utils.submit_csat_feedback(session_id="sess-csat-4", score=None)  # type: ignore[arg-type]
+
+
+def test_update_feedback_review_lifecycle(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    item = db_utils.submit_csat_feedback(
+        session_id="sess-review-1",
+        score=2,
+        comment="Resolution took way too long",
+    )
+    fb_id = item["id"]
+
+    # Initial state
+    assert item["review_status"] == "pending_review"
+
+    # Update to followup_required
+    updated = db_utils.update_feedback_review(
+        feedback_id=fb_id,
+        review_status="followup_required",
+        reviewer_notes="Manager will call customer back tomorrow morning",
+        reviewed_by="manager_bob",
+    )
+    assert updated is not None
+    assert updated["review_status"] == "followup_required"
+    assert updated["reviewer_notes"] == "Manager will call customer back tomorrow morning"
+    assert updated["reviewed_by"] == "manager_bob"
+    assert updated["reviewed_at"] is not None
+
+    # Update on missing feedback returns None
+    assert db_utils.update_feedback_review(9999, review_status="reviewed") is None  # noqa: PLR2004
+
+    # Invalid status raises ValueError
+    with pytest.raises(ValueError, match="Invalid review status"):
+        db_utils.update_feedback_review(fb_id, review_status="invalid_status")
+
+
+def test_list_feedback_review_queue_and_filters(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    f1 = db_utils.submit_csat_feedback(
+        "s-1",
+        score=1,
+        comment="Poor",
+        assigned_agent="agent_alice",
+        escalation_tier="tier_1",
+    )
+    f2 = db_utils.submit_csat_feedback(
+        "s-2",
+        score=5,
+        comment="Excellent",
+        assigned_agent="agent_bob",
+        escalation_tier="tier_2",
+    )
+    f3 = db_utils.submit_csat_feedback(
+        "s-1",
+        score=2,
+        comment="Mediocre",
+        assigned_agent="agent_alice",
+        escalation_tier="tier_1",
+    )
+
+    db_utils.update_feedback_review(f2["id"], review_status="reviewed", reviewed_by="qa_lead")
+
+    # Filter by review_status
+    pending, tot_pending = db_utils.list_feedback_review_queue(review_status="pending_review")
+    assert tot_pending == 2  # noqa: PLR2004
+    assert {item["id"] for item in pending} == {f1["id"], f3["id"]}
+
+    reviewed, tot_reviewed = db_utils.list_feedback_review_queue(review_status="reviewed")
+    assert tot_reviewed == 1
+    assert reviewed[0]["id"] == f2["id"]
+
+    # Filter by min_score / max_score
+    low_scores, tot_low = db_utils.list_feedback_review_queue(max_score=2)
+    assert tot_low == 2  # noqa: PLR2004
+
+    high_scores, tot_high = db_utils.list_feedback_review_queue(min_score=4)
+    assert tot_high == 1
+
+    # Filter by agent
+    alice_queue, tot_alice = db_utils.list_feedback_review_queue(assigned_agent="agent_alice")
+    assert tot_alice == 2  # noqa: PLR2004
+
+    bob_queue, tot_bob = db_utils.list_feedback_review_queue(assigned_agent="agent_bob")
+    assert tot_bob == 1
+
+    # Filter by escalation_tier
+    tier2_queue, tot_tier2 = db_utils.list_feedback_review_queue(escalation_tier="tier_2")
+    assert tot_tier2 == 1
+    assert tier2_queue[0]["assigned_agent"] == "agent_bob"
+
+
+def test_get_agent_performance_analytics(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # Empty database
+    assert db_utils.get_agent_performance_analytics() == []
+
+    # Alice: 5 stars & 4 stars
+    db_utils.submit_csat_feedback(
+        "s-a1",
+        score=5,
+        resolution_satisfaction=5,
+        agent_helpfulness=5,
+        response_speed=5,
+        assigned_agent="agent_alice",
+        escalation_tier="tier_1",
+    )
+    db_utils.submit_csat_feedback(
+        "s-a2",
+        score=4,
+        resolution_satisfaction=4,
+        agent_helpfulness=4,
+        response_speed=4,
+        assigned_agent="agent_alice",
+        escalation_tier="tier_1",
+    )
+
+    # Bob: 2 stars
+    db_utils.submit_csat_feedback(
+        "s-b1",
+        score=2,
+        resolution_satisfaction=2,
+        agent_helpfulness=1,
+        response_speed=2,
+        assigned_agent="agent_bob",
+        escalation_tier="tier_2",
+    )
+
+    scorecards = db_utils.get_agent_performance_analytics()
+    assert len(scorecards) == 2  # noqa: PLR2004
+
+    alice_card = next(c for c in scorecards if c["agent_id"] == "agent_alice")
+    assert alice_card["tier"] == "tier_1"
+    assert alice_card["total_ratings"] == 2  # noqa: PLR2004
+    assert alice_card["avg_csat_score"] == 4.5  # noqa: PLR2004
+    assert alice_card["avg_resolution_score"] == 4.5  # noqa: PLR2004
+    assert alice_card["avg_helpfulness_score"] == 4.5  # noqa: PLR2004
+    assert alice_card["avg_speed_score"] == 4.5  # noqa: PLR2004
+    assert alice_card["positive_count"] == 2  # noqa: PLR2004
+    assert alice_card["negative_count"] == 0
+    assert alice_card["satisfaction_rate"] == 100.0  # noqa: PLR2004
+
+    bob_card = next(c for c in scorecards if c["agent_id"] == "agent_bob")
+    assert bob_card["tier"] == "tier_2"
+    assert bob_card["total_ratings"] == 1
+    assert bob_card["avg_csat_score"] == 2.0  # noqa: PLR2004
+    assert bob_card["positive_count"] == 0
+    assert bob_card["negative_count"] == 1
+    assert bob_card["satisfaction_rate"] == 0.0
+
+
+
+

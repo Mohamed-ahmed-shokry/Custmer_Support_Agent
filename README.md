@@ -1,10 +1,15 @@
-# Customer Support RAG Agent (v0.31.0)
+# Customer Support RAG Agent (v0.33.0)
 
 A local-first customer support assistant for real estate and property management workflows. The app combines a FastAPI backend, a Streamlit chat UI, SQLite chat/document metadata, and a local Chroma vector store backed by OpenAI embeddings.
 
 ## Features
 
 - Conversational customer support over uploaded PDF, DOCX, HTML, MD, TXT, and CSV documents.
+- Multi-Criteria CSAT Feedback, Review Queues & Agent Performance Scorecards Engine (`POST /feedback/csat`, `GET /feedback/queue`, `PATCH /feedback/{id}/review`, `GET /feedback/csat-summary`, `GET /feedback/agent-scorecards`): 1–5 star multi-criteria CSAT surveys (overall satisfaction, resolution satisfaction, agent helpfulness, response speed), automated low-CSAT (`<= 2` stars) follow-up triage and `feedback.low_csat` webhook alerting, operator review workflow (`pending_review`, `followup_required`, `reviewed`, `resolved`) with reviewer notes, and per-agent / per-tier CSAT performance scorecards.
+- Streamlit 5-Star CSAT Survey Widget & Operator Scorecards Dashboard: expandable 1–5 star multi-criteria CSAT survey widget in the chat interface, plus a dedicated sidebar panel for multi-criteria CSAT KPIs, per-agent performance scorecards, and interactive operator feedback review queue management.
+- Customer Support Agent Assignment & Tiered Escalation Routing (`GET /agents`, `POST /agents`, `GET /agents/{id}`, `PATCH /agents/{id}`, `DELETE /agents/{id}`, `GET /agents/workload`, `POST /sessions/{id}/assign`, `POST /sessions/{id}/auto-assign`, `GET /sessions/{id}/assignment-history`): support agent profiles with tiered skill routing (`tier_1` Frontline & Concierge, `tier_2` Maintenance & Operations, `tier_3` Property Leadership), manual assignment and least-loaded automated routing, audit history logs, and live team workload distribution metrics.
+- Operating Business Hours & Calendar Schedule Engine (`GET /business-hours/status`): deterministic weekly operating calendar calculation (default Mon-Fri 09:00–18:00 UTC) with automatic deadline advancement across nights and weekends for business-hours SLA policies (`use_business_hours`).
+- Streamlit Support Agent Directory & Workload Dashboard: interactive sidebar panel showcasing active agent capacity, tier distribution, new agent registration, session queue filtering (Unassigned, Escalated Tier 2/3), manual assignment / auto-routing buttons, and audit trail viewers.
 - SLA Policies, Priority Triage & Automated Escalation Engine (`GET /sla/policies`, `POST /sla/policies`, `PATCH /sla/policies/{id}`, `DELETE /sla/policies/{id}`, `GET /sessions/{id}/sla`, `POST /sla/evaluate-alerts`, `GET /sla/analytics`): configurable tier-based SLA targets by priority (`urgent`, `high`, `medium`, `low`) and category, tracking first response and resolution deadlines with configurable warning thresholds. Automated background alert evaluation dispatches `sla.approaching_breach` and `sla.breached` webhooks and automatically escalates breached sessions.
 - Streamlit Priority Triage & Real-Time SLA Management: priority badge filters and indicators (`urgent`, `high`, `medium`, `low`) in session history and resolution tools, real-time active session SLA countdown tracker with color-coded health indicators (`healthy`, `approaching_breach`, `breached`, `met`), on-demand alert trigger, and dedicated SLA policy creation and compliance metrics dashboard.
 - Automated AI macro suggestions & query intent classification engine (`POST /macros/suggest`, `GET /sessions/{id}/macro-suggestions`): real-time intent taxonomy classification (`maintenance_emergency`, `maintenance_routine`, `rent_payment`, `lease_renewal`, `move_out`, `general_inquiry`), automated extraction of domain entities (`unit_id`, `customer_name`), and multi-factor ranking matching tenant inquiries to canned responses with confidence scores, match rationales, and variable auto-population.
@@ -201,6 +206,7 @@ docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build -d
 - `GET /sessions/search` — search past conversations by keyword.
 - `POST /feedback` — submit answer ratings (thumbs up/down) with optional text comments.
 - `GET /feedback`, `GET /sessions/{id}/feedback` — list and filter feedback records.
+- `POST /feedback/csat`, `GET /feedback/queue`, `PATCH /feedback/{id}/review`, `GET /feedback/csat-summary`, `GET /feedback/agent-scorecards` — 1–5 star multi-criteria CSAT surveys, operator review workflow queue, CSAT KPI summary, and per-agent performance scorecards.
 - `DELETE /sessions?before=<ISO datetime>` — prune inactive sessions.
 - `GET /quota` — daily token budget usage for the caller.
 
