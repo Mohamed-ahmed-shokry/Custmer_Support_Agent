@@ -325,6 +325,47 @@ The agent provides a 1–5 star multi-criteria Customer Satisfaction (CSAT) surv
 - `GET /feedback/agent-scorecards`: Retrieve per-agent and per-tier CSAT & operational performance scorecards.
   - Returns `AgentPerformanceScorecardsResponse` (`scorecards: [ { agent_id, tier, total_ratings, avg_csat_score, avg_resolution_score, avg_helpfulness_score, avg_speed_score, positive_count, negative_count, satisfaction_rate, followup_required_count } ]`, `tier_averages: {"tier_1": 4.5, ...}`, `overall_avg_csat`).
 
+## Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection
+
+The agent provides an end-to-end knowledge loop connecting support sessions, escalations, and customer feedback directly back into the RAG vector knowledge base (`document_store`, `document_sources`, and Chroma). Unanswered queries, low-CSAT conversations, and escalated tickets are tracked as knowledge gaps, synthesized into structured Markdown articles, and published with 1 click directly into the searchable document library.
+
+### Endpoints
+
+- `POST /knowledge/gaps`: Record or update a knowledge gap.
+  - Body: `{"query": "How do I set up autopay for monthly rent?", "category": "billing", "source_type": "manual", "session_id": "sess-123", "priority": "high", "notes": "Customer requested clear guide"}`.
+  - Normalized query matching automatically deduplicates recurring inquiries and increments `frequency` (promoting to `high` priority at frequency >= 3).
+  - Automatically dispatches `knowledge.gap_detected` webhook on creation or increment.
+  - Returns `201` with `KnowledgeGapResponse`.
+- `GET /knowledge/gaps`: List knowledge gaps with filtering.
+  - Query parameters: `status` (`open`, `drafting`, `resolved`, `dismissed`), `category`, `priority`, `source_type`, `search`, `limit`, `offset`.
+  - Returns `KnowledgeGapListResponse` (`items: [...]`, `total: int`).
+- `GET /knowledge/gaps/{gap_id}`: Retrieve a knowledge gap by ID. Returns `404` if not found.
+- `PATCH /knowledge/gaps/{gap_id}`: Partially update a knowledge gap's status, priority, category, linked article, or notes.
+- `DELETE /knowledge/gaps/{gap_id}`: Delete a knowledge gap.
+- `POST /knowledge/gaps/scan`: Automated scanner across resolved/escalated sessions and low-CSAT feedback to detect unanswered queries and extract knowledge gaps.
+  - Returns `KnowledgeGapScanResponse` (`scanned_sessions_count`, `new_gaps_created`, `existing_gaps_incremented`, `total_gaps_identified`, `gaps: [...]`).
+- `POST /knowledge/articles`: Create a new knowledge base / FAQ article draft.
+  - Body: `{"title": "Online Rent Autopay Setup", "category": "billing", "content_markdown": "...", "tags": ["autopay", "billing"], "question_pattern": "how to set up autopay", "author": "agent_sarah"}`.
+  - Returns `201` with `KnowledgeArticleResponse`.
+- `POST /sessions/{session_id}/draft-article`: Synthesize a structured Markdown FAQ / KB article draft from a resolved customer support session's inquiry, assistant answers, summary, and resolution notes.
+  - Body: `{"author": "agent_auto", "category": "billing", "link_gap_id": 12}`.
+  - Automatically links associated knowledge gap and marks its status as `drafting`.
+  - Returns `201` with `KnowledgeArticleResponse`.
+- `GET /knowledge/articles`: List knowledge base articles with filtering.
+  - Query parameters: `status` (`draft`, `published`, `archived`), `category`, `search`, `limit`, `offset`.
+  - Returns `KnowledgeArticleListResponse` (`items: [...]`, `total: int`).
+- `GET /knowledge/articles/{article_id}`: Retrieve a knowledge base article by ID. Returns `404` if not found.
+- `PATCH /knowledge/articles/{article_id}`: Partially update a knowledge base article's title, category, content markdown, question pattern, tags, or status.
+- `DELETE /knowledge/articles/{article_id}`: Delete an unpublished or archived knowledge base article.
+- `POST /knowledge/articles/{article_id}/publish`: Publish an article directly into the RAG vector knowledge base (`document_store` and `document_sources`) and Chroma index.
+  - Body: `{"collection": "default", "chunking_strategy": "markdown", "chunk_size": 1000, "chunk_overlap": 200}`.
+  - Updates article `status = "published"` and links `published_file_id`.
+  - Automatically transitions linked knowledge gap to `status = "resolved"`.
+  - Dispatches `knowledge.article_published` webhook notification.
+  - Returns `KnowledgeArticlePublishResponse`.
+- `GET /knowledge/analytics`: Retrieve self-service coverage, knowledge gap, and deflection analytics.
+  - Returns `KnowledgeBaseAnalyticsResponse` (`total_gaps`, `open_gaps`, `resolved_gaps`, `drafting_gaps`, `dismissed_gaps`, `total_articles`, `draft_articles_count`, `published_articles_count`, `archived_articles_count`, `gap_resolution_rate`, `recurring_gap_queries_count`, `estimated_deflected_queries`, `top_gap_categories`, `gaps_by_priority`).
+
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:
