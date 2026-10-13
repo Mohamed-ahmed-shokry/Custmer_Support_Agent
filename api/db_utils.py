@@ -73,7 +73,9 @@ _CREATE_SESSION_LABELS_TABLE = (
     "resolution_notes TEXT DEFAULT '', "
     "priority TEXT NOT NULL DEFAULT 'medium', "
     "assigned_agent TEXT DEFAULT NULL, "
-    "escalation_tier TEXT NOT NULL DEFAULT 'tier_1')"
+    "escalation_tier TEXT NOT NULL DEFAULT 'tier_1', "
+    "tenant_id TEXT DEFAULT NULL REFERENCES tenants(id), "
+    "unit_id TEXT DEFAULT NULL REFERENCES units(id))"
 )
 
 _CREATE_SLA_POLICIES_TABLE = (
@@ -540,7 +542,9 @@ _SELECT_ALL_SESSIONS_BASE = (
     "WHERE session_id = l1.session_id) AS assigned_agent, "
     "COALESCE("
     "(SELECT escalation_tier FROM session_labels WHERE session_id = l1.session_id), 'tier_1'"
-    ") AS escalation_tier "
+    ") AS escalation_tier, "
+    "(SELECT tenant_id FROM session_labels WHERE session_id = l1.session_id) AS tenant_id, "
+    "(SELECT unit_id FROM session_labels WHERE session_id = l1.session_id) AS unit_id "
     "FROM application_logs l1 GROUP BY l1.session_id"
 )
 _SELECT_ALL_SESSIONS = _SELECT_ALL_SESSIONS_BASE + " ORDER BY last_active DESC"
@@ -568,7 +572,9 @@ _SEARCH_SESSIONS = (
     "WHERE session_id = l1.session_id) AS assigned_agent, "
     "COALESCE("
     "(SELECT escalation_tier FROM session_labels WHERE session_id = l1.session_id), 'tier_1'"
-    ") AS escalation_tier "
+    ") AS escalation_tier, "
+    "(SELECT tenant_id FROM session_labels WHERE session_id = l1.session_id) AS tenant_id, "
+    "(SELECT unit_id FROM session_labels WHERE session_id = l1.session_id) AS unit_id "
     "FROM application_logs l1 "
     "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
     "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
@@ -1133,11 +1139,53 @@ def _truncate_preview(preview: str | None) -> str:
     return preview[: PREVIEW_MAX_LENGTH - 1].rstrip() + "…"
 
 
-def get_all_sessions(
+def _matches_session_filters(  # noqa: PLR0911, PLR0913, PLR0917
+    s_dict: dict,
     status: str | None = None,
     tag: str | None = None,
     assigned_agent: str | None = None,
     escalation_tier: str | None = None,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+) -> bool:
+    if status and s_dict.get("status", "active").lower() != status.strip().lower():
+        return False
+    if tag:
+        clean_tag = tag.strip().lower()
+        raw_tags = s_dict.get("tags", "") or ""
+        row_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+        if clean_tag not in row_tags:
+            return False
+    if assigned_agent:
+        clean_assigned = assigned_agent.strip().lower()
+        row_assigned = (s_dict.get("assigned_agent") or "").strip().lower()
+        if clean_assigned == "unassigned":
+            if row_assigned:
+                return False
+        elif row_assigned != clean_assigned:
+            return False
+    if escalation_tier:
+        clean_tier = escalation_tier.strip().lower()
+        row_tier = (s_dict.get("escalation_tier") or DEFAULT_AGENT_TIER).strip().lower()
+        if row_tier != clean_tier:
+            return False
+    if tenant_id and s_dict.get("tenant_id") != tenant_id.strip():
+        return False
+    if unit_id:
+        clean_unit = unit_id.strip().lower()
+        row_unit = (s_dict.get("unit_id") or "").strip().lower()
+        if row_unit != clean_unit:
+            return False
+    return True
+
+
+def get_all_sessions(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    tag: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
 ):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
@@ -1147,31 +1195,16 @@ def get_all_sessions(
         results = []
         for session in sessions:
             s_dict = dict(session)
-            if status:
-                clean_status = status.strip().lower()
-                if s_dict.get("status", "active").lower() != clean_status:
-                    continue
-            if tag:
-                clean_tag = tag.strip().lower()
-                raw_tags = s_dict.get("tags", "") or ""
-                row_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
-                if clean_tag not in row_tags:
-                    continue
-            if assigned_agent:
-                clean_assigned = assigned_agent.strip().lower()
-                row_assigned = (s_dict.get("assigned_agent") or "").strip().lower()
-                if clean_assigned == "unassigned":
-                    if row_assigned:
-                        continue
-                elif row_assigned != clean_assigned:
-                    continue
-            if escalation_tier:
-                clean_tier = escalation_tier.strip().lower()
-                row_tier = (s_dict.get("escalation_tier") or DEFAULT_AGENT_TIER).strip().lower()
-                if row_tier != clean_tier:
-                    continue
+            if not _matches_session_filters(
+                s_dict, status, tag, assigned_agent, escalation_tier, tenant_id, unit_id
+            ):
+                continue
             if not s_dict.get("label"):
                 s_dict["label"] = None
+            if not s_dict.get("tenant_id"):
+                s_dict["tenant_id"] = None
+            if not s_dict.get("unit_id"):
+                s_dict["unit_id"] = None
             s_dict["preview"] = _truncate_preview(s_dict.get("preview"))
             results.append(s_dict)
         return results
@@ -1209,6 +1242,8 @@ def search_sessions(query: str, limit: int = 20) -> list[dict]:
                     "priority": prio_val,
                     "assigned_agent": agent_val,
                     "escalation_tier": tier_val,
+                    "tenant_id": row["tenant_id"] if row["tenant_id"] else None,
+                    "unit_id": row["unit_id"] if row["unit_id"] else None,
                     "match_count": row["match_count"],
                     "preview": _truncate_preview(row["preview"]),
                     "last_active": row["last_active"],
@@ -1685,7 +1720,7 @@ def get_feedback_analytics(recent_comments_limit: int = 5) -> dict:
 
 
 def migrate_session_labels():
-    """Add newer columns (status, tags, summary, notes, priority, agent, tier) if missing."""
+    """Add newer columns (status, tags, summary, notes, priority, agent, tier, tenant, unit)."""
     with closing(get_db_connection()) as conn:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(session_labels)")]
         if "status" not in columns:
@@ -1709,10 +1744,14 @@ def migrate_session_labels():
                 "ALTER TABLE session_labels "
                 "ADD COLUMN escalation_tier TEXT NOT NULL DEFAULT 'tier_1'"
             )
+        if "tenant_id" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN tenant_id TEXT DEFAULT NULL")
+        if "unit_id" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN unit_id TEXT DEFAULT NULL")
         conn.commit()
 
 
-def update_session_metadata(  # noqa: PLR0913, PLR0917
+def update_session_metadata(  # noqa: PLR0913, PLR0915, PLR0917
     session_id: str,
     label: str | None = None,
     status: str | None = None,
@@ -1722,8 +1761,10 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
     priority: str | None = None,
     assigned_agent: str | None = None,
     escalation_tier: str | None = None,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
 ) -> bool:
-    """Update metadata (label, status, tags, summary, notes, priority, agent, tier)."""
+    """Update metadata (label, status, tags, summary, notes, priority, agent, tier, tenant)."""
     clean_label = normalize_session_label(label) if label is not None else None
     clean_status = normalize_session_status(status) if status is not None else None
     clean_tags = normalize_session_tags(tags) if tags is not None else None
@@ -1737,6 +1778,18 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
         raw_agent = assigned_agent.strip().lower()
         clean_agent = None if (not raw_agent or raw_agent == "unassigned") else raw_agent
     clean_tier = normalize_agent_tier(escalation_tier) if escalation_tier is not None else None
+    clean_tenant = None
+    if tenant_id is not None:
+        raw_tenant = tenant_id.strip()
+        clean_tenant = (
+            None if (not raw_tenant or raw_tenant.lower() in ("unassigned", "none")) else raw_tenant
+        )
+    clean_unit = None
+    if unit_id is not None:
+        raw_unit = unit_id.strip()
+        clean_unit = (
+            None if (not raw_unit or raw_unit.lower() in ("unassigned", "none")) else raw_unit
+        )
 
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
@@ -1745,7 +1798,7 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
 
         cur = conn.execute(
             "SELECT label, status, tags, summary, resolution_notes, "
-            "priority, assigned_agent, escalation_tier "
+            "priority, assigned_agent, escalation_tier, tenant_id, unit_id "
             "FROM session_labels WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -1758,11 +1811,13 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_priority = clean_priority or DEFAULT_SESSION_PRIORITY
             new_agent = clean_agent
             new_tier = clean_tier or DEFAULT_AGENT_TIER
+            new_tenant = clean_tenant
+            new_unit = clean_unit
             conn.execute(
                 "INSERT INTO session_labels "
                 "(session_id, label, status, tags, summary, resolution_notes, "
-                "priority, assigned_agent, escalation_tier) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "priority, assigned_agent, escalation_tier, tenant_id, unit_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     new_label,
@@ -1773,6 +1828,8 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
                     new_priority,
                     new_agent,
                     new_tier,
+                    new_tenant,
+                    new_unit,
                 ),
             )
         else:
@@ -1787,10 +1844,13 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_agent = clean_agent if assigned_agent is not None else cur_agent
             cur_tier = cur["escalation_tier"] if cur["escalation_tier"] else DEFAULT_AGENT_TIER
             new_tier = clean_tier if clean_tier is not None else cur_tier
+            new_tenant = clean_tenant if tenant_id is not None else cur["tenant_id"]
+            new_unit = clean_unit if unit_id is not None else cur["unit_id"]
             conn.execute(
                 "UPDATE session_labels "
                 "SET label = ?, status = ?, tags = ?, summary = ?, resolution_notes = ?, "
-                "priority = ?, assigned_agent = ?, escalation_tier = ? WHERE session_id = ?",
+                "priority = ?, assigned_agent = ?, escalation_tier = ?, tenant_id = ?, unit_id = ? "
+                "WHERE session_id = ?",
                 (
                     new_label,
                     new_status,
@@ -1800,6 +1860,8 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
                     new_priority,
                     new_agent,
                     new_tier,
+                    new_tenant,
+                    new_unit,
                     session_id,
                 ),
             )
@@ -1808,14 +1870,14 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
 
 
 def get_session_metadata(session_id: str) -> dict | None:
-    """Fetch label, status, tags, summary, notes, priority, agent, and tier for a session."""
+    """Fetch label, status, tags, summary, notes, priority, agent, tier, tenant, and unit."""
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
         if not exists:
             return None
         row = conn.execute(
             "SELECT label, status, tags, summary, resolution_notes, "
-            "priority, assigned_agent, escalation_tier "
+            "priority, assigned_agent, escalation_tier, tenant_id, unit_id "
             "FROM session_labels WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -1830,6 +1892,8 @@ def get_session_metadata(session_id: str) -> dict | None:
                 "priority": DEFAULT_SESSION_PRIORITY,
                 "assigned_agent": None,
                 "escalation_tier": DEFAULT_AGENT_TIER,
+                "tenant_id": None,
+                "unit_id": None,
             }
         prio_val = row["priority"] if row["priority"] else DEFAULT_SESSION_PRIORITY
         cur_agent = row["assigned_agent"] if row["assigned_agent"] else None
@@ -1844,6 +1908,8 @@ def get_session_metadata(session_id: str) -> dict | None:
             "priority": prio_val,
             "assigned_agent": cur_agent,
             "escalation_tier": cur_tier,
+            "tenant_id": row["tenant_id"] if row["tenant_id"] else None,
+            "unit_id": row["unit_id"] if row["unit_id"] else None,
         }
 
 
@@ -4170,10 +4236,164 @@ def delete_tenant(tenant_id: str) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+def get_session_tenant_context(session_id: str) -> dict[str, Any] | None:
+    """Fetch consolidated tenant and unit profile context for a session."""
+    with closing(get_db_connection()) as conn:
+        has_logs = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
+        lbl = conn.execute(
+            "SELECT tenant_id, unit_id FROM session_labels WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if not has_logs and lbl is None:
+            return None
+
+        tenant_id = lbl["tenant_id"] if lbl and lbl["tenant_id"] else None
+        unit_id = lbl["unit_id"] if lbl and lbl["unit_id"] else None
+
+    tenant = get_tenant(tenant_id) if tenant_id else None
+    effective_unit_id = unit_id or (tenant.get("unit_id") if tenant else None)
+    unit = get_unit(effective_unit_id) if effective_unit_id else None
+
+    return {
+        "session_id": session_id,
+        "tenant_id": tenant_id,
+        "unit_id": effective_unit_id,
+        "tenant": tenant,
+        "unit": unit,
+    }
+
+
+def link_session_tenant(
+    session_id: str,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+) -> dict[str, Any]:
+    """Link a customer support session to a tenant and/or unit."""
+    cleaned_tenant = tenant_id.strip() if tenant_id and tenant_id.strip() else None
+    if cleaned_tenant and cleaned_tenant.lower() in ("unassigned", "none"):
+        cleaned_tenant = None
+
+    cleaned_unit = unit_id.strip() if unit_id and unit_id.strip() else None
+    if cleaned_unit and cleaned_unit.lower() in ("unassigned", "none"):
+        cleaned_unit = None
+
+    if cleaned_tenant is not None:
+        tenant = get_tenant(cleaned_tenant)
+        if tenant is None:
+            raise ValueError(f"Tenant '{cleaned_tenant}' not found.")
+        if cleaned_unit is None and tenant.get("unit_id"):
+            cleaned_unit = tenant["unit_id"]
+
+    if cleaned_unit is not None:
+        unit = get_unit(cleaned_unit)
+        if unit is None:
+            raise ValueError(f"Unit '{cleaned_unit}' not found.")
+
+    with closing(get_db_connection()) as conn:
+        cur = conn.execute(
+            "SELECT session_id FROM session_labels WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if cur is None:
+            conn.execute(
+                "INSERT INTO session_labels "
+                "(session_id, label, status, tags, summary, resolution_notes, "
+                "priority, assigned_agent, escalation_tier, tenant_id, unit_id) "
+                "VALUES (?, '', 'active', '', '', '', 'medium', NULL, 'tier_1', ?, ?)",
+                (session_id, cleaned_tenant, cleaned_unit),
+            )
+        else:
+            conn.execute(
+                "UPDATE session_labels SET tenant_id = ?, unit_id = ? WHERE session_id = ?",
+                (cleaned_tenant, cleaned_unit, session_id),
+            )
+        conn.commit()
+
+    context = get_session_tenant_context(session_id)
+    if context is None:
+        tenant = get_tenant(cleaned_tenant) if cleaned_tenant else None
+        effective_unit_id = cleaned_unit or (tenant.get("unit_id") if tenant else None)
+        unit = get_unit(effective_unit_id) if effective_unit_id else None
+        return {
+            "session_id": session_id,
+            "tenant_id": cleaned_tenant,
+            "unit_id": effective_unit_id,
+            "tenant": tenant,
+            "unit": unit,
+        }
+    return context
+
+
+def get_tenant_support_history(tenant_id: str) -> dict[str, Any]:
+    """Retrieve full support and ticket history for a tenant across all linked sessions."""
+    tenant = get_tenant(tenant_id)
+    if tenant is None:
+        raise ValueError(f"Tenant '{tenant_id}' not found.")
+
+    with closing(get_db_connection()) as conn:
+        query = (
+            "SELECT sl.session_id, sl.label, sl.status, sl.tags, sl.summary, "
+            "sl.resolution_notes, sl.priority, sl.assigned_agent, sl.escalation_tier, "
+            "sl.unit_id, "
+            "MIN(al.created_at) AS created_at, "
+            "MAX(al.created_at) AS last_active, "
+            "COUNT(al.id) AS message_count, "
+            "(SELECT al2.user_query FROM application_logs al2 "
+            "WHERE al2.session_id = sl.session_id ORDER BY al2.id ASC LIMIT 1) AS preview "
+            "FROM session_labels sl "
+            "LEFT JOIN application_logs al ON al.session_id = sl.session_id "
+            "WHERE sl.tenant_id = ? "
+            "GROUP BY sl.session_id "
+            "ORDER BY last_active DESC"
+        )
+        rows = conn.execute(query, (tenant["id"],)).fetchall()
+        sessions = []
+        for r in rows:
+            sid = r["session_id"]
+            fb_row = conn.execute(
+                "SELECT rating, comment, score FROM feedback "
+                "WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                (sid,),
+            ).fetchone()
+            rating = fb_row["rating"] if fb_row else None
+            fb_score = fb_row["score"] if fb_row else None
+            fb_comment = fb_row["comment"] if fb_row else None
+
+            sessions.append({
+                "session_id": sid,
+                "label": r["label"] if r["label"] else None,
+                "status": r["status"] if r["status"] else "active",
+                "priority": r["priority"] if r["priority"] else DEFAULT_SESSION_PRIORITY,
+                "assigned_agent": r["assigned_agent"] if r["assigned_agent"] else None,
+                "escalation_tier": (
+                    r["escalation_tier"] if r["escalation_tier"] else DEFAULT_AGENT_TIER
+                ),
+                "tags": r["tags"] if r["tags"] else "",
+                "summary": r["summary"] if r["summary"] else "",
+                "resolution_notes": r["resolution_notes"] if r["resolution_notes"] else "",
+                "unit_id": r["unit_id"] if r["unit_id"] else tenant.get("unit_id"),
+                "message_count": r["message_count"] or 0,
+                "preview": _truncate_preview(r["preview"]),
+                "created_at": r["created_at"],
+                "last_active": r["last_active"],
+                "rating": rating,
+                "feedback_score": fb_score,
+                "feedback_comment": fb_comment,
+            })
+
+        return {
+            "tenant": tenant,
+            "total_sessions": len(sessions),
+            "sessions": sessions,
+        }
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
 migrate_document_store()
+create_units()
+create_tenants()
 create_session_labels()
 migrate_session_labels()
 create_feedback()
@@ -4185,6 +4405,4 @@ create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
-create_units()
-create_tenants()
 
