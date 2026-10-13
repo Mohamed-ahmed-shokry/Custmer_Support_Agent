@@ -10,7 +10,7 @@
 
 - [x] **Task 1**: `ROADMAP.md` v0.35.0 plan specification and `docs/PROGRESS.md` initialization
 - [x] **Task 2**: Database schema & CRUD operations for `units` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] **Task 3**: Database schema & CRUD operations for `tenants` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] **Task 3**: Database schema & CRUD operations for `tenants` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] **Task 4**: Session tenant linking, migration, and support history queries in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] **Task 5**: Core tenant context grounding engine and macro variable auto-resolution in `api/tenant_context.py` & `api/macros.py` + unit tests in `tests/test_tenant_context.py`
 - [ ] **Task 6**: Pydantic request/response models for units, tenants, linking, and context in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
