@@ -1,10 +1,12 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.33.0, 2026-10-13)
+## Current State (v0.34.0, 2026-10-13)
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
   use_hybrid)
+- Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine (`/knowledge/gaps*`, `/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) with recurring query deduplication and frequency tracking, automated session/CSAT gap scanner, structured Markdown article synthesis, 1-click publishing to RAG vector knowledge base with gap resolution, and `knowledge.gap_detected` & `knowledge.article_published` webhook notifications
+- Streamlit Knowledge Gaps & Article Studio sidebar expander (coverage KPIs, gap scanner, gap triage queue with dismissal, article drafting & RAG publisher) and 1-click session FAQ article drafting button
 - Multi-Criteria CSAT Feedback, Review Queues & Agent Performance Scorecards Engine (`POST /feedback/csat`, `GET /feedback/queue`, `PATCH /feedback/{id}/review`, `GET /feedback/csat-summary`, `GET /feedback/agent-scorecards`) with 1-5 star multi-criteria ratings, low-CSAT (`<= 2`) auto-triage and `feedback.low_csat` webhook alerting, operator review workflow, and per-agent / per-tier scorecards
 - Streamlit 5-Star CSAT Survey Widget in chat interface & CSAT Queue / Agent Scorecards dashboard in sidebar
 - Customer support agent assignment, tiered escalation routing (`tier_1`, `tier_2`, `tier_3`), assignment audit history, and team workload analytics (`/agents`, `/agents/workload`, `/sessions/{id}/assign`, `/sessions/{id}/auto-assign`, `/sessions/{id}/assignment-history`)
@@ -957,7 +959,7 @@ Close the knowledge loop between customer support operations and the RAG retriev
 - [x] Task 8: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [x] Task 9: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] Task 10: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
-- [ ] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED

@@ -18,7 +18,7 @@
 - [x] **Task 8**: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [x] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 10**: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
-- [ ] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
+- [x] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ---
@@ -33,7 +33,7 @@
 | AC4 | FastAPI endpoints `/knowledge/gaps`, `/knowledge/gaps/scan`, `/knowledge/gaps/{id}`, `/knowledge/articles`, `/knowledge/articles/{id}`, `/knowledge/articles/{id}/publish`, `/sessions/{id}/draft-article`, and `/knowledge/analytics` are wired and verified | VERIFIED | `api/main.py`, `tests/test_api_routes.py` (5 passed) |
 | AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | VERIFIED | `app/api_utils.py`, `tests/test_app_api_utils.py` (2 passed) |
 | AC6 | Streamlit UI in `app/sidebar.py` provides 1-click session KB article drafting and the "📚 Knowledge Gaps & Article Studio" management panel | VERIFIED | `app/sidebar.py`, `tests/test_app_ui.py` (106 passed) |
-| AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.34.0`) are updated and accurate | PENDING | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
+| AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.34.0`) are updated and accurate | VERIFIED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py`, `ROADMAP.md` |
 | AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
 
 ---
