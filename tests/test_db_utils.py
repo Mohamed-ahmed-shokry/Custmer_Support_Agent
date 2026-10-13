@@ -2328,3 +2328,176 @@ def test_units_validation(monkeypatch, tmp_path):
 
     # Non-existent unit update returns None
     assert db_utils.update_unit("non_existent_unit", monthly_rent=1000.0) is None
+
+
+def test_normalize_tenant_fields():
+    assert db_utils.normalize_tenant_id("tenant-101") == "tenant-101"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_tenant_id("   ")
+    with pytest.raises(ValueError, match="at most 50 characters"):
+        db_utils.normalize_tenant_id("t" * 51)
+    with pytest.raises(ValueError, match="may only contain alphanumeric"):
+        db_utils.normalize_tenant_id("tenant@101!")
+
+    assert db_utils.normalize_tenant_name("Sarah", "First name") == "Sarah"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_tenant_name("", "First name")
+    with pytest.raises(ValueError, match="at most 100 characters"):
+        db_utils.normalize_tenant_name("n" * 101, "First name")
+
+    assert db_utils.normalize_tenant_email("SARAH@EXAMPLE.COM") == "sarah@example.com"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_tenant_email("")
+    with pytest.raises(ValueError, match="Invalid tenant email format"):
+        db_utils.normalize_tenant_email("invalid-email-address")
+
+    assert db_utils.normalize_tenant_status("ACTIVE") == "active"
+    with pytest.raises(ValueError, match="Invalid tenant status"):
+        db_utils.normalize_tenant_status("nonexistent")
+
+    assert db_utils.normalize_date_str("2026-05-15", "Lease date") == "2026-05-15"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_date_str("", "Lease date")
+    with pytest.raises(ValueError, match="must be in YYYY-MM-DD format"):
+        db_utils.normalize_date_str("05/15/2026", "Lease date")
+
+
+def test_tenants_preseeded_and_lookups(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    expected_preseeded_tenants = 3
+    expected_t1_rent = 1450.0
+    expected_t1_balance = 0.0
+
+    # Preseeded tenants
+    tenants, total = db_utils.list_tenants()
+    assert total >= expected_preseeded_tenants
+    tenant_ids = {t["id"] for t in tenants}
+    assert "tenant_1" in tenant_ids
+    assert "tenant_2" in tenant_ids
+    assert "tenant_3" in tenant_ids
+
+    t1 = db_utils.get_tenant("tenant_1")
+    assert t1 is not None
+    assert t1["first_name"] == "Sarah"
+    assert t1["last_name"] == "Connor"
+    assert t1["email"] == "sarah.connor@example.com"
+    assert t1["unit_id"] == "unit_101"
+    assert t1["monthly_rent"] == expected_t1_rent
+    assert t1["balance_due"] == expected_t1_balance
+    assert t1["status"] == "active"
+
+    # Lookup by email
+    by_email = db_utils.get_tenant_by_email("SARAH.CONNOR@example.com")
+    assert by_email is not None
+    assert by_email["id"] == "tenant_1"
+
+
+def test_tenants_crud_and_filters(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    t4_rent = 1500.0
+    t4_balance = 500.0
+    updated_balance = 0.0
+    expected_u101_count = 2
+    expected_search_count = 1
+
+    # Create new tenant
+    created = db_utils.create_tenant(
+        tenant_id="tenant_4",
+        first_name="Kyle",
+        last_name="Reese",
+        email="kyle.reese@example.com",
+        phone="+1-555-0789",
+        unit_id="unit_101",
+        lease_start="2026-02-01",
+        lease_end="2027-01-31",
+        monthly_rent=t4_rent,
+        balance_due=t4_balance,
+        status="active",
+        emergency_contact_name="Sarah Connor",
+        emergency_contact_phone="+1-555-0199",
+        notes="Co-tenant on unit 101.",
+    )
+    assert created["id"] == "tenant_4"
+    assert created["balance_due"] == t4_balance
+
+    # Duplicate ID raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_tenant(
+            tenant_id="tenant_4",
+            first_name="Kyle",
+            last_name="Reese",
+            email="kyle.different@example.com",
+            phone="+1-555-0789",
+            lease_start="2026-02-01",
+            lease_end="2027-01-31",
+        )
+
+    # Duplicate email raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_tenant(
+            tenant_id="tenant_5",
+            first_name="Kyle",
+            last_name="Reese",
+            email="kyle.reese@example.com",
+            phone="+1-555-0789",
+            lease_start="2026-02-01",
+            lease_end="2027-01-31",
+        )
+
+    # Filter by unit_id
+    u101_tenants, u101_count = db_utils.list_tenants(unit_id="unit_101")
+    assert u101_count == expected_u101_count
+    assert all(t["unit_id"] == "unit_101" for t in u101_tenants)
+
+    # Filter by status
+    past_due_tenants, past_due_count = db_utils.list_tenants(status="past_due")
+    assert past_due_count == 1
+    assert past_due_tenants[0]["id"] == "tenant_2"
+
+    # Search
+    searched, search_count = db_utils.list_tenants(search="Rostova")
+    assert search_count == expected_search_count
+    assert searched[0]["id"] == "tenant_3"
+
+    # Update tenant
+    updated = db_utils.update_tenant(
+        "tenant_4",
+        balance_due=updated_balance,
+        status="active",
+        notes="Paid off balance in full.",
+    )
+    assert updated is not None
+    assert updated["balance_due"] == updated_balance
+    assert updated["notes"] == "Paid off balance in full."
+
+    # Delete tenant
+    assert db_utils.delete_tenant("tenant_4") is True
+    assert db_utils.get_tenant("tenant_4") is None
+    assert db_utils.delete_tenant("tenant_4") is False
+
+
+def test_tenants_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    with pytest.raises(ValueError, match="Phone number must not be blank"):
+        db_utils.create_tenant(
+            "t_test", "First", "Last", "test@example.com", "", "2026-01-01", "2026-12-31"
+        )
+
+    with pytest.raises(ValueError, match="Lease start date must be in YYYY-MM-DD format"):
+        db_utils.create_tenant(
+            "t_test", "First", "Last", "test@example.com", "555-0100", "invalid-date", "2026-12-31"
+        )
+
+    # Non-existent tenant update returns None
+    assert db_utils.update_tenant("non_existent_tenant", balance_due=0.0) is None
+    assert db_utils.get_tenant("") is None
+    assert db_utils.get_tenant_by_email("") is None
