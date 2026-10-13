@@ -149,10 +149,11 @@ def scan_sessions_for_knowledge_gaps(limit: int = 100) -> dict[str, Any]:
             # Check latest interaction for fallback response
             history = db_utils.get_chat_history(sid)
             if history:
-                last_ai_ans = next(
-                    (m["gpt_response"] for m in reversed(history) if m.get("gpt_response")),
-                    "",
-                )
+                ai_messages = [
+                    m["content"] for m in reversed(history)
+                    if m.get("role") == "ai" and m.get("content")
+                ]
+                last_ai_ans = ai_messages[0] if ai_messages else ""
                 if is_unanswered_or_fallback_response(last_ai_ans):
                     detected_reason = "Assistant gave fallback answer without sufficient context."
                     source_type = "unanswered_query"
@@ -202,17 +203,22 @@ def synthesize_article_from_session(
     if not history:
         raise ValueError(f"Session '{clean_sid}' has no recorded chat messages.")
 
-    first_query = history[0].get("user_query", "").strip() or "General inquiry"
+    human_msgs = [
+        m.get("content", "").strip() for m in history
+        if m.get("role") == "human" and m.get("content")
+    ]
+    first_query = human_msgs[0] if human_msgs else "General inquiry"
     summary_data = summarize_dialogue(history)
     summary_text = summary_data.get("summary", "")
     key_points = summary_data.get("key_points", [])
     suggested_tags = summary_data.get("suggested_tags", [])
 
     existing_notes = (meta.get("resolution_notes") or "").strip()
-    last_response = next(
-        (m.get("gpt_response", "").strip() for m in reversed(history) if m.get("gpt_response")),
-        "Contact management office for guidance.",
-    )
+    ai_msgs = [
+        m.get("content", "").strip() for m in reversed(history)
+        if m.get("role") == "ai" and m.get("content")
+    ]
+    last_response = ai_msgs[0] if ai_msgs else "Contact management office for guidance."
     resolution_body = (
         f"{existing_notes}\n\n{last_response}" if existing_notes else last_response
     )
