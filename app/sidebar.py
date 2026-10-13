@@ -20,6 +20,7 @@ from app.api_utils import (
     delete_sessions,
     delete_sla_policy,
     delete_webhook,
+    draft_article_from_session,
     evaluate_sla_alerts,
     export_session,
     get_agent_scorecards,
@@ -32,6 +33,7 @@ from app.api_utils import (
     get_document_details,
     get_feedback_analytics,
     get_health,
+    get_knowledge_analytics,
     get_metrics,
     get_quota,
     get_session_assignment_history,
@@ -45,6 +47,8 @@ from app.api_utils import (
     list_documents,
     list_feedback,
     list_feedback_review_queue,
+    list_knowledge_articles,
+    list_knowledge_gaps,
     list_macro_categories,
     list_macros,
     list_sessions,
@@ -53,15 +57,18 @@ from app.api_utils import (
     list_webhook_deliveries,
     list_webhooks,
     ping_webhook,
+    publish_knowledge_article,
     rechunk_collection,
     rechunk_document,
     rename_collection,
     rename_session,
     render_macro,
+    scan_knowledge_gaps,
     search_sessions,
     suggest_macros,
     summarize_session,
     update_feedback_review,
+    update_knowledge_gap,
     update_session,
     update_support_agent,
     update_webhook,
@@ -466,24 +473,45 @@ def _render_session_metadata(selected, sessions):
         placeholder="Add resolution or follow-up notes...",
     )
 
-    if st.sidebar.button("Update Metadata", key=f"btn_update_meta_{selected}"):
-        tag_list = [t.strip() for t in new_tags_str.split(",") if t.strip()]
-        with st.spinner("Updating session metadata..."):
-            if update_session(
-                selected,
-                status=new_status,
-                priority=new_priority,
-                tags=tag_list,
-                resolution_notes=new_notes.strip() if new_notes.strip() else None,
-            ):
-                st.sidebar.success("Session metadata updated.")
-                st.session_state.sessions = list_sessions()
-                st.rerun()
-            else:
-                st.sidebar.error("Failed to update session metadata.")
-
+    _render_session_metadata_actions(
+        selected, new_status, new_priority, new_tags_str, new_notes
+    )
     _render_session_assignment_controls(selected, current)
     _render_session_sla_card(selected)
+
+
+def _render_session_metadata_actions(
+    selected,
+    new_status,
+    new_priority,
+    new_tags_str,
+    new_notes,
+):
+    col_meta1, col_meta2 = st.sidebar.columns(2)
+    with col_meta1:
+        if st.button("Update Metadata", key=f"btn_update_meta_{selected}"):
+            tag_list = [t.strip() for t in new_tags_str.split(",") if t.strip()]
+            with st.spinner("Updating session metadata..."):
+                if update_session(
+                    selected,
+                    status=new_status,
+                    priority=new_priority,
+                    tags=tag_list,
+                    resolution_notes=new_notes.strip() if new_notes.strip() else None,
+                ):
+                    st.sidebar.success("Session metadata updated.")
+                    st.session_state.sessions = list_sessions()
+                    st.rerun()
+                else:
+                    st.sidebar.error("Failed to update session metadata.")
+
+    with col_meta2:
+        if st.button("📝 Draft Article", key=f"btn_draft_kb_{selected}"):
+            with st.spinner("Drafting FAQ article..."):
+                draft = draft_article_from_session(selected)
+                if draft:
+                    st.sidebar.success(f"Article #{draft['id']} drafted!")
+                    st.rerun()
 
 
 def _render_session_sla_card(selected):
@@ -1714,6 +1742,86 @@ def _render_csat_and_agent_scorecards():
                     st.rerun()
 
 
+def _render_knowledge_studio_kpis(analytics):
+    if not analytics:
+        return
+    col1, col2 = st.columns(2)
+    col1.metric("Total Gaps", analytics.get("total_gaps", 0))
+    col2.metric("Resolution Rate", f"{analytics.get('gap_resolution_rate', 0.0)}%")
+    col3, col4 = st.columns(2)
+    col3.metric("Published Articles", analytics.get("published_articles_count", 0))
+    col4.metric("Est. Deflections", analytics.get("estimated_deflected_queries", 0))
+    st.markdown("---")
+
+
+def _render_knowledge_gaps_queue():
+    st.markdown("#### 🚨 Knowledge Gaps Queue")
+    gaps, _ = list_knowledge_gaps(limit=20)
+    if not gaps:
+        st.caption("No knowledge gaps logged.")
+        return
+    for gap in gaps:
+        gid = gap["id"]
+        st.markdown(
+            f"**#{gid}: {gap['query']}**  \n"
+            f"Category: `{gap.get('category')}` | Priority: `{gap.get('priority')}` | "
+            f"Hits: `{gap.get('frequency', 1)}` | Status: `{gap.get('status')}`"
+        )
+        if gap.get("status") == "open" and st.button(
+            f"Dismiss Gap #{gid}", key=f"btn_dismiss_gap_{gid}"
+        ):
+            update_knowledge_gap(gid, status="dismissed")
+            st.rerun()
+        st.markdown("---")
+
+
+def _render_knowledge_articles_publisher():
+    st.markdown("#### 📝 Knowledge Articles & Publisher")
+    articles, _ = list_knowledge_articles(limit=20)
+    if not articles:
+        st.caption("No knowledge articles in studio.")
+        return
+    for art in articles:
+        aid = art["id"]
+        status_badge = "🟢 Published" if art.get("status") == "published" else "🟡 Draft"
+        st.markdown(
+            f"**#{aid}: {art['title']}** [{status_badge}]  \n"
+            f"Category: `{art.get('category')}` | Author: `{art.get('author')}`"
+        )
+        if art.get("status") == "draft":
+            target_col = st.text_input(
+                f"Target Collection #{aid}",
+                value="default",
+                key=f"pub_col_{aid}",
+            )
+            if st.button(f"🚀 Publish to RAG #{aid}", key=f"btn_pub_art_{aid}"):
+                with st.spinner("Publishing to vector knowledge base..."):
+                    pub_res = publish_knowledge_article(aid, collection=target_col)
+                    if pub_res:
+                        st.success(f"Article #{aid} published to '{target_col}'!")
+                        st.rerun()
+        st.markdown("---")
+
+
+def _render_knowledge_studio():
+    with st.sidebar.expander("📚 Knowledge Gaps & Article Studio"):
+        analytics = get_knowledge_analytics()
+        _render_knowledge_studio_kpis(analytics)
+
+        if st.button("🔍 Scan Sessions for Gaps", key="btn_scan_kb_gaps"):
+            with st.spinner("Scanning support sessions..."):
+                scan_res = scan_knowledge_gaps()
+                if scan_res:
+                    st.success(
+                        f"Scan complete: {scan_res.get('total_gaps_identified', 0)} "
+                        f"gaps found across {scan_res.get('scanned_sessions_count', 0)} sessions."
+                    )
+                    st.rerun()
+
+        _render_knowledge_gaps_queue()
+        _render_knowledge_articles_publisher()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -1737,6 +1845,7 @@ def display_sidebar():
     _render_webhook_manager()
     _render_sla_manager()
     _render_support_agents_and_workload()
+    _render_knowledge_studio()
     _render_ops_metrics()
 
 
