@@ -3313,3 +3313,273 @@ def test_get_agent_scorecards_route(monkeypatch):
     assert data["scorecards"][0]["agent_id"] == "agent_sarah"
 
 
+def test_knowledge_gap_routes(monkeypatch):
+    fake_gap = {
+        "id": 1,
+        "query": "How to reserve freight elevator?",
+        "normalized_query": "how to reserve freight elevator",
+        "category": "policy",
+        "source_type": "manual",
+        "session_id": "sess-1",
+        "frequency": 1,
+        "priority": "high",
+        "status": "open",
+        "linked_article_id": None,
+        "notes": "urgent",
+        "created_at": "2026-10-13 10:00:00",
+        "updated_at": "2026-10-13 10:00:00",
+    }
+    monkeypatch.setattr(main.db_utils, "record_knowledge_gap", lambda **kwargs: fake_gap)
+    monkeypatch.setattr(main.db_utils, "list_knowledge_gaps", lambda **kwargs: ([fake_gap], 1))
+    monkeypatch.setattr(
+        main.db_utils,
+        "get_knowledge_gap",
+        lambda gid: fake_gap if gid == 1 else None,
+    )
+    monkeypatch.setattr(
+        main.db_utils,
+        "update_knowledge_gap",
+        lambda gap_id, **kw: {**fake_gap, **{k: v for k, v in kw.items() if v is not None}}
+        if gap_id == 1
+        else None,
+    )
+    monkeypatch.setattr(main.db_utils, "delete_knowledge_gap", lambda gid: gid == 1)
+
+    # 1. Create gap
+    payload = {"query": "How to reserve freight elevator?", "category": "policy"}
+    res = client.post("/knowledge/gaps", json=payload)
+    assert res.status_code == HTTP_CREATED
+    assert res.json()["id"] == 1
+
+    # 2. List gaps
+    res = client.get("/knowledge/gaps?status=open")
+    assert res.status_code == HTTP_OK
+    assert res.json()["total"] == 1
+
+    # 3. Get gap
+    res = client.get("/knowledge/gaps/1")
+    assert res.status_code == HTTP_OK
+    assert res.json()["query"] == "How to reserve freight elevator?"
+
+    # 4. Get 404
+    res = client.get("/knowledge/gaps/999")
+    assert res.status_code == HTTP_NOT_FOUND
+
+    # 5. Patch gap
+    res = client.patch("/knowledge/gaps/1", json={"status": "resolved"})
+    assert res.status_code == HTTP_OK
+    assert res.json()["status"] == "resolved"
+
+    # 6. Delete gap
+    res = client.delete("/knowledge/gaps/1")
+    assert res.status_code == HTTP_OK
+    assert res.json()["status"] == "deleted"
+
+
+def test_scan_knowledge_gaps_route(monkeypatch):
+    fake_scan = {
+        "scanned_sessions_count": 25,
+        "gaps_created": 3,
+        "gaps_incremented": 1,
+        "total_gaps_identified": 4,
+        "gaps": [
+            {
+                "id": 2,
+                "query": "Where is the pet wash station?",
+                "normalized_query": "where is the pet wash station",
+                "category": "general",
+                "source_type": "low_csat",
+                "session_id": "sess-2",
+                "frequency": 1,
+                "priority": "medium",
+                "status": "open",
+                "linked_article_id": None,
+                "notes": "Low CSAT",
+                "created_at": "2026-10-13 11:00:00",
+                "updated_at": "2026-10-13 11:00:00",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        main.knowledge_base,
+        "scan_sessions_for_knowledge_gaps",
+        lambda limit=100: fake_scan,
+    )
+
+    res = client.post("/knowledge/gaps/scan?limit=50")
+    assert res.status_code == HTTP_OK
+    expected_scanned = 25
+    assert res.json()["scanned_sessions_count"] == expected_scanned
+    expected_total_identified = 4
+    assert res.json()["total_gaps_identified"] == expected_total_identified
+
+
+def test_knowledge_article_routes(monkeypatch):
+    target_aid = 10
+    fake_art = {
+        "id": target_aid,
+        "title": "Freight Elevator Booking Policy",
+        "category": "policy",
+        "question_pattern": "How to reserve elevator",
+        "content_markdown": "# Freight Elevator\n\nReserve 48h prior.",
+        "tags": ["elevator", "logistics"],
+        "source_session_id": "sess-1",
+        "source_gap_id": 1,
+        "status": "draft",
+        "author": "agent_dan",
+        "published_file_id": None,
+        "published_collection": None,
+        "created_at": "2026-10-13 10:00:00",
+        "updated_at": "2026-10-13 10:00:00",
+    }
+    monkeypatch.setattr(main.db_utils, "create_knowledge_article", lambda **kwargs: fake_art)
+    monkeypatch.setattr(main.db_utils, "list_knowledge_articles", lambda **kwargs: ([fake_art], 1))
+    monkeypatch.setattr(
+        main.db_utils,
+        "get_knowledge_article",
+        lambda aid: fake_art if aid == target_aid else None,
+    )
+    monkeypatch.setattr(
+        main.db_utils,
+        "update_knowledge_article",
+        lambda article_id, **kw: {**fake_art, **{k: v for k, v in kw.items() if v is not None}}
+        if article_id == target_aid
+        else None,
+    )
+    monkeypatch.setattr(
+        main.db_utils,
+        "delete_knowledge_article",
+        lambda aid: aid == target_aid,
+    )
+
+    # 1. Create article
+    art_payload = {
+        "title": "Freight Elevator Booking Policy",
+        "content_markdown": "# Freight Elevator",
+        "category": "policy",
+    }
+    res = client.post("/knowledge/articles", json=art_payload)
+    assert res.status_code == HTTP_CREATED
+    expected_art_id = target_aid
+    assert res.json()["id"] == expected_art_id
+
+    # 2. List articles
+    res = client.get("/knowledge/articles?category=policy")
+    assert res.status_code == HTTP_OK
+    assert res.json()["total"] == 1
+
+    # 3. Get article
+    res = client.get("/knowledge/articles/10")
+    assert res.status_code == HTTP_OK
+    assert res.json()["title"] == "Freight Elevator Booking Policy"
+
+    # 4. Patch article
+    res = client.patch("/knowledge/articles/10", json={"status": "published"})
+    assert res.status_code == HTTP_OK
+    assert res.json()["status"] == "published"
+
+    # 5. Delete article
+    res = client.delete("/knowledge/articles/10")
+    assert res.status_code == HTTP_OK
+    assert res.json()["status"] == "deleted"
+
+
+def test_session_draft_article_route(monkeypatch):
+    fake_art = {
+        "id": 11,
+        "title": "FAQ: Move-in procedures",
+        "category": "lease",
+        "question_pattern": "What are move in procedures?",
+        "content_markdown": "# Move In FAQ",
+        "tags": ["move_in"],
+        "source_session_id": "sess-3",
+        "source_gap_id": None,
+        "status": "draft",
+        "author": "agent_alice",
+        "published_file_id": None,
+        "published_collection": None,
+        "created_at": "2026-10-13 12:00:00",
+        "updated_at": "2026-10-13 12:00:00",
+    }
+    monkeypatch.setattr(main, "_get_session_summary_or_404", lambda sid: {"session_id": sid})
+    monkeypatch.setattr(
+        main.knowledge_base,
+        "synthesize_article_from_session",
+        lambda **kwargs: fake_art,
+    )
+
+    res = client.post("/sessions/sess-3/draft-article", json={"author": "agent_alice"})
+    assert res.status_code == HTTP_CREATED
+    expected_synth_id = 11
+    assert res.json()["id"] == expected_synth_id
+    assert res.json()["source_session_id"] == "sess-3"
+
+
+def test_publish_article_and_analytics_routes(monkeypatch):
+    fake_art = {
+        "id": 10,
+        "title": "Freight Elevator Booking Policy",
+        "category": "policy",
+        "question_pattern": "How to reserve elevator",
+        "content_markdown": "# Freight Elevator",
+        "tags": ["elevator"],
+        "source_session_id": "sess-1",
+        "source_gap_id": 1,
+        "status": "published",
+        "author": "agent_dan",
+        "published_file_id": 50,
+        "published_collection": "default",
+        "created_at": "2026-10-13 10:00:00",
+        "updated_at": "2026-10-13 10:00:00",
+    }
+    fake_pub_res = {
+        "article": fake_art,
+        "file_id": 50,
+        "collection": "default",
+        "indexed_in_vectorstore": True,
+        "linked_gap_resolved": True,
+    }
+    monkeypatch.setattr(
+        main.knowledge_base,
+        "publish_knowledge_article",
+        lambda **kwargs: fake_pub_res,
+    )
+
+    res = client.post("/knowledge/articles/10/publish", json={"collection": "default"})
+    assert res.status_code == HTTP_OK
+    expected_doc_id = 50
+    assert res.json()["file_id"] == expected_doc_id
+    assert res.json()["linked_gap_resolved"] is True
+
+    fake_analytics = {
+        "total_gaps": 8,
+        "open_gaps_count": 3,
+        "drafting_gaps_count": 1,
+        "resolved_gaps_count": 4,
+        "dismissed_gaps_count": 0,
+        "gap_resolution_rate": 50.0,
+        "total_gap_queries_logged": 12,
+        "recurring_queries_count": 4,
+        "category_distribution": {"policy": 2, "maintenance": 1},
+        "priority_distribution": {"high": 2, "medium": 1},
+        "total_articles": 5,
+        "draft_articles_count": 1,
+        "published_articles_count": 4,
+        "archived_articles_count": 0,
+        "estimated_deflected_queries": 24,
+    }
+    monkeypatch.setattr(
+        main.knowledge_base,
+        "get_knowledge_base_analytics",
+        lambda: fake_analytics,
+    )
+
+    res_an = client.get("/knowledge/analytics")
+    assert res_an.status_code == HTTP_OK
+    expected_tot_gaps = 8
+    assert res_an.json()["total_gaps"] == expected_tot_gaps
+    expected_deflected = 24
+    assert res_an.json()["estimated_deflected_queries"] == expected_deflected
+
+
+
