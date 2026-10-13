@@ -2382,3 +2382,136 @@ def test_render_csat_and_agent_scorecards_panel(monkeypatch):
     assert updated_reviews[0]["review_status"] == "reviewed"
     assert updated_reviews[0]["reviewer_notes"] == "Followed up with tenant."
     assert st.reruns == 1
+
+
+def test_render_session_metadata_actions_draft_article(monkeypatch):
+    st = FakeStreamlit(buttons={"btn_draft_kb_sess-kb-1": True})
+    monkeypatch.setattr(sidebar, "st", st)
+
+    drafted = []
+
+    def fake_draft(sid):
+        drafted.append(sid)
+        return {"id": 88, "title": "Draft FAQ"}
+
+    monkeypatch.setattr(sidebar, "draft_article_from_session", fake_draft)
+
+    sidebar._render_session_metadata_actions(
+        selected="sess-kb-1",
+        new_status="resolved",
+        new_priority="high",
+        new_tags_str="faq, billing",
+        new_notes="Tenant question resolved",
+    )
+
+    assert drafted == ["sess-kb-1"]
+    assert any("Article #88 drafted!" in s for s in st.successes)
+    assert st.reruns == 1
+
+
+def test_render_knowledge_studio_kpis_and_scanner(monkeypatch):
+    st = FakeStreamlit(buttons={"btn_scan_kb_gaps": True})
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_knowledge_analytics",
+        lambda: {
+            "total_gaps": 5,
+            "gap_resolution_rate": 60.0,
+            "published_articles_count": 3,
+            "estimated_deflected_queries": 12,
+        },
+    )
+    scanned = []
+
+    def fake_scan():
+        scanned.append(True)
+        return {"total_gaps_identified": 2, "scanned_sessions_count": 10}
+
+    monkeypatch.setattr(sidebar, "scan_knowledge_gaps", fake_scan)
+    monkeypatch.setattr(sidebar, "list_knowledge_gaps", lambda **kwargs: ([], 0))
+    monkeypatch.setattr(sidebar, "list_knowledge_articles", lambda **kwargs: ([], 0))
+
+    sidebar._render_knowledge_studio()
+
+    assert len(scanned) == 1
+    assert any("Total Gaps" in str(c.args) for c in st.calls if c.fn == "metric")
+    assert any("Resolution Rate" in str(c.args) for c in st.calls if c.fn == "metric")
+    assert any("Scan complete: 2 gaps found across 10 sessions." in s for s in st.successes)
+    assert st.reruns == 1
+
+
+def test_render_knowledge_gaps_queue_dismiss(monkeypatch):
+    st = FakeStreamlit(buttons={"btn_dismiss_gap_12": True})
+    monkeypatch.setattr(sidebar, "st", st)
+
+    dismissed = []
+
+    def fake_update_gap(gid, **kwargs):
+        dismissed.append((gid, kwargs))
+        return {"id": gid, **kwargs}
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_knowledge_gaps",
+        lambda **kwargs: (
+            [
+                {
+                    "id": 12,
+                    "query": "how to pay rent online",
+                    "category": "billing",
+                    "priority": "high",
+                    "frequency": 3,
+                    "status": "open",
+                }
+            ],
+            1,
+        ),
+    )
+    monkeypatch.setattr(sidebar, "update_knowledge_gap", fake_update_gap)
+
+    sidebar._render_knowledge_gaps_queue()
+
+    assert len(dismissed) == 1
+    assert dismissed[0] == (12, {"status": "dismissed"})
+    assert st.reruns == 1
+
+
+def test_render_knowledge_articles_publisher(monkeypatch):
+    st = FakeStreamlit(
+        values={"pub_col_7": "leasing_kb"},
+        buttons={"btn_pub_art_7": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    published = []
+
+    def fake_publish(aid, **kwargs):
+        published.append((aid, kwargs))
+        return {"article_id": aid, "document_id": "art-doc-7", "status": "published"}
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_knowledge_articles",
+        lambda **kwargs: (
+            [
+                {
+                    "id": 7,
+                    "title": "Online Rent Payment FAQ",
+                    "status": "draft",
+                    "category": "billing",
+                    "author": "agent_auto",
+                }
+            ],
+            1,
+        ),
+    )
+    monkeypatch.setattr(sidebar, "publish_knowledge_article", fake_publish)
+
+    sidebar._render_knowledge_articles_publisher()
+
+    assert len(published) == 1
+    assert published[0] == (7, {"collection": "leasing_kb"})
+    assert any("Article #7 published to 'leasing_kb'!" in s for s in st.successes)
+    assert st.reruns == 1

@@ -12,7 +12,17 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from api import assignment, business_hours, csat, macro_suggestions, macros, sla, webhooks
+from api import (
+    assignment,
+    business_hours,
+    csat,
+    db_utils,
+    knowledge_base,
+    macro_suggestions,
+    macros,
+    sla,
+    webhooks,
+)
 from api.chroma_utils import (
     ChunkingOptions,
     ChunkingStrategy,
@@ -147,6 +157,18 @@ from api.pydantic_models import (
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
     HealthResponse,
+    KnowledgeArticleCreateRequest,
+    KnowledgeArticleItem,
+    KnowledgeArticleListResponse,
+    KnowledgeArticlePublishRequest,
+    KnowledgeArticlePublishResponse,
+    KnowledgeArticleUpdateRequest,
+    KnowledgeBaseAnalyticsResponse,
+    KnowledgeGapCreateRequest,
+    KnowledgeGapItem,
+    KnowledgeGapListResponse,
+    KnowledgeGapScanResponse,
+    KnowledgeGapUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -170,6 +192,7 @@ from api.pydantic_models import (
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
+    SessionDraftArticleRequest,
     SessionInfo,
     SessionMacroSuggestionsResponse,
     SessionSearchResponse,
@@ -2301,4 +2324,264 @@ def get_session_assignment_history_route(session_id: str, limit: int = 50):
 def get_business_hours_status_route():
     status = business_hours.get_business_hours_status()
     return BusinessHoursStatusResponse(**status)
+
+
+# ============================================================================
+# Knowledge Base Gap Detection, FAQ Article Drafting & Deflection Routes
+# ============================================================================
+
+
+@app.post("/knowledge/gaps", response_model=KnowledgeGapItem, status_code=201)
+def create_knowledge_gap_route(gap_in: KnowledgeGapCreateRequest):
+    """Log or increment a detected knowledge base gap."""
+    try:
+        gap = db_utils.record_knowledge_gap(
+            query=gap_in.query,
+            category=gap_in.category or "general",
+            source_type=gap_in.source_type or "manual",
+            session_id=gap_in.session_id,
+            priority=gap_in.priority or "medium",
+            notes=gap_in.notes or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not gap.get("deduplicated"):
+        knowledge_base.dispatch_gap_detected_alert_if_needed(gap)
+
+    return KnowledgeGapItem(**gap)
+
+
+@app.get("/knowledge/gaps", response_model=KnowledgeGapListResponse)
+def list_knowledge_gaps_route(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    source_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List knowledge gaps with filtering and pagination."""
+    gaps, total = db_utils.list_knowledge_gaps(
+        status=status,
+        category=category,
+        priority=priority,
+        source_type=source_type,
+        limit=limit,
+        offset=offset,
+    )
+    return KnowledgeGapListResponse(
+        items=[KnowledgeGapItem(**g) for g in gaps],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.post("/knowledge/gaps/scan", response_model=KnowledgeGapScanResponse)
+def scan_knowledge_gaps_route(limit: int = 100):
+    """Scan support sessions and low-CSAT feedback to automatically identify gaps."""
+    res = knowledge_base.scan_sessions_for_knowledge_gaps(limit=limit)
+    return KnowledgeGapScanResponse(
+        scanned_sessions_count=res["scanned_sessions_count"],
+        gaps_created=res["gaps_created"],
+        gaps_incremented=res["gaps_incremented"],
+        total_gaps_identified=res["total_gaps_identified"],
+        gaps=[KnowledgeGapItem(**g) for g in res["gaps"]],
+    )
+
+
+@app.get("/knowledge/gaps/{gap_id}", response_model=KnowledgeGapItem)
+def get_knowledge_gap_route(gap_id: int):
+    """Retrieve details of a knowledge gap by ID."""
+    gap = db_utils.get_knowledge_gap(gap_id)
+    if gap is None:
+        raise HTTPException(status_code=404, detail=f"Knowledge gap #{gap_id} not found.")
+    return KnowledgeGapItem(**gap)
+
+
+@app.patch("/knowledge/gaps/{gap_id}", response_model=KnowledgeGapItem)
+def update_knowledge_gap_route(gap_id: int, gap_in: KnowledgeGapUpdateRequest):
+    """Update knowledge gap status, priority, category, linked article, or notes."""
+    try:
+        updated = db_utils.update_knowledge_gap(
+            gap_id=gap_id,
+            status=gap_in.status,
+            priority=gap_in.priority,
+            category=gap_in.category,
+            linked_article_id=gap_in.linked_article_id,
+            notes=gap_in.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Knowledge gap #{gap_id} not found.")
+    return KnowledgeGapItem(**updated)
+
+
+@app.delete("/knowledge/gaps/{gap_id}")
+def delete_knowledge_gap_route(gap_id: int):
+    """Delete a knowledge gap record."""
+    deleted = db_utils.delete_knowledge_gap(gap_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Knowledge gap #{gap_id} not found.")
+    return {"status": "deleted", "gap_id": gap_id}
+
+
+@app.post("/knowledge/articles", response_model=KnowledgeArticleItem, status_code=201)
+def create_knowledge_article_route(article_in: KnowledgeArticleCreateRequest):
+    """Create a new knowledge base article draft."""
+    try:
+        article = db_utils.create_knowledge_article(
+            title=article_in.title,
+            content_markdown=article_in.content_markdown,
+            category=article_in.category or "general",
+            question_pattern=article_in.question_pattern or "",
+            tags=article_in.tags or [],
+            source_session_id=article_in.source_session_id,
+            source_gap_id=article_in.source_gap_id,
+            author=article_in.author or "support_agent",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return KnowledgeArticleItem(**article)
+
+
+@app.post(
+    "/sessions/{session_id}/draft-article",
+    response_model=KnowledgeArticleItem,
+    status_code=201,
+)
+def draft_article_from_session_route(
+    session_id: str,
+    req: SessionDraftArticleRequest | None = None,
+):
+    """Synthesize a structured Markdown FAQ/article draft from a support session."""
+    _require_session_id(session_id)
+    _get_session_summary_or_404(session_id)
+
+    author = req.author if req and req.author else "support_agent"
+    category = req.category if req else None
+    link_gap_id = req.link_gap_id if req else None
+
+    try:
+        article = knowledge_base.synthesize_article_from_session(
+            session_id=session_id,
+            author=author,
+            category=category,
+            link_gap_id=link_gap_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return KnowledgeArticleItem(**article)
+
+
+@app.get("/knowledge/articles", response_model=KnowledgeArticleListResponse)
+def list_knowledge_articles_route(
+    status: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List knowledge articles with status/category/keyword filters."""
+    articles, total = db_utils.list_knowledge_articles(
+        status=status,
+        category=category,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return KnowledgeArticleListResponse(
+        items=[KnowledgeArticleItem(**a) for a in articles],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/knowledge/articles/{article_id}", response_model=KnowledgeArticleItem)
+def get_knowledge_article_route(article_id: int):
+    """Retrieve details of a knowledge base article by ID."""
+    article = db_utils.get_knowledge_article(article_id)
+    if article is None:
+        raise HTTPException(status_code=404, detail=f"Knowledge article #{article_id} not found.")
+    return KnowledgeArticleItem(**article)
+
+
+@app.patch("/knowledge/articles/{article_id}", response_model=KnowledgeArticleItem)
+def update_knowledge_article_route(article_id: int, article_in: KnowledgeArticleUpdateRequest):
+    """Update knowledge base article fields."""
+    try:
+        updated = db_utils.update_knowledge_article(
+            article_id=article_id,
+            title=article_in.title,
+            content_markdown=article_in.content_markdown,
+            category=article_in.category,
+            question_pattern=article_in.question_pattern,
+            tags=article_in.tags,
+            status=article_in.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Knowledge article #{article_id} not found.")
+    return KnowledgeArticleItem(**updated)
+
+
+@app.delete("/knowledge/articles/{article_id}")
+def delete_knowledge_article_route(article_id: int):
+    """Delete a knowledge base article."""
+    deleted = db_utils.delete_knowledge_article(article_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Knowledge article #{article_id} not found.")
+    return {"status": "deleted", "article_id": article_id}
+
+
+@app.post(
+    "/knowledge/articles/{article_id}/publish",
+    response_model=KnowledgeArticlePublishResponse,
+)
+def publish_knowledge_article_route(
+    article_id: int,
+    pub_in: KnowledgeArticlePublishRequest | None = None,
+):
+    """Publish a knowledge base article directly into RAG document store and resolve linked gaps."""
+    collection = pub_in.collection if pub_in else "default"
+    chunking_strategy = pub_in.chunking_strategy if pub_in else "markdown"
+    chunk_size = pub_in.chunk_size if pub_in else 1000
+    chunk_overlap = pub_in.chunk_overlap if pub_in else 200
+
+    try:
+        res = knowledge_base.publish_knowledge_article(
+            article_id=article_id,
+            collection=collection,
+            chunking_strategy=chunking_strategy,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+    except ValueError as exc:
+        err_msg = str(exc)
+        status_code = 404 if "not found" in err_msg.lower() else 422
+        raise HTTPException(status_code=status_code, detail=err_msg) from exc
+
+    return KnowledgeArticlePublishResponse(
+        article=KnowledgeArticleItem(**res["article"]),
+        file_id=res["file_id"],
+        collection=res["collection"],
+        indexed_in_vectorstore=res["indexed_in_vectorstore"],
+        linked_gap_resolved=res["linked_gap_resolved"],
+    )
+
+
+@app.get("/knowledge/analytics", response_model=KnowledgeBaseAnalyticsResponse)
+def get_knowledge_analytics_route():
+    """Retrieve knowledge base gap and deflection analytics."""
+    analytics = knowledge_base.get_knowledge_base_analytics()
+    return KnowledgeBaseAnalyticsResponse(**analytics)
+
 

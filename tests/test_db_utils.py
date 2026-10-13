@@ -18,6 +18,8 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_sla_policies()
     db_utils.create_support_agents()
     db_utils.create_session_assignment_history()
+    db_utils.create_knowledge_gaps()
+    db_utils.create_knowledge_articles()
     return db_path
 
 
@@ -2013,5 +2015,189 @@ def test_get_agent_performance_analytics(monkeypatch, tmp_path):
     assert bob_card["satisfaction_rate"] == 0.0
 
 
+def test_knowledge_gaps_crud_and_deduplication(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    gap1 = db_utils.record_knowledge_gap(
+        query="How do I reserve the freight elevator for moving?",
+        category="policy",
+        source_type="unanswered_query",
+        session_id="sess-gap-1",
+        priority="low",
+        notes="Tenant asked about freight elevator hours.",
+    )
+    assert gap1["id"] > 0
+    assert gap1["deduplicated"] is False
+    assert gap1["frequency"] == 1
+    assert gap1["category"] == "policy"
+    assert gap1["priority"] == "low"
+    assert gap1["status"] == "open"
+    assert gap1["normalized_query"] == "how do i reserve the freight elevator for moving"
+
+    # Duplicate query with different casing and punctuation increments frequency
+    gap2 = db_utils.record_knowledge_gap(
+        query="how do i reserve the freight elevator for moving?!",
+        category="policy",
+        source_type="low_csat",
+        session_id="sess-gap-2",
+        priority="medium",
+    )
+    assert gap2["id"] == gap1["id"]
+    assert gap2["deduplicated"] is True
+    assert gap2["frequency"] == 2  # noqa: PLR2004
+    assert gap2["priority"] == "medium"
+    assert gap2["session_id"] == "sess-gap-2"
+
+    # 3rd hit auto-promotes priority to high
+    gap3 = db_utils.record_knowledge_gap(
+        query="How do I reserve the freight elevator for moving",
+        category="policy",
+        priority="medium",
+    )
+    assert gap3["id"] == gap1["id"]
+    assert gap3["frequency"] == 3  # noqa: PLR2004
+    assert gap3["priority"] == "high"
+
+    # List & filter
+    items, total = db_utils.list_knowledge_gaps(status="open", category="policy")
+    assert total == 1
+    assert items[0]["id"] == gap1["id"]
+
+    # Update status and notes
+    updated = db_utils.update_knowledge_gap(
+        gap1["id"],
+        status="resolved",
+        linked_article_id=42,
+        notes="Created freight elevator FAQ article.",
+    )
+    assert updated is not None
+    assert updated["status"] == "resolved"
+    assert updated["linked_article_id"] == 42  # noqa: PLR2004
+    assert updated["notes"] == "Created freight elevator FAQ article."
+
+    # Once resolved, a new identical query opens a fresh gap
+    gap4 = db_utils.record_knowledge_gap(
+        query="How do I reserve the freight elevator for moving?",
+        category="policy",
+    )
+    assert gap4["id"] != gap1["id"]
+    assert gap4["deduplicated"] is False
+    assert gap4["frequency"] == 1
+
+    # Delete
+    assert db_utils.delete_knowledge_gap(gap4["id"]) is True
+    assert db_utils.get_knowledge_gap(gap4["id"]) is None
+    assert db_utils.delete_knowledge_gap(gap4["id"]) is False
+    assert db_utils.update_knowledge_gap(99999, status="resolved") is None
 
 
+def test_knowledge_gaps_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.record_knowledge_gap("")
+
+    with pytest.raises(ValueError, match="exceeds max length"):
+        db_utils.record_knowledge_gap("q" * 501)
+
+    with pytest.raises(ValueError, match="Invalid knowledge category"):
+        db_utils.record_knowledge_gap("Valid query", category="invalid_cat")
+
+    with pytest.raises(ValueError, match="Invalid knowledge gap source_type"):
+        db_utils.record_knowledge_gap("Valid query", source_type="invalid_src")
+
+    with pytest.raises(ValueError, match="Invalid knowledge gap status"):
+        db_utils.normalize_knowledge_gap_status("invalid_status")
+
+    with pytest.raises(ValueError, match="notes exceed max length"):
+        db_utils.record_knowledge_gap("Valid query", notes="n" * 2001)
+
+
+def test_knowledge_articles_crud_and_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    art1 = db_utils.create_knowledge_article(
+        title="Freight Elevator Reservation Policy",
+        content_markdown="# Freight Elevator\nReserve 48 hours in advance via the resident portal.",
+        category="policy",
+        question_pattern="How do I reserve the freight elevator?",
+        tags=["elevator", "moving", "policy", "elevator"],
+        source_session_id="sess-art-1",
+        source_gap_id=10,
+        status="draft",
+        author="agent_sarah",
+    )
+    assert art1["id"] > 0
+    assert art1["title"] == "Freight Elevator Reservation Policy"
+    assert art1["category"] == "policy"
+    assert art1["tags"] == ["elevator", "moving", "policy"]
+    assert art1["status"] == "draft"
+    assert art1["author"] == "agent_sarah"
+    assert art1["published_file_id"] is None
+
+    art2 = db_utils.create_knowledge_article(
+        title="Emergency HVAC Shutdown Steps",
+        content_markdown=(
+            "# HVAC Emergency\nLocate the breaker panel and contact Tier 2 maintenance."
+        ),
+        category="maintenance",
+        tags="hvac, maintenance",
+        status="published",
+    )
+    assert art2["tags"] == ["hvac", "maintenance"]
+
+    # List & filter
+    drafts, tot_drafts = db_utils.list_knowledge_articles(status="draft")
+    assert tot_drafts == 1
+    assert drafts[0]["id"] == art1["id"]
+
+    search_hits, tot_search = db_utils.list_knowledge_articles(search="breaker panel")
+    assert tot_search == 1
+    assert search_hits[0]["id"] == art2["id"]
+
+    # Update article
+    updated = db_utils.update_knowledge_article(
+        art1["id"],
+        title="Updated Freight Elevator Guide",
+        status="published",
+        published_file_id=77,
+        published_collection="default",
+        tags=["elevator", "moving"],
+    )
+    assert updated is not None
+    assert updated["title"] == "Updated Freight Elevator Guide"
+    assert updated["status"] == "published"
+    assert updated["published_file_id"] == 77  # noqa: PLR2004
+    assert updated["published_collection"] == "default"
+    assert updated["tags"] == ["elevator", "moving"]
+
+    # Delete article
+    assert db_utils.delete_knowledge_article(art1["id"]) is True
+    assert db_utils.get_knowledge_article(art1["id"]) is None
+    assert db_utils.delete_knowledge_article(art1["id"]) is False
+    assert db_utils.update_knowledge_article(99999, title="Nope") is None
+
+
+def test_knowledge_articles_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="title must not be blank"):
+        db_utils.create_knowledge_article("", "Valid content")
+
+    with pytest.raises(ValueError, match="title exceeds max length"):
+        db_utils.create_knowledge_article("t" * 201, "Valid content")
+
+    with pytest.raises(ValueError, match="content_markdown must not be blank"):
+        db_utils.create_knowledge_article("Valid Title", "   ")
+
+    with pytest.raises(ValueError, match="content_markdown exceeds max length"):
+        db_utils.create_knowledge_article("Valid Title", "c" * 15001)
+
+    with pytest.raises(ValueError, match="Invalid knowledge article status"):
+        db_utils.create_knowledge_article("Valid Title", "Valid content", status="invalid")
+
+    with pytest.raises(ValueError, match="tags exceed max length"):
+        db_utils.create_knowledge_article("Valid Title", "Valid content", tags="t" * 305)
+
+    with pytest.raises(ValueError, match="author exceeds max length"):
+        db_utils.create_knowledge_article("Valid Title", "Valid content", author="a" * 101)

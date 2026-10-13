@@ -20,6 +20,18 @@ from api.pydantic_models import (
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
+    KnowledgeArticleCreateRequest,
+    KnowledgeArticleItem,
+    KnowledgeArticleListResponse,
+    KnowledgeArticlePublishRequest,
+    KnowledgeArticlePublishResponse,
+    KnowledgeArticleUpdateRequest,
+    KnowledgeBaseAnalyticsResponse,
+    KnowledgeGapCreateRequest,
+    KnowledgeGapItem,
+    KnowledgeGapListResponse,
+    KnowledgeGapScanResponse,
+    KnowledgeGapUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -38,6 +50,7 @@ from api.pydantic_models import (
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
+    SessionDraftArticleRequest,
     SessionInfo,
     SessionMacroSuggestionsResponse,
     SessionSLAStatusResponse,
@@ -1176,6 +1189,121 @@ def test_csat_review_and_scorecard_models():
     queue_resp = FeedbackReviewQueueResponse(items=[item], total=1, limit=50, offset=0)
     assert queue_resp.total == 1
     assert queue_resp.items[0].score == 1
+
+
+def test_knowledge_base_pydantic_models():
+    expected_freq = 3
+    expected_total_gaps = 3
+    expected_article_id = 42
+    expected_chunk_size = 800
+    expected_file_id = 12
+    expected_gaps_count = 5
+    expected_resolution_rate = 40.0
+
+    # 1. KnowledgeGapCreateRequest valid & validation error
+    gap_req = KnowledgeGapCreateRequest(
+        query="  How to reserve freight elevator?  ",
+        category="policy",
+        source_type="unanswered_query",
+        session_id="sess-100",
+        priority="high",
+        notes="Recurring inquiry",
+    )
+    assert gap_req.query == "  How to reserve freight elevator?  "
+    assert gap_req.category == "policy"
+
+    with pytest.raises(ValidationError):
+        KnowledgeGapCreateRequest(query="")
+
+    # 2. KnowledgeGapUpdateRequest
+    up_req = KnowledgeGapUpdateRequest(status="resolved", priority="low", notes="Fixed")
+    assert up_req.status == "resolved"
+    assert up_req.priority == "low"
+
+    # 3. KnowledgeGapItem and KnowledgeGapListResponse
+    gap_item = KnowledgeGapItem(
+        id=1,
+        query="How to reserve freight elevator?",
+        normalized_query="how to reserve freight elevator",
+        category="general",
+        frequency=expected_freq,
+        priority="high",
+        status="open",
+    )
+    list_resp = KnowledgeGapListResponse(items=[gap_item], total=1)
+    assert list_resp.total == 1
+    assert list_resp.items[0].frequency == expected_freq
+
+    # 4. KnowledgeGapScanResponse
+    scan_resp = KnowledgeGapScanResponse(
+        scanned_sessions_count=10,
+        gaps_created=2,
+        gaps_incremented=1,
+        total_gaps_identified=expected_total_gaps,
+        gaps=[gap_item],
+    )
+    assert scan_resp.total_gaps_identified == expected_total_gaps
+
+    # 5. KnowledgeArticleCreateRequest and KnowledgeArticleUpdateRequest
+    art_req = KnowledgeArticleCreateRequest(
+        title="Freight Elevator Guide",
+        content_markdown="# Freight Elevator\n\nBooking guide.",
+        category="policy",
+        tags=["elevator", "moving"],
+    )
+    assert art_req.category == "policy"
+
+    art_up = KnowledgeArticleUpdateRequest(
+        title="Updated Guide",
+        status="published",
+    )
+    assert art_up.status == "published"
+
+    # 6. KnowledgeArticleItem and KnowledgeArticleListResponse
+    art_item = KnowledgeArticleItem(
+        id=expected_article_id,
+        title="Freight Elevator Guide",
+        category="policy",
+        content_markdown="# Guide",
+        status="draft",
+    )
+    art_list = KnowledgeArticleListResponse(items=[art_item], total=1)
+    assert art_list.total == 1
+    assert art_list.items[0].id == expected_article_id
+
+    # 7. KnowledgeArticlePublishRequest & Response
+    pub_req = KnowledgeArticlePublishRequest(collection="policies", chunk_size=expected_chunk_size)
+    assert pub_req.chunk_size == expected_chunk_size
+
+    pub_resp = KnowledgeArticlePublishResponse(
+        article=art_item,
+        file_id=expected_file_id,
+        collection="policies",
+        indexed_in_vectorstore=True,
+        linked_gap_resolved=True,
+    )
+    assert pub_resp.file_id == expected_file_id
+    assert pub_resp.indexed_in_vectorstore is True
+
+    # 8. SessionDraftArticleRequest
+    draft_req = SessionDraftArticleRequest(author="operator_dan", link_gap_id=1)
+    assert draft_req.author == "operator_dan"
+    assert draft_req.link_gap_id == 1
+
+    # 9. KnowledgeBaseAnalyticsResponse
+    analytics_resp = KnowledgeBaseAnalyticsResponse(
+        total_gaps=expected_gaps_count,
+        open_gaps_count=2,
+        drafting_gaps_count=1,
+        resolved_gaps_count=2,
+        gap_resolution_rate=expected_resolution_rate,
+        total_articles=3,
+        published_articles_count=2,
+        estimated_deflected_queries=15,
+    )
+    assert analytics_resp.total_gaps == expected_gaps_count
+    assert analytics_resp.gap_resolution_rate == expected_resolution_rate
+
 
 
 

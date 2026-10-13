@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from collections import Counter
 from contextlib import closing
@@ -278,7 +279,79 @@ VALID_WEBHOOK_EVENTS = {
     "sla.breached",
     "session.assigned",
     "session.tier_escalated",
+    "knowledge.gap_detected",
+    "knowledge.article_published",
 }
+
+_CREATE_KNOWLEDGE_GAPS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS knowledge_gaps ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "query TEXT NOT NULL, "
+    "normalized_query TEXT NOT NULL, "
+    "category TEXT NOT NULL DEFAULT 'general', "
+    "source_type TEXT NOT NULL DEFAULT 'unanswered_query', "
+    "session_id TEXT DEFAULT NULL, "
+    "frequency INTEGER NOT NULL DEFAULT 1, "
+    "priority TEXT NOT NULL DEFAULT 'medium', "
+    "status TEXT NOT NULL DEFAULT 'open', "
+    "linked_article_id INTEGER DEFAULT NULL, "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_KNOWLEDGE_GAP_NORM_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_gaps_norm_query "
+    "ON knowledge_gaps(normalized_query)"
+)
+
+VALID_KNOWLEDGE_GAP_STATUSES = {"open", "drafting", "resolved", "dismissed"}
+DEFAULT_KNOWLEDGE_GAP_STATUS = "open"
+VALID_KNOWLEDGE_GAP_SOURCES = {
+    "unanswered_query",
+    "low_csat",
+    "escalated_session",
+    "manual",
+}
+DEFAULT_KNOWLEDGE_GAP_SOURCE = "unanswered_query"
+VALID_KNOWLEDGE_CATEGORIES = {
+    "general",
+    "maintenance",
+    "lease",
+    "billing",
+    "policy",
+}
+DEFAULT_KNOWLEDGE_CATEGORY = "general"
+MAX_KNOWLEDGE_QUERY_LENGTH = 500
+MAX_KNOWLEDGE_NOTES_LENGTH = 2000
+
+_CREATE_KNOWLEDGE_ARTICLES_TABLE = (
+    "CREATE TABLE IF NOT EXISTS knowledge_articles ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "title TEXT NOT NULL, "
+    "category TEXT NOT NULL DEFAULT 'general', "
+    "question_pattern TEXT NOT NULL DEFAULT '', "
+    "content_markdown TEXT NOT NULL, "
+    "tags TEXT NOT NULL DEFAULT '', "
+    "source_session_id TEXT DEFAULT NULL, "
+    "source_gap_id INTEGER DEFAULT NULL, "
+    "status TEXT NOT NULL DEFAULT 'draft', "
+    "author TEXT NOT NULL DEFAULT 'support_agent', "
+    "published_file_id INTEGER DEFAULT NULL, "
+    "published_collection TEXT DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_articles_category "
+    "ON knowledge_articles(category)"
+)
+
+VALID_KNOWLEDGE_ARTICLE_STATUSES = {"draft", "published", "archived"}
+DEFAULT_KNOWLEDGE_ARTICLE_STATUS = "draft"
+MAX_KNOWLEDGE_TITLE_LENGTH = 200
+MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
+MAX_KNOWLEDGE_TAGS_LENGTH = 300
+MAX_KNOWLEDGE_AUTHOR_LENGTH = 100
 MAX_WEBHOOK_URL_LENGTH = 500
 MAX_WEBHOOK_SECRET_LENGTH = 256
 MAX_DELIVERY_PREVIEW_LENGTH = 500
@@ -2763,6 +2836,530 @@ def get_session_assignment_history(session_id: str, limit: int = 50) -> list[dic
         return [dict(r) for r in rows]
 
 
+def create_knowledge_gaps() -> None:
+    """Create knowledge_gaps table and index."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_KNOWLEDGE_GAPS_TABLE)
+        conn.execute(_CREATE_KNOWLEDGE_GAP_NORM_INDEX)
+        conn.commit()
+
+
+def normalize_knowledge_query(query: str | None) -> str:
+    """Normalize a customer query into a canonical lowercase alphanumeric form."""
+    cleaned = (query or "").strip()
+    if not cleaned:
+        raise ValueError("Knowledge gap query must not be blank.")
+    if len(cleaned) > MAX_KNOWLEDGE_QUERY_LENGTH:
+        raise ValueError(
+            f"Knowledge gap query exceeds max length {MAX_KNOWLEDGE_QUERY_LENGTH}."
+        )
+    tokens = re.findall(r"[a-z0-9]+", cleaned.lower())
+    return " ".join(tokens) if tokens else cleaned.lower()
+
+
+def normalize_knowledge_category(category: str | None) -> str:
+    """Validate and normalize knowledge category."""
+    clean_cat = (category or DEFAULT_KNOWLEDGE_CATEGORY).strip().lower()
+    if not clean_cat:
+        clean_cat = DEFAULT_KNOWLEDGE_CATEGORY
+    if clean_cat not in VALID_KNOWLEDGE_CATEGORIES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_CATEGORIES))
+        raise ValueError(f"Invalid knowledge category '{clean_cat}'. Allowed: {allowed}.")
+    return clean_cat
+
+
+def normalize_knowledge_gap_status(status: str | None) -> str:
+    """Validate and normalize knowledge gap status."""
+    clean_status = (status or DEFAULT_KNOWLEDGE_GAP_STATUS).strip().lower()
+    if not clean_status:
+        clean_status = DEFAULT_KNOWLEDGE_GAP_STATUS
+    if clean_status not in VALID_KNOWLEDGE_GAP_STATUSES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_GAP_STATUSES))
+        raise ValueError(f"Invalid knowledge gap status '{clean_status}'. Allowed: {allowed}.")
+    return clean_status
+
+
+def normalize_knowledge_gap_source(source_type: str | None) -> str:
+    """Validate and normalize knowledge gap source_type."""
+    clean_src = (source_type or DEFAULT_KNOWLEDGE_GAP_SOURCE).strip().lower()
+    if not clean_src:
+        clean_src = DEFAULT_KNOWLEDGE_GAP_SOURCE
+    if clean_src not in VALID_KNOWLEDGE_GAP_SOURCES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_GAP_SOURCES))
+        raise ValueError(
+            f"Invalid knowledge gap source_type '{clean_src}'. Allowed: {allowed}."
+        )
+    return clean_src
+
+
+_PRIORITY_RANK = {"urgent": 4, "high": 3, "medium": 2, "low": 1}
+
+
+def record_knowledge_gap(  # noqa: PLR0913, PLR0917
+    query: str,
+    category: str = DEFAULT_KNOWLEDGE_CATEGORY,
+    source_type: str = DEFAULT_KNOWLEDGE_GAP_SOURCE,
+    session_id: str | None = None,
+    priority: str = DEFAULT_SESSION_PRIORITY,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Record a knowledge gap, deduplicating and incrementing frequency on active matches."""
+    clean_query = (query or "").strip()
+    norm_query = normalize_knowledge_query(clean_query)
+    clean_cat = normalize_knowledge_category(category)
+    clean_src = normalize_knowledge_gap_source(source_type)
+    clean_prio = normalize_session_priority(priority)
+    clean_sid = (session_id or "").strip() or None
+    clean_notes = (notes or "").strip()
+    if len(clean_notes) > MAX_KNOWLEDGE_NOTES_LENGTH:
+        raise ValueError(
+            f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}."
+        )
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(
+            "SELECT * FROM knowledge_gaps "
+            "WHERE normalized_query = ? AND status IN ('open', 'drafting') "
+            "ORDER BY id DESC LIMIT 1",
+            (norm_query,),
+        ).fetchone()
+
+        if existing:
+            gap_id = int(existing["id"])
+            new_freq = int(existing["frequency"]) + 1
+            curr_prio = str(existing["priority"] or DEFAULT_SESSION_PRIORITY)
+            target_prio = (
+                clean_prio
+                if _PRIORITY_RANK.get(clean_prio, 2) > _PRIORITY_RANK.get(curr_prio, 2)
+                else curr_prio
+            )
+            if new_freq >= 3 and _PRIORITY_RANK.get(target_prio, 2) < _PRIORITY_RANK["high"]:  # noqa: PLR2004
+                target_prio = "high"
+
+            new_sid = clean_sid or existing["session_id"]
+            new_notes = clean_notes if clean_notes else existing["notes"]
+
+            conn.execute(
+                "UPDATE knowledge_gaps "
+                "SET frequency = ?, priority = ?, session_id = ?, notes = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (new_freq, target_prio, new_sid, new_notes, gap_id),
+            )
+            conn.commit()
+            updated_row = conn.execute(
+                "SELECT * FROM knowledge_gaps WHERE id = ?", (gap_id,)
+            ).fetchone()
+            res = dict(updated_row) if updated_row else {}
+            res["deduplicated"] = True
+            return res
+
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO knowledge_gaps "
+            "(query, normalized_query, category, source_type, session_id, "
+            "frequency, priority, status, notes) "
+            "VALUES (?, ?, ?, ?, ?, 1, ?, 'open', ?)",
+            (
+                clean_query,
+                norm_query,
+                clean_cat,
+                clean_src,
+                clean_sid,
+                clean_prio,
+                clean_notes,
+            ),
+        )
+        new_id = int(cursor.lastrowid or 0)
+        conn.commit()
+        created_row = conn.execute(
+            "SELECT * FROM knowledge_gaps WHERE id = ?", (new_id,)
+        ).fetchone()
+        res = dict(created_row) if created_row else {}
+        res["deduplicated"] = False
+        return res
+
+
+def get_knowledge_gap(gap_id: int) -> dict[str, Any] | None:
+    """Fetch a knowledge gap by ID, or None if not found."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT * FROM knowledge_gaps WHERE id = ?", (gap_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_knowledge_gaps(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    source_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """List knowledge gaps with optional filtering and pagination."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if status:
+        clauses.append("status = ?")
+        params.append(normalize_knowledge_gap_status(status))
+    if category:
+        clauses.append("category = ?")
+        params.append(normalize_knowledge_category(category))
+    if priority:
+        clauses.append("priority = ?")
+        params.append(normalize_session_priority(priority))
+    if source_type:
+        clauses.append("source_type = ?")
+        params.append(normalize_knowledge_gap_source(source_type))
+
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    count_sql = f"SELECT COUNT(*) FROM knowledge_gaps{where_sql}"
+    select_sql = (
+        f"SELECT * FROM knowledge_gaps{where_sql} "
+        "ORDER BY CASE priority "
+        "WHEN 'urgent' THEN 1 "
+        "WHEN 'high' THEN 2 "
+        "WHEN 'medium' THEN 3 "
+        "WHEN 'low' THEN 4 ELSE 5 END, frequency DESC, id DESC "
+        "LIMIT ? OFFSET ?"
+    )
+
+    with closing(get_db_connection()) as conn:
+        total = int(conn.execute(count_sql, params).fetchone()[0])
+        rows = conn.execute(
+            select_sql, [*params, max(1, limit), max(0, offset)]
+        ).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_knowledge_gap(  # noqa: PLR0913, PLR0917
+    gap_id: int,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    linked_article_id: int | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Update a knowledge gap record; returns updated dict or None if not found."""
+    current = get_knowledge_gap(gap_id)
+    if current is None:
+        return None
+
+    new_status = (
+        normalize_knowledge_gap_status(status)
+        if status is not None
+        else current["status"]
+    )
+    new_prio = (
+        normalize_session_priority(priority)
+        if priority is not None
+        else current["priority"]
+    )
+    new_cat = (
+        normalize_knowledge_category(category)
+        if category is not None
+        else current["category"]
+    )
+    new_linked = (
+        linked_article_id
+        if linked_article_id is not None
+        else current["linked_article_id"]
+    )
+    new_notes = current["notes"]
+    if notes is not None:
+        clean_notes = notes.strip()
+        if len(clean_notes) > MAX_KNOWLEDGE_NOTES_LENGTH:
+            raise ValueError(
+                f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}."
+            )
+        new_notes = clean_notes
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE knowledge_gaps "
+            "SET status = ?, priority = ?, category = ?, linked_article_id = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_status, new_prio, new_cat, new_linked, new_notes, gap_id),
+        )
+        conn.commit()
+    return get_knowledge_gap(gap_id)
+
+
+def delete_knowledge_gap(gap_id: int) -> bool:
+    """Delete a knowledge gap by ID; returns True if deleted, False if not found."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM knowledge_gaps WHERE id = ?", (gap_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def create_knowledge_articles() -> None:
+    """Create knowledge_articles table and index."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_KNOWLEDGE_ARTICLES_TABLE)
+        conn.execute(_CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX)
+        conn.commit()
+
+
+def normalize_knowledge_article_status(status: str | None) -> str:
+    """Validate and normalize knowledge article status."""
+    clean_status = (status or DEFAULT_KNOWLEDGE_ARTICLE_STATUS).strip().lower()
+    if not clean_status:
+        clean_status = DEFAULT_KNOWLEDGE_ARTICLE_STATUS
+    if clean_status not in VALID_KNOWLEDGE_ARTICLE_STATUSES:
+        allowed = ", ".join(sorted(VALID_KNOWLEDGE_ARTICLE_STATUSES))
+        raise ValueError(
+            f"Invalid knowledge article status '{clean_status}'. Allowed: {allowed}."
+        )
+    return clean_status
+
+
+def _normalize_article_tags(tags: str | list[str] | None) -> str:
+    if tags is None:
+        return ""
+    if isinstance(tags, list):
+        items = [str(t).strip().lower() for t in tags if str(t).strip()]
+    else:
+        items = [t.strip().lower() for t in str(tags).split(",") if t.strip()]
+    deduped = list(dict.fromkeys(items))
+    joined = ",".join(deduped)
+    if len(joined) > MAX_KNOWLEDGE_TAGS_LENGTH:
+        raise ValueError(
+            f"Knowledge article tags exceed max length {MAX_KNOWLEDGE_TAGS_LENGTH}."
+        )
+    return joined
+
+
+def _format_article_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    data = dict(row)
+    raw_tags = data.get("tags") or ""
+    if isinstance(raw_tags, list):
+        data["tags"] = [str(t).strip() for t in raw_tags if str(t).strip()]
+    else:
+        data["tags"] = [t.strip() for t in str(raw_tags).split(",") if t.strip()]
+    return data
+
+
+def create_knowledge_article(  # noqa: PLR0913, PLR0917
+    title: str,
+    content_markdown: str,
+    category: str = DEFAULT_KNOWLEDGE_CATEGORY,
+    question_pattern: str = "",
+    tags: str | list[str] | None = None,
+    source_session_id: str | None = None,
+    source_gap_id: int | None = None,
+    status: str = DEFAULT_KNOWLEDGE_ARTICLE_STATUS,
+    author: str = "support_agent",
+) -> dict[str, Any]:
+    """Create a new knowledge base article or draft."""
+    clean_title = (title or "").strip()
+    if not clean_title:
+        raise ValueError("Knowledge article title must not be blank.")
+    if len(clean_title) > MAX_KNOWLEDGE_TITLE_LENGTH:
+        raise ValueError(
+            f"Knowledge article title exceeds max length {MAX_KNOWLEDGE_TITLE_LENGTH}."
+        )
+
+    clean_content = (content_markdown or "").strip()
+    if not clean_content:
+        raise ValueError("Knowledge article content_markdown must not be blank.")
+    if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
+        raise ValueError(
+            "Knowledge article content_markdown exceeds max length "
+            f"{MAX_KNOWLEDGE_CONTENT_LENGTH}."
+        )
+
+    clean_cat = normalize_knowledge_category(category)
+    clean_q_pat = (question_pattern or "").strip()[:MAX_KNOWLEDGE_QUERY_LENGTH]
+    clean_tags = _normalize_article_tags(tags)
+    clean_sid = (source_session_id or "").strip() or None
+    clean_status = normalize_knowledge_article_status(status)
+    clean_author = (author or "support_agent").strip() or "support_agent"
+    if len(clean_author) > MAX_KNOWLEDGE_AUTHOR_LENGTH:
+        raise ValueError(
+            f"Knowledge article author exceeds max length {MAX_KNOWLEDGE_AUTHOR_LENGTH}."
+        )
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO knowledge_articles "
+            "(title, category, question_pattern, content_markdown, tags, "
+            "source_session_id, source_gap_id, status, author) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                clean_title,
+                clean_cat,
+                clean_q_pat,
+                clean_content,
+                clean_tags,
+                clean_sid,
+                source_gap_id,
+                clean_status,
+                clean_author,
+            ),
+        )
+        article_id = int(cursor.lastrowid or 0)
+        conn.commit()
+
+    created = get_knowledge_article(article_id)
+    if created is None:
+        raise RuntimeError("Failed to retrieve created knowledge article.")
+    return created
+
+
+def get_knowledge_article(article_id: int) -> dict[str, Any] | None:
+    """Fetch a knowledge article by ID, or None if not found."""
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT * FROM knowledge_articles WHERE id = ?", (article_id,)
+        ).fetchone()
+        return _format_article_row(row) if row else None
+
+
+def list_knowledge_articles(
+    status: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """List knowledge articles with optional status, category, or keyword search filtering."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if status:
+        clauses.append("status = ?")
+        params.append(normalize_knowledge_article_status(status))
+    if category:
+        clauses.append("category = ?")
+        params.append(normalize_knowledge_category(category))
+    if search and search.strip():
+        like_pat = f"%{search.strip()}%"
+        clauses.append(
+            "(title LIKE ? OR question_pattern LIKE ? OR content_markdown LIKE ? OR tags LIKE ?)"
+        )
+        params.extend([like_pat, like_pat, like_pat, like_pat])
+
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    count_sql = f"SELECT COUNT(*) FROM knowledge_articles{where_sql}"
+    select_sql = (
+        f"SELECT * FROM knowledge_articles{where_sql} "
+        "ORDER BY id DESC LIMIT ? OFFSET ?"
+    )
+
+    with closing(get_db_connection()) as conn:
+        total = int(conn.execute(count_sql, params).fetchone()[0])
+        rows = conn.execute(
+            select_sql, [*params, max(1, limit), max(0, offset)]
+        ).fetchall()
+        return [_format_article_row(r) for r in rows], total
+
+
+def update_knowledge_article(  # noqa: PLR0912, PLR0913, PLR0917
+    article_id: int,
+    title: str | None = None,
+    category: str | None = None,
+    question_pattern: str | None = None,
+    content_markdown: str | None = None,
+    tags: str | list[str] | None = None,
+    status: str | None = None,
+    published_file_id: int | None = None,
+    published_collection: str | None = None,
+) -> dict[str, Any] | None:
+    """Update a knowledge article; returns updated dict or None if not found."""
+    current = get_knowledge_article(article_id)
+    if current is None:
+        return None
+
+    new_title = current["title"]
+    if title is not None:
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("Knowledge article title must not be blank.")
+        if len(clean_title) > MAX_KNOWLEDGE_TITLE_LENGTH:
+            raise ValueError(
+                f"Knowledge article title exceeds max length {MAX_KNOWLEDGE_TITLE_LENGTH}."
+            )
+        new_title = clean_title
+
+    new_cat = (
+        normalize_knowledge_category(category)
+        if category is not None
+        else current["category"]
+    )
+    new_q_pat = (
+        question_pattern.strip()[:MAX_KNOWLEDGE_QUERY_LENGTH]
+        if question_pattern is not None
+        else current["question_pattern"]
+    )
+
+    new_content = current["content_markdown"]
+    if content_markdown is not None:
+        clean_content = content_markdown.strip()
+        if not clean_content:
+            raise ValueError("Knowledge article content_markdown must not be blank.")
+        if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
+            raise ValueError(
+                "Knowledge article content_markdown exceeds max length "
+                f"{MAX_KNOWLEDGE_CONTENT_LENGTH}."
+            )
+        new_content = clean_content
+
+    new_tags = (
+        _normalize_article_tags(tags)
+        if tags is not None
+        else _normalize_article_tags(current["tags"])
+    )
+    new_status = (
+        normalize_knowledge_article_status(status)
+        if status is not None
+        else current["status"]
+    )
+    new_pub_fid = (
+        published_file_id
+        if published_file_id is not None
+        else current["published_file_id"]
+    )
+    new_pub_col = (
+        published_collection
+        if published_collection is not None
+        else current["published_collection"]
+    )
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE knowledge_articles "
+            "SET title = ?, category = ?, question_pattern = ?, content_markdown = ?, "
+            "tags = ?, status = ?, published_file_id = ?, published_collection = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_title,
+                new_cat,
+                new_q_pat,
+                new_content,
+                new_tags,
+                new_status,
+                new_pub_fid,
+                new_pub_col,
+                article_id,
+            ),
+        )
+        conn.commit()
+    return get_knowledge_article(article_id)
+
+
+def delete_knowledge_article(article_id: int) -> bool:
+    """Delete a knowledge article by ID; returns True if deleted, False if not found."""
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM knowledge_articles WHERE id = ?", (article_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -2776,5 +3373,6 @@ create_support_macros()
 create_sla_policies()
 create_support_agents()
 create_session_assignment_history()
-
+create_knowledge_gaps()
+create_knowledge_articles()
 
