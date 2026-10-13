@@ -1727,3 +1727,357 @@ def get_business_hours_status() -> dict[str, Any] | None:
         return None
 
 
+# ============================================================================
+# Knowledge Base Gap Detection, Article Studio & Deflection Client Helpers
+# ============================================================================
+
+
+def record_knowledge_gap(  # noqa: PLR0913, PLR0917
+    query: str,
+    category: str = "general",
+    source_type: str = "manual",
+    session_id: str | None = None,
+    priority: str = "medium",
+    notes: str = "",
+) -> dict[str, Any] | None:
+    try:
+        payload = {
+            "query": query,
+            "category": category,
+            "source_type": source_type,
+            "session_id": session_id,
+            "priority": priority,
+            "notes": notes,
+        }
+        response = requests.post(
+            f"{API_BASE_URL}/knowledge/gaps",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to record knowledge gap", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while recording knowledge gap: {str(e)}")
+        return None
+
+
+def list_knowledge_gaps(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    source_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+        if category:
+            params["category"] = category
+        if priority:
+            params["priority"] = priority
+        if source_type:
+            params["source_type"] = source_type
+
+        response = requests.get(
+            f"{API_BASE_URL}/knowledge/gaps",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            data = response.json()
+            return cast(list[dict[str, Any]], data.get("items", [])), int(data.get("total", 0))
+        show_api_error("Failed to fetch knowledge gaps", response)
+        return [], 0
+    except Exception as e:
+        st.error(f"An error occurred while fetching knowledge gaps: {str(e)}")
+        return [], 0
+
+
+def scan_knowledge_gaps(limit: int = 100) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/knowledge/gaps/scan",
+            params={"limit": limit},
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to scan knowledge gaps", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while scanning knowledge gaps: {str(e)}")
+        return None
+
+
+def update_knowledge_gap(  # noqa: PLR0913, PLR0917
+    gap_id: int,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    linked_article_id: int | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    try:
+        payload: dict[str, Any] = {}
+        if status is not None:
+            payload["status"] = status
+        if priority is not None:
+            payload["priority"] = priority
+        if category is not None:
+            payload["category"] = category
+        if linked_article_id is not None:
+            payload["linked_article_id"] = linked_article_id
+        if notes is not None:
+            payload["notes"] = notes
+
+        response = requests.patch(
+            f"{API_BASE_URL}/knowledge/gaps/{gap_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update knowledge gap #{gap_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating knowledge gap: {str(e)}")
+        return None
+
+
+def delete_knowledge_gap(gap_id: int) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/knowledge/gaps/{gap_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete knowledge gap #{gap_id}", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting knowledge gap: {str(e)}")
+        return False
+
+
+def create_knowledge_article(  # noqa: PLR0913, PLR0917
+    title: str,
+    content_markdown: str,
+    category: str = "general",
+    question_pattern: str = "",
+    tags: list[str] | None = None,
+    source_session_id: str | None = None,
+    source_gap_id: int | None = None,
+    author: str = "support_agent",
+) -> dict[str, Any] | None:
+    try:
+        payload = {
+            "title": title,
+            "content_markdown": content_markdown,
+            "category": category,
+            "question_pattern": question_pattern,
+            "tags": tags or [],
+            "source_session_id": source_session_id,
+            "source_gap_id": source_gap_id,
+            "author": author,
+        }
+        response = requests.post(
+            f"{API_BASE_URL}/knowledge/articles",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create knowledge article", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating knowledge article: {str(e)}")
+        return None
+
+
+def draft_article_from_session(
+    session_id: str,
+    author: str = "support_agent",
+    category: str | None = None,
+    link_gap_id: int | None = None,
+) -> dict[str, Any] | None:
+    try:
+        payload: dict[str, Any] = {"author": author}
+        if category:
+            payload["category"] = category
+        if link_gap_id is not None:
+            payload["link_gap_id"] = link_gap_id
+
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/draft-article",
+            json=payload,
+            headers=_request_headers(),
+            timeout=20,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to draft article from session {session_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while drafting article: {str(e)}")
+        return None
+
+
+def list_knowledge_articles(
+    status: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+        if category:
+            params["category"] = category
+        if search:
+            params["search"] = search
+
+        response = requests.get(
+            f"{API_BASE_URL}/knowledge/articles",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            data = response.json()
+            return cast(list[dict[str, Any]], data.get("items", [])), int(data.get("total", 0))
+        show_api_error("Failed to fetch knowledge articles", response)
+        return [], 0
+    except Exception as e:
+        st.error(f"An error occurred while fetching knowledge articles: {str(e)}")
+        return [], 0
+
+
+def get_knowledge_article(article_id: int) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/knowledge/articles/{article_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch knowledge article #{article_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching knowledge article: {str(e)}")
+        return None
+
+
+def update_knowledge_article(  # noqa: PLR0913, PLR0917
+    article_id: int,
+    title: str | None = None,
+    content_markdown: str | None = None,
+    category: str | None = None,
+    question_pattern: str | None = None,
+    tags: list[str] | None = None,
+    status: str | None = None,
+) -> dict[str, Any] | None:
+    try:
+        payload: dict[str, Any] = {}
+        if title is not None:
+            payload["title"] = title
+        if content_markdown is not None:
+            payload["content_markdown"] = content_markdown
+        if category is not None:
+            payload["category"] = category
+        if question_pattern is not None:
+            payload["question_pattern"] = question_pattern
+        if tags is not None:
+            payload["tags"] = tags
+        if status is not None:
+            payload["status"] = status
+
+        response = requests.patch(
+            f"{API_BASE_URL}/knowledge/articles/{article_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update knowledge article #{article_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating knowledge article: {str(e)}")
+        return None
+
+
+def delete_knowledge_article(article_id: int) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/knowledge/articles/{article_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete knowledge article #{article_id}", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting knowledge article: {str(e)}")
+        return False
+
+
+def publish_knowledge_article(
+    article_id: int,
+    collection: str = "default",
+    chunking_strategy: str = "markdown",
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+) -> dict[str, Any] | None:
+    try:
+        payload = {
+            "collection": collection,
+            "chunking_strategy": chunking_strategy,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+        }
+        response = requests.post(
+            f"{API_BASE_URL}/knowledge/articles/{article_id}/publish",
+            json=payload,
+            headers=_request_headers(),
+            timeout=30,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to publish knowledge article #{article_id}", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while publishing knowledge article: {str(e)}")
+        return None
+
+
+def get_knowledge_analytics() -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/knowledge/analytics",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch knowledge analytics", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching knowledge analytics: {str(e)}")
+        return None
+
+
+
