@@ -21,6 +21,7 @@ from api import (
     macro_suggestions,
     macros,
     sla,
+    tenant_context,
     webhooks,
 )
 from api.chroma_utils import (
@@ -200,6 +201,8 @@ from api.pydantic_models import (
     SessionSLAStatusResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
+    SessionTenantContextResponse,
+    SessionTenantLinkRequest,
     SLAAlertEvaluateRequest,
     SLAAlertEvaluateResponse,
     SLAAlertItem,
@@ -215,6 +218,13 @@ from api.pydantic_models import (
     SupportAgentUpdateRequest,
     SupportTriageAnalyticsResponse,
     TagCount,
+    TenantCreateRequest,
+    TenantItem,
+    TenantListResponse,
+    TenantResponse,
+    TenantSupportHistoryResponse,
+    TenantSupportHistorySessionItem,
+    TenantUpdateRequest,
     UnitCreateRequest,
     UnitItem,
     UnitListResponse,
@@ -504,8 +514,11 @@ def chat(query_input: QueryInput, request: Request):
         use_cross_encoder_rerank=query_input.use_cross_encoder_rerank,
         cross_encoder_model=query_input.cross_encoder_model,
     )
+    grounded_input = tenant_context.inject_tenant_context_into_prompt(
+        query_input.question, session_id=session_id
+    )
     try:
-        result = rag_chain.invoke({"input": query_input.question, "chat_history": chat_history})
+        result = rag_chain.invoke({"input": grounded_input, "chat_history": chat_history})
     except Exception as exc:
         increment("chat_errors")
         logger.exception("RAG chain failed for session_id %s", session_id)
@@ -603,9 +616,12 @@ async def _stream_rag_response(
         use_cross_encoder_rerank=query_input.use_cross_encoder_rerank,
         cross_encoder_model=query_input.cross_encoder_model,
     )
+    grounded_input = tenant_context.inject_tenant_context_into_prompt(
+        query_input.question, session_id=session_id
+    )
     try:
         async for chunk in rag_chain.astream(
-            {"input": query_input.question, "chat_history": chat_history}
+            {"input": grounded_input, "chat_history": chat_history}
         ):
             if isinstance(chunk, dict):
                 if "answer" in chunk:
@@ -2686,6 +2702,161 @@ def delete_unit_route(unit_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Unit '{unit_id}' not found.")
     return {"status": "deleted", "unit_id": unit_id}
+
+
+# --- Tenants Endpoints ---
+
+
+@app.post("/tenants", response_model=TenantResponse, status_code=201)
+def create_tenant_route(request: TenantCreateRequest):
+    """Register a new tenant profile."""
+    try:
+        created = db_utils.create_tenant(
+            tenant_id=request.id,
+            first_name=request.first_name,
+            last_name=request.last_name,
+            email=request.email,
+            phone=request.phone,
+            lease_start=request.lease_start,
+            lease_end=request.lease_end,
+            unit_id=request.unit_id,
+            monthly_rent=request.monthly_rent,
+            balance_due=request.balance_due,
+            status=request.status,
+            emergency_contact_name=request.emergency_contact_name or "",
+            emergency_contact_phone=request.emergency_contact_phone or "",
+            notes=request.notes or "",
+        )
+        return TenantResponse(tenant=TenantItem(**created))
+    except ValueError as exc:
+        status_code = 409 if "already exists" in str(exc).lower() else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@app.get("/tenants", response_model=TenantListResponse)
+def list_tenants_route(
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List tenant profiles with optional unit, status, and search filtering."""
+    tenants, total = db_utils.list_tenants(
+        unit_id=unit_id,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return TenantListResponse(
+        items=[TenantItem(**t) for t in tenants],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/tenants/{tenant_id}", response_model=TenantResponse)
+def get_tenant_route(tenant_id: str):
+    """Retrieve details of a specific tenant profile."""
+    tenant = db_utils.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    return TenantResponse(tenant=TenantItem(**tenant))
+
+
+@app.patch("/tenants/{tenant_id}", response_model=TenantResponse)
+def update_tenant_route(tenant_id: str, request: TenantUpdateRequest):
+    """Update fields on an existing tenant profile."""
+    try:
+        updated = db_utils.update_tenant(
+            tenant_id=tenant_id,
+            first_name=request.first_name,
+            last_name=request.last_name,
+            email=request.email,
+            phone=request.phone,
+            unit_id=request.unit_id,
+            lease_start=request.lease_start,
+            lease_end=request.lease_end,
+            monthly_rent=request.monthly_rent,
+            balance_due=request.balance_due,
+            status=request.status,
+            emergency_contact_name=request.emergency_contact_name,
+            emergency_contact_phone=request.emergency_contact_phone,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    return TenantResponse(tenant=TenantItem(**updated))
+
+
+@app.delete("/tenants/{tenant_id}")
+def delete_tenant_route(tenant_id: str):
+    """Delete a tenant profile."""
+    deleted = db_utils.delete_tenant(tenant_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    return {"status": "deleted", "tenant_id": tenant_id}
+
+
+# --- Session Tenant Linking & Context Endpoints ---
+
+
+@app.post("/sessions/{session_id}/link-tenant", response_model=SessionTenantContextResponse)
+def link_session_tenant_route(session_id: str, request: SessionTenantLinkRequest):
+    """Link a support session to a tenant and/or property unit."""
+    try:
+        db_utils.link_session_tenant(
+            session_id=session_id,
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    ctx = db_utils.get_session_tenant_context(session_id)
+    if not ctx:
+        return SessionTenantContextResponse(session_id=session_id)
+    return SessionTenantContextResponse(
+        session_id=session_id,
+        tenant_id=ctx.get("tenant_id"),
+        unit_id=ctx.get("unit_id"),
+        tenant=TenantItem(**ctx["tenant"]) if ctx.get("tenant") else None,
+        unit=UnitItem(**ctx["unit"]) if ctx.get("unit") else None,
+    )
+
+
+@app.get("/sessions/{session_id}/tenant-context", response_model=SessionTenantContextResponse)
+def get_session_tenant_context_route(session_id: str):
+    """Retrieve the grounded tenant and property unit context for a support session."""
+    ctx = db_utils.get_session_tenant_context(session_id)
+    if not ctx:
+        return SessionTenantContextResponse(session_id=session_id)
+    return SessionTenantContextResponse(
+        session_id=session_id,
+        tenant_id=ctx.get("tenant_id"),
+        unit_id=ctx.get("unit_id"),
+        tenant=TenantItem(**ctx["tenant"]) if ctx.get("tenant") else None,
+        unit=UnitItem(**ctx["unit"]) if ctx.get("unit") else None,
+    )
+
+
+@app.get("/tenants/{tenant_id}/support-history", response_model=TenantSupportHistoryResponse)
+def get_tenant_support_history_route(tenant_id: str):
+    """Retrieve full support ticket/session history for a specific tenant."""
+    try:
+        history = db_utils.get_tenant_support_history(tenant_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return TenantSupportHistoryResponse(
+        tenant=TenantItem(**history["tenant"]),
+        total_sessions=history["total_sessions"],
+        sessions=[TenantSupportHistorySessionItem(**s) for s in history["sessions"]],
+    )
+
 
 
 
