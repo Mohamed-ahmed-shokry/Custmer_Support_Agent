@@ -14,8 +14,8 @@
 - [x] **Task 4**: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
 - [x] **Task 5**: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
 - [x] **Task 6**: Pydantic request/response models for knowledge gaps, articles, publishing, and analytics in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
-- [ ] **Task 7**: FastAPI endpoints for knowledge gaps (`/knowledge/gaps*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [ ] **Task 8**: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] **Task 7**: FastAPI endpoints for knowledge gaps (`/knowledge/gaps*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] **Task 8**: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [ ] **Task 10**: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
 - [ ] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
@@ -30,7 +30,7 @@
 | AC1 | `knowledge_gaps` and `knowledge_articles` SQLite tables are created and support full CRUD, recurring query deduplication (`normalized_query` frequency incrementing), and validation | VERIFIED | `api/db_utils.py`, `tests/test_db_utils.py` (86 passed) |
 | AC2 | `api/knowledge_base.py` accurately detects unanswered/fallback responses, scans escalated/low-CSAT sessions for gaps, synthesizes structured Markdown KB drafts from sessions, publishes articles into `document_store`/`document_sources` (resolving linked gaps), and dispatches `knowledge.gap_detected` and `knowledge.article_published` webhooks | VERIFIED | `api/knowledge_base.py`, `tests/test_knowledge_base.py` (6 passed) |
 | AC3 | Pydantic schemas in `api/pydantic_models.py` validate all knowledge gap, article drafting, publishing, and analytics payloads | VERIFIED | `api/pydantic_models.py`, `tests/test_models.py` (47 passed) |
-| AC4 | FastAPI endpoints `/knowledge/gaps`, `/knowledge/gaps/scan`, `/knowledge/gaps/{id}`, `/knowledge/articles`, `/knowledge/articles/{id}`, `/knowledge/articles/{id}/publish`, `/sessions/{id}/draft-article`, and `/knowledge/analytics` are wired and verified | PENDING | `api/main.py`, `tests/test_api_routes.py` |
+| AC4 | FastAPI endpoints `/knowledge/gaps`, `/knowledge/gaps/scan`, `/knowledge/gaps/{id}`, `/knowledge/articles`, `/knowledge/articles/{id}`, `/knowledge/articles/{id}/publish`, `/sessions/{id}/draft-article`, and `/knowledge/analytics` are wired and verified | VERIFIED | `api/main.py`, `tests/test_api_routes.py` (5 passed) |
 | AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PENDING | `app/api_utils.py`, `tests/test_app_api_utils.py` |
 | AC6 | Streamlit UI in `app/sidebar.py` provides 1-click session KB article drafting and the "📚 Knowledge Gaps & Article Studio" management panel | PENDING | `app/sidebar.py`, `tests/test_app_ui.py` |
 | AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.34.0`) are updated and accurate | PENDING | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
