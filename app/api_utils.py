@@ -2043,7 +2043,7 @@ def publish_knowledge_article(
     chunk_overlap: int = 200,
 ) -> dict[str, Any] | None:
     try:
-        payload = {
+        payload: dict[str, Any] = {
             "collection": collection,
             "chunking_strategy": chunking_strategy,
             "chunk_size": chunk_size,
