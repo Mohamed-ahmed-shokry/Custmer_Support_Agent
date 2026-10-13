@@ -152,6 +152,28 @@ class FakeStreamlit:
             return self.values[key]
         return options[index] if options else None
 
+    def radio(  # noqa: PLR0913, PLR0917
+        self, label, options=None, index=0, format_func=None, key=None, horizontal=False, **kwargs
+    ):
+        self.calls.append(
+            Call(
+                "st",
+                "radio",
+                (label,),
+                {
+                    "options": options,
+                    "format_func": format_func,
+                    "index": index,
+                    "key": key,
+                    "horizontal": horizontal,
+                    **kwargs,
+                },
+            )
+        )
+        if key in self.values:
+            return self.values[key]
+        return options[index] if options else None
+
     def multiselect(self, label, options=None, default=None, format_func=None, key=None):
         self.calls.append(
             Call(
