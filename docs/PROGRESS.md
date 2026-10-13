@@ -1,7 +1,7 @@
 # v0.34.0 Progress Record: Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine
 
 **Phase Branch**: `phase/v0.34.0-knowledge-gaps-article-studio`  
-**Status**: 🚧 IN PROGRESS  
+**Status**: ✅ COMPLETED  
 **Target Version**: 0.34.0  
 
 ---
@@ -19,7 +19,7 @@
 - [x] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 10**: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
 - [x] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+- [x] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ---
 
@@ -34,7 +34,7 @@
 | AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | VERIFIED | `app/api_utils.py`, `tests/test_app_api_utils.py` (2 passed) |
 | AC6 | Streamlit UI in `app/sidebar.py` provides 1-click session KB article drafting and the "📚 Knowledge Gaps & Article Studio" management panel | VERIFIED | `app/sidebar.py`, `tests/test_app_ui.py` (106 passed) |
 | AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.34.0`) are updated and accurate | VERIFIED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py`, `ROADMAP.md` |
-| AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
+| AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | VERIFIED | `pytest` (717 passed, 93.26% coverage), `ruff check` (clean), `mypy` (29 files clean) |
 
 ---
 
@@ -58,3 +58,8 @@
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
   - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 28 source files`)
   - `python -m pytest -q` -> ✅ Passed (`695 passed, 21 deselected, 94.14% coverage, fail_under=80%`)
+
+- **Phase Final Verification Gate (v0.34.0)**:
+  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`, zero errors or warnings)
+  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 29 source files`)
+  - `python -m pytest` -> ✅ Passed (`717 passed, 21 deselected, 93.26% coverage` against 80.0% required floor)

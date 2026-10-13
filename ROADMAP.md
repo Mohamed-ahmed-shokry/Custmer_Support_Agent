@@ -859,7 +859,7 @@ Deliver an advanced Customer Satisfaction (CSAT) feedback rating, operator revie
 - [x] Task 15: Version bump to 0.33.0 in `pyproject.toml` and `api/settings.py`
 - [x] Task 16: Final verification gate, progress record completion, and self-review audit
 
-## v0.34.0 plan — Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine (IN PROGRESS)
+## v0.34.0 plan — Knowledge Base Gap Detection, FAQ Article Drafting & Self-Service Deflection Engine ✅ COMPLETED
 
 Deliver an end-to-end Knowledge Base Gap Detection, FAQ Article Drafting, and Self-Service Deflection Engine that closes the loop between customer support sessions/CSAT feedback and the RAG vector knowledge base:
 automated and manual tracking of unanswered or low-confidence tenant queries (`knowledge_gaps` table with recurring query deduplication and frequency tracking), automated gap scanning across escalated and low-CSAT (`<= 2` stars) sessions, 1-click structured Markdown Knowledge Base / FAQ article drafting from resolved support sessions or knowledge gaps (`knowledge_articles` table + `api/knowledge_base.py`), 1-click publishing of KB articles directly into the persistent document store (`document_store` / `document_sources` + Chroma indexing) with automatic gap resolution and webhook notifications (`knowledge.gap_detected`, `knowledge.article_published`), self-service coverage & deflection analytics, and Streamlit UI controls for drafting articles from sessions and managing the Knowledge Base Gaps & Article Studio panel.
@@ -960,7 +960,7 @@ Close the knowledge loop between customer support operations and the RAG retriev
 - [x] Task 9: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] Task 10: Streamlit UI session KB drafting button and "📚 Knowledge Gaps & Article Studio" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
 - [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+- [x] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
