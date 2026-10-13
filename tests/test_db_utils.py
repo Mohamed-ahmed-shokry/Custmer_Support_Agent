@@ -2201,3 +2201,130 @@ def test_knowledge_articles_validation(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="author exceeds max length"):
         db_utils.create_knowledge_article("Valid Title", "Valid content", author="a" * 101)
+
+
+def test_normalize_unit_fields():
+    assert db_utils.normalize_unit_id("unit-101") == "unit-101"
+    assert db_utils.normalize_unit_id("Unit_4B.2") == "Unit_4B.2"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_unit_id("   ")
+    with pytest.raises(ValueError, match="at most 50 characters"):
+        db_utils.normalize_unit_id("u" * 51)
+    with pytest.raises(ValueError, match="may only contain alphanumeric"):
+        db_utils.normalize_unit_id("unit@101!")
+
+    assert db_utils.normalize_property_name("Sunset Heights") == "Sunset Heights"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_property_name(" ")
+    with pytest.raises(ValueError, match="at most 100 characters"):
+        db_utils.normalize_property_name("p" * 101)
+
+    assert db_utils.normalize_unit_number("4B") == "4B"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_unit_number("")
+    with pytest.raises(ValueError, match="at most 50 characters"):
+        db_utils.normalize_unit_number("n" * 51)
+
+
+def test_units_crud_and_preseeded(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+
+    expected_preseeded_count = 3
+    expected_u101_rent = 1450.0
+    initial_rent = 1600.0
+    updated_rent = 1650.0
+    expected_sh_count = 3
+
+    # Preseeded units
+    preseeded, total = db_utils.list_units()
+    assert total >= expected_preseeded_count
+    unit_ids = {u["id"] for u in preseeded}
+    assert "unit_101" in unit_ids
+    assert "unit_204" in unit_ids
+    assert "unit_PH1" in unit_ids
+
+    u101 = db_utils.get_unit("unit_101")
+    assert u101 is not None
+    assert u101["property_name"] == "Sunset Heights Apartments"
+    assert u101["parking_spot"] == "P-12"
+    assert u101["monthly_rent"] == expected_u101_rent
+
+    # Create new unit
+    created = db_utils.create_unit(
+        unit_id="unit_301",
+        property_name="Sunset Heights Apartments",
+        unit_number="301",
+        address="742 Evergreen Terrace",
+        city="Springfield",
+        state="IL",
+        zip_code="62704",
+        building_name="Building C",
+        floor=3,
+        monthly_rent=initial_rent,
+        parking_spot="P-31",
+        gate_code="#3010",
+        wifi_ssid="SunsetHeights-Guest",
+        trash_day="Tuesday",
+        notes="Newly renovated 1-bedroom unit.",
+    )
+    assert created["id"] == "unit_301"
+    assert created["monthly_rent"] == initial_rent
+
+    # Duplicate ID raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_unit(
+            unit_id="unit_301",
+            property_name="Sunset Heights Apartments",
+            unit_number="301",
+            address="742 Evergreen Terrace",
+            city="Springfield",
+            state="IL",
+            zip_code="62704",
+        )
+
+    # Filter and search
+    sh_units, sh_count = db_utils.list_units(property_name="Sunset Heights Apartments")
+    assert sh_count >= expected_sh_count
+    assert all(u["property_name"] == "Sunset Heights Apartments" for u in sh_units)
+
+    searched, search_count = db_utils.list_units(search="PH1")
+    assert search_count == 1
+    assert searched[0]["id"] == "unit_PH1"
+
+    # Update unit
+    updated = db_utils.update_unit(
+        "unit_301",
+        monthly_rent=updated_rent,
+        parking_spot="P-32",
+        notes="Updated parking spot",
+    )
+    assert updated is not None
+    assert updated["monthly_rent"] == updated_rent
+    assert updated["parking_spot"] == "P-32"
+    assert updated["notes"] == "Updated parking spot"
+
+    # Delete unit
+    assert db_utils.delete_unit("unit_301") is True
+    assert db_utils.get_unit("unit_301") is None
+    assert db_utils.delete_unit("unit_301") is False
+
+
+def test_units_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+
+    with pytest.raises(ValueError, match="Address must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "", "City", "ST", "12345")
+
+    with pytest.raises(ValueError, match="City must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "Addr", "", "ST", "12345")
+
+    with pytest.raises(ValueError, match="State must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "Addr", "City", "", "12345")
+
+    with pytest.raises(ValueError, match="Zip code must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "Addr", "City", "ST", "")
+
+    # Non-existent unit update returns None
+    assert db_utils.update_unit("non_existent_unit", monthly_rent=1000.0) is None
