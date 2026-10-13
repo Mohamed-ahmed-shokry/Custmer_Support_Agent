@@ -595,6 +595,8 @@ def test_update_session_metadata_and_retrieval(monkeypatch, tmp_path):
         "priority": "medium",
         "assigned_agent": None,
         "escalation_tier": "tier_1",
+        "tenant_id": None,
+        "unit_id": None,
     }
 
     # Update metadata incrementally
@@ -2501,3 +2503,133 @@ def test_tenants_validation(monkeypatch, tmp_path):
     assert db_utils.update_tenant("non_existent_tenant", balance_due=0.0) is None
     assert db_utils.get_tenant("") is None
     assert db_utils.get_tenant_by_email("") is None
+
+
+def test_migrate_session_labels_adds_tenant_and_unit(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy_tenant.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(
+            "CREATE TABLE session_labels ("
+            "session_id TEXT PRIMARY KEY, label TEXT NOT NULL, "
+            "status TEXT NOT NULL DEFAULT 'active', tags TEXT NOT NULL DEFAULT '')"
+        )
+        conn.commit()
+
+    db_utils.migrate_session_labels()
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(session_labels)").fetchall()]
+        assert "tenant_id" in cols
+        assert "unit_id" in cols
+
+
+def test_session_tenant_linking_and_context(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    sid = "sess-tenant-link"
+    db_utils.insert_application_logs(sid, "Rent question", "Rent answer", "gpt-4o")
+
+    # Initial context is empty
+    ctx = db_utils.get_session_tenant_context(sid)
+    assert ctx is not None
+    assert ctx["tenant_id"] is None
+    assert ctx["unit_id"] is None
+    assert ctx["tenant"] is None
+    assert ctx["unit"] is None
+
+    # Link to tenant_1 (auto-infers unit_101)
+    linked = db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    assert linked["tenant_id"] == "tenant_1"
+    assert linked["unit_id"] == "unit_101"
+    assert linked["tenant"] is not None
+    assert linked["tenant"]["first_name"] == "Sarah"
+    assert linked["unit"] is not None
+    assert linked["unit"]["unit_number"] == "101"
+
+    # Verify get_session_metadata reflects the link
+    meta = db_utils.get_session_metadata(sid)
+    assert meta is not None
+    assert meta["tenant_id"] == "tenant_1"
+    assert meta["unit_id"] == "unit_101"
+
+    # Non-existent tenant raises ValueError
+    with pytest.raises(ValueError, match="Tenant 'non_existent' not found"):
+        db_utils.link_session_tenant(sid, tenant_id="non_existent")
+
+    # Non-existent unit raises ValueError
+    with pytest.raises(ValueError, match="Unit 'invalid_unit' not found"):
+        db_utils.link_session_tenant(sid, unit_id="invalid_unit")
+
+    # Unlink tenant using 'unassigned'
+    unlinked = db_utils.link_session_tenant(sid, tenant_id="unassigned", unit_id="unassigned")
+    assert unlinked["tenant_id"] is None
+    assert unlinked["unit_id"] is None
+    assert unlinked["tenant"] is None
+    assert unlinked["unit"] is None
+
+
+def test_tenant_support_history(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    # Link two sessions to tenant_2
+    sid1 = "sess-hist-1"
+    sid2 = "sess-hist-2"
+    db_utils.insert_application_logs(sid1, "HVAC issue", "HVAC scheduled", "gpt-4o")
+    db_utils.insert_application_logs(sid2, "Follow-up status", "Tech arrives at 2pm", "gpt-4o")
+
+    db_utils.link_session_tenant(sid1, tenant_id="tenant_2")
+    db_utils.update_session_metadata(sid1, label="HVAC Ticket", status="resolved")
+    db_utils.insert_feedback(sid1, rating=1, comment="Great maintenance team!")
+
+    db_utils.link_session_tenant(sid2, tenant_id="tenant_2")
+    db_utils.update_session_metadata(sid2, label="HVAC Status", status="active", priority="high")
+
+    history = db_utils.get_tenant_support_history("tenant_2")
+    assert history["tenant"]["id"] == "tenant_2"
+    expected_sess_count = 2
+    expected_rating = 1
+    assert history["total_sessions"] == expected_sess_count
+    assert len(history["sessions"]) == expected_sess_count
+
+    # Session with feedback
+    sess1 = next(s for s in history["sessions"] if s["session_id"] == sid1)
+    assert sess1["label"] == "HVAC Ticket"
+    assert sess1["status"] == "resolved"
+    assert sess1["rating"] == expected_rating
+    assert sess1["feedback_comment"] == "Great maintenance team!"
+
+    # Non-existent tenant raises ValueError
+    with pytest.raises(ValueError, match="not found"):
+        db_utils.get_tenant_support_history("non_existent_tenant")
+
+
+def test_get_all_sessions_tenant_and_unit_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    sid1 = "sess-filt-1"
+    sid2 = "sess-filt-2"
+    db_utils.insert_application_logs(sid1, "User 1 query", "Answer 1", "gpt-4o")
+    db_utils.insert_application_logs(sid2, "User 2 query", "Answer 2", "gpt-4o")
+
+    db_utils.link_session_tenant(sid1, tenant_id="tenant_1")
+    db_utils.link_session_tenant(sid2, tenant_id="tenant_3")
+
+    t1_sessions = db_utils.get_all_sessions(tenant_id="tenant_1")
+    assert len(t1_sessions) == 1
+    assert t1_sessions[0]["session_id"] == sid1
+    assert t1_sessions[0]["tenant_id"] == "tenant_1"
+    assert t1_sessions[0]["unit_id"] == "unit_101"
+
+    ph1_sessions = db_utils.get_all_sessions(unit_id="unit_PH1")
+    assert len(ph1_sessions) == 1
+    assert ph1_sessions[0]["session_id"] == sid2
+    assert ph1_sessions[0]["tenant_id"] == "tenant_3"
+
