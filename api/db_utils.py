@@ -387,6 +387,44 @@ MAX_CITY_LENGTH = 100
 MAX_STATE_LENGTH = 50
 MAX_ZIP_CODE_LENGTH = 20
 MAX_UNIT_NOTES_LENGTH = 2000
+
+_CREATE_TENANTS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS tenants ("
+    "id TEXT PRIMARY KEY, "
+    "first_name TEXT NOT NULL, "
+    "last_name TEXT NOT NULL, "
+    "email TEXT NOT NULL UNIQUE, "
+    "phone TEXT NOT NULL, "
+    "unit_id TEXT DEFAULT NULL REFERENCES units(id) ON DELETE SET NULL, "
+    "lease_start TEXT NOT NULL, "
+    "lease_end TEXT NOT NULL, "
+    "monthly_rent REAL NOT NULL DEFAULT 0.0, "
+    "balance_due REAL NOT NULL DEFAULT 0.0, "
+    "status TEXT NOT NULL DEFAULT 'active', "
+    "emergency_contact_name TEXT NOT NULL DEFAULT '', "
+    "emergency_contact_phone TEXT NOT NULL DEFAULT '', "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_TENANTS_EMAIL_INDEX = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_email ON tenants(email)"
+)
+_CREATE_TENANTS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_tenants_unit_id ON tenants(unit_id)"
+)
+_CREATE_TENANTS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status)"
+)
+
+VALID_TENANT_STATUSES = {"active", "pending", "past_due", "moved_out", "evicted"}
+DEFAULT_TENANT_STATUS = "active"
+
+MAX_TENANT_ID_LENGTH = 50
+MAX_TENANT_NAME_LENGTH = 100
+MAX_TENANT_EMAIL_LENGTH = 150
+MAX_TENANT_PHONE_LENGTH = 50
+MAX_TENANT_NOTES_LENGTH = 2000
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -3750,6 +3788,388 @@ def delete_unit(unit_id: str) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+DEFAULT_SEEDED_TENANTS = [
+    {
+        "id": "tenant_1",
+        "first_name": "Sarah",
+        "last_name": "Connor",
+        "email": "sarah.connor@example.com",
+        "phone": "+1-555-0199",
+        "unit_id": "unit_101",
+        "lease_start": "2026-01-01",
+        "lease_end": "2026-12-31",
+        "monthly_rent": 1450.0,
+        "balance_due": 0.0,
+        "status": "active",
+        "emergency_contact_name": "John Connor",
+        "emergency_contact_phone": "+1-555-0198",
+        "notes": "Prefers email notifications for routine maintenance.",
+    },
+    {
+        "id": "tenant_2",
+        "first_name": "Marcus",
+        "last_name": "Vance",
+        "email": "marcus.vance@example.com",
+        "phone": "+1-555-0244",
+        "unit_id": "unit_204",
+        "lease_start": "2025-06-01",
+        "lease_end": "2026-05-31",
+        "monthly_rent": 1850.0,
+        "balance_due": 1850.0,
+        "status": "past_due",
+        "emergency_contact_name": "Elena Vance",
+        "emergency_contact_phone": "+1-555-0245",
+        "notes": "Late payment notice sent on the 5th.",
+    },
+    {
+        "id": "tenant_3",
+        "first_name": "Elena",
+        "last_name": "Rostova",
+        "email": "elena.rostova@example.com",
+        "phone": "+1-555-0377",
+        "unit_id": "unit_PH1",
+        "lease_start": "2025-09-01",
+        "lease_end": "2027-08-31",
+        "monthly_rent": 3200.0,
+        "balance_due": 0.0,
+        "status": "active",
+        "emergency_contact_name": "Dmitri Rostov",
+        "emergency_contact_phone": "+1-555-0378",
+        "notes": "Has registered pet (small dog). Executive corporate lease.",
+    },
+]
+
+
+def normalize_tenant_id(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Tenant ID must not be blank.")
+    if len(cleaned) > MAX_TENANT_ID_LENGTH:
+        raise ValueError(f"Tenant ID must be at most {MAX_TENANT_ID_LENGTH} characters.")
+    if not re.match(r"^[A-Za-z0-9_\-\.]+$", cleaned):
+        raise ValueError(
+            "Tenant ID may only contain alphanumeric characters, underscores, hyphens, and periods."
+        )
+    return cleaned
+
+
+def normalize_tenant_name(value: str | None, field_name: str = "Name") -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError(f"{field_name} must not be blank.")
+    if len(cleaned) > MAX_TENANT_NAME_LENGTH:
+        raise ValueError(f"{field_name} must be at most {MAX_TENANT_NAME_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_tenant_email(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        raise ValueError("Tenant email must not be blank.")
+    if len(cleaned) > MAX_TENANT_EMAIL_LENGTH:
+        raise ValueError(f"Tenant email must be at most {MAX_TENANT_EMAIL_LENGTH} characters.")
+    if "@" not in cleaned or "." not in cleaned.split("@")[-1]:
+        raise ValueError(f"Invalid tenant email format: '{cleaned}'.")
+    return cleaned
+
+
+def normalize_tenant_status(value: str | None) -> str:
+    status = (value or DEFAULT_TENANT_STATUS).strip().lower()
+    if status not in VALID_TENANT_STATUSES:
+        valid_opts = ", ".join(sorted(VALID_TENANT_STATUSES))
+        raise ValueError(f"Invalid tenant status '{status}'. Must be one of: {valid_opts}.")
+    return status
+
+
+def normalize_date_str(value: str | None, field_name: str = "Date") -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError(f"{field_name} must not be blank.")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", cleaned):
+        raise ValueError(f"{field_name} must be in YYYY-MM-DD format, got '{cleaned}'.")
+    return cleaned
+
+
+def create_tenants() -> None:
+    """Create tenants table, indexes, and pre-seed initial tenants if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_TENANTS_TABLE)
+        conn.execute(_CREATE_TENANTS_EMAIL_INDEX)
+        conn.execute(_CREATE_TENANTS_UNIT_INDEX)
+        conn.execute(_CREATE_TENANTS_STATUS_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM tenants").fetchone()
+        if row and row[0] == 0:
+            for t in DEFAULT_SEEDED_TENANTS:
+                conn.execute(
+                    "INSERT INTO tenants "
+                    "(id, first_name, last_name, email, phone, unit_id, "
+                    "lease_start, lease_end, monthly_rent, balance_due, status, "
+                    "emergency_contact_name, emergency_contact_phone, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        t["id"],
+                        t["first_name"],
+                        t["last_name"],
+                        t["email"],
+                        t["phone"],
+                        t["unit_id"],
+                        t["lease_start"],
+                        t["lease_end"],
+                        t["monthly_rent"],
+                        t["balance_due"],
+                        t["status"],
+                        t["emergency_contact_name"],
+                        t["emergency_contact_phone"],
+                        t["notes"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_tenant(  # noqa: PLR0913, PLR0917
+    tenant_id: str,
+    first_name: str,
+    last_name: str,
+    email: str,
+    phone: str,
+    lease_start: str,
+    lease_end: str,
+    unit_id: str | None = None,
+    monthly_rent: float = 0.0,
+    balance_due: float = 0.0,
+    status: str = DEFAULT_TENANT_STATUS,
+    emergency_contact_name: str = "",
+    emergency_contact_phone: str = "",
+    notes: str = "",
+) -> dict[str, Any]:
+    norm_id = normalize_tenant_id(tenant_id)
+    norm_first = normalize_tenant_name(first_name, "First name")
+    norm_last = normalize_tenant_name(last_name, "Last name")
+    norm_email = normalize_tenant_email(email)
+    clean_phone = (phone or "").strip()
+    if not clean_phone:
+        raise ValueError("Phone number must not be blank.")
+    norm_start = normalize_date_str(lease_start, "Lease start date")
+    norm_end = normalize_date_str(lease_end, "Lease end date")
+    norm_status = normalize_tenant_status(status)
+    clean_unit = unit_id.strip() if unit_id and str(unit_id).strip() else None
+    rent_val = max(0.0, float(monthly_rent))
+    balance_val = float(balance_due)
+    clean_em_name = (emergency_contact_name or "").strip()
+    clean_em_phone = (emergency_contact_phone or "").strip()
+    clean_notes = (notes or "").strip()
+
+    with closing(get_db_connection()) as conn:
+        existing_id = conn.execute("SELECT id FROM tenants WHERE id = ?", (norm_id,)).fetchone()
+        if existing_id:
+            raise ValueError(f"Tenant with ID '{norm_id}' already exists.")
+        existing_email = conn.execute(
+            "SELECT id FROM tenants WHERE email = ?", (norm_email,)
+        ).fetchone()
+        if existing_email:
+            raise ValueError(f"Tenant with email '{norm_email}' already exists.")
+
+        conn.execute(
+            "INSERT INTO tenants "
+            "(id, first_name, last_name, email, phone, unit_id, "
+            "lease_start, lease_end, monthly_rent, balance_due, status, "
+            "emergency_contact_name, emergency_contact_phone, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                norm_id,
+                norm_first,
+                norm_last,
+                norm_email,
+                clean_phone,
+                clean_unit,
+                norm_start,
+                norm_end,
+                rent_val,
+                balance_val,
+                norm_status,
+                clean_em_name,
+                clean_em_phone,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+    res = get_tenant(norm_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created tenant.")
+    return res
+
+
+def get_tenant(tenant_id: str) -> dict[str, Any] | None:
+    cleaned_id = (tenant_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_tenant_by_email(email: str) -> dict[str, Any] | None:
+    cleaned = (email or "").strip().lower()
+    if not cleaned:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE LOWER(email) = ?", (cleaned,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_tenants(
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM tenants"]
+    count_parts = ["SELECT COUNT(*) FROM tenants"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR "
+            "LOWER(email) LIKE ? OR LOWER(phone) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern, pattern])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY last_name ASC, first_name ASC LIMIT ? OFFSET ?")
+
+    with closing(get_db_connection()) as conn:
+        count_cursor = conn.execute(" ".join(count_parts), tuple(params))
+        total = int(count_cursor.fetchone()[0])
+        list_params = list(params) + [max(1, limit), max(0, offset)]
+        rows = conn.execute(" ".join(query_parts), tuple(list_params)).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_tenant(  # noqa: PLR0912, PLR0913, PLR0917
+    tenant_id: str,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    unit_id: str | None = None,
+    lease_start: str | None = None,
+    lease_end: str | None = None,
+    monthly_rent: float | None = None,
+    balance_due: float | None = None,
+    status: str | None = None,
+    emergency_contact_name: str | None = None,
+    emergency_contact_phone: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    current = get_tenant(tenant_id)
+    if not current:
+        return None
+
+    new_first = (
+        normalize_tenant_name(first_name, "First name")
+        if first_name is not None
+        else current["first_name"]
+    )
+    new_last = (
+        normalize_tenant_name(last_name, "Last name")
+        if last_name is not None
+        else current["last_name"]
+    )
+    new_email = (
+        normalize_tenant_email(email)
+        if email is not None
+        else current["email"]
+    )
+    new_phone = phone.strip() if phone is not None else current["phone"]
+    new_unit = unit_id.strip() if unit_id is not None else current["unit_id"]
+    new_start = (
+        normalize_date_str(lease_start, "Lease start date")
+        if lease_start is not None
+        else current["lease_start"]
+    )
+    new_end = (
+        normalize_date_str(lease_end, "Lease end date")
+        if lease_end is not None
+        else current["lease_end"]
+    )
+    new_rent = (
+        max(0.0, float(monthly_rent))
+        if monthly_rent is not None
+        else current["monthly_rent"]
+    )
+    new_balance = (
+        float(balance_due)
+        if balance_due is not None
+        else current["balance_due"]
+    )
+    new_status = (
+        normalize_tenant_status(status)
+        if status is not None
+        else current["status"]
+    )
+    new_em_name = (
+        emergency_contact_name.strip()
+        if emergency_contact_name is not None
+        else current["emergency_contact_name"]
+    )
+    new_em_phone = (
+        emergency_contact_phone.strip()
+        if emergency_contact_phone is not None
+        else current["emergency_contact_phone"]
+    )
+    new_notes = notes.strip() if notes is not None else current["notes"]
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE tenants SET "
+            "first_name = ?, last_name = ?, email = ?, phone = ?, unit_id = ?, "
+            "lease_start = ?, lease_end = ?, monthly_rent = ?, balance_due = ?, "
+            "status = ?, emergency_contact_name = ?, emergency_contact_phone = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_first,
+                new_last,
+                new_email,
+                new_phone,
+                new_unit,
+                new_start,
+                new_end,
+                new_rent,
+                new_balance,
+                new_status,
+                new_em_name,
+                new_em_phone,
+                new_notes,
+                tenant_id,
+            ),
+        )
+        conn.commit()
+    return get_tenant(tenant_id)
+
+
+def delete_tenant(tenant_id: str) -> bool:
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tenants WHERE id = ?", (tenant_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -3766,4 +4186,5 @@ create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
 create_units()
+create_tenants()
 
