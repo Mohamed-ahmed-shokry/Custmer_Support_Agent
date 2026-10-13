@@ -3582,4 +3582,109 @@ def test_publish_article_and_analytics_routes(monkeypatch):
     assert res_an.json()["estimated_deflected_queries"] == expected_deflected
 
 
+def test_create_unit_route_success_and_validations(monkeypatch, tmp_path):
+    """Test POST /units creation and error responses."""
+    db_file = tmp_path / "test_api_units.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+
+    # 1. Successful creation
+    unit_rent = 1600.0
+    payload = {
+        "id": "unit_401",
+        "property_name": "Highland Park",
+        "unit_number": "401",
+        "building_name": "Building B",
+        "floor": 4,
+        "address": "401 Highland Ave",
+        "city": "Springfield",
+        "state": "IL",
+        "zip_code": "62704",
+        "monthly_rent": unit_rent,
+        "parking_spot": "P-401",
+        "gate_code": "#4011",
+    }
+    res = client.post("/units", json=payload)
+    assert res.status_code == HTTP_CREATED
+    data = res.json()["unit"]
+    assert data["id"] == "unit_401"
+    assert data["property_name"] == "Highland Park"
+    assert data["monthly_rent"] == unit_rent
+
+    # 2. Duplicate unit ID -> 409 Conflict
+    dup_res = client.post("/units", json=payload)
+    assert dup_res.status_code == HTTP_CONFLICT
+    assert "already exists" in dup_res.json()["detail"].lower()
+
+    # 3. Invalid unit ID (spaces) -> 422 Unprocessable Entity
+    bad_payload = {**payload, "id": "invalid unit id with spaces"}
+    bad_res = client.post("/units", json=bad_payload)
+    assert bad_res.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_list_and_get_unit_routes(monkeypatch, tmp_path):
+    """Test GET /units listing and GET /units/{id} lookup."""
+    db_file = tmp_path / "test_api_units_list.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+
+    # Pre-seeded units are present
+    res = client.get("/units")
+    assert res.status_code == HTTP_OK
+    data = res.json()
+    expected_seeded_units = 3
+    assert data["total"] == expected_seeded_units
+    assert len(data["items"]) == expected_seeded_units
+
+    # Filter by property_name
+    filter_res = client.get("/units?property_name=Sunset%20Heights%20Apartments")
+    assert filter_res.status_code == HTTP_OK
+    expected_filtered_units = 2
+    assert filter_res.json()["total"] == expected_filtered_units
+
+    # Get single unit
+    unit_res = client.get("/units/unit_101")
+    assert unit_res.status_code == HTTP_OK
+    assert unit_res.json()["unit"]["unit_number"] == "101"
+
+    # Not found unit
+    missing_res = client.get("/units/non_existent_unit")
+    assert missing_res.status_code == HTTP_NOT_FOUND
+
+
+def test_update_and_delete_unit_routes(monkeypatch, tmp_path):
+    """Test PATCH /units/{id} update and DELETE /units/{id} deletion."""
+    db_file = tmp_path / "test_api_units_crud.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+
+    # Update unit_204
+    updated_rent = 1999.0
+    patch_res = client.patch(
+        "/units/unit_204",
+        json={"monthly_rent": updated_rent, "parking_spot": "P-999"},
+    )
+    assert patch_res.status_code == HTTP_OK
+    assert patch_res.json()["unit"]["monthly_rent"] == updated_rent
+    assert patch_res.json()["unit"]["parking_spot"] == "P-999"
+
+    # Update non-existent unit
+    patch_missing = client.patch("/units/non_existent_unit", json={"monthly_rent": 1200.0})
+    assert patch_missing.status_code == HTTP_NOT_FOUND
+
+    # Delete unit_PH1
+    del_res = client.delete("/units/unit_PH1")
+    assert del_res.status_code == HTTP_OK
+    assert del_res.json()["status"] == "deleted"
+
+    # Verify unit is gone
+    get_res = client.get("/units/unit_PH1")
+    assert get_res.status_code == HTTP_NOT_FOUND
+
+    # Delete non-existent unit -> 404
+    del_missing = client.delete("/units/unit_PH1")
+    assert del_missing.status_code == HTTP_NOT_FOUND
+
+
+
 
