@@ -281,6 +281,9 @@ VALID_WEBHOOK_EVENTS = {
     "session.tier_escalated",
     "knowledge.gap_detected",
     "knowledge.article_published",
+    "tenant.created",
+    "tenant.updated",
+    "tenant.balance_overdue",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
@@ -348,6 +351,42 @@ _CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX = (
 
 VALID_KNOWLEDGE_ARTICLE_STATUSES = {"draft", "published", "archived"}
 DEFAULT_KNOWLEDGE_ARTICLE_STATUS = "draft"
+
+_CREATE_UNITS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS units ("
+    "id TEXT PRIMARY KEY, "
+    "property_name TEXT NOT NULL, "
+    "unit_number TEXT NOT NULL, "
+    "building_name TEXT NOT NULL DEFAULT '', "
+    "floor INTEGER NOT NULL DEFAULT 1, "
+    "address TEXT NOT NULL, "
+    "city TEXT NOT NULL, "
+    "state TEXT NOT NULL, "
+    "zip_code TEXT NOT NULL, "
+    "monthly_rent REAL NOT NULL DEFAULT 0.0, "
+    "parking_spot TEXT NOT NULL DEFAULT '', "
+    "gate_code TEXT NOT NULL DEFAULT '', "
+    "wifi_ssid TEXT NOT NULL DEFAULT '', "
+    "trash_day TEXT NOT NULL DEFAULT '', "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_UNITS_PROPERTY_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_units_property ON units(property_name)"
+)
+_CREATE_UNITS_UNIT_NUM_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_units_number ON units(unit_number)"
+)
+
+MAX_UNIT_ID_LENGTH = 50
+MAX_PROPERTY_NAME_LENGTH = 100
+MAX_UNIT_NUMBER_LENGTH = 50
+MAX_ADDRESS_LENGTH = 200
+MAX_CITY_LENGTH = 100
+MAX_STATE_LENGTH = 50
+MAX_ZIP_CODE_LENGTH = 20
+MAX_UNIT_NOTES_LENGTH = 2000
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -3360,6 +3399,357 @@ def delete_knowledge_article(article_id: int) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+DEFAULT_SEEDED_UNITS = [
+    {
+        "id": "unit_101",
+        "property_name": "Sunset Heights Apartments",
+        "unit_number": "101",
+        "building_name": "Building A",
+        "floor": 1,
+        "address": "742 Evergreen Terrace",
+        "city": "Springfield",
+        "state": "IL",
+        "zip_code": "62704",
+        "monthly_rent": 1450.0,
+        "parking_spot": "P-12",
+        "gate_code": "#1010",
+        "wifi_ssid": "SunsetHeights-Guest",
+        "trash_day": "Tuesday",
+        "notes": "Corner 1-bedroom unit near laundry facility.",
+    },
+    {
+        "id": "unit_204",
+        "property_name": "Sunset Heights Apartments",
+        "unit_number": "204",
+        "building_name": "Building B",
+        "floor": 2,
+        "address": "742 Evergreen Terrace",
+        "city": "Springfield",
+        "state": "IL",
+        "zip_code": "62704",
+        "monthly_rent": 1850.0,
+        "parking_spot": "P-24",
+        "gate_code": "#2040",
+        "wifi_ssid": "SunsetHeights-Guest",
+        "trash_day": "Tuesday",
+        "notes": "2-bedroom unit with balcony facing courtyard.",
+    },
+    {
+        "id": "unit_PH1",
+        "property_name": "Oak Ridge Tower",
+        "unit_number": "PH1",
+        "building_name": "Main Tower",
+        "floor": 12,
+        "address": "100 Grand Avenue",
+        "city": "Chicago",
+        "state": "IL",
+        "zip_code": "60611",
+        "monthly_rent": 3200.0,
+        "parking_spot": "G-01 (Covered)",
+        "gate_code": "*9988",
+        "wifi_ssid": "OakRidge-Residents",
+        "trash_day": "Daily Valet Trash",
+        "notes": "Penthouse suite with skyline view and smart lock.",
+    },
+]
+
+
+def normalize_unit_id(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Unit ID must not be blank.")
+    if len(cleaned) > MAX_UNIT_ID_LENGTH:
+        raise ValueError(f"Unit ID must be at most {MAX_UNIT_ID_LENGTH} characters.")
+    if not re.match(r"^[A-Za-z0-9_\-\.]+$", cleaned):
+        raise ValueError(
+            "Unit ID may only contain alphanumeric characters, underscores, hyphens, and periods."
+        )
+    return cleaned
+
+
+def normalize_property_name(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Property name must not be blank.")
+    if len(cleaned) > MAX_PROPERTY_NAME_LENGTH:
+        raise ValueError(f"Property name must be at most {MAX_PROPERTY_NAME_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_unit_number(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Unit number must not be blank.")
+    if len(cleaned) > MAX_UNIT_NUMBER_LENGTH:
+        raise ValueError(f"Unit number must be at most {MAX_UNIT_NUMBER_LENGTH} characters.")
+    return cleaned
+
+
+def create_units() -> None:
+    """Create units table, indexes, and pre-seed initial property units if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_UNITS_TABLE)
+        conn.execute(_CREATE_UNITS_PROPERTY_INDEX)
+        conn.execute(_CREATE_UNITS_UNIT_NUM_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM units").fetchone()
+        if row and row[0] == 0:
+            for u in DEFAULT_SEEDED_UNITS:
+                conn.execute(
+                    "INSERT INTO units "
+                    "(id, property_name, unit_number, building_name, floor, address, "
+                    "city, state, zip_code, monthly_rent, parking_spot, gate_code, "
+                    "wifi_ssid, trash_day, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        u["id"],
+                        u["property_name"],
+                        u["unit_number"],
+                        u["building_name"],
+                        u["floor"],
+                        u["address"],
+                        u["city"],
+                        u["state"],
+                        u["zip_code"],
+                        u["monthly_rent"],
+                        u["parking_spot"],
+                        u["gate_code"],
+                        u["wifi_ssid"],
+                        u["trash_day"],
+                        u["notes"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_unit(  # noqa: PLR0913, PLR0917
+    unit_id: str,
+    property_name: str,
+    unit_number: str,
+    address: str,
+    city: str,
+    state: str,
+    zip_code: str,
+    building_name: str = "",
+    floor: int = 1,
+    monthly_rent: float = 0.0,
+    parking_spot: str = "",
+    gate_code: str = "",
+    wifi_ssid: str = "",
+    trash_day: str = "",
+    notes: str = "",
+) -> dict[str, Any]:
+    norm_id = normalize_unit_id(unit_id)
+    norm_prop = normalize_property_name(property_name)
+    norm_num = normalize_unit_number(unit_number)
+    clean_addr = (address or "").strip()
+    if not clean_addr:
+        raise ValueError("Address must not be blank.")
+    if len(clean_addr) > MAX_ADDRESS_LENGTH:
+        raise ValueError(f"Address must be at most {MAX_ADDRESS_LENGTH} characters.")
+    clean_city = (city or "").strip()
+    if not clean_city:
+        raise ValueError("City must not be blank.")
+    clean_state = (state or "").strip()
+    if not clean_state:
+        raise ValueError("State must not be blank.")
+    clean_zip = (zip_code or "").strip()
+    if not clean_zip:
+        raise ValueError("Zip code must not be blank.")
+    clean_bldg = (building_name or "").strip()
+    clean_parking = (parking_spot or "").strip()
+    clean_gate = (gate_code or "").strip()
+    clean_wifi = (wifi_ssid or "").strip()
+    clean_trash = (trash_day or "").strip()
+    clean_notes = (notes or "").strip()
+    rent_val = max(0.0, float(monthly_rent))
+    floor_val = int(floor)
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute("SELECT id FROM units WHERE id = ?", (norm_id,)).fetchone()
+        if existing:
+            raise ValueError(f"Unit with ID '{norm_id}' already exists.")
+        conn.execute(
+            "INSERT INTO units "
+            "(id, property_name, unit_number, building_name, floor, address, "
+            "city, state, zip_code, monthly_rent, parking_spot, gate_code, "
+            "wifi_ssid, trash_day, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                norm_id,
+                norm_prop,
+                norm_num,
+                clean_bldg,
+                floor_val,
+                clean_addr,
+                clean_city,
+                clean_state,
+                clean_zip,
+                rent_val,
+                clean_parking,
+                clean_gate,
+                clean_wifi,
+                clean_trash,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+    res = get_unit(norm_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created unit.")
+    return res
+
+
+def get_unit(unit_id: str) -> dict[str, Any] | None:
+    cleaned_id = (unit_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM units WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_units(
+    property_name: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM units"]
+    count_parts = ["SELECT COUNT(*) FROM units"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if property_name and property_name.strip():
+        where_clauses.append("LOWER(property_name) = LOWER(?)")
+        params.append(property_name.strip())
+
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(unit_number) LIKE ? OR LOWER(property_name) LIKE ? OR LOWER(address) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY property_name ASC, unit_number ASC LIMIT ? OFFSET ?")
+
+    with closing(get_db_connection()) as conn:
+        count_cursor = conn.execute(" ".join(count_parts), tuple(params))
+        total = int(count_cursor.fetchone()[0])
+        list_params = list(params) + [max(1, limit), max(0, offset)]
+        rows = conn.execute(" ".join(query_parts), tuple(list_params)).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_unit(  # noqa: PLR0912, PLR0913, PLR0917
+    unit_id: str,
+    property_name: str | None = None,
+    unit_number: str | None = None,
+    building_name: str | None = None,
+    floor: int | None = None,
+    address: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    zip_code: str | None = None,
+    monthly_rent: float | None = None,
+    parking_spot: str | None = None,
+    gate_code: str | None = None,
+    wifi_ssid: str | None = None,
+    trash_day: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    current = get_unit(unit_id)
+    if not current:
+        return None
+
+    new_prop = (
+        normalize_property_name(property_name)
+        if property_name is not None
+        else current["property_name"]
+    )
+    new_num = (
+        normalize_unit_number(unit_number)
+        if unit_number is not None
+        else current["unit_number"]
+    )
+    new_bldg = (
+        building_name.strip()
+        if building_name is not None
+        else current["building_name"]
+    )
+    new_floor = int(floor) if floor is not None else current["floor"]
+    new_addr = address.strip() if address is not None else current["address"]
+    new_city = city.strip() if city is not None else current["city"]
+    new_state = state.strip() if state is not None else current["state"]
+    new_zip = zip_code.strip() if zip_code is not None else current["zip_code"]
+    new_rent = (
+        max(0.0, float(monthly_rent))
+        if monthly_rent is not None
+        else current["monthly_rent"]
+    )
+    new_parking = (
+        parking_spot.strip()
+        if parking_spot is not None
+        else current["parking_spot"]
+    )
+    new_gate = (
+        gate_code.strip()
+        if gate_code is not None
+        else current["gate_code"]
+    )
+    new_wifi = (
+        wifi_ssid.strip()
+        if wifi_ssid is not None
+        else current["wifi_ssid"]
+    )
+    new_trash = (
+        trash_day.strip()
+        if trash_day is not None
+        else current["trash_day"]
+    )
+    new_notes = notes.strip() if notes is not None else current["notes"]
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE units SET "
+            "property_name = ?, unit_number = ?, building_name = ?, floor = ?, "
+            "address = ?, city = ?, state = ?, zip_code = ?, monthly_rent = ?, "
+            "parking_spot = ?, gate_code = ?, wifi_ssid = ?, trash_day = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_prop,
+                new_num,
+                new_bldg,
+                new_floor,
+                new_addr,
+                new_city,
+                new_state,
+                new_zip,
+                new_rent,
+                new_parking,
+                new_gate,
+                new_wifi,
+                new_trash,
+                new_notes,
+                unit_id,
+            ),
+        )
+        conn.commit()
+    return get_unit(unit_id)
+
+
+def delete_unit(unit_id: str) -> bool:
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM units WHERE id = ?", (unit_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -3375,4 +3765,5 @@ create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
+create_units()
 
