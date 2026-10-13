@@ -215,6 +215,11 @@ from api.pydantic_models import (
     SupportAgentUpdateRequest,
     SupportTriageAnalyticsResponse,
     TagCount,
+    UnitCreateRequest,
+    UnitItem,
+    UnitListResponse,
+    UnitResponse,
+    UnitUpdateRequest,
     UpdateSessionRequest,
     UploadDocumentResponse,
     WebhookCreateRequest,
@@ -2583,5 +2588,104 @@ def get_knowledge_analytics_route():
     """Retrieve knowledge base gap and deflection analytics."""
     analytics = knowledge_base.get_knowledge_base_analytics()
     return KnowledgeBaseAnalyticsResponse(**analytics)
+
+
+# --- Property Units Endpoints ---
+
+
+@app.post("/units", response_model=UnitResponse, status_code=201)
+def create_unit_route(request: UnitCreateRequest):
+    """Register a new property unit."""
+    try:
+        created = db_utils.create_unit(
+            unit_id=request.id,
+            property_name=request.property_name,
+            unit_number=request.unit_number,
+            building_name=request.building_name or "",
+            floor=request.floor if request.floor is not None else 1,
+            address=request.address or "",
+            city=request.city or "",
+            state=request.state or "",
+            zip_code=request.zip_code or "",
+            monthly_rent=request.monthly_rent,
+            parking_spot=request.parking_spot or "",
+            gate_code=request.gate_code or "",
+            wifi_ssid=request.wifi_ssid or "",
+            trash_day=request.trash_day or "",
+            notes=request.notes or "",
+        )
+        return UnitResponse(unit=UnitItem(**created))
+    except ValueError as exc:
+        status_code = 409 if "already exists" in str(exc).lower() else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@app.get("/units", response_model=UnitListResponse)
+def list_units_route(
+    property_name: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List property units with optional filtering and pagination."""
+    units, total = db_utils.list_units(
+        property_name=property_name,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return UnitListResponse(
+        items=[UnitItem(**u) for u in units],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/units/{unit_id}", response_model=UnitResponse)
+def get_unit_route(unit_id: str):
+    """Fetch details for a specific property unit."""
+    unit = db_utils.get_unit(unit_id)
+    if not unit:
+        raise HTTPException(status_code=404, detail=f"Unit '{unit_id}' not found.")
+    return UnitResponse(unit=UnitItem(**unit))
+
+
+@app.patch("/units/{unit_id}", response_model=UnitResponse)
+def update_unit_route(unit_id: str, request: UnitUpdateRequest):
+    """Update fields of an existing property unit."""
+    try:
+        updated = db_utils.update_unit(
+            unit_id=unit_id,
+            property_name=request.property_name,
+            unit_number=request.unit_number,
+            building_name=request.building_name,
+            floor=request.floor,
+            address=request.address,
+            city=request.city,
+            state=request.state,
+            zip_code=request.zip_code,
+            monthly_rent=request.monthly_rent,
+            parking_spot=request.parking_spot,
+            gate_code=request.gate_code,
+            wifi_ssid=request.wifi_ssid,
+            trash_day=request.trash_day,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Unit '{unit_id}' not found.")
+    return UnitResponse(unit=UnitItem(**updated))
+
+
+@app.delete("/units/{unit_id}")
+def delete_unit_route(unit_id: str):
+    """Delete a property unit record."""
+    deleted = db_utils.delete_unit(unit_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Unit '{unit_id}' not found.")
+    return {"status": "deleted", "unit_id": unit_id}
+
 
 
