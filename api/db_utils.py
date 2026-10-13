@@ -3939,6 +3939,15 @@ def normalize_tenant_email(value: str | None) -> str:
     return cleaned
 
 
+def normalize_tenant_phone(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Phone number must not be blank.")
+    if len(cleaned) > MAX_TENANT_PHONE_LENGTH:
+        raise ValueError(f"Phone number must be at most {MAX_TENANT_PHONE_LENGTH} characters.")
+    return cleaned
+
+
 def normalize_tenant_status(value: str | None) -> str:
     status = (value or DEFAULT_TENANT_STATUS).strip().lower()
     if status not in VALID_TENANT_STATUSES:
@@ -4012,9 +4021,7 @@ def create_tenant(  # noqa: PLR0913, PLR0917
     norm_first = normalize_tenant_name(first_name, "First name")
     norm_last = normalize_tenant_name(last_name, "Last name")
     norm_email = normalize_tenant_email(email)
-    clean_phone = (phone or "").strip()
-    if not clean_phone:
-        raise ValueError("Phone number must not be blank.")
+    clean_phone = normalize_tenant_phone(phone)
     norm_start = normalize_date_str(lease_start, "Lease start date")
     norm_end = normalize_date_str(lease_end, "Lease end date")
     norm_status = normalize_tenant_status(status)

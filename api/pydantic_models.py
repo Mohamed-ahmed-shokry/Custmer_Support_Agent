@@ -1601,6 +1601,270 @@ class KnowledgeBaseAnalyticsResponse(BaseModel):
     estimated_deflected_queries: int = 0
 
 
+# --- Property Units Models ---
+
+
+class UnitItem(BaseModel):
+    id: str
+    property_name: str
+    unit_number: str
+    building_name: str | None = None
+    floor: int | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zip_code: str | None = None
+    monthly_rent: float = 0.0
+    parking_spot: str | None = None
+    gate_code: str | None = None
+    wifi_ssid: str | None = None
+    trash_day: str | None = None
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class UnitCreateRequest(BaseModel):
+    id: str = Field(..., max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    property_name: str = Field(..., max_length=db_utils.MAX_PROPERTY_NAME_LENGTH)
+    unit_number: str = Field(..., max_length=db_utils.MAX_UNIT_NUMBER_LENGTH)
+    building_name: str | None = Field(default=None, max_length=100)
+    floor: int | None = None
+    address: str | None = Field(default=None, max_length=db_utils.MAX_ADDRESS_LENGTH)
+    city: str | None = Field(default=None, max_length=db_utils.MAX_CITY_LENGTH)
+    state: str | None = Field(default=None, max_length=db_utils.MAX_STATE_LENGTH)
+    zip_code: str | None = Field(default=None, max_length=db_utils.MAX_ZIP_CODE_LENGTH)
+    monthly_rent: float = Field(default=0.0, ge=0.0)
+    parking_spot: str | None = Field(default=None, max_length=50)
+    gate_code: str | None = Field(default=None, max_length=50)
+    wifi_ssid: str | None = Field(default=None, max_length=100)
+    trash_day: str | None = Field(default=None, max_length=50)
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_NOTES_LENGTH)
+
+    @field_validator("id")
+    @classmethod
+    def validate_unit_id(cls, v: str) -> str:
+        return db_utils.normalize_unit_id(v)
+
+    @field_validator("property_name")
+    @classmethod
+    def validate_property_name(cls, v: str) -> str:
+        return db_utils.normalize_property_name(v)
+
+    @field_validator("unit_number")
+    @classmethod
+    def validate_unit_number(cls, v: str) -> str:
+        return db_utils.normalize_unit_number(v)
+
+
+class UnitUpdateRequest(BaseModel):
+    property_name: str | None = Field(default=None, max_length=db_utils.MAX_PROPERTY_NAME_LENGTH)
+    unit_number: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_NUMBER_LENGTH)
+    building_name: str | None = Field(default=None, max_length=100)
+    floor: int | None = None
+    address: str | None = Field(default=None, max_length=db_utils.MAX_ADDRESS_LENGTH)
+    city: str | None = Field(default=None, max_length=db_utils.MAX_CITY_LENGTH)
+    state: str | None = Field(default=None, max_length=db_utils.MAX_STATE_LENGTH)
+    zip_code: str | None = Field(default=None, max_length=db_utils.MAX_ZIP_CODE_LENGTH)
+    monthly_rent: float | None = Field(default=None, ge=0.0)
+    parking_spot: str | None = Field(default=None, max_length=50)
+    gate_code: str | None = Field(default=None, max_length=50)
+    wifi_ssid: str | None = Field(default=None, max_length=100)
+    trash_day: str | None = Field(default=None, max_length=50)
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_NOTES_LENGTH)
+
+    @field_validator("property_name")
+    @classmethod
+    def validate_property_name(cls, v: str | None) -> str | None:
+        return db_utils.normalize_property_name(v) if v is not None else None
+
+    @field_validator("unit_number")
+    @classmethod
+    def validate_unit_number(cls, v: str | None) -> str | None:
+        return db_utils.normalize_unit_number(v) if v is not None else None
+
+
+class UnitResponse(BaseModel):
+    unit: UnitItem
+
+
+class UnitListResponse(BaseModel):
+    items: list[UnitItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+# --- Tenants Models ---
+
+
+class TenantItem(BaseModel):
+    id: str
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    unit_id: str | None = None
+    lease_start: str
+    lease_end: str
+    monthly_rent: float = 0.0
+    balance_due: float = 0.0
+    status: str = "active"
+    emergency_contact_name: str = ""
+    emergency_contact_phone: str = ""
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class TenantCreateRequest(BaseModel):
+    id: str = Field(..., max_length=db_utils.MAX_TENANT_ID_LENGTH)
+    first_name: str = Field(..., max_length=db_utils.MAX_TENANT_NAME_LENGTH)
+    last_name: str = Field(..., max_length=db_utils.MAX_TENANT_NAME_LENGTH)
+    email: str = Field(..., max_length=db_utils.MAX_TENANT_EMAIL_LENGTH)
+    phone: str = Field(..., max_length=db_utils.MAX_TENANT_PHONE_LENGTH)
+    unit_id: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    lease_start: str = Field(...)
+    lease_end: str = Field(...)
+    monthly_rent: float = Field(default=0.0, ge=0.0)
+    balance_due: float = Field(default=0.0)
+    status: str = Field(default="active")
+    emergency_contact_name: str = Field(default="", max_length=db_utils.MAX_TENANT_NAME_LENGTH)
+    emergency_contact_phone: str = Field(default="", max_length=db_utils.MAX_TENANT_PHONE_LENGTH)
+    notes: str = Field(default="", max_length=db_utils.MAX_TENANT_NOTES_LENGTH)
+
+    @field_validator("id")
+    @classmethod
+    def validate_tenant_id(cls, v: str) -> str:
+        return db_utils.normalize_tenant_id(v)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return db_utils.normalize_tenant_email(v)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return db_utils.normalize_tenant_phone(v)
+
+    @field_validator("lease_start")
+    @classmethod
+    def validate_lease_start(cls, v: str) -> str:
+        return db_utils.normalize_date_str(v, field_name="Lease start")
+
+    @field_validator("lease_end")
+    @classmethod
+    def validate_lease_end(cls, v: str) -> str:
+        return db_utils.normalize_date_str(v, field_name="Lease end")
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_tenant_status(v)
+
+
+class TenantUpdateRequest(BaseModel):
+    first_name: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_NAME_LENGTH)
+    last_name: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_NAME_LENGTH)
+    email: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_EMAIL_LENGTH)
+    phone: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_PHONE_LENGTH)
+    unit_id: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    lease_start: str | None = Field(default=None)
+    lease_end: str | None = Field(default=None)
+    monthly_rent: float | None = Field(default=None, ge=0.0)
+    balance_due: float | None = Field(default=None)
+    status: str | None = Field(default=None)
+    emergency_contact_name: str | None = Field(
+        default=None, max_length=db_utils.MAX_TENANT_NAME_LENGTH
+    )
+    emergency_contact_phone: str | None = Field(
+        default=None, max_length=db_utils.MAX_TENANT_PHONE_LENGTH
+    )
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_NOTES_LENGTH)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str | None) -> str | None:
+        return db_utils.normalize_tenant_email(v) if v is not None else None
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        return db_utils.normalize_tenant_phone(v) if v is not None else None
+
+    @field_validator("lease_start")
+    @classmethod
+    def validate_lease_start(cls, v: str | None) -> str | None:
+        return (
+            db_utils.normalize_date_str(v, field_name="Lease start") if v is not None else None
+        )
+
+    @field_validator("lease_end")
+    @classmethod
+    def validate_lease_end(cls, v: str | None) -> str | None:
+        return db_utils.normalize_date_str(v, field_name="Lease end") if v is not None else None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return db_utils.normalize_tenant_status(v) if v is not None else None
+
+
+class TenantResponse(BaseModel):
+    tenant: TenantItem
+
+
+class TenantListResponse(BaseModel):
+    items: list[TenantItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+# --- Session Linking & Context Models ---
+
+
+class SessionTenantLinkRequest(BaseModel):
+    tenant_id: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_ID_LENGTH)
+    unit_id: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+
+
+class SessionTenantContextResponse(BaseModel):
+    session_id: str
+    tenant_id: str | None = None
+    unit_id: str | None = None
+    tenant: TenantItem | None = None
+    unit: UnitItem | None = None
+
+
+class TenantSupportHistorySessionItem(BaseModel):
+    session_id: str
+    label: str | None = None
+    status: str = "active"
+    priority: str = "medium"
+    assigned_agent: str | None = None
+    escalation_tier: str = "tier_1"
+    tags: str = ""
+    summary: str = ""
+    resolution_notes: str = ""
+    unit_id: str | None = None
+    message_count: int = 0
+    preview: str = ""
+    created_at: str | None = None
+    last_active: str | None = None
+    rating: int | None = None
+    feedback_score: float | None = None
+    feedback_comment: str | None = None
+
+
+class TenantSupportHistoryResponse(BaseModel):
+    tenant: TenantItem
+    total_sessions: int = 0
+    sessions: list[TenantSupportHistorySessionItem] = Field(default_factory=list)
+
+
+
 
 
 
