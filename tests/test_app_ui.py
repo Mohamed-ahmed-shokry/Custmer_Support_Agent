@@ -2515,3 +2515,174 @@ def test_render_knowledge_articles_publisher(monkeypatch):
     assert published[0] == (7, {"collection": "leasing_kb"})
     assert any("Article #7 published to 'leasing_kb'!" in s for s in st.successes)
     assert st.reruns == 1
+
+
+def test_render_session_tenant_card_linked(monkeypatch):
+    """Test tenant card rendering for a linked session and unlinking."""
+    st = FakeStreamlit(buttons={"btn_unlink_tenant_sess_1": True})
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_ctx = {
+        "session_id": "sess_1",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "tenant": {
+            "id": "tenant_1",
+            "first_name": "Sarah",
+            "last_name": "Connor",
+            "email": "sarah@example.com",
+            "phone": "555-0199",
+            "lease_start": "2026-01-01",
+            "lease_end": "2026-12-31",
+            "monthly_rent": 1450.0,
+            "balance_due": 0.0,
+            "status": "active",
+        },
+        "unit": {
+            "id": "unit_101",
+            "unit_number": "101",
+            "property_name": "Sunset Heights",
+            "parking_spot": "P-101",
+            "gate_code": "#1010",
+        },
+    }
+    unlinked_calls = []
+
+    def fake_link(sid, tenant_id=None, unit_id=None):
+        unlinked_calls.append((sid, tenant_id, unit_id))
+        return True
+
+    monkeypatch.setattr(sidebar, "get_session_tenant_context", lambda sid: mock_ctx)
+    monkeypatch.setattr(sidebar, "link_session_tenant", fake_link)
+
+    sidebar._render_session_tenant_card("sess_1")
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Sarah Connor" in m for m in markdowns)
+    assert any("Sunset Heights" in m for m in markdowns)
+    expected_unlinks = 1
+    assert len(unlinked_calls) == expected_unlinks
+    assert unlinked_calls[0] == ("sess_1", None, None)
+    assert st.reruns == 1
+
+
+def test_render_session_tenant_card_unlinked(monkeypatch):
+    """Test tenant card rendering for an unlinked session and linking."""
+    st = FakeStreamlit(
+        values={"select_link_tenant_sess_2": "tenant_2"},
+        buttons={"btn_link_tenant_sess_2": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    linked_calls = []
+
+    mock_tenants_payload = {
+        "items": [
+            {
+                "id": "tenant_2",
+                "first_name": "Marcus",
+                "last_name": "Vance",
+                "unit_id": "unit_204",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "get_session_tenant_context", lambda sid: None)
+    monkeypatch.setattr(sidebar, "list_tenants", lambda **kwargs: mock_tenants_payload)
+    monkeypatch.setattr(
+        sidebar,
+        "link_session_tenant",
+        lambda sid, tenant_id=None, unit_id=None: linked_calls.append((sid, tenant_id)) or True,
+    )
+
+    sidebar._render_session_tenant_card("sess_2")
+
+    expected_links = 1
+    assert len(linked_calls) == expected_links
+    assert linked_calls[0] == ("sess_2", "tenant_2")
+    assert st.reruns == 1
+
+
+def test_render_tenant_and_property_directory_tabs(monkeypatch):
+    """Test directory panel tabs (Tenants, Units, Support History)."""
+    # 1. Tenants tab with delete
+    st_t = FakeStreamlit(buttons={"btn_del_tenant_t1": True})
+    monkeypatch.setattr(sidebar, "st", st_t)
+    deleted_tenants = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenants",
+        lambda **kwargs: {
+            "items": [{"id": "t1", "first_name": "John", "last_name": "Doe", "monthly_rent": 1200}],
+            "total": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar, "delete_tenant", lambda tid: deleted_tenants.append(tid) or True
+    )
+
+    sidebar._render_tenants_tab()
+    expected_del_t = 1
+    assert len(deleted_tenants) == expected_del_t
+    assert deleted_tenants[0] == "t1"
+    assert st_t.reruns == 1
+
+    # 2. Units tab with delete
+    st_u = FakeStreamlit(buttons={"btn_del_unit_u1": True})
+    monkeypatch.setattr(sidebar, "st", st_u)
+    deleted_units = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_units",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "u1",
+                    "unit_number": "201",
+                    "property_name": "Park Place",
+                    "address": "123 Park St",
+                    "city": "Austin",
+                    "state": "TX",
+                    "zip_code": "78701",
+                }
+            ],
+            "total": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar, "delete_unit", lambda uid: deleted_units.append(uid) or True
+    )
+
+    sidebar._render_units_tab()
+    expected_del_u = 1
+    assert len(deleted_units) == expected_del_u
+    assert deleted_units[0] == "u1"
+    assert st_u.reruns == 1
+
+    # 3. Support History tab
+    st_h = FakeStreamlit(
+        values={"hist_tenant_select": "t1"},
+        buttons={"btn_fetch_t_history": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st_h)
+    monkeypatch.setattr(
+        sidebar,
+        "get_tenant_support_history",
+        lambda tid: {
+            "tenant": {"id": "t1", "first_name": "John", "last_name": "Doe"},
+            "total_sessions": 2,
+            "sessions": [
+                {
+                    "session_id": "s12345678",
+                    "status": "resolved",
+                    "summary": "AC repair",
+                    "rating": 5,
+                }
+            ],
+        },
+    )
+
+    sidebar._render_tenant_history_tab()
+    markdowns_h = [c.args[0] for c in st_h.calls if c.fn == "markdown"]
+    assert any("Total Linked Sessions:" in m for m in markdowns_h)
+
