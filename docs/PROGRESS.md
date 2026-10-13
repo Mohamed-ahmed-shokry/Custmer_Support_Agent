@@ -18,7 +18,7 @@
 - [x] **Task 8**: FastAPI endpoints for tenants, session linking, tenant context, and history (`/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [x] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 10**: Streamlit UI session tenant context card, tenant linking, and "🏢 Tenant & Property Directory" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
-- [ ] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
+- [x] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ---
@@ -33,7 +33,7 @@
 | AC4 | FastAPI endpoints `/units*`, `/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`, and `/tenants/{id}/support-history` are wired and verified with complete HTTP status codes | PENDING | `api/main.py`, `tests/test_api_routes.py` |
 | AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PENDING | `app/api_utils.py`, `tests/test_app_api_utils.py` |
 | AC6 | Streamlit UI in `app/sidebar.py` provides the Tenant Context Card in session metadata and the "🏢 Tenant & Property Directory" management panel | PENDING | `app/sidebar.py`, `tests/test_app_ui.py` |
-| AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.35.0`) are updated and accurate | PENDING | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
+| AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.35.0`) are updated and accurate | PASSED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
 | AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
 
 ---
