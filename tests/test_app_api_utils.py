@@ -1754,6 +1754,100 @@ def test_csat_summary_and_scorecards_client(fake_requests, fake_st, monkeypatch)
     assert api_utils.get_agent_scorecards()["total_agents"] == 0
 
 
+def test_knowledge_gap_client_helpers(fake_requests, fake_st, monkeypatch):
+    # 1. record_knowledge_gap
+    fake_gap = {"id": 1, "query": "Elevator booking", "status": "open"}
+    fake_requests.response = FakeResponse(status_code=201, payload=fake_gap)
+    res = api_utils.record_knowledge_gap("Elevator booking", category="policy")
+    assert res == fake_gap
+
+    fake_requests.response = FakeResponse(status_code=400, payload={"detail": "bad"})
+    assert api_utils.record_knowledge_gap("Elevator booking") is None
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.record_knowledge_gap("Elevator booking") is None
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    # 2. list_knowledge_gaps
+    fake_gaps_resp = {"items": [fake_gap], "total": 1}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_gaps_resp)
+    items, tot = api_utils.list_knowledge_gaps(status="open", category="policy", priority="high")
+    assert len(items) == 1
+    assert tot == 1
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_knowledge_gaps() == ([], 0)
+
+    # 3. scan_knowledge_gaps
+    fake_scan = {"scanned_sessions_count": 10, "gaps_created": 2}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_scan)
+    assert api_utils.scan_knowledge_gaps(limit=20) == fake_scan
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.scan_knowledge_gaps() is None
+
+    # 4. update_knowledge_gap & delete_knowledge_gap
+    fake_updated = {**fake_gap, "status": "resolved"}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_updated)
+    assert api_utils.update_knowledge_gap(1, status="resolved") == fake_updated
+
+    fake_requests.response = FakeResponse(status_code=200, payload={"status": "deleted"})
+    assert api_utils.delete_knowledge_gap(1) is True
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.update_knowledge_gap(1, status="resolved") is None
+    assert api_utils.delete_knowledge_gap(1) is False
+
+
+def test_knowledge_article_client_helpers(fake_requests, fake_st):
+    # 1. create_knowledge_article & draft_article_from_session
+    fake_art = {"id": 10, "title": "Elevator Guide", "status": "draft"}
+    fake_requests.response = FakeResponse(status_code=201, payload=fake_art)
+    assert api_utils.create_knowledge_article("Elevator Guide", "# Guide") == fake_art
+    assert api_utils.draft_article_from_session("sess-1", author="agent_alice") == fake_art
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_knowledge_article("Elevator Guide", "# Guide") is None
+    assert api_utils.draft_article_from_session("sess-1") is None
+
+    # 2. list_knowledge_articles & get_knowledge_article
+    fake_arts_resp = {"items": [fake_art], "total": 1}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_arts_resp)
+    art_items, art_tot = api_utils.list_knowledge_articles(search="Elevator")
+    assert len(art_items) == 1
+    assert art_tot == 1
+
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_art)
+    assert api_utils.get_knowledge_article(10) == fake_art
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.list_knowledge_articles() == ([], 0)
+    assert api_utils.get_knowledge_article(10) is None
+
+    # 3. update_knowledge_article & delete_knowledge_article
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_art)
+    assert api_utils.update_knowledge_article(10, title="New Title") == fake_art
+    assert api_utils.delete_knowledge_article(10) is True
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.update_knowledge_article(10, title="New Title") is None
+    assert api_utils.delete_knowledge_article(10) is False
+
+    # 4. publish_knowledge_article & get_knowledge_analytics
+    fake_pub = {"article": fake_art, "file_id": 50, "linked_gap_resolved": True}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_pub)
+    assert api_utils.publish_knowledge_article(10, collection="default") == fake_pub
+
+    fake_an = {"total_gaps": 5, "gap_resolution_rate": 80.0}
+    fake_requests.response = FakeResponse(status_code=200, payload=fake_an)
+    assert api_utils.get_knowledge_analytics() == fake_an
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.publish_knowledge_article(10) is None
+    assert api_utils.get_knowledge_analytics() is None
+
+
+
 
 
 
