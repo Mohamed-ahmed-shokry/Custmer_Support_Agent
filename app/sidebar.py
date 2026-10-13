@@ -11,6 +11,8 @@ from app.api_utils import (
     create_macro,
     create_sla_policy,
     create_support_agent,
+    create_tenant,
+    create_unit,
     create_webhook,
     delete_collection,
     delete_document,
@@ -19,6 +21,8 @@ from app.api_utils import (
     delete_session,
     delete_sessions,
     delete_sla_policy,
+    delete_tenant,
+    delete_unit,
     delete_webhook,
     draft_article_from_session,
     evaluate_sla_alerts,
@@ -40,9 +44,12 @@ from app.api_utils import (
     get_session_history,
     get_session_macro_suggestions,
     get_session_sla_status,
+    get_session_tenant_context,
     get_sla_compliance_analytics,
     get_stats,
     get_support_triage_analytics,
+    get_tenant_support_history,
+    link_session_tenant,
     list_collections,
     list_documents,
     list_feedback,
@@ -54,6 +61,8 @@ from app.api_utils import (
     list_sessions,
     list_sla_policies,
     list_support_agents,
+    list_tenants,
+    list_units,
     list_webhook_deliveries,
     list_webhooks,
     ping_webhook,
@@ -478,6 +487,7 @@ def _render_session_metadata(selected, sessions):
     )
     _render_session_assignment_controls(selected, current)
     _render_session_sla_card(selected)
+    _render_session_tenant_card(selected)
 
 
 def _render_session_metadata_actions(
@@ -550,6 +560,86 @@ def _render_session_sla_card(selected):
     col1, col2 = st.sidebar.columns(2)
     col1.metric("First Response", resp_text)
     col2.metric("Resolution", resol_text)
+
+
+def _render_linked_tenant_details(selected, tenant, unit):
+    t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
+    st.sidebar.markdown(f"**Resident:** {t_name}")
+    st.sidebar.caption(
+        f"📧 {tenant.get('email', 'N/A')} | 📞 {tenant.get('phone', 'N/A')}"
+    )
+    if unit:
+        u_info = f"Unit {unit.get('unit_number')} - {unit.get('property_name')}"
+        st.sidebar.markdown(f"**Unit:** {u_info}")
+        if unit.get("parking_spot"):
+            st.sidebar.caption(f"🅿️ Spot: {unit['parking_spot']}")
+        gate = unit.get("gate_code") or unit.get("access_code")
+        if gate:
+            st.sidebar.caption(f"🔑 Gate: {gate}")
+
+    status = tenant.get("status") or "active"
+    badge = "🟢" if status == "active" else "🔴"
+    start_date = tenant.get("lease_start")
+    end_date = tenant.get("lease_end")
+    st.sidebar.markdown(f"**Lease:** {start_date} to {end_date} ({badge} {status})")
+    rent_val = tenant.get("monthly_rent", 0.0)
+    bal_val = tenant.get("balance_due", 0.0)
+    bal_warn = " ⚠️" if bal_val > 0 else ""
+    st.sidebar.caption(f"Rent: ${rent_val:,.2f}/mo | Balance: ${bal_val:,.2f}{bal_warn}")
+
+    if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
+        with st.spinner("Unlinking tenant..."):
+            res = link_session_tenant(selected, tenant_id=None, unit_id=None)
+            if res:
+                st.sidebar.success("Resident unlinked.")
+                st.rerun()
+            else:
+                st.sidebar.error("Failed to unlink resident.")
+
+
+def _render_link_tenant_selector(selected):
+    st.sidebar.caption("No resident profile linked to this session.")
+    all_tenants_resp = list_tenants(limit=100)
+    tenants_list = all_tenants_resp.get("items", []) if all_tenants_resp else []
+    if not tenants_list:
+        return
+
+    tenant_opts = ["(Select Tenant)"] + [t["id"] for t in tenants_list]
+    tenant_names = {
+        t["id"]: f"{t['first_name']} {t['last_name']} (Unit: {t.get('unit_id', 'None')})"
+        for t in tenants_list
+    }
+    tenant_names["(Select Tenant)"] = "-- Select a resident to link --"
+    chosen_tenant = st.sidebar.selectbox(
+        "Link Resident",
+        options=tenant_opts,
+        format_func=lambda x: tenant_names.get(x, x),
+        key=f"select_link_tenant_{selected}",
+    )
+    if st.sidebar.button("🔗 Link to Session", key=f"btn_link_tenant_{selected}"):
+        if chosen_tenant != "(Select Tenant)":
+            with st.spinner("Linking resident..."):
+                res = link_session_tenant(selected, tenant_id=chosen_tenant)
+                if res:
+                    st.sidebar.success("Resident linked to session!")
+                    st.rerun()
+                else:
+                    st.sidebar.error("Failed to link resident.")
+        else:
+            st.sidebar.warning("Please choose a resident to link.")
+
+
+def _render_session_tenant_card(selected):
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🏢 Resident Context & Lease")
+    ctx = get_session_tenant_context(selected)
+    tenant = ctx.get("tenant") if ctx else None
+    unit = ctx.get("unit") if ctx else None
+
+    if tenant:
+        _render_linked_tenant_details(selected, tenant, unit)
+    else:
+        _render_link_tenant_selector(selected)
 
 
 EXPORT_FORMAT_META = {
@@ -1822,6 +1912,186 @@ def _render_knowledge_studio():
         _render_knowledge_articles_publisher()
 
 
+def _render_tenants_tab():
+    t_search = st.text_input(
+        "Search Tenants", key="t_search_input", placeholder="Name, email, phone"
+    )
+    t_status = st.selectbox(
+        "Status",
+        ["All", "active", "past_due", "evicted", "former"],
+        key="t_status_select",
+    )
+    status_filter = None if t_status == "All" else t_status
+    tenants_resp = list_tenants(search=t_search, status=status_filter, limit=50)
+    tenants = tenants_resp.get("items", []) if tenants_resp else []
+    total = tenants_resp.get("total", 0) if tenants_resp else 0
+    st.caption(f"Showing {len(tenants)} of {total} tenant(s)")
+
+    for t in tenants[:10]:
+        t_id = t["id"]
+        full_name = f"{t['first_name']} {t['last_name']}"
+        with st.expander(f"👤 {full_name} ({t.get('unit_id', 'No Unit')})"):
+            st.caption(f"ID: `{t_id}` | Status: `{t.get('status')}`")
+            st.caption(f"📧 {t.get('email')} | 📞 {t.get('phone')}")
+            st.caption(f"Lease: {t.get('lease_start')} - {t.get('lease_end')}")
+            rent_amount = t.get("monthly_rent", 0)
+            bal_amount = t.get("balance_due", 0)
+            st.caption(f"Rent: ${rent_amount:,.2f} | Balance: ${bal_amount:,.2f}")
+            if st.button("Delete Tenant", key=f"btn_del_tenant_{t_id}") and delete_tenant(t_id):
+                st.success(f"Deleted tenant {t_id}")
+                st.rerun()
+
+    with st.expander("➕ Register New Tenant"):
+        new_id = st.text_input("Tenant ID", key="new_t_id", placeholder="e.g. tenant_401")
+        col_n1, col_n2 = st.columns(2)
+        new_first = col_n1.text_input("First Name", key="new_t_first")
+        new_last = col_n2.text_input("Last Name", key="new_t_last")
+        col_c1, col_c2 = st.columns(2)
+        new_email = col_c1.text_input("Email", key="new_t_email")
+        new_phone = col_c2.text_input("Phone", key="new_t_phone")
+        new_unit = st.text_input("Unit ID", key="new_t_unit", placeholder="e.g. unit_101")
+        col_l1, col_l2 = st.columns(2)
+        new_start = col_l1.text_input("Lease Start", value="2026-01-01", key="new_t_start")
+        new_end = col_l2.text_input("Lease End", value="2026-12-31", key="new_t_end")
+        col_f1, col_f2 = st.columns(2)
+        new_rent = col_f1.number_input(
+            "Monthly Rent", min_value=0.0, value=1500.0, step=50.0, key="new_t_rent"
+        )
+        new_bal = col_f2.number_input("Balance Due", value=0.0, step=50.0, key="new_t_bal")
+        if st.button("Save Tenant", key="btn_save_tenant"):
+            if new_id and new_first and new_last and new_email and new_phone:
+                payload = {
+                    "id": new_id,
+                    "first_name": new_first,
+                    "last_name": new_last,
+                    "email": new_email,
+                    "phone": new_phone,
+                    "unit_id": new_unit.strip() if new_unit.strip() else None,
+                    "lease_start": new_start,
+                    "lease_end": new_end,
+                    "monthly_rent": float(new_rent),
+                    "balance_due": float(new_bal),
+                    "status": "active",
+                }
+                res = create_tenant(payload)
+                if res:
+                    st.success(f"Tenant {new_id} registered!")
+                    st.rerun()
+            else:
+                st.warning("Please fill in all required tenant fields.")
+
+
+def _render_units_tab():
+    u_search = st.text_input(
+        "Search Units", key="u_search_input", placeholder="Unit #, building, property"
+    )
+    units_resp = list_units(search=u_search, limit=50)
+    units = units_resp.get("items", []) if units_resp else []
+    total = units_resp.get("total", 0) if units_resp else 0
+    st.caption(f"Showing {len(units)} of {total} unit(s)")
+
+    for u in units[:10]:
+        u_id = u["id"]
+        with st.expander(f"🚪 Unit {u.get('unit_number')} ({u.get('property_name')})"):
+            bldg_name = u.get("building_name", "N/A")
+            floor_val = u.get("floor", 1)
+            st.caption(f"ID: `{u_id}` | Bldg: {bldg_name} | Floor: {floor_val}")
+            u_addr_full = (
+                f"{u.get('address')}, {u.get('city')}, {u.get('state')} {u.get('zip_code')}"
+            )
+            st.caption(f"Address: {u_addr_full}")
+            u_rent_amount = u.get("monthly_rent", 0)
+            u_spot = u.get("parking_spot", "N/A")
+            st.caption(f"Rent: ${u_rent_amount:,.2f} | Parking: {u_spot}")
+            if st.button("Delete Unit", key=f"btn_del_unit_{u_id}") and delete_unit(u_id):
+                st.success(f"Deleted unit {u_id}")
+                st.rerun()
+
+    with st.expander("➕ Add Property Unit"):
+        unit_id = st.text_input("Unit ID", key="new_u_id", placeholder="e.g. unit_501")
+        col_p1, col_p2 = st.columns(2)
+        prop_name = col_p1.text_input("Property Name", value="Sunset Heights", key="new_u_prop")
+        unit_num = col_p2.text_input("Unit Number", placeholder="501", key="new_u_num")
+        u_addr = st.text_input("Street Address", value="100 Main St", key="new_u_addr")
+        col_c1, col_c2, col_c3 = st.columns(3)
+        u_city = col_c1.text_input("City", value="Austin", key="new_u_city")
+        u_state = col_c2.text_input("State", value="TX", key="new_u_state")
+        u_zip = col_c3.text_input("Zip Code", value="78701", key="new_u_zip")
+        col_b1, col_b2 = st.columns(2)
+        bldg = col_b1.text_input("Building", key="new_u_bldg")
+        floor_num = col_b2.number_input("Floor", min_value=1, value=1, step=1, key="new_u_floor")
+        u_rent = st.number_input(
+            "Monthly Rent", min_value=0.0, value=1800.0, step=50.0, key="new_u_rent"
+        )
+        if st.button("Save Unit", key="btn_save_unit"):
+            if unit_id and prop_name and unit_num and u_addr and u_city and u_state and u_zip:
+                payload = {
+                    "id": unit_id,
+                    "property_name": prop_name,
+                    "unit_number": unit_num,
+                    "address": u_addr,
+                    "city": u_city,
+                    "state": u_state,
+                    "zip_code": u_zip,
+                    "building_name": bldg,
+                    "floor": int(floor_num),
+                    "monthly_rent": float(u_rent),
+                }
+                res = create_unit(payload)
+                if res:
+                    st.success(f"Unit {unit_id} created!")
+                    st.rerun()
+            else:
+                st.warning("Please fill in required unit fields.")
+
+
+def _render_tenant_history_tab():
+    tenants_resp = list_tenants(limit=100)
+    tenants = tenants_resp.get("items", []) if tenants_resp else []
+    if not tenants:
+        st.caption("No tenants found.")
+        return
+    tenant_choices = [t["id"] for t in tenants]
+    tenant_map = {t["id"]: f"{t['first_name']} {t['last_name']} ({t['id']})" for t in tenants}
+    selected_t = st.selectbox(
+        "Select Tenant",
+        options=tenant_choices,
+        format_func=lambda tid: tenant_map.get(tid, tid),
+        key="hist_tenant_select",
+    )
+    if st.button("Fetch Support History", key="btn_fetch_t_history"):
+        hist = get_tenant_support_history(selected_t)
+        if hist:
+            total_sess = hist.get("total_sessions", 0)
+            st.markdown(f"**Total Linked Sessions:** `{total_sess}`")
+            for s in hist.get("sessions", []):
+                sid = s.get("session_id", "")
+                st.markdown(f"**Session `{sid[:8]}`** - Status: `{s.get('status')}`")
+                if s.get("summary"):
+                    st.caption(f"Summary: {s['summary']}")
+                if s.get("rating"):
+                    st.caption(f"Rating: {'⭐' * s['rating']}")
+                st.markdown("---")
+        else:
+            st.info("No support history found for this tenant.")
+
+
+def _render_tenant_and_property_directory():
+    with st.sidebar.expander("🏢 Tenant & Property Directory"):
+        tab = st.radio(
+            "Directory Section",
+            ["Tenants", "Units", "Support History"],
+            horizontal=True,
+            key="tenant_dir_tab_radio",
+        )
+        if tab == "Tenants":
+            _render_tenants_tab()
+        elif tab == "Units":
+            _render_units_tab()
+        else:
+            _render_tenant_history_tab()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -1845,6 +2115,7 @@ def display_sidebar():
     _render_webhook_manager()
     _render_sla_manager()
     _render_support_agents_and_workload()
+    _render_tenant_and_property_directory()
     _render_knowledge_studio()
     _render_ops_metrics()
 
