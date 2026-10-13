@@ -1,7 +1,7 @@
 # v0.35.0 Progress Record: Tenant Profiles, Property Unit Directory & Context Grounding Engine
 
 **Phase Branch**: `phase/v0.35.0-tenant-context-property-directory`  
-**Status**: 🚧 IN PROGRESS  
+**Status**: ✅ COMPLETED  
 **Target Version**: 0.35.0  
 
 ---
@@ -19,7 +19,7 @@
 - [x] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 10**: Streamlit UI session tenant context card, tenant linking, and "🏢 Tenant & Property Directory" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
 - [x] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+- [x] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ---
 
@@ -27,14 +27,14 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `units` and `tenants` SQLite tables are created, seeded with defaults, supported with full CRUD and validation, and `session_labels` is migrated with `tenant_id` and `unit_id` columns | PENDING | `api/db_utils.py`, `tests/test_db_utils.py` |
-| AC2 | `api/tenant_context.py` accurately generates structured RAG context blocks from tenant and unit records, and macro variable resolution automatically populates tenant details | PENDING | `api/tenant_context.py`, `tests/test_tenant_context.py` |
-| AC3 | Pydantic schemas in `api/pydantic_models.py` validate unit creation, tenant management, session linking, and tenant context payloads | PENDING | `api/pydantic_models.py`, `tests/test_models.py` |
-| AC4 | FastAPI endpoints `/units*`, `/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`, and `/tenants/{id}/support-history` are wired and verified with complete HTTP status codes | PENDING | `api/main.py`, `tests/test_api_routes.py` |
-| AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PENDING | `app/api_utils.py`, `tests/test_app_api_utils.py` |
-| AC6 | Streamlit UI in `app/sidebar.py` provides the Tenant Context Card in session metadata and the "🏢 Tenant & Property Directory" management panel | PENDING | `app/sidebar.py`, `tests/test_app_ui.py` |
+| AC1 | `units` and `tenants` SQLite tables are created, seeded with defaults, supported with full CRUD and validation, and `session_labels` is migrated with `tenant_id` and `unit_id` columns | PASSED | `api/db_utils.py`, `tests/test_db_utils.py` |
+| AC2 | `api/tenant_context.py` accurately generates structured RAG context blocks from tenant and unit records, and macro variable resolution automatically populates tenant details | PASSED | `api/tenant_context.py`, `tests/test_tenant_context.py` |
+| AC3 | Pydantic schemas in `api/pydantic_models.py` validate unit creation, tenant management, session linking, and tenant context payloads | PASSED | `api/pydantic_models.py`, `tests/test_models.py` |
+| AC4 | FastAPI endpoints `/units*`, `/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`, and `/tenants/{id}/support-history` are wired and verified with complete HTTP status codes | PASSED | `api/main.py`, `tests/test_api_routes.py` |
+| AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PASSED | `app/api_utils.py`, `tests/test_app_api_utils.py` |
+| AC6 | Streamlit UI in `app/sidebar.py` provides the Tenant Context Card in session metadata and the "🏢 Tenant & Property Directory" management panel | PASSED | `app/sidebar.py`, `tests/test_app_ui.py` |
 | AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.35.0`) are updated and accurate | PASSED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
-| AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
+| AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PASSED | 753 passed, 21 deselected, 93.28% coverage; ruff clean; mypy clean |
 
 ---
 
@@ -54,3 +54,9 @@
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
   - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 29 source files`)
   - `python -m pytest -q` -> ✅ Passed (`717 passed, 21 deselected, 93.26% coverage, fail_under=80%`)
+
+- **Milestone Final Verification Gate (v0.35.0)**:
+  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
+  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 30 source files`)
+  - `python -m pytest -q` -> ✅ Passed (`753 passed, 21 deselected, 93.28% coverage, fail_under=80%`)
+

@@ -962,7 +962,7 @@ Close the knowledge loop between customer support operations and the RAG retriev
 - [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
-## v0.35.0 plan — Tenant Profiles, Property Unit Directory & Context Grounding Engine (IN PROGRESS)
+## v0.35.0 plan — Tenant Profiles, Property Unit Directory & Context Grounding Engine ✅ COMPLETED
 
 Transform the customer support experience into a tenant-aware, property-grounded care platform. Maintain a structured directory of property units and tenant profiles with lease dates, rent amounts, and balances; link support sessions directly to tenants; inject verified tenant and property unit context into RAG query prompts for personalized tenant answers; auto-populate macro variables (`{customer_name}`, `{unit_id}`, `{tenant_email}`, `{monthly_rent}`, `{balance_due}`); and deliver a dedicated Tenant & Property Directory dashboard in Streamlit.
 
@@ -1068,7 +1068,7 @@ Enable personalized, context-rich property management customer support by linkin
 - [x] Task 9: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] Task 10: Streamlit UI session tenant context card, tenant linking, and "🏢 Tenant & Property Directory" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
 - [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+- [x] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
