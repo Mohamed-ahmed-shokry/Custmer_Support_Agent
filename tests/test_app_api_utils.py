@@ -1847,6 +1847,128 @@ def test_knowledge_article_client_helpers(fake_requests, fake_st):
     assert api_utils.get_knowledge_analytics() is None
 
 
+def test_property_unit_client_helpers(fake_requests, fake_st, monkeypatch):
+    """Test unit CRUD client helpers."""
+    # 1. list_units
+    mock_units = {"items": [{"id": "unit_101", "unit_number": "101"}], "total": 1}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_units)
+    res_list = api_utils.list_units(property_name="Sunset", search="101")
+    assert res_list == mock_units
+
+    # Error response
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_units() is None
+
+    # Exception
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_units() is None
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    # 2. get_unit
+    mock_unit = {"unit": {"id": "unit_101", "unit_number": "101"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_unit)
+    assert api_utils.get_unit("unit_101") == mock_unit
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_unit("unit_101") is None
+
+    # 3. create_unit
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=mock_unit)
+    assert api_utils.create_unit({"id": "unit_101"}) == mock_unit
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_unit({"id": "unit_101"}) is None
+
+    # 4. update_unit
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_unit)
+    assert api_utils.update_unit("unit_101", {"monthly_rent": 1500.0}) == mock_unit
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.update_unit("unit_101", {"monthly_rent": 1500.0}) is None
+
+    # 5. delete_unit
+    del_payload = {"status": "deleted"}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=del_payload)
+    assert api_utils.delete_unit("unit_101") is True
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_unit("unit_101") is False
+
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.delete_unit("unit_101") is False
+
+
+def test_tenant_and_session_linking_client_helpers(fake_requests, fake_st, monkeypatch):
+    """Test tenant CRUD, session linking, and context client helpers."""
+    # 1. list_tenants
+    mock_tenants = {"items": [{"id": "tenant_1", "first_name": "Sarah"}], "total": 1}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_tenants)
+    res_list = api_utils.list_tenants(unit_id="unit_101", status="active", search="Sarah")
+    assert res_list == mock_tenants
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_tenants() is None
+
+    # 2. get_tenant
+    mock_tenant = {"tenant": {"id": "tenant_1", "first_name": "Sarah"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_tenant)
+    assert api_utils.get_tenant("tenant_1") == mock_tenant
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_tenant("tenant_1") is None
+
+    # 3. create_tenant
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=mock_tenant)
+    assert api_utils.create_tenant({"id": "tenant_1"}) == mock_tenant
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_tenant({"id": "tenant_1"}) is None
+
+    # 4. update_tenant
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_tenant)
+    assert api_utils.update_tenant("tenant_1", {"notes": "VIP"}) == mock_tenant
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.update_tenant("tenant_1", {"notes": "VIP"}) is None
+
+    # 5. delete_tenant
+    fake_del_resp = {"status": "deleted"}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=fake_del_resp)
+    assert api_utils.delete_tenant("tenant_1") is True
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_tenant("tenant_1") is False
+
+    # 6. link_session_tenant
+    mock_link = {"session_id": "s1", "tenant_id": "tenant_1", "unit_id": "unit_101"}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_link)
+    assert api_utils.link_session_tenant("s1", tenant_id="tenant_1") == mock_link
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.link_session_tenant("s1", tenant_id="invalid") is None
+
+    # 7. get_session_tenant_context
+    mock_ctx = {"session_id": "s1", "tenant": mock_tenant["tenant"], "unit": None}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_ctx)
+    assert api_utils.get_session_tenant_context("s1") == mock_ctx
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_session_tenant_context("s1") is None
+
+    # 8. get_tenant_support_history
+    mock_hist = {"tenant": mock_tenant["tenant"], "total_sessions": 1, "sessions": []}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_hist)
+    assert api_utils.get_tenant_support_history("tenant_1") == mock_hist
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_tenant_support_history("tenant_1") is None
+
+    # BoomRequests check
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.get_tenant_support_history("tenant_1") is None
+
+
+
 
 
 
