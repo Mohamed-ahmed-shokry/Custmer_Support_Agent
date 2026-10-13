@@ -950,8 +950,8 @@ Close the knowledge loop between customer support operations and the RAG retriev
 - [x] Task 1: `ROADMAP.md` v0.34.0 plan specification and `docs/PROGRESS.md` initialization
 - [x] Task 2: Database schema & CRUD operations for `knowledge_gaps` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [x] Task 3: Database schema & CRUD operations for `knowledge_articles` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] Task 4: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
-- [ ] Task 5: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [x] Task 4: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [x] Task 5: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
 - [ ] Task 6: Pydantic request/response models for knowledge gaps, articles, publishing, and analytics in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [ ] Task 7: FastAPI endpoints for knowledge gaps (`/knowledge/gaps*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] Task 8: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`

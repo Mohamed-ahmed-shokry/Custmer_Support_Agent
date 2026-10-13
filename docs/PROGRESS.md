@@ -11,8 +11,8 @@
 - [x] **Task 1**: `ROADMAP.md` v0.34.0 plan specification and `docs/PROGRESS.md` initialization
 - [x] **Task 2**: Database schema & CRUD operations for `knowledge_gaps` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [x] **Task 3**: Database schema & CRUD operations for `knowledge_articles` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] **Task 4**: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
-- [ ] **Task 5**: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [x] **Task 4**: Core knowledge gap detection, session scanner, and webhook alerts in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
+- [x] **Task 5**: Session-to-KB Markdown article synthesis, RAG publishing, and coverage analytics in `api/knowledge_base.py` + unit tests in `tests/test_knowledge_base.py`
 - [ ] **Task 6**: Pydantic request/response models for knowledge gaps, articles, publishing, and analytics in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [ ] **Task 7**: FastAPI endpoints for knowledge gaps (`/knowledge/gaps*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] **Task 8**: FastAPI endpoints for knowledge articles, session drafting, publishing, and analytics (`/knowledge/articles*`, `/sessions/{id}/draft-article`, `/knowledge/analytics`) in `api/main.py` + route tests in `tests/test_api_routes.py`
@@ -28,7 +28,7 @@
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
 | AC1 | `knowledge_gaps` and `knowledge_articles` SQLite tables are created and support full CRUD, recurring query deduplication (`normalized_query` frequency incrementing), and validation | VERIFIED | `api/db_utils.py`, `tests/test_db_utils.py` (86 passed) |
-| AC2 | `api/knowledge_base.py` accurately detects unanswered/fallback responses, scans escalated/low-CSAT sessions for gaps, synthesizes structured Markdown KB drafts from sessions, publishes articles into `document_store`/`document_sources` (resolving linked gaps), and dispatches `knowledge.gap_detected` and `knowledge.article_published` webhooks | PENDING | `api/knowledge_base.py`, `tests/test_knowledge_base.py` |
+| AC2 | `api/knowledge_base.py` accurately detects unanswered/fallback responses, scans escalated/low-CSAT sessions for gaps, synthesizes structured Markdown KB drafts from sessions, publishes articles into `document_store`/`document_sources` (resolving linked gaps), and dispatches `knowledge.gap_detected` and `knowledge.article_published` webhooks | VERIFIED | `api/knowledge_base.py`, `tests/test_knowledge_base.py` (6 passed) |
 | AC3 | Pydantic schemas in `api/pydantic_models.py` validate all knowledge gap, article drafting, publishing, and analytics payloads | PENDING | `api/pydantic_models.py`, `tests/test_models.py` |
 | AC4 | FastAPI endpoints `/knowledge/gaps`, `/knowledge/gaps/scan`, `/knowledge/gaps/{id}`, `/knowledge/articles`, `/knowledge/articles/{id}`, `/knowledge/articles/{id}/publish`, `/sessions/{id}/draft-article`, and `/knowledge/analytics` are wired and verified | PENDING | `api/main.py`, `tests/test_api_routes.py` |
 | AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PENDING | `app/api_utils.py`, `tests/test_app_api_utils.py` |
