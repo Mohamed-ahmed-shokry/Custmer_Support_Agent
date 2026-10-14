@@ -1,25 +1,22 @@
-# v0.35.0 Progress Record: Tenant Profiles, Property Unit Directory & Context Grounding Engine
+# v0.36.0 Progress Record: Maintenance Work Orders, Service Requests & Resident Dispatch Engine
 
-**Phase Branch**: `phase/v0.35.0-tenant-context-property-directory`  
-**Status**: ✅ COMPLETED  
-**Target Version**: 0.35.0  
+**Phase Branch**: `phase/v0.36.0-maintenance-work-orders-dispatch`  
+**Status**: 🚧 IN PROGRESS  
+**Target Version**: 0.36.0  
 
 ---
 
 ## 1. Task Breakdown & Execution Status
 
-- [x] **Task 1**: `ROADMAP.md` v0.35.0 plan specification and `docs/PROGRESS.md` initialization
-- [x] **Task 2**: Database schema & CRUD operations for `units` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [x] **Task 3**: Database schema & CRUD operations for `tenants` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [x] **Task 4**: Session tenant linking, migration, and support history queries in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [x] **Task 5**: Core tenant context grounding engine and macro variable auto-resolution in `api/tenant_context.py` & `api/macros.py` + unit tests in `tests/test_tenant_context.py`
-- [x] **Task 6**: Pydantic request/response models for units, tenants, linking, and context in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
-- [x] **Task 7**: FastAPI endpoints for property units (`/units*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [x] **Task 8**: FastAPI endpoints for tenants, session linking, tenant context, and history (`/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`) in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [x] **Task 9**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [x] **Task 10**: Streamlit UI session tenant context card, tenant linking, and "🏢 Tenant & Property Directory" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
-- [x] **Task 11**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
-- [x] **Task 12**: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+- [x] **Task 1**: `ROADMAP.md` v0.36.0 plan specification and `docs/PROGRESS.md` initialization
+- [ ] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `work_orders` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] **Task 3**: Context grounding engine integration for open maintenance work orders in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [ ] **Task 4**: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [ ] **Task 5**: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] **Task 6**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] **Task 7**: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
+- [ ] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] **Task 9**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ---
 
@@ -27,36 +24,31 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `units` and `tenants` SQLite tables are created, seeded with defaults, supported with full CRUD and validation, and `session_labels` is migrated with `tenant_id` and `unit_id` columns | PASSED | `api/db_utils.py`, `tests/test_db_utils.py` |
-| AC2 | `api/tenant_context.py` accurately generates structured RAG context blocks from tenant and unit records, and macro variable resolution automatically populates tenant details | PASSED | `api/tenant_context.py`, `tests/test_tenant_context.py` |
-| AC3 | Pydantic schemas in `api/pydantic_models.py` validate unit creation, tenant management, session linking, and tenant context payloads | PASSED | `api/pydantic_models.py`, `tests/test_models.py` |
-| AC4 | FastAPI endpoints `/units*`, `/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`, and `/tenants/{id}/support-history` are wired and verified with complete HTTP status codes | PASSED | `api/main.py`, `tests/test_api_routes.py` |
-| AC5 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PASSED | `app/api_utils.py`, `tests/test_app_api_utils.py` |
-| AC6 | Streamlit UI in `app/sidebar.py` provides the Tenant Context Card in session metadata and the "🏢 Tenant & Property Directory" management panel | PASSED | `app/sidebar.py`, `tests/test_app_ui.py` |
-| AC7 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.35.0`) are updated and accurate | PASSED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
-| AC8 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PASSED | 753 passed, 21 deselected, 93.28% coverage; ruff clean; mypy clean |
+| AC1 | `work_orders` SQLite table is created, seeded with defaults, and supported with CRUD, category/priority/status filters, and summary metrics in `api/db_utils.py` | PENDING | `api/db_utils.py`, `tests/test_db_utils.py` |
+| AC2 | `api/tenant_context.py` augments grounding prompt context with active maintenance work orders for the linked session/tenant/unit | PENDING | `api/tenant_context.py`, `tests/test_tenant_context.py` |
+| AC3 | Webhook events `work_order.created`, `work_order.emergency_escalated`, and `work_order.status_changed` trigger correctly on lifecycle transitions | PENDING | `api/webhooks.py`, `tests/test_webhooks.py` |
+| AC4 | Pydantic schemas in `api/pydantic_models.py` validate work order creation, update, filtering, metrics, and session conversion | PENDING | `api/pydantic_models.py`, `tests/test_models.py` |
+| AC5 | FastAPI endpoints `/work-orders*`, `/sessions/{id}/create-work-order`, and `/units/{id}/work-orders` are wired and covered with tests | PENDING | `api/main.py`, `tests/test_api_routes.py` |
+| AC6 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PENDING | `app/api_utils.py`, `tests/test_app_api_utils.py` |
+| AC7 | Streamlit UI in `app/sidebar.py` provides 1-click work order creation from the resident session card and the "🛠️ Maintenance & Work Orders" board | PENDING | `app/sidebar.py`, `tests/test_app_ui.py` |
+| AC8 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.36.0`) are updated | PENDING | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
+| AC9 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
 
 ---
 
 ## 3. Decision Log
 
-- **Decision 1 (2026-10-14)**: Select **v0.35.0 — Tenant Profiles, Property Unit Directory & Context Grounding Engine** as the development phase.
-  - *Context*: Baseline checks (`pytest`, `ruff`, `mypy`) are 100% green on `v0.34.0`. In prior phases, support chat sessions were anonymous, lacking persistent tenant identity, lease terms, or property unit context. Support agents had to manually query or re-enter tenant information, macros required manual parameter entry for `{customer_name}` and `{unit_id}`, and the RAG assistant lacked personal lease context for tenant questions (rent due, lease end, amenities, parking, gate codes).
-  - *Alternatives considered*: Direct third-party property management API sync (requires enterprise credentials) or maintenance work orders dispatch (benefits directly from having tenant and unit entities first).
-  - *Rationale*: Creating a local-first Property Unit Directory and Tenant Profile engine, linking sessions to tenants, and injecting verified tenant context into RAG prompts and canned macros delivers foundational domain value for property management customer care with zero external dependencies.
-  - *Blast radius & Reversibility*: Additive SQLite tables (`units`, `tenants`), backward-compatible migration on `session_labels` (nullable `tenant_id` and `unit_id`), additive `/units` and `/tenants` routes, and optional tenant prompt grounding.
+- **Decision 1 (2026-10-15)**: Select **v0.36.0 — Maintenance Work Orders, Service Requests & Resident Dispatch Engine** as the development phase.
+  - *Context*: In v0.35.0, resident profiles and property unit directories were introduced, enabling session linking and verified lease context grounding. However, maintenance repair workflows—the most frequent and urgent category of property management customer inquiries—cannot currently be tracked, dispatched, or queried via conversational RAG.
+  - *Alternatives considered*: Document lease upload / PDF vector ingestion (informational only; does not resolve operational maintenance requests) or external PMS webhook sync (requires external credentials/mock APIs).
+  - *Rationale*: Creating a local-first maintenance work order and dispatch system directly connected to units, tenants, and sessions bridges conversational support and physical property operations with zero external dependencies.
+  - *Blast radius & Reversibility*: Additive SQLite table `work_orders`, non-breaking addition to prompt context blocks, additive endpoints `/work-orders` and `/sessions/{id}/create-work-order`.
 
 ---
 
 ## 4. Validation Commands & Results
 
-- **Baseline Check (v0.34.0)**:
-  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
-  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 29 source files`)
-  - `python -m pytest -q` -> ✅ Passed (`717 passed, 21 deselected, 93.26% coverage, fail_under=80%`)
-
-- **Milestone Final Verification Gate (v0.35.0)**:
+- **Baseline Check (v0.35.0)**:
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
   - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 30 source files`)
   - `python -m pytest -q` -> ✅ Passed (`753 passed, 21 deselected, 93.28% coverage, fail_under=80%`)
-
