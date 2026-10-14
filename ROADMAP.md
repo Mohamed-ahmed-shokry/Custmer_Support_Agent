@@ -962,6 +962,114 @@ Close the knowledge loop between customer support operations and the RAG retriev
 - [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.34.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
+## v0.35.0 plan — Tenant Profiles, Property Unit Directory & Context Grounding Engine ✅ COMPLETED
+
+Transform the customer support experience into a tenant-aware, property-grounded care platform. Maintain a structured directory of property units and tenant profiles with lease dates, rent amounts, and balances; link support sessions directly to tenants; inject verified tenant and property unit context into RAG query prompts for personalized tenant answers; auto-populate macro variables (`{customer_name}`, `{unit_id}`, `{tenant_email}`, `{monthly_rent}`, `{balance_due}`); and deliver a dedicated Tenant & Property Directory dashboard in Streamlit.
+
+### Objective & Expected Outcome
+Enable personalized, context-rich property management customer support by linking support conversations to persistent tenant and property unit entities. The RAG agent can answer tenant-specific inquiries (rent due, lease terms, amenities, parking, access codes), canned macro templates are auto-populated without manual entry, and property operators have an integrated directory of units, tenants, and comprehensive support histories.
+
+### Scope & Objectives
+- **Database Schema & Migrations (`api/db_utils.py`)**:
+  - SQLite table `units`:
+    - `id TEXT PRIMARY KEY`
+    - `property_name TEXT NOT NULL`
+    - `unit_number TEXT NOT NULL`
+    - `building_name TEXT DEFAULT ''`
+    - `floor INTEGER DEFAULT 1`
+    - `address TEXT NOT NULL`
+    - `city TEXT NOT NULL`
+    - `state TEXT NOT NULL`
+    - `zip_code TEXT NOT NULL`
+    - `monthly_rent REAL NOT NULL DEFAULT 0.0`
+    - `parking_spot TEXT DEFAULT ''`
+    - `gate_code TEXT DEFAULT ''`
+    - `wifi_ssid TEXT DEFAULT ''`
+    - `trash_day TEXT DEFAULT ''`
+    - `notes TEXT DEFAULT ''`
+    - `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+    - `updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+  - SQLite table `tenants`:
+    - `id TEXT PRIMARY KEY`
+    - `first_name TEXT NOT NULL`
+    - `last_name TEXT NOT NULL`
+    - `email TEXT NOT NULL UNIQUE`
+    - `phone TEXT NOT NULL`
+    - `unit_id TEXT REFERENCES units(id)`
+    - `lease_start TEXT NOT NULL` (YYYY-MM-DD)
+    - `lease_end TEXT NOT NULL` (YYYY-MM-DD)
+    - `monthly_rent REAL NOT NULL DEFAULT 0.0`
+    - `balance_due REAL NOT NULL DEFAULT 0.0`
+    - `status TEXT NOT NULL DEFAULT 'active'` (`active`, `pending`, `past_due`, `moved_out`, `evicted`)
+    - `emergency_contact_name TEXT DEFAULT ''`
+    - `emergency_contact_phone TEXT DEFAULT ''`
+    - `notes TEXT DEFAULT ''`
+    - `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+    - `updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+  - SQLite schema migration for `session_labels`:
+    - Add `tenant_id TEXT DEFAULT NULL`
+    - Add `unit_id TEXT DEFAULT NULL`
+  - Pre-seeding: seed initial property units and tenant profiles on DB initialization for turnkey out-of-the-box operation.
+  - CRUD & query methods in `api/db_utils.py`:
+    - Units: `create_unit()`, `get_unit()`, `list_units()`, `update_unit()`, `delete_unit()`
+    - Tenants: `create_tenant()`, `get_tenant()`, `list_tenants()`, `update_tenant()`, `delete_tenant()`
+    - Linking: `link_session_tenant()`, `get_session_tenant_context()`, `get_tenant_support_history()`
+- **Tenant Context Grounding & Macro Enhancement (`api/tenant_context.py` & `api/macros.py`)**:
+  - `build_tenant_rag_context(tenant_id: str | None, unit_id: str | None) -> str`: produces a concise, structured system context block from tenant and unit profiles for injection into RAG prompt contexts.
+  - Variable auto-population: enhance macro rendering in `api/macros.py` and `api/db_utils.py` to automatically resolve `{customer_name}`, `{unit_id}`, `{tenant_email}`, `{monthly_rent}`, `{balance_due}`, `{lease_end}`, `{parking_spot}`, and `{gate_code}` from the session's linked tenant.
+  - Webhooks: extend `VALID_WEBHOOK_EVENTS` with `"tenant.created"`, `"tenant.updated"`, and `"tenant.balance_overdue"`.
+- **Pydantic Models (`api/pydantic_models.py`)**:
+  - Request and response schemas for Units (`UnitCreateRequest`, `UnitUpdateRequest`, `UnitResponse`, `UnitListResponse`).
+  - Request and response schemas for Tenants (`TenantCreateRequest`, `TenantUpdateRequest`, `TenantResponse`, `TenantListResponse`).
+  - Request and response schemas for Session Tenant Linking & Context (`SessionTenantLinkRequest`, `SessionTenantContextResponse`, `TenantSupportHistoryResponse`).
+- **FastAPI Endpoints (`api/main.py`)**:
+  - `/units`: CRUD endpoints (`POST /units`, `GET /units`, `GET /units/{id}`, `PATCH /units/{id}`, `DELETE /units/{id}`).
+  - `/tenants`: CRUD endpoints (`POST /tenants`, `GET /tenants`, `GET /tenants/{id}`, `PATCH /tenants/{id}`, `DELETE /tenants/{id}`).
+  - `/sessions/{id}/link-tenant`: link/unlink tenant and unit to a session.
+  - `/sessions/{id}/tenant-context`: retrieve live tenant and property unit card for the session.
+  - `/tenants/{id}/support-history`: retrieve all sessions, CSAT feedback ratings, and notes for a tenant.
+- **Client & Streamlit UI Integration (`app/api_utils.py` & `app/sidebar.py`)**:
+  - Client SDK methods in `app/api_utils.py` with `X-API-Key` propagation and resilient error handling.
+  - Streamlit Session Metadata Panel (`app/sidebar.py`): Tenant Context Card & 1-click **"👤 Link Tenant"** modal/selector showing active lease, balance due, and unit details.
+  - Streamlit **"🏢 Tenant & Property Directory"** expander panel (`app/sidebar.py`):
+    - Unit directory tab/section: search, filter by property, register units.
+    - Tenant directory tab/section: search, filter by lease status, register tenants.
+    - Tenant Support History viewer: inspect cross-session tickets and CSAT ratings by tenant.
+  - Quick Responses & Macros integration: auto-populate tenant details into macro inputs.
+
+### Acceptance Criteria
+1. `units` and `tenants` SQLite tables are created, seeded with defaults, supported with full CRUD and validation, and `session_labels` is migrated with `tenant_id` and `unit_id` columns (`tests/test_db_utils.py`).
+2. `api/tenant_context.py` accurately generates structured RAG context blocks from tenant and unit records, and macro variable resolution automatically populates tenant details (`tests/test_tenant_context.py`).
+3. Pydantic schemas in `api/pydantic_models.py` validate unit creation, tenant management, session linking, and tenant context payloads (`tests/test_models.py`).
+4. FastAPI endpoints `/units*`, `/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`, and `/tenants/{id}/support-history` are wired and verified with complete HTTP status codes (`tests/test_api_routes.py`).
+5. Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling (`tests/test_app_api_utils.py`).
+6. Streamlit UI in `app/sidebar.py` provides the Tenant Context Card in session metadata and the "🏢 Tenant & Property Directory" management panel (`tests/test_app_ui.py`).
+7. Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.35.0`) are updated and accurate.
+8. Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions.
+
+### Validation Plan
+- Focused unit tests per micro-step (`tests/test_db_utils.py`, `tests/test_tenant_context.py`, `tests/test_models.py`, `tests/test_api_routes.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`).
+- Full suite verification: `python -m pytest`, `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`.
+- End-to-end workflow verification exercising unit creation -> tenant registration -> session linking -> tenant context generation -> macro variable resolution -> support history retrieval.
+
+### Exclusions
+- External property management software integrations (e.g. Yardi Voyager, AppFolio, RealPage APIs) — excluded to maintain 100% offline, local-first operation.
+- Payment gateway card processing (e.g. Stripe, Plaid) — balance tracking is informational; live merchant banking is out of scope.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.35.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] Task 2: Database schema & CRUD operations for `units` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 3: Database schema & CRUD operations for `tenants` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 4: Session tenant linking, migration, and support history queries in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 5: Core tenant context grounding engine and macro variable auto-resolution in `api/tenant_context.py` & `api/macros.py` + unit tests in `tests/test_tenant_context.py`
+- [x] Task 6: Pydantic request/response models for units, tenants, linking, and context in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [x] Task 7: FastAPI endpoints for property units (`/units*`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] Task 8: FastAPI endpoints for tenants, session linking, tenant context, and history (`/tenants*`, `/sessions/{id}/link-tenant`, `/sessions/{id}/tenant-context`) in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] Task 9: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 10: Streamlit UI session tenant context card, tenant linking, and "🏢 Tenant & Property Directory" sidebar panel in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
+- [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI

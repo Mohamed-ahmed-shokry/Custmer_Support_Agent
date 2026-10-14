@@ -1,4 +1,4 @@
-# API Reference (v0.32.0)
+# API Reference (v0.35.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -365,6 +365,44 @@ The agent provides an end-to-end knowledge loop connecting support sessions, esc
   - Returns `KnowledgeArticlePublishResponse`.
 - `GET /knowledge/analytics`: Retrieve self-service coverage, knowledge gap, and deflection analytics.
   - Returns `KnowledgeBaseAnalyticsResponse` (`total_gaps`, `open_gaps`, `resolved_gaps`, `drafting_gaps`, `dismissed_gaps`, `total_articles`, `draft_articles_count`, `published_articles_count`, `archived_articles_count`, `gap_resolution_rate`, `recurring_gap_queries_count`, `estimated_deflected_queries`, `top_gap_categories`, `gaps_by_priority`).
+
+## Tenant Profiles, Property Unit Directory & Context Grounding Engine
+
+The agent supports resident context grounding, linking support sessions directly to tenant profiles and property units (`units`, `tenants`, `session_labels`). When a session is linked, chat queries (`/chat` and `/chat/stream`) are automatically augmented with verified lease terms, balance due, access codes, and amenities, and macro variables (`{customer_name}`, `{unit_id}`, `{monthly_rent}`, `{balance_due}`) are resolved without manual agent entry.
+
+### Property Units Endpoints
+
+- `POST /units`: Register a new property unit.
+  - Body: `{"id": "unit_401", "property_name": "Sunset Heights", "unit_number": "401", "address": "123 Main St", "city": "Austin", "state": "TX", "zip_code": "78701", "building_name": "Tower A", "floor": 4, "monthly_rent": 1650.0, "parking_spot": "P-401", "gate_code": "#4011"}`.
+  - Returns `201` with `UnitResponse`.
+- `GET /units`: List property units with filtering and pagination.
+  - Query parameters: `property_name`, `search`, `limit`, `offset`.
+  - Returns `UnitListResponse` (`items: [...]`, `total: int`).
+- `GET /units/{unit_id}`: Retrieve unit details. Returns `404` if not found.
+- `PATCH /units/{unit_id}`: Partially update unit details (rent, parking, gate code, notes). Returns `UnitResponse`.
+- `DELETE /units/{unit_id}`: Delete a unit record.
+
+### Tenants Endpoints
+
+- `POST /tenants`: Register a new tenant profile.
+  - Body: `{"id": "tenant_10", "first_name": "Diana", "last_name": "Prince", "email": "diana@example.com", "phone": "+1 555-0144", "unit_id": "unit_401", "lease_start": "2026-01-01", "lease_end": "2026-12-31", "monthly_rent": 1650.0, "balance_due": 0.0, "status": "active"}`.
+  - Returns `201` with `TenantResponse`.
+- `GET /tenants`: List tenant profiles with filtering.
+  - Query parameters: `unit_id`, `status` (`active`, `past_due`, `evicted`, `former`), `search`, `limit`, `offset`.
+  - Returns `TenantListResponse` (`items: [...]`, `total: int`).
+- `GET /tenants/{tenant_id}`: Retrieve tenant profile. Returns `404` if not found.
+- `PATCH /tenants/{tenant_id}`: Update tenant fields (contact info, unit_id, rent, balance_due, status, notes).
+- `DELETE /tenants/{tenant_id}`: Delete a tenant profile.
+
+### Session Linking & Context Grounding Endpoints
+
+- `POST /sessions/{session_id}/link-tenant`: Link a support session to a tenant and/or property unit.
+  - Body: `{"tenant_id": "tenant_1", "unit_id": null}` (auto-resolves unit from tenant if not specified).
+  - Returns `SessionTenantContextResponse`.
+- `GET /sessions/{session_id}/tenant-context`: Retrieve grounded resident and property unit context for a support session.
+  - Returns `SessionTenantContextResponse` (`session_id`, `tenant_id`, `unit_id`, `tenant: {...}`, `unit: {...}`).
+- `GET /tenants/{tenant_id}/support-history`: Retrieve complete support session history for a resident.
+  - Returns `TenantSupportHistoryResponse` (`tenant`, `total_sessions`, `sessions: [ { session_id, label, status, priority, message_count, preview, created_at, last_active, rating, feedback_score, feedback_comment } ]`).
 
 ## Evaluation Harness
 

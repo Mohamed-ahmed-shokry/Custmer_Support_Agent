@@ -56,6 +56,8 @@ from api.pydantic_models import (
     SessionSLAStatusResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
+    SessionTenantContextResponse,
+    SessionTenantLinkRequest,
     SLAAlertEvaluateResponse,
     SLAAlertItem,
     SLAComplianceAnalyticsResponse,
@@ -70,6 +72,18 @@ from api.pydantic_models import (
     SupportAgentUpdateRequest,
     SupportTriageAnalyticsResponse,
     TagCount,
+    TenantCreateRequest,
+    TenantItem,
+    TenantListResponse,
+    TenantResponse,
+    TenantSupportHistoryResponse,
+    TenantSupportHistorySessionItem,
+    TenantUpdateRequest,
+    UnitCreateRequest,
+    UnitItem,
+    UnitListResponse,
+    UnitResponse,
+    UnitUpdateRequest,
     UpdateSessionRequest,
     WebhookCreateRequest,
     WebhookDeliveryLogItem,
@@ -1303,6 +1317,171 @@ def test_knowledge_base_pydantic_models():
     )
     assert analytics_resp.total_gaps == expected_gaps_count
     assert analytics_resp.gap_resolution_rate == expected_resolution_rate
+
+
+def test_unit_models_validations_and_roundtrip():
+    # 1. Valid UnitCreateRequest
+    unit_rent = 1850.0
+    req = UnitCreateRequest(
+        id="unit_301",
+        property_name="Sunset Heights",
+        unit_number="301",
+        building_name="Tower C",
+        floor=3,
+        monthly_rent=unit_rent,
+        parking_spot="P-301",
+        gate_code="#3010",
+    )
+    assert req.id == "unit_301"
+    assert req.monthly_rent == unit_rent
+
+    # 2. Validation failures
+    with pytest.raises(ValidationError):
+        UnitCreateRequest(id="invalid id with spaces", property_name="Valid", unit_number="1")
+    with pytest.raises(ValidationError):
+        UnitCreateRequest(id="unit_1", property_name="", unit_number="1")
+    with pytest.raises(ValidationError):
+        UnitCreateRequest(id="unit_1", property_name="Valid", unit_number="")
+
+    # 3. UnitUpdateRequest
+    updated_rent = 1950.0
+    up_req = UnitUpdateRequest(monthly_rent=updated_rent, parking_spot="P-999")
+    assert up_req.monthly_rent == updated_rent
+
+    # 4. UnitItem and responses
+    item = UnitItem(
+        id="unit_301",
+        property_name="Sunset Heights",
+        unit_number="301",
+        monthly_rent=unit_rent,
+    )
+    resp = UnitResponse(unit=item)
+    assert resp.unit.id == "unit_301"
+    list_resp = UnitListResponse(items=[item], total=1)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+
+def test_tenant_models_validations_and_roundtrip():
+    # 1. Valid TenantCreateRequest
+    tenant_rent = 1850.0
+    balance = 200.0
+    req = TenantCreateRequest(
+        id="tenant_10",
+        first_name="Kyle",
+        last_name="Reese",
+        email="kyle.reese@example.com",
+        phone="+1-555-0399",
+        unit_id="unit_301",
+        lease_start="2026-01-01",
+        lease_end="2026-12-31",
+        monthly_rent=tenant_rent,
+        balance_due=balance,
+        status="active",
+    )
+    assert req.id == "tenant_10"
+    assert req.email == "kyle.reese@example.com"
+    assert req.monthly_rent == tenant_rent
+
+    # 2. Validation failures
+    with pytest.raises(ValidationError):
+        TenantCreateRequest(
+            id="tenant_10",
+            first_name="Kyle",
+            last_name="Reese",
+            email="invalid-email",
+            phone="555-0100",
+            lease_start="2026-01-01",
+            lease_end="2026-12-31",
+        )
+    with pytest.raises(ValidationError):
+        TenantCreateRequest(
+            id="tenant_10",
+            first_name="Kyle",
+            last_name="Reese",
+            email="kyle@example.com",
+            phone="555-0100",
+            lease_start="invalid-date",
+            lease_end="2026-12-31",
+        )
+    with pytest.raises(ValidationError):
+        TenantCreateRequest(
+            id="tenant_10",
+            first_name="Kyle",
+            last_name="Reese",
+            email="kyle@example.com",
+            phone="555-0100",
+            lease_start="2026-01-01",
+            lease_end="2026-12-31",
+            status="invalid_status",
+        )
+
+    # 3. TenantUpdateRequest
+    up_req = TenantUpdateRequest(status="past_due", balance_due=500.0)
+    assert up_req.status == "past_due"
+
+    # 4. TenantItem and responses
+    item = TenantItem(
+        id="tenant_10",
+        first_name="Kyle",
+        last_name="Reese",
+        email="kyle.reese@example.com",
+        phone="+1-555-0399",
+        lease_start="2026-01-01",
+        lease_end="2026-12-31",
+        monthly_rent=tenant_rent,
+    )
+    resp = TenantResponse(tenant=item)
+    assert resp.tenant.id == "tenant_10"
+    list_resp = TenantListResponse(items=[item], total=1)
+    assert list_resp.total == 1
+
+
+def test_session_tenant_link_and_context_models():
+    # 1. SessionTenantLinkRequest
+    link_req = SessionTenantLinkRequest(tenant_id="tenant_1", unit_id="unit_101")
+    assert link_req.tenant_id == "tenant_1"
+    assert link_req.unit_id == "unit_101"
+
+    # 2. SessionTenantContextResponse
+    u_item = UnitItem(id="unit_101", property_name="Sunset Heights", unit_number="101")
+    t_item = TenantItem(
+        id="tenant_1",
+        first_name="Sarah",
+        last_name="Connor",
+        email="sarah@example.com",
+        phone="555-0199",
+        lease_start="2026-01-01",
+        lease_end="2026-12-31",
+    )
+    ctx_resp = SessionTenantContextResponse(
+        session_id="sess-link-1",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        tenant=t_item,
+        unit=u_item,
+    )
+    assert ctx_resp.session_id == "sess-link-1"
+    assert ctx_resp.tenant is not None
+    assert ctx_resp.tenant.first_name == "Sarah"
+
+    # 3. TenantSupportHistoryResponse
+    h_item = TenantSupportHistorySessionItem(
+        session_id="sess-link-1",
+        label="HVAC Ticket",
+        status="resolved",
+        rating=1,
+        message_count=3,
+        preview="HVAC inquiry",
+    )
+    hist_resp = TenantSupportHistoryResponse(
+        tenant=t_item,
+        total_sessions=1,
+        sessions=[h_item],
+    )
+    assert hist_resp.total_sessions == 1
+    assert hist_resp.sessions[0].label == "HVAC Ticket"
+
 
 
 

@@ -73,7 +73,9 @@ _CREATE_SESSION_LABELS_TABLE = (
     "resolution_notes TEXT DEFAULT '', "
     "priority TEXT NOT NULL DEFAULT 'medium', "
     "assigned_agent TEXT DEFAULT NULL, "
-    "escalation_tier TEXT NOT NULL DEFAULT 'tier_1')"
+    "escalation_tier TEXT NOT NULL DEFAULT 'tier_1', "
+    "tenant_id TEXT DEFAULT NULL REFERENCES tenants(id), "
+    "unit_id TEXT DEFAULT NULL REFERENCES units(id))"
 )
 
 _CREATE_SLA_POLICIES_TABLE = (
@@ -281,6 +283,9 @@ VALID_WEBHOOK_EVENTS = {
     "session.tier_escalated",
     "knowledge.gap_detected",
     "knowledge.article_published",
+    "tenant.created",
+    "tenant.updated",
+    "tenant.balance_overdue",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
@@ -348,6 +353,80 @@ _CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX = (
 
 VALID_KNOWLEDGE_ARTICLE_STATUSES = {"draft", "published", "archived"}
 DEFAULT_KNOWLEDGE_ARTICLE_STATUS = "draft"
+
+_CREATE_UNITS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS units ("
+    "id TEXT PRIMARY KEY, "
+    "property_name TEXT NOT NULL, "
+    "unit_number TEXT NOT NULL, "
+    "building_name TEXT NOT NULL DEFAULT '', "
+    "floor INTEGER NOT NULL DEFAULT 1, "
+    "address TEXT NOT NULL, "
+    "city TEXT NOT NULL, "
+    "state TEXT NOT NULL, "
+    "zip_code TEXT NOT NULL, "
+    "monthly_rent REAL NOT NULL DEFAULT 0.0, "
+    "parking_spot TEXT NOT NULL DEFAULT '', "
+    "gate_code TEXT NOT NULL DEFAULT '', "
+    "wifi_ssid TEXT NOT NULL DEFAULT '', "
+    "trash_day TEXT NOT NULL DEFAULT '', "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_UNITS_PROPERTY_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_units_property ON units(property_name)"
+)
+_CREATE_UNITS_UNIT_NUM_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_units_number ON units(unit_number)"
+)
+
+MAX_UNIT_ID_LENGTH = 50
+MAX_PROPERTY_NAME_LENGTH = 100
+MAX_UNIT_NUMBER_LENGTH = 50
+MAX_ADDRESS_LENGTH = 200
+MAX_CITY_LENGTH = 100
+MAX_STATE_LENGTH = 50
+MAX_ZIP_CODE_LENGTH = 20
+MAX_UNIT_NOTES_LENGTH = 2000
+
+_CREATE_TENANTS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS tenants ("
+    "id TEXT PRIMARY KEY, "
+    "first_name TEXT NOT NULL, "
+    "last_name TEXT NOT NULL, "
+    "email TEXT NOT NULL UNIQUE, "
+    "phone TEXT NOT NULL, "
+    "unit_id TEXT DEFAULT NULL REFERENCES units(id) ON DELETE SET NULL, "
+    "lease_start TEXT NOT NULL, "
+    "lease_end TEXT NOT NULL, "
+    "monthly_rent REAL NOT NULL DEFAULT 0.0, "
+    "balance_due REAL NOT NULL DEFAULT 0.0, "
+    "status TEXT NOT NULL DEFAULT 'active', "
+    "emergency_contact_name TEXT NOT NULL DEFAULT '', "
+    "emergency_contact_phone TEXT NOT NULL DEFAULT '', "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_TENANTS_EMAIL_INDEX = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_email ON tenants(email)"
+)
+_CREATE_TENANTS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_tenants_unit_id ON tenants(unit_id)"
+)
+_CREATE_TENANTS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status)"
+)
+
+VALID_TENANT_STATUSES = {"active", "pending", "past_due", "moved_out", "evicted"}
+DEFAULT_TENANT_STATUS = "active"
+
+MAX_TENANT_ID_LENGTH = 50
+MAX_TENANT_NAME_LENGTH = 100
+MAX_TENANT_EMAIL_LENGTH = 150
+MAX_TENANT_PHONE_LENGTH = 50
+MAX_TENANT_NOTES_LENGTH = 2000
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -463,7 +542,9 @@ _SELECT_ALL_SESSIONS_BASE = (
     "WHERE session_id = l1.session_id) AS assigned_agent, "
     "COALESCE("
     "(SELECT escalation_tier FROM session_labels WHERE session_id = l1.session_id), 'tier_1'"
-    ") AS escalation_tier "
+    ") AS escalation_tier, "
+    "(SELECT tenant_id FROM session_labels WHERE session_id = l1.session_id) AS tenant_id, "
+    "(SELECT unit_id FROM session_labels WHERE session_id = l1.session_id) AS unit_id "
     "FROM application_logs l1 GROUP BY l1.session_id"
 )
 _SELECT_ALL_SESSIONS = _SELECT_ALL_SESSIONS_BASE + " ORDER BY last_active DESC"
@@ -491,7 +572,9 @@ _SEARCH_SESSIONS = (
     "WHERE session_id = l1.session_id) AS assigned_agent, "
     "COALESCE("
     "(SELECT escalation_tier FROM session_labels WHERE session_id = l1.session_id), 'tier_1'"
-    ") AS escalation_tier "
+    ") AS escalation_tier, "
+    "(SELECT tenant_id FROM session_labels WHERE session_id = l1.session_id) AS tenant_id, "
+    "(SELECT unit_id FROM session_labels WHERE session_id = l1.session_id) AS unit_id "
     "FROM application_logs l1 "
     "WHERE l1.user_query LIKE ? OR l1.gpt_response LIKE ? "
     "GROUP BY l1.session_id ORDER BY last_active DESC LIMIT ?"
@@ -1056,11 +1139,53 @@ def _truncate_preview(preview: str | None) -> str:
     return preview[: PREVIEW_MAX_LENGTH - 1].rstrip() + "…"
 
 
-def get_all_sessions(
+def _matches_session_filters(  # noqa: PLR0911, PLR0913, PLR0917
+    s_dict: dict,
     status: str | None = None,
     tag: str | None = None,
     assigned_agent: str | None = None,
     escalation_tier: str | None = None,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+) -> bool:
+    if status and s_dict.get("status", "active").lower() != status.strip().lower():
+        return False
+    if tag:
+        clean_tag = tag.strip().lower()
+        raw_tags = s_dict.get("tags", "") or ""
+        row_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+        if clean_tag not in row_tags:
+            return False
+    if assigned_agent:
+        clean_assigned = assigned_agent.strip().lower()
+        row_assigned = (s_dict.get("assigned_agent") or "").strip().lower()
+        if clean_assigned == "unassigned":
+            if row_assigned:
+                return False
+        elif row_assigned != clean_assigned:
+            return False
+    if escalation_tier:
+        clean_tier = escalation_tier.strip().lower()
+        row_tier = (s_dict.get("escalation_tier") or DEFAULT_AGENT_TIER).strip().lower()
+        if row_tier != clean_tier:
+            return False
+    if tenant_id and s_dict.get("tenant_id") != tenant_id.strip():
+        return False
+    if unit_id:
+        clean_unit = unit_id.strip().lower()
+        row_unit = (s_dict.get("unit_id") or "").strip().lower()
+        if row_unit != clean_unit:
+            return False
+    return True
+
+
+def get_all_sessions(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    tag: str | None = None,
+    assigned_agent: str | None = None,
+    escalation_tier: str | None = None,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
 ):
     with closing(get_db_connection()) as conn:
         cursor = conn.cursor()
@@ -1070,31 +1195,16 @@ def get_all_sessions(
         results = []
         for session in sessions:
             s_dict = dict(session)
-            if status:
-                clean_status = status.strip().lower()
-                if s_dict.get("status", "active").lower() != clean_status:
-                    continue
-            if tag:
-                clean_tag = tag.strip().lower()
-                raw_tags = s_dict.get("tags", "") or ""
-                row_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
-                if clean_tag not in row_tags:
-                    continue
-            if assigned_agent:
-                clean_assigned = assigned_agent.strip().lower()
-                row_assigned = (s_dict.get("assigned_agent") or "").strip().lower()
-                if clean_assigned == "unassigned":
-                    if row_assigned:
-                        continue
-                elif row_assigned != clean_assigned:
-                    continue
-            if escalation_tier:
-                clean_tier = escalation_tier.strip().lower()
-                row_tier = (s_dict.get("escalation_tier") or DEFAULT_AGENT_TIER).strip().lower()
-                if row_tier != clean_tier:
-                    continue
+            if not _matches_session_filters(
+                s_dict, status, tag, assigned_agent, escalation_tier, tenant_id, unit_id
+            ):
+                continue
             if not s_dict.get("label"):
                 s_dict["label"] = None
+            if not s_dict.get("tenant_id"):
+                s_dict["tenant_id"] = None
+            if not s_dict.get("unit_id"):
+                s_dict["unit_id"] = None
             s_dict["preview"] = _truncate_preview(s_dict.get("preview"))
             results.append(s_dict)
         return results
@@ -1132,6 +1242,8 @@ def search_sessions(query: str, limit: int = 20) -> list[dict]:
                     "priority": prio_val,
                     "assigned_agent": agent_val,
                     "escalation_tier": tier_val,
+                    "tenant_id": row["tenant_id"] if row["tenant_id"] else None,
+                    "unit_id": row["unit_id"] if row["unit_id"] else None,
                     "match_count": row["match_count"],
                     "preview": _truncate_preview(row["preview"]),
                     "last_active": row["last_active"],
@@ -1608,7 +1720,7 @@ def get_feedback_analytics(recent_comments_limit: int = 5) -> dict:
 
 
 def migrate_session_labels():
-    """Add newer columns (status, tags, summary, notes, priority, agent, tier) if missing."""
+    """Add newer columns (status, tags, summary, notes, priority, agent, tier, tenant, unit)."""
     with closing(get_db_connection()) as conn:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(session_labels)")]
         if "status" not in columns:
@@ -1632,10 +1744,14 @@ def migrate_session_labels():
                 "ALTER TABLE session_labels "
                 "ADD COLUMN escalation_tier TEXT NOT NULL DEFAULT 'tier_1'"
             )
+        if "tenant_id" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN tenant_id TEXT DEFAULT NULL")
+        if "unit_id" not in columns:
+            conn.execute("ALTER TABLE session_labels ADD COLUMN unit_id TEXT DEFAULT NULL")
         conn.commit()
 
 
-def update_session_metadata(  # noqa: PLR0913, PLR0917
+def update_session_metadata(  # noqa: PLR0913, PLR0915, PLR0917
     session_id: str,
     label: str | None = None,
     status: str | None = None,
@@ -1645,8 +1761,10 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
     priority: str | None = None,
     assigned_agent: str | None = None,
     escalation_tier: str | None = None,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
 ) -> bool:
-    """Update metadata (label, status, tags, summary, notes, priority, agent, tier)."""
+    """Update metadata (label, status, tags, summary, notes, priority, agent, tier, tenant)."""
     clean_label = normalize_session_label(label) if label is not None else None
     clean_status = normalize_session_status(status) if status is not None else None
     clean_tags = normalize_session_tags(tags) if tags is not None else None
@@ -1660,6 +1778,18 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
         raw_agent = assigned_agent.strip().lower()
         clean_agent = None if (not raw_agent or raw_agent == "unassigned") else raw_agent
     clean_tier = normalize_agent_tier(escalation_tier) if escalation_tier is not None else None
+    clean_tenant = None
+    if tenant_id is not None:
+        raw_tenant = tenant_id.strip()
+        clean_tenant = (
+            None if (not raw_tenant or raw_tenant.lower() in ("unassigned", "none")) else raw_tenant
+        )
+    clean_unit = None
+    if unit_id is not None:
+        raw_unit = unit_id.strip()
+        clean_unit = (
+            None if (not raw_unit or raw_unit.lower() in ("unassigned", "none")) else raw_unit
+        )
 
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
@@ -1668,7 +1798,7 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
 
         cur = conn.execute(
             "SELECT label, status, tags, summary, resolution_notes, "
-            "priority, assigned_agent, escalation_tier "
+            "priority, assigned_agent, escalation_tier, tenant_id, unit_id "
             "FROM session_labels WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -1681,11 +1811,13 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_priority = clean_priority or DEFAULT_SESSION_PRIORITY
             new_agent = clean_agent
             new_tier = clean_tier or DEFAULT_AGENT_TIER
+            new_tenant = clean_tenant
+            new_unit = clean_unit
             conn.execute(
                 "INSERT INTO session_labels "
                 "(session_id, label, status, tags, summary, resolution_notes, "
-                "priority, assigned_agent, escalation_tier) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "priority, assigned_agent, escalation_tier, tenant_id, unit_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     new_label,
@@ -1696,6 +1828,8 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
                     new_priority,
                     new_agent,
                     new_tier,
+                    new_tenant,
+                    new_unit,
                 ),
             )
         else:
@@ -1710,10 +1844,13 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
             new_agent = clean_agent if assigned_agent is not None else cur_agent
             cur_tier = cur["escalation_tier"] if cur["escalation_tier"] else DEFAULT_AGENT_TIER
             new_tier = clean_tier if clean_tier is not None else cur_tier
+            new_tenant = clean_tenant if tenant_id is not None else cur["tenant_id"]
+            new_unit = clean_unit if unit_id is not None else cur["unit_id"]
             conn.execute(
                 "UPDATE session_labels "
                 "SET label = ?, status = ?, tags = ?, summary = ?, resolution_notes = ?, "
-                "priority = ?, assigned_agent = ?, escalation_tier = ? WHERE session_id = ?",
+                "priority = ?, assigned_agent = ?, escalation_tier = ?, tenant_id = ?, unit_id = ? "
+                "WHERE session_id = ?",
                 (
                     new_label,
                     new_status,
@@ -1723,6 +1860,8 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
                     new_priority,
                     new_agent,
                     new_tier,
+                    new_tenant,
+                    new_unit,
                     session_id,
                 ),
             )
@@ -1731,14 +1870,14 @@ def update_session_metadata(  # noqa: PLR0913, PLR0917
 
 
 def get_session_metadata(session_id: str) -> dict | None:
-    """Fetch label, status, tags, summary, notes, priority, agent, and tier for a session."""
+    """Fetch label, status, tags, summary, notes, priority, agent, tier, tenant, and unit."""
     with closing(get_db_connection()) as conn:
         exists = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
         if not exists:
             return None
         row = conn.execute(
             "SELECT label, status, tags, summary, resolution_notes, "
-            "priority, assigned_agent, escalation_tier "
+            "priority, assigned_agent, escalation_tier, tenant_id, unit_id "
             "FROM session_labels WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -1753,6 +1892,8 @@ def get_session_metadata(session_id: str) -> dict | None:
                 "priority": DEFAULT_SESSION_PRIORITY,
                 "assigned_agent": None,
                 "escalation_tier": DEFAULT_AGENT_TIER,
+                "tenant_id": None,
+                "unit_id": None,
             }
         prio_val = row["priority"] if row["priority"] else DEFAULT_SESSION_PRIORITY
         cur_agent = row["assigned_agent"] if row["assigned_agent"] else None
@@ -1767,6 +1908,8 @@ def get_session_metadata(session_id: str) -> dict | None:
             "priority": prio_val,
             "assigned_agent": cur_agent,
             "escalation_tier": cur_tier,
+            "tenant_id": row["tenant_id"] if row["tenant_id"] else None,
+            "unit_id": row["unit_id"] if row["unit_id"] else None,
         }
 
 
@@ -3360,10 +3503,904 @@ def delete_knowledge_article(article_id: int) -> bool:
         return bool(cursor.rowcount and cursor.rowcount > 0)
 
 
+DEFAULT_SEEDED_UNITS = [
+    {
+        "id": "unit_101",
+        "property_name": "Sunset Heights Apartments",
+        "unit_number": "101",
+        "building_name": "Building A",
+        "floor": 1,
+        "address": "742 Evergreen Terrace",
+        "city": "Springfield",
+        "state": "IL",
+        "zip_code": "62704",
+        "monthly_rent": 1450.0,
+        "parking_spot": "P-12",
+        "gate_code": "#1010",
+        "wifi_ssid": "SunsetHeights-Guest",
+        "trash_day": "Tuesday",
+        "notes": "Corner 1-bedroom unit near laundry facility.",
+    },
+    {
+        "id": "unit_204",
+        "property_name": "Sunset Heights Apartments",
+        "unit_number": "204",
+        "building_name": "Building B",
+        "floor": 2,
+        "address": "742 Evergreen Terrace",
+        "city": "Springfield",
+        "state": "IL",
+        "zip_code": "62704",
+        "monthly_rent": 1850.0,
+        "parking_spot": "P-24",
+        "gate_code": "#2040",
+        "wifi_ssid": "SunsetHeights-Guest",
+        "trash_day": "Tuesday",
+        "notes": "2-bedroom unit with balcony facing courtyard.",
+    },
+    {
+        "id": "unit_PH1",
+        "property_name": "Oak Ridge Tower",
+        "unit_number": "PH1",
+        "building_name": "Main Tower",
+        "floor": 12,
+        "address": "100 Grand Avenue",
+        "city": "Chicago",
+        "state": "IL",
+        "zip_code": "60611",
+        "monthly_rent": 3200.0,
+        "parking_spot": "G-01 (Covered)",
+        "gate_code": "*9988",
+        "wifi_ssid": "OakRidge-Residents",
+        "trash_day": "Daily Valet Trash",
+        "notes": "Penthouse suite with skyline view and smart lock.",
+    },
+]
+
+
+def normalize_unit_id(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Unit ID must not be blank.")
+    if len(cleaned) > MAX_UNIT_ID_LENGTH:
+        raise ValueError(f"Unit ID must be at most {MAX_UNIT_ID_LENGTH} characters.")
+    if not re.match(r"^[A-Za-z0-9_\-\.]+$", cleaned):
+        raise ValueError(
+            "Unit ID may only contain alphanumeric characters, underscores, hyphens, and periods."
+        )
+    return cleaned
+
+
+def normalize_property_name(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Property name must not be blank.")
+    if len(cleaned) > MAX_PROPERTY_NAME_LENGTH:
+        raise ValueError(f"Property name must be at most {MAX_PROPERTY_NAME_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_unit_number(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Unit number must not be blank.")
+    if len(cleaned) > MAX_UNIT_NUMBER_LENGTH:
+        raise ValueError(f"Unit number must be at most {MAX_UNIT_NUMBER_LENGTH} characters.")
+    return cleaned
+
+
+def create_units() -> None:
+    """Create units table, indexes, and pre-seed initial property units if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_UNITS_TABLE)
+        conn.execute(_CREATE_UNITS_PROPERTY_INDEX)
+        conn.execute(_CREATE_UNITS_UNIT_NUM_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM units").fetchone()
+        if row and row[0] == 0:
+            for u in DEFAULT_SEEDED_UNITS:
+                conn.execute(
+                    "INSERT INTO units "
+                    "(id, property_name, unit_number, building_name, floor, address, "
+                    "city, state, zip_code, monthly_rent, parking_spot, gate_code, "
+                    "wifi_ssid, trash_day, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        u["id"],
+                        u["property_name"],
+                        u["unit_number"],
+                        u["building_name"],
+                        u["floor"],
+                        u["address"],
+                        u["city"],
+                        u["state"],
+                        u["zip_code"],
+                        u["monthly_rent"],
+                        u["parking_spot"],
+                        u["gate_code"],
+                        u["wifi_ssid"],
+                        u["trash_day"],
+                        u["notes"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_unit(  # noqa: PLR0913, PLR0917
+    unit_id: str,
+    property_name: str,
+    unit_number: str,
+    address: str,
+    city: str,
+    state: str,
+    zip_code: str,
+    building_name: str = "",
+    floor: int = 1,
+    monthly_rent: float = 0.0,
+    parking_spot: str = "",
+    gate_code: str = "",
+    wifi_ssid: str = "",
+    trash_day: str = "",
+    notes: str = "",
+) -> dict[str, Any]:
+    norm_id = normalize_unit_id(unit_id)
+    norm_prop = normalize_property_name(property_name)
+    norm_num = normalize_unit_number(unit_number)
+    clean_addr = (address or "").strip()
+    if not clean_addr:
+        raise ValueError("Address must not be blank.")
+    if len(clean_addr) > MAX_ADDRESS_LENGTH:
+        raise ValueError(f"Address must be at most {MAX_ADDRESS_LENGTH} characters.")
+    clean_city = (city or "").strip()
+    if not clean_city:
+        raise ValueError("City must not be blank.")
+    clean_state = (state or "").strip()
+    if not clean_state:
+        raise ValueError("State must not be blank.")
+    clean_zip = (zip_code or "").strip()
+    if not clean_zip:
+        raise ValueError("Zip code must not be blank.")
+    clean_bldg = (building_name or "").strip()
+    clean_parking = (parking_spot or "").strip()
+    clean_gate = (gate_code or "").strip()
+    clean_wifi = (wifi_ssid or "").strip()
+    clean_trash = (trash_day or "").strip()
+    clean_notes = (notes or "").strip()
+    rent_val = max(0.0, float(monthly_rent))
+    floor_val = int(floor)
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute("SELECT id FROM units WHERE id = ?", (norm_id,)).fetchone()
+        if existing:
+            raise ValueError(f"Unit with ID '{norm_id}' already exists.")
+        conn.execute(
+            "INSERT INTO units "
+            "(id, property_name, unit_number, building_name, floor, address, "
+            "city, state, zip_code, monthly_rent, parking_spot, gate_code, "
+            "wifi_ssid, trash_day, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                norm_id,
+                norm_prop,
+                norm_num,
+                clean_bldg,
+                floor_val,
+                clean_addr,
+                clean_city,
+                clean_state,
+                clean_zip,
+                rent_val,
+                clean_parking,
+                clean_gate,
+                clean_wifi,
+                clean_trash,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+    res = get_unit(norm_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created unit.")
+    return res
+
+
+def get_unit(unit_id: str) -> dict[str, Any] | None:
+    cleaned_id = (unit_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM units WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_units(
+    property_name: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM units"]
+    count_parts = ["SELECT COUNT(*) FROM units"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if property_name and property_name.strip():
+        where_clauses.append("LOWER(property_name) = LOWER(?)")
+        params.append(property_name.strip())
+
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(unit_number) LIKE ? OR LOWER(property_name) LIKE ? OR LOWER(address) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY property_name ASC, unit_number ASC LIMIT ? OFFSET ?")
+
+    with closing(get_db_connection()) as conn:
+        count_cursor = conn.execute(" ".join(count_parts), tuple(params))
+        total = int(count_cursor.fetchone()[0])
+        list_params = list(params) + [max(1, limit), max(0, offset)]
+        rows = conn.execute(" ".join(query_parts), tuple(list_params)).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_unit(  # noqa: PLR0912, PLR0913, PLR0917
+    unit_id: str,
+    property_name: str | None = None,
+    unit_number: str | None = None,
+    building_name: str | None = None,
+    floor: int | None = None,
+    address: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    zip_code: str | None = None,
+    monthly_rent: float | None = None,
+    parking_spot: str | None = None,
+    gate_code: str | None = None,
+    wifi_ssid: str | None = None,
+    trash_day: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    current = get_unit(unit_id)
+    if not current:
+        return None
+
+    new_prop = (
+        normalize_property_name(property_name)
+        if property_name is not None
+        else current["property_name"]
+    )
+    new_num = (
+        normalize_unit_number(unit_number)
+        if unit_number is not None
+        else current["unit_number"]
+    )
+    new_bldg = (
+        building_name.strip()
+        if building_name is not None
+        else current["building_name"]
+    )
+    new_floor = int(floor) if floor is not None else current["floor"]
+    new_addr = address.strip() if address is not None else current["address"]
+    new_city = city.strip() if city is not None else current["city"]
+    new_state = state.strip() if state is not None else current["state"]
+    new_zip = zip_code.strip() if zip_code is not None else current["zip_code"]
+    new_rent = (
+        max(0.0, float(monthly_rent))
+        if monthly_rent is not None
+        else current["monthly_rent"]
+    )
+    new_parking = (
+        parking_spot.strip()
+        if parking_spot is not None
+        else current["parking_spot"]
+    )
+    new_gate = (
+        gate_code.strip()
+        if gate_code is not None
+        else current["gate_code"]
+    )
+    new_wifi = (
+        wifi_ssid.strip()
+        if wifi_ssid is not None
+        else current["wifi_ssid"]
+    )
+    new_trash = (
+        trash_day.strip()
+        if trash_day is not None
+        else current["trash_day"]
+    )
+    new_notes = notes.strip() if notes is not None else current["notes"]
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE units SET "
+            "property_name = ?, unit_number = ?, building_name = ?, floor = ?, "
+            "address = ?, city = ?, state = ?, zip_code = ?, monthly_rent = ?, "
+            "parking_spot = ?, gate_code = ?, wifi_ssid = ?, trash_day = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_prop,
+                new_num,
+                new_bldg,
+                new_floor,
+                new_addr,
+                new_city,
+                new_state,
+                new_zip,
+                new_rent,
+                new_parking,
+                new_gate,
+                new_wifi,
+                new_trash,
+                new_notes,
+                unit_id,
+            ),
+        )
+        conn.commit()
+    return get_unit(unit_id)
+
+
+def delete_unit(unit_id: str) -> bool:
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM units WHERE id = ?", (unit_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+DEFAULT_SEEDED_TENANTS = [
+    {
+        "id": "tenant_1",
+        "first_name": "Sarah",
+        "last_name": "Connor",
+        "email": "sarah.connor@example.com",
+        "phone": "+1-555-0199",
+        "unit_id": "unit_101",
+        "lease_start": "2026-01-01",
+        "lease_end": "2026-12-31",
+        "monthly_rent": 1450.0,
+        "balance_due": 0.0,
+        "status": "active",
+        "emergency_contact_name": "John Connor",
+        "emergency_contact_phone": "+1-555-0198",
+        "notes": "Prefers email notifications for routine maintenance.",
+    },
+    {
+        "id": "tenant_2",
+        "first_name": "Marcus",
+        "last_name": "Vance",
+        "email": "marcus.vance@example.com",
+        "phone": "+1-555-0244",
+        "unit_id": "unit_204",
+        "lease_start": "2025-06-01",
+        "lease_end": "2026-05-31",
+        "monthly_rent": 1850.0,
+        "balance_due": 1850.0,
+        "status": "past_due",
+        "emergency_contact_name": "Elena Vance",
+        "emergency_contact_phone": "+1-555-0245",
+        "notes": "Late payment notice sent on the 5th.",
+    },
+    {
+        "id": "tenant_3",
+        "first_name": "Elena",
+        "last_name": "Rostova",
+        "email": "elena.rostova@example.com",
+        "phone": "+1-555-0377",
+        "unit_id": "unit_PH1",
+        "lease_start": "2025-09-01",
+        "lease_end": "2027-08-31",
+        "monthly_rent": 3200.0,
+        "balance_due": 0.0,
+        "status": "active",
+        "emergency_contact_name": "Dmitri Rostov",
+        "emergency_contact_phone": "+1-555-0378",
+        "notes": "Has registered pet (small dog). Executive corporate lease.",
+    },
+]
+
+
+def normalize_tenant_id(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Tenant ID must not be blank.")
+    if len(cleaned) > MAX_TENANT_ID_LENGTH:
+        raise ValueError(f"Tenant ID must be at most {MAX_TENANT_ID_LENGTH} characters.")
+    if not re.match(r"^[A-Za-z0-9_\-\.]+$", cleaned):
+        raise ValueError(
+            "Tenant ID may only contain alphanumeric characters, underscores, hyphens, and periods."
+        )
+    return cleaned
+
+
+def normalize_tenant_name(value: str | None, field_name: str = "Name") -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError(f"{field_name} must not be blank.")
+    if len(cleaned) > MAX_TENANT_NAME_LENGTH:
+        raise ValueError(f"{field_name} must be at most {MAX_TENANT_NAME_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_tenant_email(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        raise ValueError("Tenant email must not be blank.")
+    if len(cleaned) > MAX_TENANT_EMAIL_LENGTH:
+        raise ValueError(f"Tenant email must be at most {MAX_TENANT_EMAIL_LENGTH} characters.")
+    if "@" not in cleaned or "." not in cleaned.split("@")[-1]:
+        raise ValueError(f"Invalid tenant email format: '{cleaned}'.")
+    return cleaned
+
+
+def normalize_tenant_phone(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Phone number must not be blank.")
+    if len(cleaned) > MAX_TENANT_PHONE_LENGTH:
+        raise ValueError(f"Phone number must be at most {MAX_TENANT_PHONE_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_tenant_status(value: str | None) -> str:
+    status = (value or DEFAULT_TENANT_STATUS).strip().lower()
+    if status not in VALID_TENANT_STATUSES:
+        valid_opts = ", ".join(sorted(VALID_TENANT_STATUSES))
+        raise ValueError(f"Invalid tenant status '{status}'. Must be one of: {valid_opts}.")
+    return status
+
+
+def normalize_date_str(value: str | None, field_name: str = "Date") -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError(f"{field_name} must not be blank.")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", cleaned):
+        raise ValueError(f"{field_name} must be in YYYY-MM-DD format, got '{cleaned}'.")
+    return cleaned
+
+
+def create_tenants() -> None:
+    """Create tenants table, indexes, and pre-seed initial tenants if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_TENANTS_TABLE)
+        conn.execute(_CREATE_TENANTS_EMAIL_INDEX)
+        conn.execute(_CREATE_TENANTS_UNIT_INDEX)
+        conn.execute(_CREATE_TENANTS_STATUS_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM tenants").fetchone()
+        if row and row[0] == 0:
+            for t in DEFAULT_SEEDED_TENANTS:
+                conn.execute(
+                    "INSERT INTO tenants "
+                    "(id, first_name, last_name, email, phone, unit_id, "
+                    "lease_start, lease_end, monthly_rent, balance_due, status, "
+                    "emergency_contact_name, emergency_contact_phone, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        t["id"],
+                        t["first_name"],
+                        t["last_name"],
+                        t["email"],
+                        t["phone"],
+                        t["unit_id"],
+                        t["lease_start"],
+                        t["lease_end"],
+                        t["monthly_rent"],
+                        t["balance_due"],
+                        t["status"],
+                        t["emergency_contact_name"],
+                        t["emergency_contact_phone"],
+                        t["notes"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_tenant(  # noqa: PLR0913, PLR0917
+    tenant_id: str,
+    first_name: str,
+    last_name: str,
+    email: str,
+    phone: str,
+    lease_start: str,
+    lease_end: str,
+    unit_id: str | None = None,
+    monthly_rent: float = 0.0,
+    balance_due: float = 0.0,
+    status: str = DEFAULT_TENANT_STATUS,
+    emergency_contact_name: str = "",
+    emergency_contact_phone: str = "",
+    notes: str = "",
+) -> dict[str, Any]:
+    norm_id = normalize_tenant_id(tenant_id)
+    norm_first = normalize_tenant_name(first_name, "First name")
+    norm_last = normalize_tenant_name(last_name, "Last name")
+    norm_email = normalize_tenant_email(email)
+    clean_phone = normalize_tenant_phone(phone)
+    norm_start = normalize_date_str(lease_start, "Lease start date")
+    norm_end = normalize_date_str(lease_end, "Lease end date")
+    norm_status = normalize_tenant_status(status)
+    clean_unit = unit_id.strip() if unit_id and str(unit_id).strip() else None
+    rent_val = max(0.0, float(monthly_rent))
+    balance_val = float(balance_due)
+    clean_em_name = (emergency_contact_name or "").strip()
+    clean_em_phone = (emergency_contact_phone or "").strip()
+    clean_notes = (notes or "").strip()
+
+    with closing(get_db_connection()) as conn:
+        existing_id = conn.execute("SELECT id FROM tenants WHERE id = ?", (norm_id,)).fetchone()
+        if existing_id:
+            raise ValueError(f"Tenant with ID '{norm_id}' already exists.")
+        existing_email = conn.execute(
+            "SELECT id FROM tenants WHERE email = ?", (norm_email,)
+        ).fetchone()
+        if existing_email:
+            raise ValueError(f"Tenant with email '{norm_email}' already exists.")
+
+        conn.execute(
+            "INSERT INTO tenants "
+            "(id, first_name, last_name, email, phone, unit_id, "
+            "lease_start, lease_end, monthly_rent, balance_due, status, "
+            "emergency_contact_name, emergency_contact_phone, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                norm_id,
+                norm_first,
+                norm_last,
+                norm_email,
+                clean_phone,
+                clean_unit,
+                norm_start,
+                norm_end,
+                rent_val,
+                balance_val,
+                norm_status,
+                clean_em_name,
+                clean_em_phone,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+    res = get_tenant(norm_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created tenant.")
+    return res
+
+
+def get_tenant(tenant_id: str) -> dict[str, Any] | None:
+    cleaned_id = (tenant_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_tenant_by_email(email: str) -> dict[str, Any] | None:
+    cleaned = (email or "").strip().lower()
+    if not cleaned:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM tenants WHERE LOWER(email) = ?", (cleaned,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_tenants(
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM tenants"]
+    count_parts = ["SELECT COUNT(*) FROM tenants"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR "
+            "LOWER(email) LIKE ? OR LOWER(phone) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern, pattern])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY last_name ASC, first_name ASC LIMIT ? OFFSET ?")
+
+    with closing(get_db_connection()) as conn:
+        count_cursor = conn.execute(" ".join(count_parts), tuple(params))
+        total = int(count_cursor.fetchone()[0])
+        list_params = list(params) + [max(1, limit), max(0, offset)]
+        rows = conn.execute(" ".join(query_parts), tuple(list_params)).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_tenant(  # noqa: PLR0912, PLR0913, PLR0917
+    tenant_id: str,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    unit_id: str | None = None,
+    lease_start: str | None = None,
+    lease_end: str | None = None,
+    monthly_rent: float | None = None,
+    balance_due: float | None = None,
+    status: str | None = None,
+    emergency_contact_name: str | None = None,
+    emergency_contact_phone: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    current = get_tenant(tenant_id)
+    if not current:
+        return None
+
+    new_first = (
+        normalize_tenant_name(first_name, "First name")
+        if first_name is not None
+        else current["first_name"]
+    )
+    new_last = (
+        normalize_tenant_name(last_name, "Last name")
+        if last_name is not None
+        else current["last_name"]
+    )
+    new_email = (
+        normalize_tenant_email(email)
+        if email is not None
+        else current["email"]
+    )
+    new_phone = phone.strip() if phone is not None else current["phone"]
+    new_unit = unit_id.strip() if unit_id is not None else current["unit_id"]
+    new_start = (
+        normalize_date_str(lease_start, "Lease start date")
+        if lease_start is not None
+        else current["lease_start"]
+    )
+    new_end = (
+        normalize_date_str(lease_end, "Lease end date")
+        if lease_end is not None
+        else current["lease_end"]
+    )
+    new_rent = (
+        max(0.0, float(monthly_rent))
+        if monthly_rent is not None
+        else current["monthly_rent"]
+    )
+    new_balance = (
+        float(balance_due)
+        if balance_due is not None
+        else current["balance_due"]
+    )
+    new_status = (
+        normalize_tenant_status(status)
+        if status is not None
+        else current["status"]
+    )
+    new_em_name = (
+        emergency_contact_name.strip()
+        if emergency_contact_name is not None
+        else current["emergency_contact_name"]
+    )
+    new_em_phone = (
+        emergency_contact_phone.strip()
+        if emergency_contact_phone is not None
+        else current["emergency_contact_phone"]
+    )
+    new_notes = notes.strip() if notes is not None else current["notes"]
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE tenants SET "
+            "first_name = ?, last_name = ?, email = ?, phone = ?, unit_id = ?, "
+            "lease_start = ?, lease_end = ?, monthly_rent = ?, balance_due = ?, "
+            "status = ?, emergency_contact_name = ?, emergency_contact_phone = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_first,
+                new_last,
+                new_email,
+                new_phone,
+                new_unit,
+                new_start,
+                new_end,
+                new_rent,
+                new_balance,
+                new_status,
+                new_em_name,
+                new_em_phone,
+                new_notes,
+                tenant_id,
+            ),
+        )
+        conn.commit()
+    return get_tenant(tenant_id)
+
+
+def delete_tenant(tenant_id: str) -> bool:
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tenants WHERE id = ?", (tenant_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def get_session_tenant_context(session_id: str) -> dict[str, Any] | None:
+    """Fetch consolidated tenant and unit profile context for a session."""
+    with closing(get_db_connection()) as conn:
+        has_logs = conn.execute(_SESSION_HAS_LOGS, (session_id,)).fetchone() is not None
+        lbl = conn.execute(
+            "SELECT tenant_id, unit_id FROM session_labels WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if not has_logs and lbl is None:
+            return None
+
+        tenant_id = lbl["tenant_id"] if lbl and lbl["tenant_id"] else None
+        unit_id = lbl["unit_id"] if lbl and lbl["unit_id"] else None
+
+    tenant = get_tenant(tenant_id) if tenant_id else None
+    effective_unit_id = unit_id or (tenant.get("unit_id") if tenant else None)
+    unit = get_unit(effective_unit_id) if effective_unit_id else None
+
+    return {
+        "session_id": session_id,
+        "tenant_id": tenant_id,
+        "unit_id": effective_unit_id,
+        "tenant": tenant,
+        "unit": unit,
+    }
+
+
+def link_session_tenant(
+    session_id: str,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+) -> dict[str, Any]:
+    """Link a customer support session to a tenant and/or unit."""
+    cleaned_tenant = tenant_id.strip() if tenant_id and tenant_id.strip() else None
+    if cleaned_tenant and cleaned_tenant.lower() in ("unassigned", "none"):
+        cleaned_tenant = None
+
+    cleaned_unit = unit_id.strip() if unit_id and unit_id.strip() else None
+    if cleaned_unit and cleaned_unit.lower() in ("unassigned", "none"):
+        cleaned_unit = None
+
+    if cleaned_tenant is not None:
+        tenant = get_tenant(cleaned_tenant)
+        if tenant is None:
+            raise ValueError(f"Tenant '{cleaned_tenant}' not found.")
+        if cleaned_unit is None and tenant.get("unit_id"):
+            cleaned_unit = tenant["unit_id"]
+
+    if cleaned_unit is not None:
+        unit = get_unit(cleaned_unit)
+        if unit is None:
+            raise ValueError(f"Unit '{cleaned_unit}' not found.")
+
+    with closing(get_db_connection()) as conn:
+        cur = conn.execute(
+            "SELECT session_id FROM session_labels WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if cur is None:
+            conn.execute(
+                "INSERT INTO session_labels "
+                "(session_id, label, status, tags, summary, resolution_notes, "
+                "priority, assigned_agent, escalation_tier, tenant_id, unit_id) "
+                "VALUES (?, '', 'active', '', '', '', 'medium', NULL, 'tier_1', ?, ?)",
+                (session_id, cleaned_tenant, cleaned_unit),
+            )
+        else:
+            conn.execute(
+                "UPDATE session_labels SET tenant_id = ?, unit_id = ? WHERE session_id = ?",
+                (cleaned_tenant, cleaned_unit, session_id),
+            )
+        conn.commit()
+
+    context = get_session_tenant_context(session_id)
+    if context is None:
+        tenant = get_tenant(cleaned_tenant) if cleaned_tenant else None
+        effective_unit_id = cleaned_unit or (tenant.get("unit_id") if tenant else None)
+        unit = get_unit(effective_unit_id) if effective_unit_id else None
+        return {
+            "session_id": session_id,
+            "tenant_id": cleaned_tenant,
+            "unit_id": effective_unit_id,
+            "tenant": tenant,
+            "unit": unit,
+        }
+    return context
+
+
+def get_tenant_support_history(tenant_id: str) -> dict[str, Any]:
+    """Retrieve full support and ticket history for a tenant across all linked sessions."""
+    tenant = get_tenant(tenant_id)
+    if tenant is None:
+        raise ValueError(f"Tenant '{tenant_id}' not found.")
+
+    with closing(get_db_connection()) as conn:
+        query = (
+            "SELECT sl.session_id, sl.label, sl.status, sl.tags, sl.summary, "
+            "sl.resolution_notes, sl.priority, sl.assigned_agent, sl.escalation_tier, "
+            "sl.unit_id, "
+            "MIN(al.created_at) AS created_at, "
+            "MAX(al.created_at) AS last_active, "
+            "COUNT(al.id) AS message_count, "
+            "(SELECT al2.user_query FROM application_logs al2 "
+            "WHERE al2.session_id = sl.session_id ORDER BY al2.id ASC LIMIT 1) AS preview "
+            "FROM session_labels sl "
+            "LEFT JOIN application_logs al ON al.session_id = sl.session_id "
+            "WHERE sl.tenant_id = ? "
+            "GROUP BY sl.session_id "
+            "ORDER BY last_active DESC"
+        )
+        rows = conn.execute(query, (tenant["id"],)).fetchall()
+        sessions = []
+        for r in rows:
+            sid = r["session_id"]
+            fb_row = conn.execute(
+                "SELECT rating, comment, score FROM feedback "
+                "WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                (sid,),
+            ).fetchone()
+            rating = fb_row["rating"] if fb_row else None
+            fb_score = fb_row["score"] if fb_row else None
+            fb_comment = fb_row["comment"] if fb_row else None
+
+            sessions.append({
+                "session_id": sid,
+                "label": r["label"] if r["label"] else None,
+                "status": r["status"] if r["status"] else "active",
+                "priority": r["priority"] if r["priority"] else DEFAULT_SESSION_PRIORITY,
+                "assigned_agent": r["assigned_agent"] if r["assigned_agent"] else None,
+                "escalation_tier": (
+                    r["escalation_tier"] if r["escalation_tier"] else DEFAULT_AGENT_TIER
+                ),
+                "tags": r["tags"] if r["tags"] else "",
+                "summary": r["summary"] if r["summary"] else "",
+                "resolution_notes": r["resolution_notes"] if r["resolution_notes"] else "",
+                "unit_id": r["unit_id"] if r["unit_id"] else tenant.get("unit_id"),
+                "message_count": r["message_count"] or 0,
+                "preview": _truncate_preview(r["preview"]),
+                "created_at": r["created_at"],
+                "last_active": r["last_active"],
+                "rating": rating,
+                "feedback_score": fb_score,
+                "feedback_comment": fb_comment,
+            })
+
+        return {
+            "tenant": tenant,
+            "total_sessions": len(sessions),
+            "sessions": sessions,
+        }
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
 migrate_document_store()
+create_units()
+create_tenants()
 create_session_labels()
 migrate_session_labels()
 create_feedback()

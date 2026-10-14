@@ -2080,4 +2080,257 @@ def get_knowledge_analytics() -> dict[str, Any] | None:
         return None
 
 
+# --- Property Units Client Helpers ---
+
+
+def list_units(
+    property_name: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if property_name and property_name.strip():
+            params["property_name"] = property_name.strip()
+        if search and search.strip():
+            params["search"] = search.strip()
+        response = requests.get(
+            f"{API_BASE_URL}/units",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to list property units", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while listing units: {str(e)}")
+        return None
+
+
+def get_unit(unit_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/units/{unit_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch unit '{unit_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching unit: {str(e)}")
+        return None
+
+
+def create_unit(payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/units",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create property unit", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating unit: {str(e)}")
+        return None
+
+
+def update_unit(unit_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/units/{unit_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update unit '{unit_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating unit: {str(e)}")
+        return None
+
+
+def delete_unit(unit_id: str) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/units/{unit_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete unit '{unit_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting unit: {str(e)}")
+        return False
+
+
+# --- Tenants Client Helpers ---
+
+
+def list_tenants(
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if unit_id and unit_id.strip():
+            params["unit_id"] = unit_id.strip()
+        if status and status.strip():
+            params["status"] = status.strip()
+        if search and search.strip():
+            params["search"] = search.strip()
+        response = requests.get(
+            f"{API_BASE_URL}/tenants",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to list tenants", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while listing tenants: {str(e)}")
+        return None
+
+
+def get_tenant(tenant_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/tenants/{tenant_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant: {str(e)}")
+        return None
+
+
+def create_tenant(payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/tenants",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create tenant", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating tenant: {str(e)}")
+        return None
+
+
+def update_tenant(tenant_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/tenants/{tenant_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating tenant: {str(e)}")
+        return None
+
+
+def delete_tenant(tenant_id: str) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/tenants/{tenant_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete tenant '{tenant_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting tenant: {str(e)}")
+        return False
+
+
+# --- Session Tenant Linking & Context Client Helpers ---
+
+
+def link_session_tenant(
+    session_id: str,
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+) -> dict[str, Any] | None:
+    try:
+        payload: dict[str, Any] = {"tenant_id": tenant_id, "unit_id": unit_id}
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/link-tenant",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to link tenant to session '{session_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while linking tenant to session: {str(e)}")
+        return None
+
+
+def get_session_tenant_context(session_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/sessions/{session_id}/tenant-context",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch tenant context for session '{session_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant context: {str(e)}")
+        return None
+
+
+def get_tenant_support_history(tenant_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/tenants/{tenant_id}/support-history",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch support history for tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant support history: {str(e)}")
+        return None
+
+
+
 

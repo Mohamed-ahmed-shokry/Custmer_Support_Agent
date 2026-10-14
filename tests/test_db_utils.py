@@ -595,6 +595,8 @@ def test_update_session_metadata_and_retrieval(monkeypatch, tmp_path):
         "priority": "medium",
         "assigned_agent": None,
         "escalation_tier": "tier_1",
+        "tenant_id": None,
+        "unit_id": None,
     }
 
     # Update metadata incrementally
@@ -2201,3 +2203,433 @@ def test_knowledge_articles_validation(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="author exceeds max length"):
         db_utils.create_knowledge_article("Valid Title", "Valid content", author="a" * 101)
+
+
+def test_normalize_unit_fields():
+    assert db_utils.normalize_unit_id("unit-101") == "unit-101"
+    assert db_utils.normalize_unit_id("Unit_4B.2") == "Unit_4B.2"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_unit_id("   ")
+    with pytest.raises(ValueError, match="at most 50 characters"):
+        db_utils.normalize_unit_id("u" * 51)
+    with pytest.raises(ValueError, match="may only contain alphanumeric"):
+        db_utils.normalize_unit_id("unit@101!")
+
+    assert db_utils.normalize_property_name("Sunset Heights") == "Sunset Heights"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_property_name(" ")
+    with pytest.raises(ValueError, match="at most 100 characters"):
+        db_utils.normalize_property_name("p" * 101)
+
+    assert db_utils.normalize_unit_number("4B") == "4B"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_unit_number("")
+    with pytest.raises(ValueError, match="at most 50 characters"):
+        db_utils.normalize_unit_number("n" * 51)
+
+
+def test_units_crud_and_preseeded(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+
+    expected_preseeded_count = 3
+    expected_u101_rent = 1450.0
+    initial_rent = 1600.0
+    updated_rent = 1650.0
+    expected_sh_count = 3
+
+    # Preseeded units
+    preseeded, total = db_utils.list_units()
+    assert total >= expected_preseeded_count
+    unit_ids = {u["id"] for u in preseeded}
+    assert "unit_101" in unit_ids
+    assert "unit_204" in unit_ids
+    assert "unit_PH1" in unit_ids
+
+    u101 = db_utils.get_unit("unit_101")
+    assert u101 is not None
+    assert u101["property_name"] == "Sunset Heights Apartments"
+    assert u101["parking_spot"] == "P-12"
+    assert u101["monthly_rent"] == expected_u101_rent
+
+    # Create new unit
+    created = db_utils.create_unit(
+        unit_id="unit_301",
+        property_name="Sunset Heights Apartments",
+        unit_number="301",
+        address="742 Evergreen Terrace",
+        city="Springfield",
+        state="IL",
+        zip_code="62704",
+        building_name="Building C",
+        floor=3,
+        monthly_rent=initial_rent,
+        parking_spot="P-31",
+        gate_code="#3010",
+        wifi_ssid="SunsetHeights-Guest",
+        trash_day="Tuesday",
+        notes="Newly renovated 1-bedroom unit.",
+    )
+    assert created["id"] == "unit_301"
+    assert created["monthly_rent"] == initial_rent
+
+    # Duplicate ID raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_unit(
+            unit_id="unit_301",
+            property_name="Sunset Heights Apartments",
+            unit_number="301",
+            address="742 Evergreen Terrace",
+            city="Springfield",
+            state="IL",
+            zip_code="62704",
+        )
+
+    # Filter and search
+    sh_units, sh_count = db_utils.list_units(property_name="Sunset Heights Apartments")
+    assert sh_count >= expected_sh_count
+    assert all(u["property_name"] == "Sunset Heights Apartments" for u in sh_units)
+
+    searched, search_count = db_utils.list_units(search="PH1")
+    assert search_count == 1
+    assert searched[0]["id"] == "unit_PH1"
+
+    # Update unit
+    updated = db_utils.update_unit(
+        "unit_301",
+        monthly_rent=updated_rent,
+        parking_spot="P-32",
+        notes="Updated parking spot",
+    )
+    assert updated is not None
+    assert updated["monthly_rent"] == updated_rent
+    assert updated["parking_spot"] == "P-32"
+    assert updated["notes"] == "Updated parking spot"
+
+    # Delete unit
+    assert db_utils.delete_unit("unit_301") is True
+    assert db_utils.get_unit("unit_301") is None
+    assert db_utils.delete_unit("unit_301") is False
+
+
+def test_units_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+
+    with pytest.raises(ValueError, match="Address must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "", "City", "ST", "12345")
+
+    with pytest.raises(ValueError, match="City must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "Addr", "", "ST", "12345")
+
+    with pytest.raises(ValueError, match="State must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "Addr", "City", "", "12345")
+
+    with pytest.raises(ValueError, match="Zip code must not be blank"):
+        db_utils.create_unit("u_test", "Prop", "1", "Addr", "City", "ST", "")
+
+    # Non-existent unit update returns None
+    assert db_utils.update_unit("non_existent_unit", monthly_rent=1000.0) is None
+
+
+def test_normalize_tenant_fields():
+    assert db_utils.normalize_tenant_id("tenant-101") == "tenant-101"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_tenant_id("   ")
+    with pytest.raises(ValueError, match="at most 50 characters"):
+        db_utils.normalize_tenant_id("t" * 51)
+    with pytest.raises(ValueError, match="may only contain alphanumeric"):
+        db_utils.normalize_tenant_id("tenant@101!")
+
+    assert db_utils.normalize_tenant_name("Sarah", "First name") == "Sarah"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_tenant_name("", "First name")
+    with pytest.raises(ValueError, match="at most 100 characters"):
+        db_utils.normalize_tenant_name("n" * 101, "First name")
+
+    assert db_utils.normalize_tenant_email("SARAH@EXAMPLE.COM") == "sarah@example.com"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_tenant_email("")
+    with pytest.raises(ValueError, match="Invalid tenant email format"):
+        db_utils.normalize_tenant_email("invalid-email-address")
+
+    assert db_utils.normalize_tenant_status("ACTIVE") == "active"
+    with pytest.raises(ValueError, match="Invalid tenant status"):
+        db_utils.normalize_tenant_status("nonexistent")
+
+    assert db_utils.normalize_date_str("2026-05-15", "Lease date") == "2026-05-15"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_date_str("", "Lease date")
+    with pytest.raises(ValueError, match="must be in YYYY-MM-DD format"):
+        db_utils.normalize_date_str("05/15/2026", "Lease date")
+
+
+def test_tenants_preseeded_and_lookups(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    expected_preseeded_tenants = 3
+    expected_t1_rent = 1450.0
+    expected_t1_balance = 0.0
+
+    # Preseeded tenants
+    tenants, total = db_utils.list_tenants()
+    assert total >= expected_preseeded_tenants
+    tenant_ids = {t["id"] for t in tenants}
+    assert "tenant_1" in tenant_ids
+    assert "tenant_2" in tenant_ids
+    assert "tenant_3" in tenant_ids
+
+    t1 = db_utils.get_tenant("tenant_1")
+    assert t1 is not None
+    assert t1["first_name"] == "Sarah"
+    assert t1["last_name"] == "Connor"
+    assert t1["email"] == "sarah.connor@example.com"
+    assert t1["unit_id"] == "unit_101"
+    assert t1["monthly_rent"] == expected_t1_rent
+    assert t1["balance_due"] == expected_t1_balance
+    assert t1["status"] == "active"
+
+    # Lookup by email
+    by_email = db_utils.get_tenant_by_email("SARAH.CONNOR@example.com")
+    assert by_email is not None
+    assert by_email["id"] == "tenant_1"
+
+
+def test_tenants_crud_and_filters(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    t4_rent = 1500.0
+    t4_balance = 500.0
+    updated_balance = 0.0
+    expected_u101_count = 2
+    expected_search_count = 1
+
+    # Create new tenant
+    created = db_utils.create_tenant(
+        tenant_id="tenant_4",
+        first_name="Kyle",
+        last_name="Reese",
+        email="kyle.reese@example.com",
+        phone="+1-555-0789",
+        unit_id="unit_101",
+        lease_start="2026-02-01",
+        lease_end="2027-01-31",
+        monthly_rent=t4_rent,
+        balance_due=t4_balance,
+        status="active",
+        emergency_contact_name="Sarah Connor",
+        emergency_contact_phone="+1-555-0199",
+        notes="Co-tenant on unit 101.",
+    )
+    assert created["id"] == "tenant_4"
+    assert created["balance_due"] == t4_balance
+
+    # Duplicate ID raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_tenant(
+            tenant_id="tenant_4",
+            first_name="Kyle",
+            last_name="Reese",
+            email="kyle.different@example.com",
+            phone="+1-555-0789",
+            lease_start="2026-02-01",
+            lease_end="2027-01-31",
+        )
+
+    # Duplicate email raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_tenant(
+            tenant_id="tenant_5",
+            first_name="Kyle",
+            last_name="Reese",
+            email="kyle.reese@example.com",
+            phone="+1-555-0789",
+            lease_start="2026-02-01",
+            lease_end="2027-01-31",
+        )
+
+    # Filter by unit_id
+    u101_tenants, u101_count = db_utils.list_tenants(unit_id="unit_101")
+    assert u101_count == expected_u101_count
+    assert all(t["unit_id"] == "unit_101" for t in u101_tenants)
+
+    # Filter by status
+    past_due_tenants, past_due_count = db_utils.list_tenants(status="past_due")
+    assert past_due_count == 1
+    assert past_due_tenants[0]["id"] == "tenant_2"
+
+    # Search
+    searched, search_count = db_utils.list_tenants(search="Rostova")
+    assert search_count == expected_search_count
+    assert searched[0]["id"] == "tenant_3"
+
+    # Update tenant
+    updated = db_utils.update_tenant(
+        "tenant_4",
+        balance_due=updated_balance,
+        status="active",
+        notes="Paid off balance in full.",
+    )
+    assert updated is not None
+    assert updated["balance_due"] == updated_balance
+    assert updated["notes"] == "Paid off balance in full."
+
+    # Delete tenant
+    assert db_utils.delete_tenant("tenant_4") is True
+    assert db_utils.get_tenant("tenant_4") is None
+    assert db_utils.delete_tenant("tenant_4") is False
+
+
+def test_tenants_validation(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    with pytest.raises(ValueError, match="Phone number must not be blank"):
+        db_utils.create_tenant(
+            "t_test", "First", "Last", "test@example.com", "", "2026-01-01", "2026-12-31"
+        )
+
+    with pytest.raises(ValueError, match="Lease start date must be in YYYY-MM-DD format"):
+        db_utils.create_tenant(
+            "t_test", "First", "Last", "test@example.com", "555-0100", "invalid-date", "2026-12-31"
+        )
+
+    # Non-existent tenant update returns None
+    assert db_utils.update_tenant("non_existent_tenant", balance_due=0.0) is None
+    assert db_utils.get_tenant("") is None
+    assert db_utils.get_tenant_by_email("") is None
+
+
+def test_migrate_session_labels_adds_tenant_and_unit(monkeypatch, tmp_path):
+    db_path = tmp_path / "legacy_tenant.db"
+    monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        conn.execute(
+            "CREATE TABLE session_labels ("
+            "session_id TEXT PRIMARY KEY, label TEXT NOT NULL, "
+            "status TEXT NOT NULL DEFAULT 'active', tags TEXT NOT NULL DEFAULT '')"
+        )
+        conn.commit()
+
+    db_utils.migrate_session_labels()
+
+    with closing(sqlite3.connect(str(db_path))) as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(session_labels)").fetchall()]
+        assert "tenant_id" in cols
+        assert "unit_id" in cols
+
+
+def test_session_tenant_linking_and_context(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    sid = "sess-tenant-link"
+    db_utils.insert_application_logs(sid, "Rent question", "Rent answer", "gpt-4o")
+
+    # Initial context is empty
+    ctx = db_utils.get_session_tenant_context(sid)
+    assert ctx is not None
+    assert ctx["tenant_id"] is None
+    assert ctx["unit_id"] is None
+    assert ctx["tenant"] is None
+    assert ctx["unit"] is None
+
+    # Link to tenant_1 (auto-infers unit_101)
+    linked = db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    assert linked["tenant_id"] == "tenant_1"
+    assert linked["unit_id"] == "unit_101"
+    assert linked["tenant"] is not None
+    assert linked["tenant"]["first_name"] == "Sarah"
+    assert linked["unit"] is not None
+    assert linked["unit"]["unit_number"] == "101"
+
+    # Verify get_session_metadata reflects the link
+    meta = db_utils.get_session_metadata(sid)
+    assert meta is not None
+    assert meta["tenant_id"] == "tenant_1"
+    assert meta["unit_id"] == "unit_101"
+
+    # Non-existent tenant raises ValueError
+    with pytest.raises(ValueError, match="Tenant 'non_existent' not found"):
+        db_utils.link_session_tenant(sid, tenant_id="non_existent")
+
+    # Non-existent unit raises ValueError
+    with pytest.raises(ValueError, match="Unit 'invalid_unit' not found"):
+        db_utils.link_session_tenant(sid, unit_id="invalid_unit")
+
+    # Unlink tenant using 'unassigned'
+    unlinked = db_utils.link_session_tenant(sid, tenant_id="unassigned", unit_id="unassigned")
+    assert unlinked["tenant_id"] is None
+    assert unlinked["unit_id"] is None
+    assert unlinked["tenant"] is None
+    assert unlinked["unit"] is None
+
+
+def test_tenant_support_history(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    # Link two sessions to tenant_2
+    sid1 = "sess-hist-1"
+    sid2 = "sess-hist-2"
+    db_utils.insert_application_logs(sid1, "HVAC issue", "HVAC scheduled", "gpt-4o")
+    db_utils.insert_application_logs(sid2, "Follow-up status", "Tech arrives at 2pm", "gpt-4o")
+
+    db_utils.link_session_tenant(sid1, tenant_id="tenant_2")
+    db_utils.update_session_metadata(sid1, label="HVAC Ticket", status="resolved")
+    db_utils.insert_feedback(sid1, rating=1, comment="Great maintenance team!")
+
+    db_utils.link_session_tenant(sid2, tenant_id="tenant_2")
+    db_utils.update_session_metadata(sid2, label="HVAC Status", status="active", priority="high")
+
+    history = db_utils.get_tenant_support_history("tenant_2")
+    assert history["tenant"]["id"] == "tenant_2"
+    expected_sess_count = 2
+    expected_rating = 1
+    assert history["total_sessions"] == expected_sess_count
+    assert len(history["sessions"]) == expected_sess_count
+
+    # Session with feedback
+    sess1 = next(s for s in history["sessions"] if s["session_id"] == sid1)
+    assert sess1["label"] == "HVAC Ticket"
+    assert sess1["status"] == "resolved"
+    assert sess1["rating"] == expected_rating
+    assert sess1["feedback_comment"] == "Great maintenance team!"
+
+    # Non-existent tenant raises ValueError
+    with pytest.raises(ValueError, match="not found"):
+        db_utils.get_tenant_support_history("non_existent_tenant")
+
+
+def test_get_all_sessions_tenant_and_unit_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+
+    sid1 = "sess-filt-1"
+    sid2 = "sess-filt-2"
+    db_utils.insert_application_logs(sid1, "User 1 query", "Answer 1", "gpt-4o")
+    db_utils.insert_application_logs(sid2, "User 2 query", "Answer 2", "gpt-4o")
+
+    db_utils.link_session_tenant(sid1, tenant_id="tenant_1")
+    db_utils.link_session_tenant(sid2, tenant_id="tenant_3")
+
+    t1_sessions = db_utils.get_all_sessions(tenant_id="tenant_1")
+    assert len(t1_sessions) == 1
+    assert t1_sessions[0]["session_id"] == sid1
+    assert t1_sessions[0]["tenant_id"] == "tenant_1"
+    assert t1_sessions[0]["unit_id"] == "unit_101"
+
+    ph1_sessions = db_utils.get_all_sessions(unit_id="unit_PH1")
+    assert len(ph1_sessions) == 1
+    assert ph1_sessions[0]["session_id"] == sid2
+    assert ph1_sessions[0]["tenant_id"] == "tenant_3"
+

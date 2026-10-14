@@ -10,6 +10,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from api.tenant_context import extract_tenant_macro_variables
+
 # Pattern matching variable placeholders like {customer_name}, {unit_id}
 _VARIABLE_PATTERN = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 
@@ -18,6 +20,11 @@ DEFAULT_SYSTEM_VARIABLES: dict[str, str] = {
     "agent_name": "Support Agent",
     "customer_name": "Valued Resident",
     "unit_id": "Your Unit",
+    "monthly_rent": "$0.00",
+    "balance_due": "$0.00",
+    "lease_end": "N/A",
+    "parking_spot": "N/A",
+    "gate_code": "N/A",
     "support_contact": DEFAULT_SUPPORT_CONTACT,
 }
 
@@ -51,6 +58,7 @@ def render_template(
     template: str,
     variables: dict[str, Any] | None = None,
     fallback_defaults: bool = True,
+    session_id: str | None = None,
 ) -> tuple[str, list[str]]:
     """Render a macro template by safely replacing variable placeholders.
 
@@ -59,6 +67,7 @@ def render_template(
         variables: Key-value mapping of custom variable substitutions.
         fallback_defaults: When True, fills known standard placeholders
             (e.g., date, support_contact, customer_name) with sensible defaults.
+        session_id: Optional support session ID to auto-resolve tenant & unit variables.
 
     Returns:
         A tuple of ``(rendered_text, unresolved_variables)`` where
@@ -70,6 +79,10 @@ def render_template(
     merged_vars: dict[str, str] = {}
     if fallback_defaults:
         merged_vars.update(get_system_defaults())
+
+    if session_id:
+        tenant_vars = extract_tenant_macro_variables(session_id=session_id)
+        merged_vars.update(tenant_vars)
 
     if variables:
         for k, v in variables.items():
