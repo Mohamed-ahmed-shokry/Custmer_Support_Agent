@@ -2,6 +2,7 @@ import re
 import sqlite3
 from collections import Counter
 from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -427,6 +428,81 @@ MAX_TENANT_NAME_LENGTH = 100
 MAX_TENANT_EMAIL_LENGTH = 150
 MAX_TENANT_PHONE_LENGTH = 50
 MAX_TENANT_NOTES_LENGTH = 2000
+
+_CREATE_WORK_ORDERS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS work_orders ("
+    "id TEXT PRIMARY KEY, "
+    "unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE, "
+    "tenant_id TEXT DEFAULT NULL REFERENCES tenants(id) ON DELETE SET NULL, "
+    "session_id TEXT DEFAULT NULL, "
+    "title TEXT NOT NULL, "
+    "description TEXT NOT NULL, "
+    "category TEXT NOT NULL DEFAULT 'general', "
+    "priority TEXT NOT NULL DEFAULT 'medium', "
+    "status TEXT NOT NULL DEFAULT 'submitted', "
+    "entry_permission TEXT NOT NULL DEFAULT 'permission_granted', "
+    "assigned_to TEXT NOT NULL DEFAULT '', "
+    "scheduled_date TEXT NOT NULL DEFAULT '', "
+    "completed_at TEXT DEFAULT NULL, "
+    "resolution_notes TEXT NOT NULL DEFAULT '', "
+    "estimated_cost REAL DEFAULT NULL, "
+    "actual_cost REAL DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_WORK_ORDERS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_work_orders_unit_id ON work_orders(unit_id)"
+)
+_CREATE_WORK_ORDERS_TENANT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_work_orders_tenant_id ON work_orders(tenant_id)"
+)
+_CREATE_WORK_ORDERS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(status)"
+)
+_CREATE_WORK_ORDERS_PRIORITY_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_work_orders_priority ON work_orders(priority)"
+)
+_CREATE_WORK_ORDERS_CATEGORY_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_work_orders_category ON work_orders(category)"
+)
+
+VALID_WORK_ORDER_CATEGORIES = {
+    "plumbing",
+    "hvac",
+    "electrical",
+    "appliance",
+    "pest",
+    "structural",
+    "security",
+    "general",
+}
+DEFAULT_WORK_ORDER_CATEGORY = "general"
+
+VALID_WORK_ORDER_PRIORITIES = {"low", "medium", "high", "emergency"}
+DEFAULT_WORK_ORDER_PRIORITY = "medium"
+
+VALID_WORK_ORDER_STATUSES = {
+    "submitted",
+    "scheduled",
+    "in_progress",
+    "on_hold",
+    "completed",
+    "cancelled",
+}
+DEFAULT_WORK_ORDER_STATUS = "submitted"
+
+VALID_ENTRY_PERMISSIONS = {
+    "permission_granted",
+    "call_first",
+    "appointment_only",
+}
+DEFAULT_ENTRY_PERMISSION = "permission_granted"
+
+MAX_WORK_ORDER_ID_LENGTH = 50
+MAX_WORK_ORDER_TITLE_LENGTH = 200
+MAX_WORK_ORDER_DESC_LENGTH = 5000
+MAX_WORK_ORDER_ASSIGNEE_LENGTH = 100
+MAX_WORK_ORDER_NOTES_LENGTH = 3000
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -4395,12 +4471,589 @@ def get_tenant_support_history(tenant_id: str) -> dict[str, Any]:
         }
 
 
+DEFAULT_SEEDED_WORK_ORDERS = [
+    {
+        "id": "wo_101",
+        "unit_id": "unit_101",
+        "tenant_id": "tenant_1",
+        "session_id": None,
+        "title": "Kitchen faucet leaking constantly",
+        "description": "Steady drip from the base of the kitchen faucet. Bucket placed underneath.",
+        "category": "plumbing",
+        "priority": "medium",
+        "status": "scheduled",
+        "entry_permission": "permission_granted",
+        "assigned_to": "Apex Plumbing Services",
+        "scheduled_date": "2026-10-18T10:00:00",
+        "completed_at": None,
+        "resolution_notes": "",
+        "estimated_cost": 150.0,
+        "actual_cost": None,
+    },
+    {
+        "id": "wo_102",
+        "unit_id": "unit_204",
+        "tenant_id": "tenant_2",
+        "session_id": None,
+        "title": "Living room AC blowing ambient air",
+        "description": "AC unit runs and blows air but does not cool below 78 degrees.",
+        "category": "hvac",
+        "priority": "high",
+        "status": "in_progress",
+        "entry_permission": "call_first",
+        "assigned_to": "CoolTech HVAC Solutions",
+        "scheduled_date": "2026-10-16T14:00:00",
+        "completed_at": None,
+        "resolution_notes": "Technician dispatched to inspect compressor and refrigerant levels.",
+        "estimated_cost": 320.0,
+        "actual_cost": None,
+    },
+    {
+        "id": "wo_103",
+        "unit_id": "unit_PH1",
+        "tenant_id": "tenant_3",
+        "session_id": None,
+        "title": "Dishwasher not draining after wash cycle",
+        "description": "Standing water remaining in bottom of dishwasher basin.",
+        "category": "appliance",
+        "priority": "low",
+        "status": "completed",
+        "entry_permission": "appointment_only",
+        "assigned_to": "Swift Appliance Repair",
+        "scheduled_date": "2026-10-10T11:00:00",
+        "completed_at": "2026-10-10T12:30:00",
+        "resolution_notes": "Cleared clogged drain filter and verified pump operation.",
+        "estimated_cost": 120.0,
+        "actual_cost": 115.0,
+    },
+]
+
+
+def normalize_work_order_id(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Work order ID must not be blank.")
+    if len(cleaned) > MAX_WORK_ORDER_ID_LENGTH:
+        raise ValueError(f"Work order ID must be at most {MAX_WORK_ORDER_ID_LENGTH} characters.")
+    if not re.match(r"^[A-Za-z0-9_\-\.]+$", cleaned):
+        raise ValueError(
+            "Work order ID may only contain alphanumeric characters, "
+            "underscores, hyphens, and periods."
+        )
+    return cleaned
+
+
+def normalize_work_order_title(value: str | None) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Work order title must not be blank.")
+    if len(cleaned) > MAX_WORK_ORDER_TITLE_LENGTH:
+        raise ValueError(
+            f"Work order title must be at most {MAX_WORK_ORDER_TITLE_LENGTH} characters."
+        )
+    return cleaned
+
+
+def normalize_work_order_category(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_WORK_ORDER_CATEGORY
+    if cleaned not in VALID_WORK_ORDER_CATEGORIES:
+        valid_cats = ", ".join(sorted(VALID_WORK_ORDER_CATEGORIES))
+        raise ValueError(
+            f"Invalid work order category '{cleaned}'. Expected one of: {valid_cats}."
+        )
+    return cleaned
+
+
+def normalize_work_order_priority(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_WORK_ORDER_PRIORITY
+    if cleaned not in VALID_WORK_ORDER_PRIORITIES:
+        valid_pris = ", ".join(sorted(VALID_WORK_ORDER_PRIORITIES))
+        raise ValueError(
+            f"Invalid work order priority '{cleaned}'. Expected one of: {valid_pris}."
+        )
+    return cleaned
+
+
+def normalize_work_order_status(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_WORK_ORDER_STATUS
+    if cleaned not in VALID_WORK_ORDER_STATUSES:
+        valid_stats = ", ".join(sorted(VALID_WORK_ORDER_STATUSES))
+        raise ValueError(
+            f"Invalid work order status '{cleaned}'. Expected one of: {valid_stats}."
+        )
+    return cleaned
+
+
+def normalize_entry_permission(value: str | None) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_ENTRY_PERMISSION
+    if cleaned not in VALID_ENTRY_PERMISSIONS:
+        valid_perms = ", ".join(sorted(VALID_ENTRY_PERMISSIONS))
+        raise ValueError(
+            f"Invalid entry permission '{cleaned}'. Expected one of: {valid_perms}."
+        )
+    return cleaned
+
+
+def create_work_orders() -> None:
+    """Create work_orders table, indexes, and pre-seed initial records if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_WORK_ORDERS_TABLE)
+        conn.execute(_CREATE_WORK_ORDERS_UNIT_INDEX)
+        conn.execute(_CREATE_WORK_ORDERS_TENANT_INDEX)
+        conn.execute(_CREATE_WORK_ORDERS_STATUS_INDEX)
+        conn.execute(_CREATE_WORK_ORDERS_PRIORITY_INDEX)
+        conn.execute(_CREATE_WORK_ORDERS_CATEGORY_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM work_orders").fetchone()
+        if row and row[0] == 0:
+            for w in DEFAULT_SEEDED_WORK_ORDERS:
+                conn.execute(
+                    "INSERT INTO work_orders "
+                    "(id, unit_id, tenant_id, session_id, title, description, "
+                    "category, priority, status, entry_permission, assigned_to, "
+                    "scheduled_date, completed_at, resolution_notes, "
+                    "estimated_cost, actual_cost) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        w["id"],
+                        w["unit_id"],
+                        w["tenant_id"],
+                        w["session_id"],
+                        w["title"],
+                        w["description"],
+                        w["category"],
+                        w["priority"],
+                        w["status"],
+                        w["entry_permission"],
+                        w["assigned_to"],
+                        w["scheduled_date"],
+                        w["completed_at"],
+                        w["resolution_notes"],
+                        w["estimated_cost"],
+                        w["actual_cost"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_work_order(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
+    work_order_id: str,
+    unit_id: str,
+    title: str,
+    description: str,
+    category: str = "general",
+    priority: str = "medium",
+    status: str = "submitted",
+    tenant_id: str | None = None,
+    session_id: str | None = None,
+    entry_permission: str = "permission_granted",
+    assigned_to: str = "",
+    scheduled_date: str = "",
+    completed_at: str | None = None,
+    resolution_notes: str = "",
+    estimated_cost: float | None = None,
+    actual_cost: float | None = None,
+) -> dict[str, Any]:
+    norm_id = normalize_work_order_id(work_order_id)
+    norm_unit = normalize_unit_id(unit_id)
+    norm_title = normalize_work_order_title(title)
+    clean_desc = (description or "").strip()
+    if not clean_desc:
+        raise ValueError("Work order description must not be blank.")
+    if len(clean_desc) > MAX_WORK_ORDER_DESC_LENGTH:
+        raise ValueError(
+            f"Work order description must be at most {MAX_WORK_ORDER_DESC_LENGTH} characters."
+        )
+    norm_cat = normalize_work_order_category(category)
+    norm_priority = normalize_work_order_priority(priority)
+    norm_status = normalize_work_order_status(status)
+    norm_entry = normalize_entry_permission(entry_permission)
+
+    clean_tenant = (tenant_id or "").strip() or None
+    clean_session = (session_id or "").strip() or None
+    clean_assignee = (assigned_to or "").strip()
+    if len(clean_assignee) > MAX_WORK_ORDER_ASSIGNEE_LENGTH:
+        raise ValueError(
+            f"Assigned to must be at most {MAX_WORK_ORDER_ASSIGNEE_LENGTH} characters."
+        )
+    clean_date = (scheduled_date or "").strip()
+    clean_notes = (resolution_notes or "").strip()
+    if len(clean_notes) > MAX_WORK_ORDER_NOTES_LENGTH:
+        raise ValueError(
+            f"Resolution notes must be at most {MAX_WORK_ORDER_NOTES_LENGTH} characters."
+        )
+
+    clean_completed = (completed_at or "").strip() or None
+    if norm_status == "completed" and clean_completed is None:
+        clean_completed = datetime.now(UTC).isoformat()
+
+    est_val = float(estimated_cost) if estimated_cost is not None else None
+    act_val = float(actual_cost) if actual_cost is not None else None
+
+    with closing(get_db_connection()) as conn:
+        unit_row = conn.execute("SELECT id FROM units WHERE id = ?", (norm_unit,)).fetchone()
+        if not unit_row:
+            raise ValueError(f"Unit with ID '{norm_unit}' does not exist.")
+
+        if clean_tenant:
+            tenant_row = conn.execute(
+                "SELECT id FROM tenants WHERE id = ?", (clean_tenant,)
+            ).fetchone()
+            if not tenant_row:
+                raise ValueError(f"Tenant with ID '{clean_tenant}' does not exist.")
+
+        existing = conn.execute(
+            "SELECT id FROM work_orders WHERE id = ?", (norm_id,)
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Work order with ID '{norm_id}' already exists.")
+
+        conn.execute(
+            "INSERT INTO work_orders "
+            "(id, unit_id, tenant_id, session_id, title, description, "
+            "category, priority, status, entry_permission, assigned_to, "
+            "scheduled_date, completed_at, resolution_notes, "
+            "estimated_cost, actual_cost) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                norm_id,
+                norm_unit,
+                clean_tenant,
+                clean_session,
+                norm_title,
+                clean_desc,
+                norm_cat,
+                norm_priority,
+                norm_status,
+                norm_entry,
+                clean_assignee,
+                clean_date,
+                clean_completed,
+                clean_notes,
+                est_val,
+                act_val,
+            ),
+        )
+        conn.commit()
+
+    res = get_work_order(norm_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created work order.")
+    return res
+
+
+def get_work_order(work_order_id: str) -> dict[str, Any] | None:
+    cleaned_id = (work_order_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM work_orders WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_work_orders(  # noqa: PLR0912, PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM work_orders"]
+    count_parts = ["SELECT COUNT(*) FROM work_orders"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if tenant_id and tenant_id.strip():
+        where_clauses.append("tenant_id = ?")
+        params.append(tenant_id.strip())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if priority and priority.strip():
+        where_clauses.append("priority = ?")
+        params.append(priority.strip().lower())
+
+    if category and category.strip():
+        where_clauses.append("category = ?")
+        params.append(category.strip().lower())
+
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(assigned_to) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    order_clause = (
+        " ORDER BY CASE priority "
+        "WHEN 'emergency' THEN 1 "
+        "WHEN 'high' THEN 2 "
+        "WHEN 'medium' THEN 3 "
+        "WHEN 'low' THEN 4 "
+        "ELSE 5 END ASC, created_at DESC LIMIT ? OFFSET ?"
+    )
+    query_parts.append(order_clause)
+
+    with closing(get_db_connection()) as conn:
+        count_cursor = conn.execute(" ".join(count_parts), tuple(params))
+        total = int(count_cursor.fetchone()[0])
+        list_params = list(params) + [max(1, limit), max(0, offset)]
+        rows = conn.execute(" ".join(query_parts), tuple(list_params)).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_work_order(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
+    work_order_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    status: str | None = None,
+    entry_permission: str | None = None,
+    assigned_to: str | None = None,
+    scheduled_date: str | None = None,
+    completed_at: str | None = None,
+    resolution_notes: str | None = None,
+    estimated_cost: float | None = None,
+    actual_cost: float | None = None,
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any] | None:
+    current = get_work_order(work_order_id)
+    if not current:
+        return None
+
+    new_title = (
+        normalize_work_order_title(title) if title is not None else current["title"]
+    )
+    new_desc = description.strip() if description is not None else current["description"]
+    if not new_desc:
+        raise ValueError("Work order description must not be blank.")
+    if len(new_desc) > MAX_WORK_ORDER_DESC_LENGTH:
+        raise ValueError(
+            f"Work order description must be at most {MAX_WORK_ORDER_DESC_LENGTH} characters."
+        )
+
+    new_cat = (
+        normalize_work_order_category(category) if category is not None else current["category"]
+    )
+    new_priority = (
+        normalize_work_order_priority(priority) if priority is not None else current["priority"]
+    )
+    new_status = (
+        normalize_work_order_status(status) if status is not None else current["status"]
+    )
+    new_entry = (
+        normalize_entry_permission(entry_permission)
+        if entry_permission is not None
+        else current["entry_permission"]
+    )
+    new_assignee = (
+        assigned_to.strip() if assigned_to is not None else current["assigned_to"]
+    )
+    if len(new_assignee) > MAX_WORK_ORDER_ASSIGNEE_LENGTH:
+        raise ValueError(
+            f"Assigned to must be at most {MAX_WORK_ORDER_ASSIGNEE_LENGTH} characters."
+        )
+    new_date = (
+        scheduled_date.strip() if scheduled_date is not None else current["scheduled_date"]
+    )
+    new_notes = (
+        resolution_notes.strip() if resolution_notes is not None else current["resolution_notes"]
+    )
+    if len(new_notes) > MAX_WORK_ORDER_NOTES_LENGTH:
+        raise ValueError(
+            f"Resolution notes must be at most {MAX_WORK_ORDER_NOTES_LENGTH} characters."
+        )
+
+    new_completed = current["completed_at"]
+    if completed_at is not None:
+        new_completed = completed_at.strip() or None
+    elif new_status == "completed" and current["status"] != "completed" and not new_completed:
+        new_completed = datetime.now(UTC).isoformat()
+
+    new_est = (
+        float(estimated_cost) if estimated_cost is not None else current["estimated_cost"]
+    )
+    new_act = (
+        float(actual_cost) if actual_cost is not None else current["actual_cost"]
+    )
+    new_unit = unit_id.strip() if unit_id is not None else current["unit_id"]
+    new_tenant = tenant_id.strip() if tenant_id is not None else current["tenant_id"]
+
+    with closing(get_db_connection()) as conn:
+        if unit_id is not None:
+            unit_exists = conn.execute(
+                "SELECT id FROM units WHERE id = ?", (new_unit,)
+            ).fetchone()
+            if not unit_exists:
+                raise ValueError(f"Unit with ID '{new_unit}' does not exist.")
+
+        if tenant_id is not None and new_tenant:
+            tenant_exists = conn.execute(
+                "SELECT id FROM tenants WHERE id = ?", (new_tenant,)
+            ).fetchone()
+            if not tenant_exists:
+                raise ValueError(f"Tenant with ID '{new_tenant}' does not exist.")
+
+        conn.execute(
+            "UPDATE work_orders SET "
+            "unit_id = ?, tenant_id = ?, title = ?, description = ?, "
+            "category = ?, priority = ?, status = ?, entry_permission = ?, "
+            "assigned_to = ?, scheduled_date = ?, completed_at = ?, "
+            "resolution_notes = ?, estimated_cost = ?, actual_cost = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_unit,
+                new_tenant,
+                new_title,
+                new_desc,
+                new_cat,
+                new_priority,
+                new_status,
+                new_entry,
+                new_assignee,
+                new_date,
+                new_completed,
+                new_notes,
+                new_est,
+                new_act,
+                work_order_id,
+            ),
+        )
+        conn.commit()
+
+    return get_work_order(work_order_id)
+
+
+def delete_work_order(work_order_id: str) -> bool:
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM work_orders WHERE id = ?", (work_order_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def get_unit_work_orders(unit_id: str, open_only: bool = False) -> list[dict[str, Any]]:
+    cleaned_unit = (unit_id or "").strip()
+    if not cleaned_unit:
+        return []
+    query = (
+        "SELECT * FROM work_orders WHERE unit_id = ?"
+    )
+    if open_only:
+        query += " AND status NOT IN ('completed', 'cancelled')"
+    query += " ORDER BY created_at DESC"
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, (cleaned_unit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_tenant_work_orders(tenant_id: str, open_only: bool = False) -> list[dict[str, Any]]:
+    cleaned_tenant = (tenant_id or "").strip()
+    if not cleaned_tenant:
+        return []
+    query = (
+        "SELECT * FROM work_orders WHERE tenant_id = ?"
+    )
+    if open_only:
+        query += " AND status NOT IN ('completed', 'cancelled')"
+    query += " ORDER BY created_at DESC"
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(query, (cleaned_tenant,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_work_order_summary_metrics() -> dict[str, Any]:
+    with closing(get_db_connection()) as conn:
+        total_row = conn.execute("SELECT COUNT(*) FROM work_orders").fetchone()
+        total = int(total_row[0]) if total_row else 0
+
+        open_row = conn.execute(
+            "SELECT COUNT(*) FROM work_orders WHERE status NOT IN ('completed', 'cancelled')"
+        ).fetchone()
+        open_count = int(open_row[0]) if open_row else 0
+
+        emergency_row = conn.execute(
+            "SELECT COUNT(*) FROM work_orders "
+            "WHERE priority = 'emergency' AND status NOT IN ('completed', 'cancelled')"
+        ).fetchone()
+        emergency_count = int(emergency_row[0]) if emergency_row else 0
+
+        completed_row = conn.execute(
+            "SELECT COUNT(*) FROM work_orders WHERE status = 'completed'"
+        ).fetchone()
+        completed_count = int(completed_row[0]) if completed_row else 0
+
+        in_progress_row = conn.execute(
+            "SELECT COUNT(*) FROM work_orders WHERE status = 'in_progress'"
+        ).fetchone()
+        in_progress_count = int(in_progress_row[0]) if in_progress_row else 0
+
+        status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM work_orders GROUP BY status"
+        ).fetchall()
+        by_status = {r[0]: int(r[1]) for r in status_rows}
+
+        priority_rows = conn.execute(
+            "SELECT priority, COUNT(*) FROM work_orders GROUP BY priority"
+        ).fetchall()
+        by_priority = {r[0]: int(r[1]) for r in priority_rows}
+
+        category_rows = conn.execute(
+            "SELECT category, COUNT(*) FROM work_orders GROUP BY category"
+        ).fetchall()
+        by_category = {r[0]: int(r[1]) for r in category_rows}
+
+        costs_row = conn.execute(
+            "SELECT COALESCE(SUM(estimated_cost), 0.0), COALESCE(SUM(actual_cost), 0.0) "
+            "FROM work_orders"
+        ).fetchone()
+        est_cost = float(costs_row[0]) if costs_row else 0.0
+        act_cost = float(costs_row[1]) if costs_row else 0.0
+
+        return {
+            "total_work_orders": total,
+            "open_work_orders": open_count,
+            "emergency_work_orders": emergency_count,
+            "in_progress_work_orders": in_progress_count,
+            "completed_work_orders": completed_count,
+            "by_status": by_status,
+            "by_priority": by_priority,
+            "by_category": by_category,
+            "total_estimated_cost": est_cost,
+            "total_actual_cost": act_cost,
+        }
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
 migrate_document_store()
 create_units()
 create_tenants()
+create_work_orders()
 create_session_labels()
 migrate_session_labels()
 create_feedback()
@@ -4412,4 +5065,5 @@ create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
+
 

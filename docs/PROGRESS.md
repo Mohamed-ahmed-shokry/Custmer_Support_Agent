@@ -9,7 +9,7 @@
 ## 1. Task Breakdown & Execution Status
 
 - [x] **Task 1**: `ROADMAP.md` v0.36.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `work_orders` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `work_orders` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] **Task 3**: Context grounding engine integration for open maintenance work orders in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
 - [ ] **Task 4**: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [ ] **Task 5**: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
@@ -24,7 +24,7 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `work_orders` SQLite table is created, seeded with defaults, and supported with CRUD, category/priority/status filters, and summary metrics in `api/db_utils.py` | PENDING | `api/db_utils.py`, `tests/test_db_utils.py` |
+| AC1 | `work_orders` SQLite table is created, seeded with defaults, and supported with CRUD, category/priority/status filters, and summary metrics in `api/db_utils.py` | PASSED | `api/db_utils.py`, `tests/test_db_utils.py` |
 | AC2 | `api/tenant_context.py` augments grounding prompt context with active maintenance work orders for the linked session/tenant/unit | PENDING | `api/tenant_context.py`, `tests/test_tenant_context.py` |
 | AC3 | Webhook events `work_order.created`, `work_order.emergency_escalated`, and `work_order.status_changed` trigger correctly on lifecycle transitions | PENDING | `api/webhooks.py`, `tests/test_webhooks.py` |
 | AC4 | Pydantic schemas in `api/pydantic_models.py` validate work order creation, update, filtering, metrics, and session conversion | PENDING | `api/pydantic_models.py`, `tests/test_models.py` |

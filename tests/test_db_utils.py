@@ -2633,3 +2633,230 @@ def test_get_all_sessions_tenant_and_unit_filtering(monkeypatch, tmp_path):
     assert ph1_sessions[0]["session_id"] == sid2
     assert ph1_sessions[0]["tenant_id"] == "tenant_3"
 
+
+def test_work_orders_pre_seeded_and_crud(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+
+    # Pre-seeded work orders exist
+    wo101 = db_utils.get_work_order("wo_101")
+    assert wo101 is not None
+    assert wo101["title"] == "Kitchen faucet leaking constantly"
+    assert wo101["category"] == "plumbing"
+    assert wo101["priority"] == "medium"
+    assert wo101["status"] == "scheduled"
+    assert wo101["assigned_to"] == "Apex Plumbing Services"
+
+    # Create new work order
+    expected_cost = 75.0
+    created = db_utils.create_work_order(
+        work_order_id="wo_custom_1",
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        title="Smoke detector beeping",
+        description="Chirping smoke detector in master bedroom every 30 seconds.",
+        category="electrical",
+        priority="high",
+        status="submitted",
+        entry_permission="call_first",
+        assigned_to="Quick Electric",
+        estimated_cost=expected_cost,
+    )
+    assert created["id"] == "wo_custom_1"
+    assert created["title"] == "Smoke detector beeping"
+    assert created["priority"] == "high"
+    assert created["estimated_cost"] == expected_cost
+
+    # Duplicate work order ID
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_work_order(
+            work_order_id="wo_custom_1",
+            unit_id="unit_101",
+            title="Duplicate",
+            description="Testing duplicate check",
+        )
+
+    # Invalid unit ID
+    with pytest.raises(ValueError, match="Unit with ID 'non_existent' does not exist"):
+        db_utils.create_work_order(
+            work_order_id="wo_bad_unit",
+            unit_id="non_existent",
+            title="Bad Unit",
+            description="Testing invalid unit",
+        )
+
+    # Invalid tenant ID
+    with pytest.raises(ValueError, match="Tenant with ID 'non_existent_tenant' does not exist"):
+        db_utils.create_work_order(
+            work_order_id="wo_bad_tenant",
+            unit_id="unit_101",
+            tenant_id="non_existent_tenant",
+            title="Bad Tenant",
+            description="Testing invalid tenant",
+        )
+
+    # Invalid normalizations
+    with pytest.raises(ValueError, match="Work order ID must not be blank"):
+        db_utils.create_work_order("", "unit_101", "Title", "Desc")
+
+    with pytest.raises(ValueError, match="Work order title must not be blank"):
+        db_utils.create_work_order("wo_bad_title", "unit_101", "", "Desc")
+
+    with pytest.raises(ValueError, match="Work order description must not be blank"):
+        db_utils.create_work_order("wo_bad_desc", "unit_101", "Title", "")
+
+    with pytest.raises(ValueError, match="Invalid work order category"):
+        db_utils.create_work_order("wo_bad_cat", "unit_101", "Title", "Desc", category="space_ship")
+
+    with pytest.raises(ValueError, match="Invalid work order priority"):
+        db_utils.create_work_order(
+            "wo_bad_pri", "unit_101", "Title", "Desc", priority="catastrophic"
+        )
+
+    with pytest.raises(ValueError, match="Invalid work order status"):
+        db_utils.create_work_order("wo_bad_stat", "unit_101", "Title", "Desc", status="exploded")
+
+    with pytest.raises(ValueError, match="Invalid entry permission"):
+        db_utils.create_work_order(
+            "wo_bad_perm", "unit_101", "Title", "Desc", entry_permission="kick_door"
+        )
+
+
+def test_get_and_list_work_orders_filtering(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+
+    min_initial_count = 3
+    # Pre-seeded has 3 work orders: wo_101 (medium), wo_102 (high), wo_103 (low)
+    items, total = db_utils.list_work_orders()
+    assert total >= min_initial_count
+    # Check priority ordering: high should come before medium before low
+    priorities = [w["priority"] for w in items]
+    assert priorities.index("high") < priorities.index("medium") < priorities.index("low")
+
+    # Filter by unit
+    u101_items, u101_total = db_utils.list_work_orders(unit_id="unit_101")
+    assert u101_total == 1
+    assert u101_items[0]["id"] == "wo_101"
+
+    # Filter by tenant
+    t2_items, t2_total = db_utils.list_work_orders(tenant_id="tenant_2")
+    assert t2_total == 1
+    assert t2_items[0]["id"] == "wo_102"
+
+    # Filter by status
+    comp_items, comp_total = db_utils.list_work_orders(status="completed")
+    assert comp_total == 1
+    assert comp_items[0]["id"] == "wo_103"
+
+    # Filter by category
+    hvac_items, hvac_total = db_utils.list_work_orders(category="hvac")
+    assert hvac_total == 1
+    assert hvac_items[0]["id"] == "wo_102"
+
+    # Search keyword in description or assigned_to
+    search_items, search_total = db_utils.list_work_orders(search="Swift Appliance")
+    assert search_total == 1
+    assert search_items[0]["id"] == "wo_103"
+
+    # Pagination
+    p_items, p_total = db_utils.list_work_orders(limit=1, offset=1)
+    assert p_total >= min_initial_count
+    assert len(p_items) == 1
+
+    # Empty lookup
+    assert db_utils.get_work_order("") is None
+    assert db_utils.get_work_order("non_existent_wo") is None
+
+
+def test_update_and_delete_work_order(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+
+    # Update non-existent returns None
+    assert db_utils.update_work_order("wo_not_found", title="New") is None
+
+    expected_act_cost = 240.0
+    # Update work order fields
+    updated = db_utils.update_work_order(
+        "wo_101",
+        title="Kitchen faucet dripping heavily",
+        priority="emergency",
+        assigned_to="Fast Flow Plumbing",
+        estimated_cost=250.0,
+        actual_cost=expected_act_cost,
+        resolution_notes="Cartridge replaced successfully.",
+        status="completed",
+    )
+    assert updated is not None
+    assert updated["title"] == "Kitchen faucet dripping heavily"
+    assert updated["priority"] == "emergency"
+    assert updated["status"] == "completed"
+    assert updated["completed_at"] is not None  # Auto-completed timestamp
+    assert updated["actual_cost"] == expected_act_cost
+
+    # Update with invalid unit
+    with pytest.raises(ValueError, match="Unit with ID 'bad_unit' does not exist"):
+        db_utils.update_work_order("wo_101", unit_id="bad_unit")
+
+    # Update with invalid tenant
+    with pytest.raises(ValueError, match="Tenant with ID 'bad_tenant' does not exist"):
+        db_utils.update_work_order("wo_101", tenant_id="bad_tenant")
+
+    # Delete work order
+    assert db_utils.delete_work_order("wo_101") is True
+    assert db_utils.get_work_order("wo_101") is None
+    assert db_utils.delete_work_order("wo_101") is False
+
+
+def test_get_unit_and_tenant_work_orders_and_metrics(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+
+    # Add emergency work order for tenant_1 / unit_101
+    db_utils.create_work_order(
+        work_order_id="wo_em_1",
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        title="Burst pipe flooding hallway",
+        description="Water rapidly flooding from water heater.",
+        category="plumbing",
+        priority="emergency",
+        status="in_progress",
+        estimated_cost=500.0,
+    )
+
+    expected_two = 2
+    # Unit work orders
+    all_u101 = db_utils.get_unit_work_orders("unit_101", open_only=False)
+    assert len(all_u101) == expected_two  # wo_101 and wo_em_1
+    open_u101 = db_utils.get_unit_work_orders("unit_101", open_only=True)
+    assert len(open_u101) == expected_two
+
+    # Tenant work orders
+    all_t1 = db_utils.get_tenant_work_orders("tenant_1", open_only=False)
+    assert len(all_t1) == expected_two
+    assert db_utils.get_tenant_work_orders("") == []
+    assert db_utils.get_unit_work_orders("") == []
+
+    expected_total = 4
+    expected_open = 3
+    # Metrics
+    metrics = db_utils.get_work_order_summary_metrics()
+    assert metrics["total_work_orders"] == expected_total
+    assert metrics["emergency_work_orders"] == 1
+    assert metrics["completed_work_orders"] == 1
+    assert metrics["open_work_orders"] == expected_open
+    assert "plumbing" in metrics["by_category"]
+    assert "emergency" in metrics["by_priority"]
+    assert metrics["total_estimated_cost"] > 0
+
+
