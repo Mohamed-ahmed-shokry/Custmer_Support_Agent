@@ -1864,6 +1864,200 @@ class TenantSupportHistoryResponse(BaseModel):
     sessions: list[TenantSupportHistorySessionItem] = Field(default_factory=list)
 
 
+# --- Work Orders Models ---
+
+
+class WorkOrderCategory(StrEnum):
+    PLUMBING = "plumbing"
+    HVAC = "hvac"
+    ELECTRICAL = "electrical"
+    APPLIANCE = "appliance"
+    PEST = "pest"
+    STRUCTURAL = "structural"
+    SECURITY = "security"
+    GENERAL = "general"
+
+
+class WorkOrderPriority(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    EMERGENCY = "emergency"
+
+
+class WorkOrderStatus(StrEnum):
+    SUBMITTED = "submitted"
+    SCHEDULED = "scheduled"
+    IN_PROGRESS = "in_progress"
+    ON_HOLD = "on_hold"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class EntryPermission(StrEnum):
+    PERMISSION_GRANTED = "permission_granted"
+    CALL_FIRST = "call_first"
+    APPOINTMENT_ONLY = "appointment_only"
+
+
+class WorkOrderItem(BaseModel):
+    id: str
+    unit_id: str
+    tenant_id: str | None = None
+    session_id: str | None = None
+    title: str
+    description: str
+    category: str = "general"
+    priority: str = "medium"
+    status: str = "submitted"
+    entry_permission: str = "permission_granted"
+    assigned_to: str = ""
+    scheduled_date: str = ""
+    completed_at: str | None = None
+    resolution_notes: str = ""
+    estimated_cost: float | None = None
+    actual_cost: float | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class WorkOrderCreateRequest(BaseModel):
+    id: str | None = Field(default=None, max_length=db_utils.MAX_WORK_ORDER_ID_LENGTH)
+    unit_id: str = Field(min_length=1, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    title: str = Field(min_length=1, max_length=db_utils.MAX_WORK_ORDER_TITLE_LENGTH)
+    description: str = Field(min_length=1, max_length=db_utils.MAX_WORK_ORDER_DESC_LENGTH)
+    category: str = Field(default=db_utils.DEFAULT_WORK_ORDER_CATEGORY)
+    priority: str = Field(default=db_utils.DEFAULT_WORK_ORDER_PRIORITY)
+    status: str = Field(default=db_utils.DEFAULT_WORK_ORDER_STATUS)
+    tenant_id: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_ID_LENGTH)
+    session_id: str | None = Field(default=None)
+    entry_permission: str = Field(default=db_utils.DEFAULT_ENTRY_PERMISSION)
+    assigned_to: str = Field(default="", max_length=db_utils.MAX_WORK_ORDER_ASSIGNEE_LENGTH)
+    scheduled_date: str = Field(default="")
+    resolution_notes: str = Field(default="", max_length=db_utils.MAX_WORK_ORDER_NOTES_LENGTH)
+    estimated_cost: float | None = Field(default=None, ge=0.0)
+    actual_cost: float | None = Field(default=None, ge=0.0)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return db_utils.normalize_work_order_id(v) if v is not None else None
+
+    @field_validator("unit_id")
+    @classmethod
+    def validate_unit_id(cls, v: str) -> str:
+        return db_utils.normalize_unit_id(v)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        return db_utils.normalize_work_order_title(v)
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        return db_utils.normalize_work_order_category(v)
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: str) -> str:
+        return db_utils.normalize_work_order_priority(v)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_work_order_status(v)
+
+    @field_validator("entry_permission")
+    @classmethod
+    def validate_entry_permission(cls, v: str) -> str:
+        return db_utils.normalize_entry_permission(v)
+
+
+class WorkOrderUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=db_utils.MAX_WORK_ORDER_TITLE_LENGTH)
+    description: str | None = Field(default=None, max_length=db_utils.MAX_WORK_ORDER_DESC_LENGTH)
+    category: str | None = Field(default=None)
+    priority: str | None = Field(default=None)
+    status: str | None = Field(default=None)
+    entry_permission: str | None = Field(default=None)
+    assigned_to: str | None = Field(
+        default=None, max_length=db_utils.MAX_WORK_ORDER_ASSIGNEE_LENGTH
+    )
+    scheduled_date: str | None = Field(default=None)
+    completed_at: str | None = Field(default=None)
+    resolution_notes: str | None = Field(
+        default=None, max_length=db_utils.MAX_WORK_ORDER_NOTES_LENGTH
+    )
+    estimated_cost: float | None = Field(default=None, ge=0.0)
+    actual_cost: float | None = Field(default=None, ge=0.0)
+    unit_id: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    tenant_id: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_ID_LENGTH)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str | None) -> str | None:
+        return db_utils.normalize_work_order_title(v) if v is not None else None
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str | None) -> str | None:
+        return db_utils.normalize_work_order_category(v) if v is not None else None
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v: str | None) -> str | None:
+        return db_utils.normalize_work_order_priority(v) if v is not None else None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return db_utils.normalize_work_order_status(v) if v is not None else None
+
+    @field_validator("entry_permission")
+    @classmethod
+    def validate_entry_permission(cls, v: str | None) -> str | None:
+        return db_utils.normalize_entry_permission(v) if v is not None else None
+
+
+class WorkOrderFromSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=db_utils.MAX_WORK_ORDER_TITLE_LENGTH)
+    description: str = Field(min_length=1, max_length=db_utils.MAX_WORK_ORDER_DESC_LENGTH)
+    category: str = Field(default=db_utils.DEFAULT_WORK_ORDER_CATEGORY)
+    priority: str = Field(default=db_utils.DEFAULT_WORK_ORDER_PRIORITY)
+    entry_permission: str = Field(default=db_utils.DEFAULT_ENTRY_PERMISSION)
+    assigned_to: str = Field(default="", max_length=db_utils.MAX_WORK_ORDER_ASSIGNEE_LENGTH)
+    scheduled_date: str = Field(default="")
+    estimated_cost: float | None = Field(default=None, ge=0.0)
+    unit_id: str | None = Field(default=None, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    tenant_id: str | None = Field(default=None, max_length=db_utils.MAX_TENANT_ID_LENGTH)
+
+
+class WorkOrderResponse(BaseModel):
+    work_order: WorkOrderItem
+
+
+class WorkOrderListResponse(BaseModel):
+    items: list[WorkOrderItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class WorkOrderMetricsResponse(BaseModel):
+    total_work_orders: int = 0
+    open_work_orders: int = 0
+    emergency_work_orders: int = 0
+    in_progress_work_orders: int = 0
+    completed_work_orders: int = 0
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_priority: dict[str, int] = Field(default_factory=dict)
+    by_category: dict[str, int] = Field(default_factory=dict)
+    total_estimated_cost: float = 0.0
+    total_actual_cost: float = 0.0
+
+
+
 
 
 

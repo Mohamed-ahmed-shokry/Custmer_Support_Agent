@@ -1121,7 +1121,7 @@ Bridge the gap between tenant communication and property operations. Maintenance
 - [x] Task 1: `ROADMAP.md` v0.36.0 plan specification and `docs/PROGRESS.md` initialization
 - [x] Task 2: Database schema, table creation, default seed data, and CRUD operations for `work_orders` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [x] Task 3: Context grounding engine integration for open maintenance work orders in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
-- [ ] Task 4: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [x] Task 4: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [ ] Task 5: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [ ] Task 7: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
