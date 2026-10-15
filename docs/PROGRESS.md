@@ -1,7 +1,7 @@
 # v0.36.0 Progress Record: Maintenance Work Orders, Service Requests & Resident Dispatch Engine
 
 **Phase Branch**: `phase/v0.36.0-maintenance-work-orders-dispatch`  
-**Status**: 🚧 IN PROGRESS  
+**Status**: ✅ COMPLETED  
 **Target Version**: 0.36.0  
 
 ---
@@ -16,7 +16,7 @@
 - [x] **Task 6**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 7**: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
 - [x] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] **Task 9**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] **Task 9**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ---
 
@@ -32,7 +32,7 @@
 | AC6 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PASSED | `app/api_utils.py`, `tests/test_app_api_utils.py` |
 | AC7 | Streamlit UI in `app/sidebar.py` provides 1-click work order creation from the resident session card and the "🛠️ Maintenance & Work Orders" board | PASSED | `app/sidebar.py`, `tests/test_app_ui.py` |
 | AC8 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.36.0`) are updated | PASSED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
-| AC9 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
+| AC9 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PASSED | `pytest` (776 passed, 93.38% coverage), `ruff check`, `mypy` |
 
 ---
 
@@ -52,3 +52,9 @@
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
   - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 30 source files`)
   - `python -m pytest -q` -> ✅ Passed (`753 passed, 21 deselected, 93.28% coverage, fail_under=80%`)
+
+- **Milestone Verification Gate (v0.36.0)**:
+  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
+  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 30 source files`)
+  - `python -m pytest -q` -> ✅ Passed (`776 passed, 21 deselected, 93.38% coverage, fail_under=80%`)
+

@@ -1073,7 +1073,7 @@ Enable personalized, context-rich property management customer support by linkin
 - [x] Task 11: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.35.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 12: Final verification gate, self-review audit, progress record completion, and draft PR delivery
 
-## v0.36.0 plan — Maintenance Work Orders, Service Requests & Resident Dispatch Engine (IN PROGRESS)
+## v0.36.0 plan — Maintenance Work Orders, Service Requests & Resident Dispatch Engine ✅ COMPLETED
 
 Empower property operators and residents with an integrated maintenance work order and dispatch system. Automatically convert resident support inquiries into structured service requests with category triage (HVAC, plumbing, electrical, appliance, pest, structural, security, general) and urgency prioritization (`low`, `medium`, `high`, `emergency`). Ground RAG chat responses with live work order statuses so tenants can check repair schedules in conversation, automatically dispatch emergency escalation webhooks (`work_order.emergency_escalated`), and provide an interactive maintenance board in Streamlit for technician dispatch and status tracking.
 
@@ -1129,7 +1129,7 @@ Bridge the gap between tenant communication and property operations. Maintenance
 - [x] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] Task 7: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
