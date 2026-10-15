@@ -2332,5 +2332,195 @@ def get_tenant_support_history(tenant_id: str) -> dict[str, Any] | None:
         return None
 
 
+# --- Maintenance Work Orders & Dispatch Client Helpers ---
+
+
+def list_work_orders(  # noqa: PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if unit_id and unit_id.strip():
+            params["unit_id"] = unit_id.strip()
+        if tenant_id and tenant_id.strip():
+            params["tenant_id"] = tenant_id.strip()
+        if status and status.strip():
+            params["status"] = status.strip()
+        if priority and priority.strip():
+            params["priority"] = priority.strip()
+        if category and category.strip():
+            params["category"] = category.strip()
+        if search and search.strip():
+            params["search"] = search.strip()
+        response = requests.get(
+            f"{API_BASE_URL}/work-orders",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to list work orders", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while listing work orders: {str(e)}")
+        return None
+
+
+def get_work_order(work_order_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/work-orders/{work_order_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch work order '{work_order_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching work order: {str(e)}")
+        return None
+
+
+def get_work_order_metrics() -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/work-orders/metrics",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch work order metrics", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching work order metrics: {str(e)}")
+        return None
+
+
+def create_work_order(payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/work-orders",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create work order", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating work order: {str(e)}")
+        return None
+
+
+def update_work_order(
+    work_order_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/work-orders/{work_order_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update work order '{work_order_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating work order: {str(e)}")
+        return None
+
+
+def delete_work_order(work_order_id: str) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/work-orders/{work_order_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete work order '{work_order_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting work order: {str(e)}")
+        return False
+
+
+def create_work_order_from_session(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/create-work-order",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error(
+            f"Failed to create work order from session '{session_id}'", response
+        )
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating work order from session: {str(e)}")
+        return None
+
+
+def get_unit_work_orders(
+    unit_id: str, open_only: bool = False
+) -> dict[str, Any] | None:
+    try:
+        params = {"open_only": str(open_only).lower()}
+        response = requests.get(
+            f"{API_BASE_URL}/units/{unit_id}/work-orders",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch work orders for unit '{unit_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching unit work orders: {str(e)}")
+        return None
+
+
+def get_tenant_work_orders(
+    tenant_id: str, open_only: bool = False
+) -> dict[str, Any] | None:
+    try:
+        params = {"open_only": str(open_only).lower()}
+        response = requests.get(
+            f"{API_BASE_URL}/tenants/{tenant_id}/work-orders",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(
+            f"Failed to fetch work orders for tenant '{tenant_id}'", response
+        )
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant work orders: {str(e)}")
+        return None
+
+
+
 
 
