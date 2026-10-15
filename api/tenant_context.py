@@ -9,7 +9,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api.db_utils import get_session_tenant_context, get_tenant, get_unit
+from api.db_utils import (
+    get_session_tenant_context,
+    get_tenant,
+    get_tenant_work_orders,
+    get_unit,
+    get_unit_work_orders,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,22 +120,71 @@ def _format_tenant_lines(tenant: dict[str, Any], has_unit: bool) -> list[str]:
     return lines
 
 
+def _format_work_orders_lines(work_orders: list[dict[str, Any]]) -> list[str]:
+    """Format active maintenance work order tickets."""
+    lines: list[str] = ["[ACTIVE MAINTENANCE WORK ORDERS]"]
+    for wo in work_orders:
+        wo_id = wo.get("id", "Unknown")
+        title = wo.get("title", "Untitled")
+        cat = wo.get("category", "general")
+        prio = wo.get("priority", "medium")
+        status = wo.get("status", "submitted")
+        assignee = wo.get("assigned_to") or "Unassigned"
+        sched = wo.get("scheduled_date")
+        entry = wo.get("entry_permission") or "permission_granted"
+
+        parts = [
+            f"[{wo_id}] {title}",
+            f"Category: {cat}",
+            f"Priority: {prio}",
+            f"Status: {status}",
+            f"Assigned To: {assignee}",
+        ]
+        if sched:
+            parts.append(f"Scheduled: {sched}")
+        parts.append(f"Entry: {entry}")
+        if wo.get("resolution_notes"):
+            parts.append(f"Notes: {wo['resolution_notes']}")
+        lines.append("  - " + " | ".join(parts))
+    lines.append("[END ACTIVE MAINTENANCE WORK ORDERS]")
+    return lines
+
+
 def build_tenant_rag_context(
     tenant_id: str | None = None,
     unit_id: str | None = None,
     session_id: str | None = None,
+    include_work_orders: bool = True,
 ) -> str:
-    """Build a structured Markdown block of verified tenant and property context for RAG prompts."""
+    """Build a structured Markdown block of verified tenant, property, and maintenance context."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
-    if not tenant and not unit:
+    resolved_tenant_id = tenant.get("id") if tenant else tenant_id
+    resolved_unit_id = unit.get("id") if unit else unit_id
+
+    work_orders: list[dict[str, Any]] = []
+    if include_work_orders:
+        if resolved_tenant_id:
+            work_orders = get_tenant_work_orders(resolved_tenant_id, open_only=True)
+        elif resolved_unit_id:
+            work_orders = get_unit_work_orders(resolved_unit_id, open_only=True)
+
+    if not tenant and not unit and not work_orders:
         return ""
 
-    lines: list[str] = ["[VERIFIED RESIDENT & PROPERTY UNIT PROFILE]"]
-    if tenant:
-        lines.extend(_format_tenant_lines(tenant, has_unit=bool(unit)))
-    if unit:
-        lines.extend(_format_unit_lines(unit))
-    lines.append("[END RESIDENT & PROPERTY UNIT PROFILE]")
+    lines: list[str] = []
+    if tenant or unit:
+        lines.append("[VERIFIED RESIDENT & PROPERTY UNIT PROFILE]")
+        if tenant:
+            lines.extend(_format_tenant_lines(tenant, has_unit=bool(unit)))
+        if unit:
+            lines.extend(_format_unit_lines(unit))
+        lines.append("[END RESIDENT & PROPERTY UNIT PROFILE]")
+
+    if work_orders:
+        if lines:
+            lines.append("")
+        lines.extend(_format_work_orders_lines(work_orders))
+
     return "\n".join(lines)
 
 
@@ -222,4 +277,22 @@ def extract_tenant_macro_variables(
         variables.update(_extract_tenant_vars(tenant))
     if unit:
         variables.update(_extract_unit_vars(unit))
+
+    resolved_tenant_id = tenant.get("id") if tenant else tenant_id
+    resolved_unit_id = unit.get("id") if unit else unit_id
+    work_orders: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        work_orders = get_tenant_work_orders(resolved_tenant_id, open_only=True)
+    elif resolved_unit_id:
+        work_orders = get_unit_work_orders(resolved_unit_id, open_only=True)
+
+    if work_orders:
+        variables["open_work_orders_count"] = str(len(work_orders))
+        latest = work_orders[0]
+        variables["latest_work_order_id"] = str(latest.get("id", ""))
+        variables["latest_work_order_title"] = str(latest.get("title", ""))
+        variables["latest_work_order_status"] = str(latest.get("status", ""))
+    else:
+        variables["open_work_orders_count"] = "0"
+
     return variables
