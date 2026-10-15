@@ -1,6 +1,9 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.34.0, 2026-10-13)
+## Current State (v0.36.0, 2026-10-15)
+- Maintenance Work Orders, Service Requests & Resident Dispatch Engine (`POST /work-orders`, `GET /work-orders`, `GET /work-orders/metrics`, `GET /work-orders/{id}`, `PATCH /work-orders/{id}`, `DELETE /work-orders/{id}`, `POST /sessions/{id}/create-work-order`, `GET /units/{id}/work-orders`, `GET /tenants/{id}/work-orders`): persistent maintenance repair tracking (`work_orders` table in SQLite) connected to property units and residents, tracking category (`plumbing`, `electrical`, `hvac`, `appliance`, `pest_control`, `structural`, `general`), priority (`low`, `medium`, `high`, `emergency`), status (`submitted`, `scheduled`, `in_progress`, `completed`, `cancelled`), entry permissions, contractor/staff assignment, scheduled dates, and estimated vs. actual repair costs. Prompt grounding augments chat context with active maintenance work orders (`[ACTIVE MAINTENANCE WORK ORDERS]`), macro variables auto-resolve (`{open_work_orders_count}`, `{latest_work_order_id}`), and real-time webhook events (`work_order.created`, `work_order.emergency_escalated`, `work_order.status_changed`) alert operations teams immediately.
+- Streamlit Maintenance Board & 1-Click Resident Dispatch Widget: live "🛠️ Dispatch Work Order" expander directly on the active session resident card with 1-click conversion of conversational support sessions into persistent work orders with auto-resolved unit/tenant IDs, open work order unit warnings, plus a dedicated "🛠️ Maintenance & Work Orders" sidebar panel with live KPI cards (Total, Open, In Progress, Emergency), searchable filterable board with 1-click status transitions (`Start`, `Done`, `Delete`), new service request creation form, and cost tracking dashboard.
+- Tenant Profiles, Property Unit Directory & Context Grounding Engine (`POST /units`, `GET /units`, `GET /units/{id}`, `PATCH /units/{id}`, `DELETE /units/{id}`, `POST /tenants`, `GET /tenants`, `GET /tenants/{id}`, `PATCH /tenants/{id}`, `DELETE /tenants/{id}`, `POST /sessions/{id}/link-tenant`, `GET /sessions/{id}/tenant-context`, `GET /tenants/{id}/support-history`): persistent property unit directory (`units`) tracking building, floor, parking spot, gate access code, and monthly rent, resident profiles (`tenants`) with lease start/end dates, current balance due, and emergency contacts, and support session-to-tenant linking (`session_labels`). Chat turns (`/chat` and `/chat/stream`) are automatically grounded with verified lease context, and canned macro variables (`{customer_name}`, `{unit_id}`, `{monthly_rent}`, `{balance_due}`) auto-resolve seamlessly.
 - FastAPI backend: chat, streaming chat (SSE), upload/list/delete, sessions
   + history, metrics with per-route latency averages and approximate token
   usage, live/ready probes; retrieval filters (file_ids, source_filename,
@@ -1125,7 +1128,7 @@ Bridge the gap between tenant communication and property operations. Maintenance
 - [x] Task 5: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [x] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] Task 7: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED

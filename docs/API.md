@@ -1,4 +1,4 @@
-# API Reference (v0.35.0)
+# API Reference (v0.36.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -403,6 +403,40 @@ The agent supports resident context grounding, linking support sessions directly
   - Returns `SessionTenantContextResponse` (`session_id`, `tenant_id`, `unit_id`, `tenant: {...}`, `unit: {...}`).
 - `GET /tenants/{tenant_id}/support-history`: Retrieve complete support session history for a resident.
   - Returns `TenantSupportHistoryResponse` (`tenant`, `total_sessions`, `sessions: [ { session_id, label, status, priority, message_count, preview, created_at, last_active, rating, feedback_score, feedback_comment } ]`).
+
+## Maintenance Work Orders, Service Requests & Resident Dispatch
+
+Persistent repair request engine linking support sessions, property units, and resident profiles (`work_orders`). Active open work orders are automatically injected into conversational RAG prompt context (`[ACTIVE MAINTENANCE WORK ORDERS]`), and macro variables auto-resolve (`{open_work_orders_count}`, `{latest_work_order_id}`).
+
+### Work Order Endpoints
+
+- `POST /work-orders`: Create a new maintenance work order.
+  - Body: `{"id": "wo_201", "unit_id": "unit_101", "title": "Kitchen faucet leaking", "description": "Dripping faucet under sink", "category": "plumbing", "priority": "medium", "status": "submitted", "tenant_id": "tenant_1", "session_id": null, "entry_permission": "permission_granted", "assigned_to": "Plumber Bob", "scheduled_date": "2026-10-18", "estimated_cost": 150.0}`.
+  - Categories: `plumbing`, `electrical`, `hvac`, `appliance`, `pest_control`, `structural`, `general`.
+  - Priorities: `low`, `medium`, `high`, `emergency`.
+  - Permissions: `permission_granted`, `call_first`, `resident_must_be_present`.
+  - Returns `201` with `WorkOrderResponse`.
+  - Triggers background webhook `work_order.created` (and `work_order.emergency_escalated` if priority is `emergency`).
+- `GET /work-orders`: List maintenance work orders with filtering and pagination.
+  - Query parameters: `unit_id`, `tenant_id`, `status` (`submitted`, `scheduled`, `in_progress`, `completed`, `cancelled`), `priority`, `category`, `search`, `limit`, `offset`.
+  - Returns `WorkOrderListResponse` (`items: [...]`, `total: int`).
+- `GET /work-orders/metrics`: Aggregate maintenance summary metrics and KPIs.
+  - Returns `WorkOrderMetricsResponse` (`total_work_orders`, `open_work_orders`, `emergency_work_orders`, `in_progress_work_orders`, `completed_work_orders`, `by_status: {...}`, `by_priority: {...}`, `by_category: {...}`, `total_estimated_cost`, `total_actual_cost`).
+- `GET /work-orders/{work_order_id}`: Retrieve details of a specific maintenance work order. Returns `404` if not found.
+- `PATCH /work-orders/{work_order_id}`: Partially update a work order (status, priority, assignee, scheduled date, actual cost, resolution notes).
+  - Returns `WorkOrderResponse`.
+  - Triggers background webhook `work_order.status_changed` if status changed, and `work_order.emergency_escalated` if priority escalated to `emergency`.
+- `DELETE /work-orders/{work_order_id}`: Delete a maintenance work order record.
+- `POST /sessions/{session_id}/create-work-order`: 1-click convert an active support session into a maintenance work order.
+  - Body: `{"title": "No heat in unit", "description": "Thermostat unresponsive", "category": "hvac", "priority": "emergency", "entry_permission": "permission_granted", "estimated_cost": 250.0}`.
+  - Automatically resolves `unit_id` and `tenant_id` from the session's linked resident context if not explicitly provided.
+  - Returns `201` with `WorkOrderResponse`.
+- `GET /units/{unit_id}/work-orders`: List all maintenance work orders for a property unit.
+  - Query parameter: `open_only=true` (filters out `completed` and `cancelled`).
+  - Returns `WorkOrderListResponse`.
+- `GET /tenants/{tenant_id}/work-orders`: List all maintenance work orders submitted by a resident.
+  - Query parameter: `open_only=true`.
+  - Returns `WorkOrderListResponse`.
 
 ## Evaluation Harness
 

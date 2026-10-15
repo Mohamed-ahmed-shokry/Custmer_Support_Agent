@@ -15,7 +15,7 @@
 - [x] **Task 5**: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [x] **Task 6**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 7**: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
-- [ ] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
+- [x] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] **Task 9**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ---
@@ -31,7 +31,7 @@
 | AC5 | FastAPI endpoints `/work-orders*`, `/sessions/{id}/create-work-order`, and `/units/{id}/work-orders` are wired and covered with tests | PASSED | `api/main.py`, `tests/test_api_routes.py` |
 | AC6 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` header forwarding and error handling | PASSED | `app/api_utils.py`, `tests/test_app_api_utils.py` |
 | AC7 | Streamlit UI in `app/sidebar.py` provides 1-click work order creation from the resident session card and the "🛠️ Maintenance & Work Orders" board | PASSED | `app/sidebar.py`, `tests/test_app_ui.py` |
-| AC8 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.36.0`) are updated | PENDING | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
+| AC8 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version (`0.36.0`) are updated | PASSED | `README.md`, `docs/API.md`, `pyproject.toml`, `api/settings.py` |
 | AC9 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | PENDING | `pytest`, `ruff check`, `mypy` |
 
 ---
