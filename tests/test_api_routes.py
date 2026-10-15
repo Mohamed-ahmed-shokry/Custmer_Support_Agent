@@ -3861,6 +3861,229 @@ def test_tenant_support_history_route(monkeypatch, tmp_path):
     assert missing_res.status_code == HTTP_NOT_FOUND
 
 
+def test_create_and_list_work_orders_routes(monkeypatch, tmp_path):
+    """Test POST /work-orders and GET /work-orders with filtering and webhooks."""
+    db_file = tmp_path / "test_api_wo_create_list.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_work_orders()
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. Initial list
+    res_list = client.get("/work-orders")
+    assert res_list.status_code == HTTP_OK
+    data_list = res_list.json()
+    expected_seeded_count = 3
+    assert data_list["total"] >= expected_seeded_count
+
+    # 2. Filtering by status
+    res_filtered = client.get("/work-orders?status=in_progress")
+    assert res_filtered.status_code == HTTP_OK
+    items = res_filtered.json()["items"]
+    expected_filtered_count = 1
+    assert len(items) == expected_filtered_count
+    assert items[0]["id"] == "wo_102"
+
+    # 3. Create regular work order
+    create_payload = {
+        "id": "wo_new_01",
+        "unit_id": "unit_101",
+        "title": "Kitchen faucet leaking",
+        "description": "Slow dripping faucet under the kitchen sink.",
+        "category": "plumbing",
+        "priority": "medium",
+        "tenant_id": "tenant_1",
+    }
+    create_res = client.post("/work-orders", json=create_payload)
+    assert create_res.status_code == HTTP_CREATED
+    wo_item = create_res.json()["work_order"]
+    assert wo_item["id"] == "wo_new_01"
+    assert wo_item["title"] == "Kitchen faucet leaking"
+
+    # Webhook dispatched
+    event_names = [e[0] for e in dispatched]
+    assert "work_order.created" in event_names
+
+    # 4. Create emergency work order -> emergency_escalated webhook
+    dispatched.clear()
+    emergency_payload = {
+        "id": "wo_emerg_01",
+        "unit_id": "unit_204",
+        "title": "Gas leak detected",
+        "description": "Strong gas smell near heater.",
+        "category": "hvac",
+        "priority": "emergency",
+    }
+    emerg_res = client.post("/work-orders", json=emergency_payload)
+    assert emerg_res.status_code == HTTP_CREATED
+    event_names = [e[0] for e in dispatched]
+    assert "work_order.created" in event_names
+    assert "work_order.emergency_escalated" in event_names
+
+    # 5. Duplicate ID -> 409
+    dup_res = client.post("/work-orders", json=create_payload)
+    assert dup_res.status_code == HTTP_CONFLICT
+
+    # 6. Invalid unit -> 422
+    bad_unit_res = client.post(
+        "/work-orders",
+        json={
+            "id": "wo_bad_unit",
+            "unit_id": "non_existent_unit",
+            "title": "Test invalid unit",
+            "description": "Some description",
+        },
+    )
+    assert bad_unit_res.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_get_update_and_delete_work_order_routes(monkeypatch, tmp_path):
+    """Test GET, PATCH, and DELETE /work-orders/{id}."""
+    db_file = tmp_path / "test_api_wo_crud.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_work_orders()
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. Get existing
+    get_res = client.get("/work-orders/wo_101")
+    assert get_res.status_code == HTTP_OK
+    assert get_res.json()["work_order"]["id"] == "wo_101"
+
+    # 2. Get non-existent -> 404
+    missing_res = client.get("/work-orders/wo_non_existent")
+    assert missing_res.status_code == HTTP_NOT_FOUND
+
+    # 3. Patch status and priority to emergency -> status_changed & emergency_escalated
+    expected_cost = 145.50
+    patch_payload = {
+        "status": "in_progress",
+        "priority": "emergency",
+        "actual_cost": expected_cost,
+        "resolution_notes": "Technician on-site.",
+    }
+    patch_res = client.patch("/work-orders/wo_101", json=patch_payload)
+    assert patch_res.status_code == HTTP_OK
+    updated = patch_res.json()["work_order"]
+    assert updated["status"] == "in_progress"
+    assert updated["priority"] == "emergency"
+    assert updated["actual_cost"] == expected_cost
+
+    event_names = [e[0] for e in dispatched]
+    assert "work_order.status_changed" in event_names
+    assert "work_order.emergency_escalated" in event_names
+
+    # 4. Patch non-existent -> 404
+    patch_missing = client.patch("/work-orders/wo_ghost", json={"status": "completed"})
+    assert patch_missing.status_code == HTTP_NOT_FOUND
+
+    # 5. Delete existing
+    del_res = client.delete("/work-orders/wo_101")
+    assert del_res.status_code == HTTP_OK
+    assert del_res.json()["status"] == "deleted"
+
+    # 6. Delete already deleted -> 404
+    del_again = client.delete("/work-orders/wo_101")
+    assert del_again.status_code == HTTP_NOT_FOUND
+
+
+def test_work_order_metrics_route(monkeypatch, tmp_path):
+    """Test GET /work-orders/metrics."""
+    db_file = tmp_path / "test_api_wo_metrics.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_work_orders()
+
+    res = client.get("/work-orders/metrics")
+    assert res.status_code == HTTP_OK
+    data = res.json()
+    expected_seeded_total = 3
+    assert data["total_work_orders"] == expected_seeded_total
+    expected_open_count = 2
+    assert data["open_work_orders"] == expected_open_count
+    assert "by_status" in data
+    assert "by_priority" in data
+    assert "by_category" in data
+
+
+def test_session_create_work_order_route(monkeypatch, tmp_path):
+    """Test POST /sessions/{id}/create-work-order with session context auto-resolution."""
+    db_file = tmp_path / "test_api_wo_session.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_session_labels()
+    main.db_utils.create_application_logs()
+    main.db_utils.create_work_orders()
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    sid = "session_wo_test_99"
+    main.db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    # 1. Create work order from session (auto-resolving unit_101 and tenant_1)
+    req_body = {
+        "title": "Ceiling water leak",
+        "description": "Water dripping through bathroom ceiling fan.",
+        "category": "plumbing",
+        "priority": "high",
+        "entry_permission": "call_first",
+    }
+    res = client.post(f"/sessions/{sid}/create-work-order", json=req_body)
+    assert res.status_code == HTTP_CREATED
+    wo = res.json()["work_order"]
+    assert wo["session_id"] == sid
+    assert wo["unit_id"] == "unit_101"
+    assert wo["tenant_id"] == "tenant_1"
+    assert wo["title"] == "Ceiling water leak"
+    assert any(e[0] == "work_order.created" for e in dispatched)
+
+    # 2. Unlinked session without explicit unit_id -> 422
+    unlinked_sid = "session_unlinked_123"
+    res_fail = client.post(f"/sessions/{unlinked_sid}/create-work-order", json=req_body)
+    assert res_fail.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+
+def test_unit_and_tenant_work_orders_routes(monkeypatch, tmp_path):
+    """Test GET /units/{id}/work-orders and GET /tenants/{id}/work-orders."""
+    db_file = tmp_path / "test_api_wo_unit_tenant.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_work_orders()
+
+    # Unit work orders
+    res_unit = client.get("/units/unit_101/work-orders")
+    assert res_unit.status_code == HTTP_OK
+    unit_wos = res_unit.json()["items"]
+    expected_unit_count = 1
+    assert len(unit_wos) == expected_unit_count
+    assert unit_wos[0]["id"] == "wo_101"
+
+    # Tenant work orders
+    res_tenant = client.get("/tenants/tenant_2/work-orders")
+    assert res_tenant.status_code == HTTP_OK
+    tenant_wos = res_tenant.json()["items"]
+    expected_tenant_count = 1
+    assert len(tenant_wos) == expected_tenant_count
+    assert tenant_wos[0]["id"] == "wo_102"
+
+
+
 
 
 

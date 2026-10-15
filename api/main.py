@@ -238,6 +238,13 @@ from api.pydantic_models import (
     WebhookPingResponse,
     WebhookResponse,
     WebhookUpdateRequest,
+    WorkOrderCreateRequest,
+    WorkOrderFromSessionRequest,
+    WorkOrderItem,
+    WorkOrderListResponse,
+    WorkOrderMetricsResponse,
+    WorkOrderResponse,
+    WorkOrderUpdateRequest,
 )
 from api.security import (
     WINDOW_SECONDS,
@@ -2856,6 +2863,311 @@ def get_tenant_support_history_route(tenant_id: str):
         total_sessions=history["total_sessions"],
         sessions=[TenantSupportHistorySessionItem(**s) for s in history["sessions"]],
     )
+
+
+# --- Maintenance Work Orders & Dispatch Endpoints ---
+
+
+@app.post("/work-orders", response_model=WorkOrderResponse, status_code=201)
+def create_work_order_route(
+    request: WorkOrderCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Create a new maintenance work order."""
+    wo_id = request.id or f"wo_{uuid.uuid4().hex[:8]}"
+    try:
+        created = db_utils.create_work_order(
+            work_order_id=wo_id,
+            unit_id=request.unit_id,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            status=request.status,
+            tenant_id=request.tenant_id,
+            session_id=request.session_id,
+            entry_permission=request.entry_permission,
+            assigned_to=request.assigned_to,
+            scheduled_date=request.scheduled_date,
+            resolution_notes=request.resolution_notes,
+            estimated_cost=request.estimated_cost,
+            actual_cost=request.actual_cost,
+        )
+    except ValueError as exc:
+        status_code = 409 if "already exists" in str(exc).lower() else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "work_order.created",
+        {
+            "work_order_id": created["id"],
+            "unit_id": created["unit_id"],
+            "tenant_id": created["tenant_id"],
+            "session_id": created["session_id"],
+            "title": created["title"],
+            "category": created["category"],
+            "priority": created["priority"],
+            "status": created["status"],
+            "assigned_to": created["assigned_to"],
+            "scheduled_date": created["scheduled_date"],
+            "estimated_cost": created["estimated_cost"],
+        },
+    )
+    if created["priority"] == "emergency":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "work_order.emergency_escalated",
+            {
+                "work_order_id": created["id"],
+                "unit_id": created["unit_id"],
+                "tenant_id": created["tenant_id"],
+                "priority": "emergency",
+                "title": created["title"],
+                "category": created["category"],
+            },
+        )
+
+    return WorkOrderResponse(work_order=WorkOrderItem(**created))
+
+
+@app.get("/work-orders/metrics", response_model=WorkOrderMetricsResponse)
+def get_work_order_metrics_route():
+    """Retrieve aggregate maintenance metrics, KPIs, and status counts."""
+    metrics = db_utils.get_work_order_summary_metrics()
+    return WorkOrderMetricsResponse(**metrics)
+
+
+@app.get("/work-orders", response_model=WorkOrderListResponse)
+def list_work_orders_route(  # noqa: PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List maintenance work orders with optional filtering and pagination."""
+    items, total = db_utils.list_work_orders(
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        status=status,
+        priority=priority,
+        category=category,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return WorkOrderListResponse(
+        items=[WorkOrderItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/work-orders/{work_order_id}", response_model=WorkOrderResponse)
+def get_work_order_route(work_order_id: str):
+    """Retrieve details of a specific maintenance work order."""
+    item = db_utils.get_work_order(work_order_id)
+    if not item:
+        raise HTTPException(
+            status_code=404, detail=f"Work order '{work_order_id}' not found."
+        )
+    return WorkOrderResponse(work_order=WorkOrderItem(**item))
+
+
+@app.patch("/work-orders/{work_order_id}", response_model=WorkOrderResponse)
+def update_work_order_route(
+    work_order_id: str,
+    request: WorkOrderUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update fields on an existing work order."""
+    prior = db_utils.get_work_order(work_order_id)
+    if not prior:
+        raise HTTPException(
+            status_code=404, detail=f"Work order '{work_order_id}' not found."
+        )
+
+    try:
+        updated = db_utils.update_work_order(
+            work_order_id=work_order_id,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            status=request.status,
+            entry_permission=request.entry_permission,
+            assigned_to=request.assigned_to,
+            scheduled_date=request.scheduled_date,
+            completed_at=request.completed_at,
+            resolution_notes=request.resolution_notes,
+            estimated_cost=request.estimated_cost,
+            actual_cost=request.actual_cost,
+            unit_id=request.unit_id,
+            tenant_id=request.tenant_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not updated:
+        raise HTTPException(
+            status_code=404, detail=f"Work order '{work_order_id}' not found."
+        )
+
+    if updated["status"] != prior["status"]:
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "work_order.status_changed",
+            {
+                "work_order_id": updated["id"],
+                "unit_id": updated["unit_id"],
+                "tenant_id": updated["tenant_id"],
+                "previous_status": prior["status"],
+                "new_status": updated["status"],
+                "priority": updated["priority"],
+                "category": updated["category"],
+                "resolution_notes": updated["resolution_notes"],
+                "actual_cost": updated["actual_cost"],
+            },
+        )
+
+    if updated["priority"] == "emergency" and prior["priority"] != "emergency":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "work_order.emergency_escalated",
+            {
+                "work_order_id": updated["id"],
+                "unit_id": updated["unit_id"],
+                "tenant_id": updated["tenant_id"],
+                "priority": "emergency",
+                "title": updated["title"],
+                "category": updated["category"],
+            },
+        )
+
+    return WorkOrderResponse(work_order=WorkOrderItem(**updated))
+
+
+@app.delete("/work-orders/{work_order_id}")
+def delete_work_order_route(work_order_id: str):
+    """Delete a maintenance work order."""
+    deleted = db_utils.delete_work_order(work_order_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, detail=f"Work order '{work_order_id}' not found."
+        )
+    return {"status": "deleted", "work_order_id": work_order_id}
+
+
+@app.post(
+    "/sessions/{session_id}/create-work-order",
+    response_model=WorkOrderResponse,
+    status_code=201,
+)
+def create_work_order_from_session_route(
+    session_id: str,
+    request: WorkOrderFromSessionRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Convert a support session into a maintenance work order with auto-resolved unit/tenant."""
+    target_unit = request.unit_id
+    target_tenant = request.tenant_id
+
+    if not target_unit or not target_tenant:
+        ctx = db_utils.get_session_tenant_context(session_id)
+        if ctx:
+            if not target_unit:
+                target_unit = ctx.get("unit_id")
+            if not target_tenant:
+                target_tenant = ctx.get("tenant_id")
+
+    if not target_unit:
+        raise HTTPException(
+            status_code=422,
+            detail="unit_id is required either in request body or linked to session context.",
+        )
+
+    wo_id = f"wo_{uuid.uuid4().hex[:8]}"
+    try:
+        created = db_utils.create_work_order(
+            work_order_id=wo_id,
+            unit_id=target_unit,
+            title=request.title,
+            description=request.description,
+            category=request.category,
+            priority=request.priority,
+            status="submitted",
+            tenant_id=target_tenant,
+            session_id=session_id,
+            entry_permission=request.entry_permission,
+            assigned_to=request.assigned_to,
+            scheduled_date=request.scheduled_date,
+            estimated_cost=request.estimated_cost,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "work_order.created",
+        {
+            "work_order_id": created["id"],
+            "unit_id": created["unit_id"],
+            "tenant_id": created["tenant_id"],
+            "session_id": created["session_id"],
+            "title": created["title"],
+            "category": created["category"],
+            "priority": created["priority"],
+            "status": created["status"],
+            "assigned_to": created["assigned_to"],
+            "scheduled_date": created["scheduled_date"],
+            "estimated_cost": created["estimated_cost"],
+        },
+    )
+    if created["priority"] == "emergency":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "work_order.emergency_escalated",
+            {
+                "work_order_id": created["id"],
+                "unit_id": created["unit_id"],
+                "tenant_id": created["tenant_id"],
+                "priority": "emergency",
+                "title": created["title"],
+                "category": created["category"],
+            },
+        )
+
+    return WorkOrderResponse(work_order=WorkOrderItem(**created))
+
+
+@app.get("/units/{unit_id}/work-orders", response_model=WorkOrderListResponse)
+def get_unit_work_orders_route(unit_id: str, open_only: bool = False):
+    """Retrieve maintenance work orders for a specific unit."""
+    items = db_utils.get_unit_work_orders(unit_id, open_only=open_only)
+    return WorkOrderListResponse(
+        items=[WorkOrderItem(**item) for item in items],
+        total=len(items),
+        limit=len(items),
+        offset=0,
+    )
+
+
+@app.get("/tenants/{tenant_id}/work-orders", response_model=WorkOrderListResponse)
+def get_tenant_work_orders_route(tenant_id: str, open_only: bool = False):
+    """Retrieve maintenance work orders for a specific tenant."""
+    items = db_utils.get_tenant_work_orders(tenant_id, open_only=open_only)
+    return WorkOrderListResponse(
+        items=[WorkOrderItem(**item) for item in items],
+        total=len(items),
+        limit=len(items),
+        offset=0,
+    )
+
 
 
 

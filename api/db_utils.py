@@ -287,6 +287,9 @@ VALID_WEBHOOK_EVENTS = {
     "tenant.created",
     "tenant.updated",
     "tenant.balance_overdue",
+    "work_order.created",
+    "work_order.emergency_escalated",
+    "work_order.status_changed",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

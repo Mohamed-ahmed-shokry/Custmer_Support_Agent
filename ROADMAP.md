@@ -1122,7 +1122,7 @@ Bridge the gap between tenant communication and property operations. Maintenance
 - [x] Task 2: Database schema, table creation, default seed data, and CRUD operations for `work_orders` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [x] Task 3: Context grounding engine integration for open maintenance work orders in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
 - [x] Task 4: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
-- [ ] Task 5: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] Task 5: FastAPI endpoints for work orders, metrics, and session conversion in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [ ] Task 7: Streamlit UI components in `app/sidebar.py` (session work order conversion & "🛠️ Maintenance & Work Orders" board) + UI tests in `tests/test_app_ui.py`
 - [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
