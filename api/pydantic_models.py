@@ -2249,6 +2249,148 @@ class BillingMetricsResponse(BaseModel):
     by_payment_method: dict[str, int] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Lease Renewal Models (v0.38.0)
+# ---------------------------------------------------------------------------
+
+
+class LeaseRenewalItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    session_id: str | None = None
+    current_rent: float
+    proposed_rent: float
+    term_months: int = 12
+    start_date: str
+    end_date: str
+    concession_amount: float = 0.0
+    concession_notes: str = ""
+    security_deposit_change: float = 0.0
+    status: str = "offered"
+    expires_at: str
+    signature_name: str = ""
+    signature_ip: str = ""
+    signed_at: str | None = None
+    notes: str = ""
+    document_file_id: int | None = None
+    created_at: str
+    updated_at: str
+
+
+class LeaseRenewalCreateRequest(BaseModel):
+    tenant_id: str
+    unit_id: str | None = None
+    proposed_rent: float | None = Field(default=None, gt=0.0)
+    current_rent: float | None = Field(default=None, ge=0.0)
+    term_months: int = Field(default=12)
+    start_date: str | None = None
+    end_date: str | None = None
+    concession_amount: float = Field(default=0.0, ge=0.0)
+    concession_notes: str = Field(default="", max_length=db_utils.MAX_CONCESSION_NOTES_LENGTH)
+    security_deposit_change: float = Field(default=0.0)
+    status: str = Field(default="offered")
+    expires_at: str | None = None
+    session_id: str | None = None
+    notes: str = Field(default="", max_length=db_utils.MAX_LEASE_RENEWAL_NOTES_LENGTH)
+    renewal_id: str | None = Field(
+        default=None, max_length=db_utils.MAX_LEASE_RENEWAL_ID_LENGTH
+    )
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_lease_renewal_status(v)
+
+    @field_validator("term_months")
+    @classmethod
+    def validate_term(cls, v: int) -> int:
+        return db_utils.normalize_renewal_term_months(v)
+
+    @field_validator("renewal_id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return db_utils.normalize_lease_renewal_id(v) if v is not None else None
+
+
+class LeaseRenewalUpdateRequest(BaseModel):
+    proposed_rent: float | None = Field(default=None, gt=0.0)
+    term_months: int | None = Field(default=None)
+    start_date: str | None = None
+    end_date: str | None = None
+    concession_amount: float | None = Field(default=None, ge=0.0)
+    concession_notes: str | None = Field(
+        default=None, max_length=db_utils.MAX_CONCESSION_NOTES_LENGTH
+    )
+    security_deposit_change: float | None = Field(default=None)
+    status: str | None = Field(default=None)
+    expires_at: str | None = None
+    notes: str | None = Field(
+        default=None, max_length=db_utils.MAX_LEASE_RENEWAL_NOTES_LENGTH
+    )
+    document_file_id: int | None = Field(default=None)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return db_utils.normalize_lease_renewal_status(v) if v is not None else None
+
+    @field_validator("term_months")
+    @classmethod
+    def validate_term(cls, v: int | None) -> int | None:
+        return db_utils.normalize_renewal_term_months(v) if v is not None else None
+
+
+class LeaseRenewalSignRequest(BaseModel):
+    signature_name: str = Field(min_length=1, max_length=db_utils.MAX_SIGNATURE_NAME_LENGTH)
+    signature_ip: str = Field(default="127.0.0.1", max_length=db_utils.MAX_SIGNATURE_IP_LENGTH)
+    signed_at: str | None = None
+    notes: str | None = Field(
+        default=None, max_length=db_utils.MAX_LEASE_RENEWAL_NOTES_LENGTH
+    )
+
+
+class LeaseRenewalResponse(BaseModel):
+    renewal: LeaseRenewalItem
+
+
+class LeaseRenewalListResponse(BaseModel):
+    items: list[LeaseRenewalItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class LeaseRenewalDocumentPublishRequest(BaseModel):
+    collection: str = "default"
+    chunking_strategy: str = "markdown"
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+
+
+class LeaseRenewalDocumentPublishResponse(BaseModel):
+    renewal_id: str
+    file_id: int
+    filename: str
+    collection: str
+    sha256: str
+    content_length: int
+    indexed_in_chroma: bool
+
+
+class LeaseRenewalMetricsResponse(BaseModel):
+    total_renewals: int = 0
+    signed_renewals: int = 0
+    pending_renewals: int = 0
+    draft_renewals: int = 0
+    declined_renewals: int = 0
+    renewal_rate: float = 0.0
+    avg_rent_increase_pct: float = 0.0
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_term: dict[str, int] = Field(default_factory=dict)
+
+
+
 
 
 
