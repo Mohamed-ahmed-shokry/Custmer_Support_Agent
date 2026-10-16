@@ -295,6 +295,10 @@ VALID_WEBHOOK_EVENTS = {
     "billing.charge_posted",
     "billing.late_fee_assessed",
     "billing.overdue_escalated",
+    "lease_renewal.offered",
+    "lease_renewal.accepted",
+    "lease_renewal.signed",
+    "lease_renewal.declined",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
@@ -588,6 +592,63 @@ MAX_TRANSACTION_ID_LENGTH = 50
 MAX_TRANSACTION_DESC_LENGTH = 500
 MAX_TRANSACTION_REF_LENGTH = 100
 MAX_TRANSACTION_NOTES_LENGTH = 2000
+
+_CREATE_LEASE_RENEWALS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS lease_renewals ("
+    "id TEXT PRIMARY KEY, "
+    "tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, "
+    "unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE, "
+    "session_id TEXT DEFAULT NULL, "
+    "current_rent REAL NOT NULL, "
+    "proposed_rent REAL NOT NULL, "
+    "term_months INTEGER NOT NULL DEFAULT 12, "
+    "start_date TEXT NOT NULL DEFAULT '', "
+    "end_date TEXT NOT NULL DEFAULT '', "
+    "concession_amount REAL NOT NULL DEFAULT 0.0, "
+    "concession_notes TEXT NOT NULL DEFAULT '', "
+    "security_deposit_change REAL NOT NULL DEFAULT 0.0, "
+    "status TEXT NOT NULL DEFAULT 'offered', "
+    "expires_at TEXT NOT NULL DEFAULT '', "
+    "signature_name TEXT NOT NULL DEFAULT '', "
+    "signature_ip TEXT NOT NULL DEFAULT '', "
+    "signed_at TEXT DEFAULT NULL, "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "document_file_id INTEGER DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_LEASE_RENEWALS_TENANT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_tenant_id ON lease_renewals(tenant_id)"
+)
+_CREATE_LEASE_RENEWALS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_unit_id ON lease_renewals(unit_id)"
+)
+_CREATE_LEASE_RENEWALS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_status ON lease_renewals(status)"
+)
+_CREATE_LEASE_RENEWALS_EXPIRES_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_expires_at ON lease_renewals(expires_at)"
+)
+
+VALID_LEASE_RENEWAL_STATUSES = {
+    "draft",
+    "offered",
+    "negotiating",
+    "accepted",
+    "signed",
+    "declined",
+    "expired",
+}
+DEFAULT_LEASE_RENEWAL_STATUS = "offered"
+VALID_RENEWAL_TERM_MONTHS = {1, 3, 6, 9, 12, 18, 24, 36}
+DEFAULT_RENEWAL_TERM_MONTHS = 12
+
+MAX_LEASE_RENEWAL_ID_LENGTH = 50
+MAX_SIGNATURE_NAME_LENGTH = 150
+MAX_SIGNATURE_IP_LENGTH = 50
+MAX_CONCESSION_NOTES_LENGTH = 1000
+MAX_LEASE_RENEWAL_NOTES_LENGTH = 3000
+
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -5833,6 +5894,584 @@ def get_billing_summary_metrics() -> dict[str, Any]:
         }
 
 
+DEFAULT_SEEDED_LEASE_RENEWALS = [
+    {
+        "id": "lr_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "session_id": None,
+        "current_rent": 1450.0,
+        "proposed_rent": 1500.0,
+        "term_months": 12,
+        "start_date": "2026-11-01",
+        "end_date": "2027-10-31",
+        "concession_amount": 100.0,
+        "concession_notes": "First month renewal credit of $100 applied upon signing.",
+        "security_deposit_change": 0.0,
+        "status": "offered",
+        "expires_at": "2026-10-31",
+        "signature_name": "",
+        "signature_ip": "",
+        "signed_at": None,
+        "notes": "12-month standard renewal offer with early sign incentive.",
+        "document_file_id": None,
+    },
+    {
+        "id": "lr_102",
+        "tenant_id": "tenant_2",
+        "unit_id": "unit_204",
+        "session_id": None,
+        "current_rent": 1850.0,
+        "proposed_rent": 1925.0,
+        "term_months": 12,
+        "start_date": "2027-01-01",
+        "end_date": "2027-12-31",
+        "concession_amount": 0.0,
+        "concession_notes": "",
+        "security_deposit_change": 0.0,
+        "status": "draft",
+        "expires_at": "2026-11-30",
+        "signature_name": "",
+        "signature_ip": "",
+        "signed_at": None,
+        "notes": "Draft renewal under review pending payment of overdue balance.",
+        "document_file_id": None,
+    },
+    {
+        "id": "lr_103",
+        "tenant_id": "tenant_3",
+        "unit_id": "unit_PH1",
+        "session_id": None,
+        "current_rent": 3200.0,
+        "proposed_rent": 3350.0,
+        "term_months": 24,
+        "start_date": "2026-10-01",
+        "end_date": "2028-09-30",
+        "concession_amount": 250.0,
+        "concession_notes": "Penthouse multi-year renewal concession.",
+        "security_deposit_change": 150.0,
+        "status": "signed",
+        "expires_at": "2026-09-25",
+        "signature_name": "Eleanor Vance",
+        "signature_ip": "192.168.1.105",
+        "signed_at": "2026-09-24T14:30:00Z",
+        "notes": "24-month executive renewal executed successfully.",
+        "document_file_id": None,
+    },
+]
+
+
+def normalize_lease_renewal_id(lr_id: str) -> str:
+    cleaned = (lr_id or "").strip()
+    if not cleaned:
+        raise ValueError("Lease renewal ID must not be blank.")
+    if len(cleaned) > MAX_LEASE_RENEWAL_ID_LENGTH:
+        raise ValueError(
+            f"Lease renewal ID must be at most {MAX_LEASE_RENEWAL_ID_LENGTH} characters."
+        )
+    return cleaned
+
+
+def normalize_lease_renewal_status(val: str) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_LEASE_RENEWAL_STATUS
+    if cleaned not in VALID_LEASE_RENEWAL_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_LEASE_RENEWAL_STATUSES))
+        raise ValueError(
+            f"Invalid lease renewal status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_renewal_term_months(val: int | None) -> int:
+    if val is None:
+        return DEFAULT_RENEWAL_TERM_MONTHS
+    try:
+        ival = int(val)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Renewal term months must be an integer.") from exc
+    if ival not in VALID_RENEWAL_TERM_MONTHS:
+        valid_terms = ", ".join(str(m) for m in sorted(VALID_RENEWAL_TERM_MONTHS))
+        raise ValueError(
+            f"Invalid renewal term months '{ival}'. Expected one of: {valid_terms}."
+        )
+    return ival
+
+
+def create_lease_renewals() -> None:
+    """Create lease_renewals table, indexes, and pre-seed initial records if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_LEASE_RENEWALS_TABLE)
+        conn.execute(_CREATE_LEASE_RENEWALS_TENANT_INDEX)
+        conn.execute(_CREATE_LEASE_RENEWALS_UNIT_INDEX)
+        conn.execute(_CREATE_LEASE_RENEWALS_STATUS_INDEX)
+        conn.execute(_CREATE_LEASE_RENEWALS_EXPIRES_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM lease_renewals").fetchone()
+        if row and row[0] == 0:
+            for lr in DEFAULT_SEEDED_LEASE_RENEWALS:
+                conn.execute(
+                    "INSERT INTO lease_renewals "
+                    "(id, tenant_id, unit_id, session_id, current_rent, "
+                    "proposed_rent, term_months, start_date, end_date, "
+                    "concession_amount, concession_notes, security_deposit_change, "
+                    "status, expires_at, signature_name, signature_ip, "
+                    "signed_at, notes, document_file_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        lr["id"],
+                        lr["tenant_id"],
+                        lr["unit_id"],
+                        lr["session_id"],
+                        lr["current_rent"],
+                        lr["proposed_rent"],
+                        lr["term_months"],
+                        lr["start_date"],
+                        lr["end_date"],
+                        lr["concession_amount"],
+                        lr["concession_notes"],
+                        lr["security_deposit_change"],
+                        lr["status"],
+                        lr["expires_at"],
+                        lr["signature_name"],
+                        lr["signature_ip"],
+                        lr["signed_at"],
+                        lr["notes"],
+                        lr["document_file_id"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_lease_renewal(  # noqa: PLR0913, PLR0915, PLR0917
+    tenant_id: str,
+    unit_id: str | None = None,
+    proposed_rent: float | None = None,
+    current_rent: float | None = None,
+    term_months: int = 12,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    concession_amount: float = 0.0,
+    concession_notes: str = "",
+    security_deposit_change: float = 0.0,
+    status: str = "offered",
+    expires_at: str | None = None,
+    session_id: str | None = None,
+    notes: str = "",
+    lr_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a new lease renewal offer with validation and auto-resolved tenant/unit details."""
+    norm_tenant = (tenant_id or "").strip()
+    if not norm_tenant:
+        raise ValueError("Tenant ID must not be blank.")
+
+    tenant_record = get_tenant(norm_tenant)
+    if not tenant_record:
+        raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
+
+    resolved_unit = (unit_id or tenant_record.get("unit_id") or "").strip()
+    if not resolved_unit:
+        raise ValueError("Unit ID is required or must be linked to the tenant.")
+    unit_record = get_unit(resolved_unit)
+    if not unit_record:
+        raise ValueError(f"Unit with ID '{resolved_unit}' does not exist.")
+
+    resolved_current_rent = (
+        float(current_rent)
+        if current_rent is not None
+        else float(tenant_record.get("monthly_rent", 0.0))
+    )
+    if resolved_current_rent < 0.0:
+        raise ValueError("Current rent cannot be negative.")
+
+    resolved_proposed_rent = (
+        float(proposed_rent)
+        if proposed_rent is not None
+        else resolved_current_rent
+    )
+    if resolved_proposed_rent <= 0.0:
+        raise ValueError("Proposed rent must be greater than zero.")
+
+    norm_term = normalize_renewal_term_months(term_months)
+    norm_status = normalize_lease_renewal_status(status)
+
+    resolved_start = (start_date or tenant_record.get("lease_end") or "").strip()
+    if not resolved_start:
+        resolved_start = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    resolved_end = (end_date or "").strip()
+    if not resolved_end:
+        try:
+            start_dt = datetime.strptime(resolved_start, "%Y-%m-%d")
+            total_months = start_dt.month + norm_term
+            new_year = start_dt.year + (total_months - 1) // 12
+            new_month = ((total_months - 1) % 12) + 1
+            new_day = min(start_dt.day, 28)
+            resolved_end = f"{new_year:04d}-{new_month:02d}-{new_day:02d}"
+        except Exception:
+            resolved_end = resolved_start
+
+    resolved_expires = (expires_at or "").strip()
+    if not resolved_expires:
+        resolved_expires = resolved_start
+
+    clean_concession_amount = max(0.0, float(concession_amount or 0.0))
+    clean_concession_notes = (concession_notes or "").strip()[:MAX_CONCESSION_NOTES_LENGTH]
+    clean_deposit_change = float(security_deposit_change or 0.0)
+    clean_notes = (notes or "").strip()[:MAX_LEASE_RENEWAL_NOTES_LENGTH]
+    clean_session = (session_id or "").strip() or None
+
+    renewal_id = normalize_lease_renewal_id(
+        lr_id or f"lr_{uuid.uuid4().hex[:8]}"
+    )
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(
+            "SELECT id FROM lease_renewals WHERE id = ?", (renewal_id,)
+        ).fetchone()
+        if existing:
+            raise ValueError(
+                f"Lease renewal with ID '{renewal_id}' already exists."
+            )
+
+        conn.execute(
+            "INSERT INTO lease_renewals "
+            "(id, tenant_id, unit_id, session_id, current_rent, "
+            "proposed_rent, term_months, start_date, end_date, "
+            "concession_amount, concession_notes, security_deposit_change, "
+            "status, expires_at, signature_name, signature_ip, "
+            "signed_at, notes, document_file_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', NULL, ?, NULL)",
+            (
+                renewal_id,
+                norm_tenant,
+                resolved_unit,
+                clean_session,
+                resolved_current_rent,
+                resolved_proposed_rent,
+                norm_term,
+                resolved_start,
+                resolved_end,
+                clean_concession_amount,
+                clean_concession_notes,
+                clean_deposit_change,
+                norm_status,
+                resolved_expires,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+
+    res = get_lease_renewal(renewal_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created lease renewal.")
+    return res
+
+
+def get_lease_renewal(renewal_id: str) -> dict[str, Any] | None:
+    cleaned_id = (renewal_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT * FROM lease_renewals WHERE id = ?", (cleaned_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_lease_renewals(  # noqa: PLR0912, PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM lease_renewals"]
+    count_parts = ["SELECT COUNT(*) FROM lease_renewals"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if tenant_id and tenant_id.strip():
+        where_clauses.append("tenant_id = ?")
+        params.append(tenant_id.strip())
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if search and search.strip():
+        s = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(id) LIKE ? OR LOWER(notes) LIKE ? OR LOWER(signature_name) LIKE ?)"
+        )
+        params.extend([s, s, s])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+    params_for_query = list(params) + [max(1, limit), max(0, offset)]
+
+    full_query = "".join(query_parts)
+    full_count_query = "".join(count_parts)
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(full_count_query, params).fetchone()[0]
+        rows = conn.execute(full_query, params_for_query).fetchall()
+        return [dict(r) for r in rows], int(total)
+
+
+def get_tenant_lease_renewals(tenant_id: str) -> list[dict[str, Any]]:
+    """Retrieve all lease renewal records for a tenant ordered by created_at DESC."""
+    cleaned_id = (tenant_id or "").strip()
+    if not cleaned_id:
+        return []
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM lease_renewals WHERE tenant_id = ? ORDER BY created_at DESC",
+            (cleaned_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_lease_renewal(  # noqa: PLR0912, PLR0913, PLR0917
+    renewal_id: str,
+    proposed_rent: float | None = None,
+    term_months: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    concession_amount: float | None = None,
+    concession_notes: str | None = None,
+    security_deposit_change: float | None = None,
+    status: str | None = None,
+    expires_at: str | None = None,
+    notes: str | None = None,
+    document_file_id: int | None = None,
+) -> dict[str, Any] | None:
+    current = get_lease_renewal(renewal_id)
+    if not current:
+        return None
+
+    updates: list[str] = []
+    params: list[Any] = []
+
+    if proposed_rent is not None:
+        p_val = float(proposed_rent)
+        if p_val <= 0.0:
+            raise ValueError("Proposed rent must be greater than zero.")
+        updates.append("proposed_rent = ?")
+        params.append(p_val)
+
+    if term_months is not None:
+        t_val = normalize_renewal_term_months(term_months)
+        updates.append("term_months = ?")
+        params.append(t_val)
+
+    if start_date is not None:
+        updates.append("start_date = ?")
+        params.append(start_date.strip())
+
+    if end_date is not None:
+        updates.append("end_date = ?")
+        params.append(end_date.strip())
+
+    if concession_amount is not None:
+        updates.append("concession_amount = ?")
+        params.append(max(0.0, float(concession_amount)))
+
+    if concession_notes is not None:
+        updates.append("concession_notes = ?")
+        params.append(concession_notes.strip()[:MAX_CONCESSION_NOTES_LENGTH])
+
+    if security_deposit_change is not None:
+        updates.append("security_deposit_change = ?")
+        params.append(float(security_deposit_change))
+
+    if status is not None:
+        s_val = normalize_lease_renewal_status(status)
+        updates.append("status = ?")
+        params.append(s_val)
+
+    if expires_at is not None:
+        updates.append("expires_at = ?")
+        params.append(expires_at.strip())
+
+    if notes is not None:
+        updates.append("notes = ?")
+        params.append(notes.strip()[:MAX_LEASE_RENEWAL_NOTES_LENGTH])
+
+    if document_file_id is not None:
+        updates.append("document_file_id = ?")
+        params.append(int(document_file_id))
+
+    if not updates:
+        return current
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    sql = f"UPDATE lease_renewals SET {', '.join(updates)} WHERE id = ?"
+    params.append(renewal_id)
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(sql, params)
+        conn.commit()
+
+    return get_lease_renewal(renewal_id)
+
+
+def delete_lease_renewal(renewal_id: str) -> bool:
+    cleaned_id = (renewal_id or "").strip()
+    if not cleaned_id:
+        return False
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(
+            "DELETE FROM lease_renewals WHERE id = ?", (cleaned_id,)
+        )
+        conn.commit()
+        return bool(cursor.rowcount > 0)
+
+
+def sign_lease_renewal(  # noqa: PLR0913, PLR0917
+    renewal_id: str,
+    signature_name: str,
+    signature_ip: str = "127.0.0.1",
+    signed_at: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Digitally sign a renewal offer and atomically update tenant lease dates and rent."""
+    current = get_lease_renewal(renewal_id)
+    if not current:
+        raise ValueError(f"Lease renewal with ID '{renewal_id}' does not exist.")
+
+    if current["status"] == "signed":
+        raise ValueError("Lease renewal has already been signed.")
+
+    sig_name = (signature_name or "").strip()
+    if not sig_name:
+        raise ValueError("Signature name must not be blank.")
+    if len(sig_name) > MAX_SIGNATURE_NAME_LENGTH:
+        raise ValueError(
+            f"Signature name must be at most {MAX_SIGNATURE_NAME_LENGTH} characters."
+        )
+
+    sig_ip = (signature_ip or "127.0.0.1").strip()[:MAX_SIGNATURE_IP_LENGTH]
+    timestamp = signed_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    combined_notes = current["notes"] or ""
+    if notes and notes.strip():
+        combined_notes = f"{combined_notes} | {notes.strip()}".strip(" |")
+
+    tenant_id = current["tenant_id"]
+    new_start = current["start_date"]
+    new_end = current["end_date"]
+    new_rent = current["proposed_rent"]
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE lease_renewals SET "
+            "status = 'signed', "
+            "signature_name = ?, "
+            "signature_ip = ?, "
+            "signed_at = ?, "
+            "notes = ?, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            (sig_name, sig_ip, timestamp, combined_notes, renewal_id),
+        )
+
+        # Atomically update tenant lease parameters
+        if new_start and new_end and new_rent > 0:
+            conn.execute(
+                "UPDATE tenants SET "
+                "lease_start = ?, "
+                "lease_end = ?, "
+                "monthly_rent = ?, "
+                "status = 'active', "
+                "updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ?",
+                (new_start, new_end, new_rent, tenant_id),
+            )
+
+        conn.commit()
+
+    updated = get_lease_renewal(renewal_id)
+    if not updated:
+        raise RuntimeError("Failed to retrieve signed lease renewal.")
+    return updated
+
+
+def get_lease_renewal_summary_metrics() -> dict[str, Any]:
+    """Compute aggregated portfolio lease renewal statistics."""
+    with closing(get_db_connection()) as conn:
+        total_row = conn.execute("SELECT COUNT(*) FROM lease_renewals").fetchone()
+        total_count = int(total_row[0]) if total_row else 0
+
+        signed_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals WHERE status = 'signed'"
+        ).fetchone()
+        signed_count = int(signed_row[0]) if signed_row else 0
+
+        offered_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals "
+            "WHERE status IN ('offered', 'negotiating', 'accepted')"
+        ).fetchone()
+        offered_count = int(offered_row[0]) if offered_row else 0
+
+        draft_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals WHERE status = 'draft'"
+        ).fetchone()
+        draft_count = int(draft_row[0]) if draft_row else 0
+
+        declined_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals WHERE status IN ('declined', 'expired')"
+        ).fetchone()
+        declined_count = int(declined_row[0]) if declined_row else 0
+
+        renewal_rate = (
+            round((signed_count / total_count) * 100.0, 2)
+            if total_count > 0
+            else 0.0
+        )
+
+        diff_row = conn.execute(
+            "SELECT AVG(((proposed_rent - current_rent) / current_rent) * 100.0) "
+            "FROM lease_renewals WHERE current_rent > 0"
+        ).fetchone()
+        avg_rent_increase_pct = (
+            round(float(diff_row[0]), 2)
+            if diff_row and diff_row[0] is not None
+            else 0.0
+        )
+
+        by_status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM lease_renewals GROUP BY status"
+        ).fetchall()
+        by_status = {r[0]: int(r[1]) for r in by_status_rows}
+
+        by_term_rows = conn.execute(
+            "SELECT term_months, COUNT(*) FROM lease_renewals GROUP BY term_months"
+        ).fetchall()
+        by_term = {str(r[0]): int(r[1]) for r in by_term_rows}
+
+        return {
+            "total_renewals": total_count,
+            "signed_renewals": signed_count,
+            "pending_renewals": offered_count,
+            "draft_renewals": draft_count,
+            "declined_renewals": declined_count,
+            "renewal_rate": renewal_rate,
+            "avg_rent_increase_pct": avg_rent_increase_pct,
+            "by_status": by_status,
+            "by_term": by_term,
+        }
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -5841,6 +6480,7 @@ create_units()
 create_tenants()
 create_work_orders()
 create_billing_transactions()
+create_lease_renewals()
 create_session_labels()
 migrate_session_labels()
 create_feedback()
@@ -5852,5 +6492,6 @@ create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
+
 
 
