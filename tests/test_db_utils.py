@@ -10,6 +10,11 @@ def initialize_temp_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
     db_utils.create_application_logs()
     db_utils.create_document_store()
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+    db_utils.create_billing_transactions()
+    db_utils.create_lease_renewals()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     db_utils.create_feedback()
@@ -3100,5 +3105,131 @@ def test_record_tenant_payment_and_ledger_summary(monkeypatch, tmp_path):  # noq
     assert metrics["collection_rate"] > 0
     assert "rent" in metrics["by_type"]
     assert "paid" in metrics["by_status"]
+
+
+def test_lease_renewal_crud_and_metrics(monkeypatch, tmp_path):  # noqa: PLR0915
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # 1. Normalization tests
+    assert db_utils.normalize_lease_renewal_id("  lr_custom_99  ") == "lr_custom_99"
+    with pytest.raises(ValueError, match="blank"):
+        db_utils.normalize_lease_renewal_id("   ")
+
+    assert db_utils.normalize_lease_renewal_status("Offered") == "offered"
+    assert db_utils.normalize_lease_renewal_status("SIGNED") == "signed"
+    with pytest.raises(ValueError, match="Invalid lease renewal status"):
+        db_utils.normalize_lease_renewal_status("invalid_status")
+
+    assert db_utils.normalize_renewal_term_months(12) == 12  # noqa: PLR2004
+    assert db_utils.normalize_renewal_term_months(6) == 6  # noqa: PLR2004
+    with pytest.raises(ValueError, match="Invalid renewal term months"):
+        db_utils.normalize_renewal_term_months(5)
+
+    # 2. Pre-seeded renewals
+    initial_renewals, count = db_utils.list_lease_renewals()
+    assert count >= 3  # noqa: PLR2004
+    seeded_ids = [r["id"] for r in initial_renewals]
+    assert "lr_101" in seeded_ids
+    assert "lr_102" in seeded_ids
+    assert "lr_103" in seeded_ids
+
+    # 3. Create a new lease renewal offer
+    new_lr = db_utils.create_lease_renewal(
+        tenant_id="tenant_1",
+        proposed_rent=1550.0,
+        term_months=12,
+        start_date="2026-11-01",
+        end_date="2027-10-31",
+        concession_amount=150.0,
+        concession_notes="$150 signing discount",
+        notes="Standard 1-year renewal",
+        lr_id="lr_test_new",
+    )
+    assert new_lr["id"] == "lr_test_new"
+    assert new_lr["tenant_id"] == "tenant_1"
+    assert new_lr["unit_id"] == "unit_101"
+    assert new_lr["proposed_rent"] == 1550.0  # noqa: PLR2004
+    assert new_lr["status"] == "offered"
+    assert new_lr["concession_amount"] == 150.0  # noqa: PLR2004
+
+    # Duplicate ID check
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_lease_renewal(tenant_id="tenant_1", lr_id="lr_test_new")
+
+    # Invalid tenant check
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.create_lease_renewal(tenant_id="non_existent_tenant")
+
+    # 4. Get by ID
+    fetched = db_utils.get_lease_renewal("lr_test_new")
+    assert fetched is not None
+    assert fetched["id"] == "lr_test_new"
+    assert fetched["proposed_rent"] == 1550.0  # noqa: PLR2004
+
+    # 5. List with filters
+    t1_renewals, t1_count = db_utils.list_lease_renewals(tenant_id="tenant_1")
+    assert t1_count >= 2  # noqa: PLR2004
+    assert all(r["tenant_id"] == "tenant_1" for r in t1_renewals)
+
+    offered_renewals, off_count = db_utils.list_lease_renewals(status="offered")
+    assert off_count >= 2  # noqa: PLR2004
+    assert all(r["status"] == "offered" for r in offered_renewals)
+
+    search_renewals, s_count = db_utils.list_lease_renewals(search="standard")
+    assert s_count >= 1
+
+    # 6. Tenant-specific renewals
+    tenant_lrs = db_utils.get_tenant_lease_renewals("tenant_1")
+    assert len(tenant_lrs) >= 2  # noqa: PLR2004
+
+    # 7. Update renewal
+    updated = db_utils.update_lease_renewal(
+        "lr_test_new",
+        proposed_rent=1525.0,
+        concession_amount=200.0,
+        status="negotiating",
+        notes="Tenant countered with $1525 and $200 concession",
+    )
+    assert updated is not None
+    assert updated["proposed_rent"] == 1525.0  # noqa: PLR2004
+    assert updated["concession_amount"] == 200.0  # noqa: PLR2004
+    assert updated["status"] == "negotiating"
+
+    # 8. Digital Signing & Tenant Update
+    signed = db_utils.sign_lease_renewal(
+        "lr_test_new",
+        signature_name="Sarah Connor",
+        signature_ip="192.168.1.50",
+        notes="Signed electronically via resident portal",
+    )
+    assert signed["status"] == "signed"
+    assert signed["signature_name"] == "Sarah Connor"
+    assert signed["signature_ip"] == "192.168.1.50"
+    assert signed["signed_at"] is not None
+
+    # Verify tenant was updated
+    tenant_after = db_utils.get_tenant("tenant_1")
+    assert tenant_after is not None
+    assert tenant_after["lease_start"] == "2026-11-01"
+    assert tenant_after["lease_end"] == "2027-10-31"
+    assert tenant_after["monthly_rent"] == 1525.0  # noqa: PLR2004
+
+    # Cannot sign twice
+    with pytest.raises(ValueError, match="already been signed"):
+        db_utils.sign_lease_renewal("lr_test_new", signature_name="Sarah Connor")
+
+    # 9. Delete renewal
+    deleted = db_utils.delete_lease_renewal("lr_test_new")
+    assert deleted is True
+    assert db_utils.get_lease_renewal("lr_test_new") is None
+
+    # 10. Summary metrics
+    metrics = db_utils.get_lease_renewal_summary_metrics()
+    assert metrics["total_renewals"] >= 3  # noqa: PLR2004
+    assert metrics["signed_renewals"] >= 1
+    assert metrics["pending_renewals"] >= 1
+    assert "draft" in metrics["by_status"]
+    assert "12" in metrics["by_term"]
+
 
 
