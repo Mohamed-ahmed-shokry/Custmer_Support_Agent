@@ -5138,7 +5138,7 @@ DEFAULT_SEEDED_BILLING_TRANSACTIONS = [
         "tenant_id": "tenant_1",
         "unit_id": "unit_101",
         "session_id": None,
-        "transaction_type": "rent",
+        "transaction_type": "payment",
         "amount": 1450.0,
         "status": "paid",
         "due_date": "2026-10-01",
@@ -5183,7 +5183,7 @@ DEFAULT_SEEDED_BILLING_TRANSACTIONS = [
         "tenant_id": "tenant_3",
         "unit_id": "unit_PH1",
         "session_id": None,
-        "transaction_type": "rent",
+        "transaction_type": "payment",
         "amount": 3200.0,
         "status": "paid",
         "due_date": "2026-10-01",
@@ -5713,11 +5713,12 @@ def get_tenant_ledger_summary(tenant_id: str) -> dict[str, Any] | None:
         total_charges = float(charges_row[0]) if charges_row else 0.0
 
         # Payments sum
-        payments_row = conn.execute(
+        payments_query = (
             "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
-            "WHERE tenant_id = ? AND transaction_type = 'payment' AND status = 'paid'",
-            (norm_tenant,),
-        ).fetchone()
+            "WHERE tenant_id = ? AND "
+            "(transaction_type = 'payment' OR (paid_at IS NOT NULL AND status = 'paid'))"
+        )
+        payments_row = conn.execute(payments_query, (norm_tenant,)).fetchone()
         total_payments = float(payments_row[0]) if payments_row else 0.0
 
         # Overdue charges sum & count
@@ -5730,12 +5731,14 @@ def get_tenant_ledger_summary(tenant_id: str) -> dict[str, Any] | None:
         overdue_count = int(overdue_row[1]) if overdue_row else 0
 
         # Last payment
-        last_pay_row = conn.execute(
+        last_pay_query = (
             "SELECT * FROM billing_transactions "
-            "WHERE tenant_id = ? AND transaction_type = 'payment' AND status = 'paid' "
-            "ORDER BY paid_at DESC, created_at DESC LIMIT 1",
-            (norm_tenant,),
-        ).fetchone()
+            "WHERE tenant_id = ? AND "
+            "(transaction_type = 'payment' OR "
+            "(paid_at IS NOT NULL AND status = 'paid' AND payment_method != '')) "
+            "ORDER BY paid_at DESC, created_at DESC LIMIT 1"
+        )
+        last_pay_row = conn.execute(last_pay_query, (norm_tenant,)).fetchone()
         last_payment = dict(last_pay_row) if last_pay_row else None
 
         # Recent transactions
@@ -5776,7 +5779,7 @@ def get_billing_summary_metrics() -> dict[str, Any]:
 
         collected_row = conn.execute(
             "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
-            "WHERE transaction_type = 'payment' AND status = 'paid'"
+            "WHERE (transaction_type = 'payment' OR (paid_at IS NOT NULL AND status = 'paid'))"
         ).fetchone()
         total_collected = float(collected_row[0]) if collected_row else 0.0
 
