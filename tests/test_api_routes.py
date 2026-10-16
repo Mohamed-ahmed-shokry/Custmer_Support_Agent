@@ -4087,8 +4087,10 @@ def test_billing_transactions_crud_and_metrics_routes(monkeypatch, tmp_path):
     """Test /billing/transactions CRUD, list filtering, and /billing/metrics."""
     db_file = tmp_path / "test_api_billing_crud.db"
     monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
     main.db_utils.create_units()
     main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
     main.db_utils.create_billing_transactions()
 
     dispatched = []
@@ -4168,8 +4170,10 @@ def test_tenant_payment_and_ledger_routes(monkeypatch, tmp_path):
     """Test POST /tenants/{id}/payments, GET /tenants/{id}/ledger, and session payment."""
     db_file = tmp_path / "test_api_billing_payments.db"
     monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
     main.db_utils.create_units()
     main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
     main.db_utils.create_billing_transactions()
     main.db_utils.create_session_labels()
     main.db_utils.create_application_logs()
