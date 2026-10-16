@@ -5715,8 +5715,7 @@ def get_tenant_ledger_summary(tenant_id: str) -> dict[str, Any] | None:
         # Payments sum
         payments_query = (
             "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
-            "WHERE tenant_id = ? AND "
-            "(transaction_type = 'payment' OR (paid_at IS NOT NULL AND status = 'paid'))"
+            "WHERE tenant_id = ? AND transaction_type = 'payment' AND status = 'paid'"
         )
         payments_row = conn.execute(payments_query, (norm_tenant,)).fetchone()
         total_payments = float(payments_row[0]) if payments_row else 0.0
@@ -5779,7 +5778,7 @@ def get_billing_summary_metrics() -> dict[str, Any]:
 
         collected_row = conn.execute(
             "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
-            "WHERE (transaction_type = 'payment' OR (paid_at IS NOT NULL AND status = 'paid'))"
+            "WHERE transaction_type = 'payment' AND status = 'paid'"
         ).fetchone()
         total_collected = float(collected_row[0]) if collected_row else 0.0
 
