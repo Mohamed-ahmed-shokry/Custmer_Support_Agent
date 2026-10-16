@@ -28,6 +28,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_units()
     db_utils.create_tenants()
     db_utils.create_work_orders()
+    db_utils.create_billing_transactions()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -220,4 +221,45 @@ def test_render_template_overrides_tenant_variables():
     rendered, unresolved = render_template(template, variables=custom_vars, session_id=sid)
     assert unresolved == []
     assert rendered == "Resident Ms. Sarah Connor, VIP, rent balance is $100.00."
+
+
+def test_build_tenant_rag_context_billing_grounding():
+    """Verify that billing ledger and payment history are grounded in RAG prompt context."""
+    # tenant_1 has recorded ACH payment and zero balance
+    t1_block = build_tenant_rag_context(tenant_id="tenant_1")
+    assert "[RESIDENT BILLING & PAYMENT LEDGER]" in t1_block
+    assert "Current Balance Due: $0.00 | Monthly Rent: $1,450.00" in t1_block
+    assert "Last Payment: $1,450.00 on 2026-10-01T09:30:00Z via ach (Ref: ACH-88412)" in t1_block
+    assert "[END RESIDENT BILLING & PAYMENT LEDGER]" in t1_block
+
+    # tenant_2 has overdue rent and late fee
+    t2_block = build_tenant_rag_context(tenant_id="tenant_2")
+    assert "[RESIDENT BILLING & PAYMENT LEDGER]" in t2_block
+    assert "Overdue Amount:" in t2_block
+    assert "overdue charge(s)" in t2_block
+
+    # include_billing=False suppresses billing block
+    suppressed = build_tenant_rag_context(tenant_id="tenant_1", include_billing=False)
+    assert "[RESIDENT BILLING & PAYMENT LEDGER]" not in suppressed
+    assert "[VERIFIED RESIDENT & PROPERTY UNIT PROFILE]" in suppressed
+
+
+def test_render_template_with_billing_variables():
+    """Verify macro template rendering with financial and billing variables."""
+    sid = "sess-macro-billing"
+    db_utils.insert_application_logs(sid, "Payment info", "Here is your statement", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Dear {customer_name}, your last payment of {last_payment_amount} "
+        "was received on {last_payment_date} via {last_payment_method} "
+        "(Ref: {last_payment_reference}). Overdue balance: {overdue_balance}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Dear Sarah Connor" in rendered
+    assert "payment of $1,450.00" in rendered
+    assert "via ach" in rendered
+    assert "Ref: ACH-88412" in rendered
+    assert "Overdue balance: $0.00" in rendered
 

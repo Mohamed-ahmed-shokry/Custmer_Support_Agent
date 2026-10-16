@@ -1,3 +1,5 @@
+from typing import Any
+
 import streamlit as st
 from api.macros import extract_template_variables
 from api.pydantic_models import ModelName, model_from_value
@@ -8,6 +10,7 @@ from app.api_utils import (
     apply_macro_to_session,
     assign_session,
     auto_assign_session,
+    create_billing_transaction,
     create_macro,
     create_sla_policy,
     create_support_agent,
@@ -16,6 +19,7 @@ from app.api_utils import (
     create_webhook,
     create_work_order,
     create_work_order_from_session,
+    delete_billing_transaction,
     delete_collection,
     delete_document,
     delete_documents,
@@ -32,6 +36,7 @@ from app.api_utils import (
     export_session,
     get_agent_scorecards,
     get_agent_workload_analytics,
+    get_billing_metrics,
     get_business_hours_status,
     get_collection_analytics,
     get_collections_details,
@@ -51,10 +56,12 @@ from app.api_utils import (
     get_sla_compliance_analytics,
     get_stats,
     get_support_triage_analytics,
+    get_tenant_ledger,
     get_tenant_support_history,
     get_unit_work_orders,
     get_work_order_metrics,
     link_session_tenant,
+    list_billing_transactions,
     list_collections,
     list_documents,
     list_feedback,
@@ -75,6 +82,8 @@ from app.api_utils import (
     publish_knowledge_article,
     rechunk_collection,
     rechunk_document,
+    record_session_payment,
+    record_tenant_payment,
     rename_collection,
     rename_session,
     render_macro,
@@ -82,6 +91,7 @@ from app.api_utils import (
     search_sessions,
     suggest_macros,
     summarize_session,
+    update_billing_transaction,
     update_feedback_review,
     update_knowledge_gap,
     update_session,
@@ -636,6 +646,84 @@ def _render_session_work_order_dispatch(selected: str):
                     st.error("Failed to create work order.")
 
 
+def _render_session_billing_widget(selected: str, tenant: dict):
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    ledger = get_tenant_ledger(tenant_id)
+    if ledger:
+        cur_bal = ledger.get("current_balance", 0.0)
+        overdue_amt = ledger.get("overdue_amount", 0.0)
+        overdue_cnt = ledger.get("overdue_count", 0)
+        last_pay = ledger.get("last_payment")
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 💰 Resident Financial Ledger")
+        bc1, bc2 = st.sidebar.columns(2)
+        bc1.metric("Balance Due", f"${cur_bal:,.2f}")
+        bc2.metric("Overdue", f"${overdue_amt:,.2f}")
+
+        if overdue_cnt > 0:
+            st.sidebar.error(f"🚨 {overdue_cnt} Overdue Charge(s) (${overdue_amt:,.2f})")
+        else:
+            st.sidebar.success("✅ Account Current / Paid Up")
+
+        if last_pay:
+            last_date = (last_pay.get("paid_at") or "")[:10]
+            st.sidebar.caption(
+                f"**Last Payment:** ${last_pay.get('amount', 0):,.2f} on {last_date} "
+                f"({last_pay.get('payment_method', 'portal')})"
+            )
+
+    with st.sidebar.expander("💳 Record Resident Payment"):
+        default_pay = float(tenant.get("balance_due", 0.0))
+        if default_pay <= 0.0:
+            default_pay = float(tenant.get("monthly_rent", 1000.0))
+
+        pay_amount = st.number_input(
+            "Payment Amount ($)",
+            min_value=1.0,
+            value=default_pay,
+            step=50.0,
+            key=f"pay_amt_{selected}",
+        )
+        pay_method = st.selectbox(
+            "Method",
+            ["online_portal", "ach", "credit_card", "debit_card", "check", "cashier_check"],
+            key=f"pay_meth_{selected}",
+        )
+        pay_ref = st.text_input(
+            "Reference # (Auth/Check #)",
+            placeholder="e.g. AUTH-88231",
+            key=f"pay_ref_{selected}",
+        )
+        pay_desc = st.text_input(
+            "Payment Memo",
+            value="Resident Rent Payment",
+            key=f"pay_desc_{selected}",
+        )
+
+        if st.button("💵 Submit Payment", key=f"btn_pay_{selected}"):
+            with st.spinner("Processing resident payment..."):
+                pay_payload = {
+                    "amount": float(pay_amount),
+                    "payment_method": pay_method,
+                    "reference_number": pay_ref.strip(),
+                    "description": pay_desc.strip(),
+                }
+                res = record_session_payment(selected, pay_payload)
+                if res:
+                    new_bal_val = res.get("new_balance", 0.0)
+                    st.success(
+                        f"Payment of ${pay_amount:,.2f} recorded! New balance: ${new_bal_val:,.2f}"
+                    )
+                    st.rerun()
+                else:
+                    st.error("Failed to record payment.")
+
+
+
 def _render_linked_tenant_details(selected, tenant, unit):
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
     st.sidebar.markdown(f"**Resident:** {t_name}")
@@ -667,6 +755,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
         if open_count > 0:
             st.sidebar.warning(f"⚠️ {open_count} Open Work Order(s) for Unit")
 
+    _render_session_billing_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -2348,6 +2437,256 @@ def _render_maintenance_board():
             _render_work_order_metrics_tab(metrics)
 
 
+def _render_billing_board():
+    with st.sidebar.expander("💰 Billing & Rent Ledgers"):
+        metrics = get_billing_metrics() or {}
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        bc1.metric("Billed", f"${metrics.get('total_billed', 0.0):,.0f}")
+        bc2.metric("Collected", f"${metrics.get('total_collected', 0.0):,.0f}")
+        bc3.metric("Outstanding", f"${metrics.get('total_outstanding', 0.0):,.0f}")
+        bc4.metric("Rate", f"{metrics.get('collection_rate', 0.0):.1f}%")
+
+        b_tab = st.radio(
+            "Billing Section",
+            ["Transactions", "Record Payment", "Post Charge", "Financial KPIs"],
+            horizontal=True,
+            key="billing_board_tab_radio",
+        )
+
+        if b_tab == "Transactions":
+            _render_billing_transactions_tab()
+        elif b_tab == "Record Payment":
+            _render_record_payment_tab()
+        elif b_tab == "Post Charge":
+            _render_post_charge_tab()
+        else:
+            _render_billing_metrics_tab(metrics)
+
+
+def _render_billing_transactions_tab():
+    c_f1, c_f2 = st.columns(2)
+    stat_filter = c_f1.selectbox(
+        "Status Filter",
+        ["All", "posted", "pending", "paid", "overdue", "waived", "refunded"],
+        key="tx_filter_status",
+    )
+    type_filter = c_f2.selectbox(
+        "Type Filter",
+        [
+            "All",
+            "rent",
+            "security_deposit",
+            "late_fee",
+            "utility",
+            "parking_fee",
+            "pet_rent",
+            "maintenance_charge",
+            "payment",
+            "credit_refund",
+        ],
+        key="tx_filter_type",
+    )
+    s_filter_val = None if stat_filter == "All" else stat_filter
+    t_filter_val = None if type_filter == "All" else type_filter
+
+    tx_resp = list_billing_transactions(
+        status=s_filter_val, transaction_type=t_filter_val, limit=25
+    )
+    items = tx_resp.get("items", []) if tx_resp else []
+    total = tx_resp.get("total", 0) if tx_resp else 0
+    st.caption(f"Showing {len(items)} of {total} transaction(s)")
+
+    for tx in items:
+        tx_id = tx["id"]
+        status_emoji = (
+            "🟢"
+            if tx.get("status") == "paid"
+            else ("🔴" if tx.get("status") == "overdue" else "🟡")
+        )
+        t_type = tx.get("transaction_type", "charge").upper()
+        amt = tx.get("amount", 0.0)
+        due = tx.get("due_date") or "N/A"
+
+        with st.expander(f"{status_emoji} #{tx_id}: {t_type} - ${amt:,.2f} ({tx.get('status')})"):
+            st.caption(f"**Description:** {tx.get('description')}")
+            st.caption(f"**Tenant:** `{tx.get('tenant_id')}` | **Unit:** `{tx.get('unit_id')}`")
+            st.caption(f"**Due Date:** {due}")
+            if tx.get("paid_at"):
+                paid_str = tx["paid_at"][:19].replace("T", " ")
+                method_str = tx.get("payment_method", "")
+                st.caption(f"**Paid At:** {paid_str} via {method_str}")
+            if tx.get("reference_number"):
+                st.caption(f"**Ref:** `{tx['reference_number']}`")
+            if tx.get("notes"):
+                st.caption(f"**Notes:** {tx['notes']}")
+
+            tc1, tc2, tc3 = st.columns(3)
+            if tx.get("status") != "paid" and tc1.button("Mark Paid", key=f"btn_pay_tx_{tx_id}"):
+                update_billing_transaction(tx_id, {"status": "paid"})
+                st.success(f"Transaction {tx_id} marked as paid.")
+                st.rerun()
+            if tx.get("status") != "waived" and tc2.button("Waive", key=f"btn_waive_tx_{tx_id}"):
+                update_billing_transaction(tx_id, {"status": "waived"})
+                st.info(f"Transaction {tx_id} waived.")
+                st.rerun()
+            if tc3.button("Delete", key=f"btn_del_tx_{tx_id}"):
+                delete_billing_transaction(tx_id)
+                st.warning(f"Transaction {tx_id} deleted.")
+                st.rerun()
+
+
+def _render_record_payment_tab():
+    st.markdown("##### 💳 Record Resident Payment")
+    tenants_resp = list_tenants(limit=100)
+    tenants_list = tenants_resp.get("items", []) if tenants_resp else []
+    if not tenants_list:
+        st.caption("No tenants registered.")
+        return
+
+    tenant_map = {
+        t["id"]: f"{t['first_name']} {t['last_name']} (Bal: ${t.get('balance_due', 0):,.2f})"
+        for t in tenants_list
+    }
+    chosen_tid = st.selectbox(
+        "Resident Account",
+        options=list(tenant_map.keys()),
+        format_func=lambda x: tenant_map.get(x, x),
+        key="pay_board_tenant_select",
+    )
+    sel_tenant: dict[str, Any] = next((t for t in tenants_list if t["id"] == chosen_tid), {})
+    default_amt = max(
+        1.0, float(sel_tenant.get("balance_due") or sel_tenant.get("monthly_rent", 1000.0))
+    )
+
+    c_p1, c_p2 = st.columns(2)
+    pay_amt = c_p1.number_input(
+        "Payment Amount ($)", min_value=1.0, value=default_amt, step=50.0, key="pay_board_amt"
+    )
+    pay_meth = c_p2.selectbox(
+        "Method",
+        [
+            "online_portal",
+            "ach",
+            "credit_card",
+            "debit_card",
+            "check",
+            "cashier_check",
+            "money_order",
+        ],
+        key="pay_board_meth",
+    )
+    pay_ref = st.text_input(
+        "Reference Number / Check #", placeholder="e.g. ACH-44122", key="pay_board_ref"
+    )
+    pay_memo = st.text_input(
+        "Payment Memo", value="Monthly Rent Payment", key="pay_board_memo"
+    )
+
+    if st.button("Process Payment", key="btn_board_process_payment"):
+        with st.spinner("Recording payment..."):
+            payload = {
+                "amount": float(pay_amt),
+                "payment_method": pay_meth,
+                "reference_number": pay_ref.strip(),
+                "description": pay_memo.strip(),
+            }
+            res = record_tenant_payment(chosen_tid, payload)
+            if res:
+                new_bal = res.get("new_balance", 0.0)
+                st.success(
+                    f"Payment of ${pay_amt:,.2f} recorded! New balance: ${new_bal:,.2f}"
+                )
+                st.rerun()
+            else:
+                st.error("Failed to process payment.")
+
+
+def _render_post_charge_tab():
+    st.markdown("##### 📝 Post Charge / Assessment")
+    tenants_resp = list_tenants(limit=100)
+    tenants_list = tenants_resp.get("items", []) if tenants_resp else []
+    if not tenants_list:
+        st.caption("No tenants registered.")
+        return
+
+    tenant_map = {
+        t["id"]: f"{t['first_name']} {t['last_name']} (Unit: {t.get('unit_id', 'None')})"
+        for t in tenants_list
+    }
+    chosen_tid = st.selectbox(
+        "Target Resident",
+        options=list(tenant_map.keys()),
+        format_func=lambda x: tenant_map.get(x, x),
+        key="charge_board_tenant_select",
+    )
+    sel_tenant: dict[str, Any] = next((t for t in tenants_list if t["id"] == chosen_tid), {})
+    sel_unit = sel_tenant.get("unit_id") or "unit_101"
+
+    c_c1, c_c2 = st.columns(2)
+    chg_type = c_c1.selectbox(
+        "Charge Type",
+        [
+            "rent",
+            "security_deposit",
+            "late_fee",
+            "utility",
+            "parking_fee",
+            "pet_rent",
+            "maintenance_charge",
+        ],
+        key="charge_board_type",
+    )
+    chg_amt = c_c2.number_input(
+        "Amount ($)", min_value=1.0, value=50.0, step=10.0, key="charge_board_amt"
+    )
+    chg_desc = st.text_input(
+        "Description",
+        placeholder="e.g. Utility Assessment - Water & Sewer",
+        key="charge_board_desc",
+    )
+    chg_due = st.text_input(
+        "Due Date (YYYY-MM-DD)", value="2026-11-01", key="charge_board_due"
+    )
+
+    if st.button("Post Charge to Ledger", key="btn_board_post_charge"):
+        if not chg_desc.strip():
+            st.error("Charge description is required.")
+        else:
+            with st.spinner("Posting transaction to ledger..."):
+                payload = {
+                    "tenant_id": chosen_tid,
+                    "unit_id": sel_unit,
+                    "description": chg_desc.strip(),
+                    "amount": float(chg_amt),
+                    "transaction_type": chg_type,
+                    "status": "posted",
+                    "due_date": chg_due.strip(),
+                }
+                res = create_billing_transaction(payload)
+                if res:
+                    st.success(
+                        f"Charge of ${chg_amt:,.2f} posted to tenant {chosen_tid}!"
+                    )
+                    st.rerun()
+                else:
+                    st.error("Failed to post charge.")
+
+
+def _render_billing_metrics_tab(metrics: dict):
+    st.markdown("##### 📈 Portfolio Financial Health")
+    c1, c2 = st.columns(2)
+    c1.metric("Overdue Invoices", metrics.get("overdue_transactions_count", 0))
+    c2.metric("Delinquent Tenants", metrics.get("overdue_tenants_count", 0))
+
+    st.markdown("**Revenue by Transaction Type:**")
+    for t_name, count in (metrics.get("by_type") or {}).items():
+        st.caption(f"- **{t_name.title()}**: {count} transaction(s)")
+
+    st.markdown("**Transaction Status Breakdown:**")
+    for s_name, count in (metrics.get("by_status") or {}).items():
+        st.caption(f"- **{s_name.title()}**: {count}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -2373,6 +2712,7 @@ def display_sidebar():
     _render_support_agents_and_workload()
     _render_tenant_and_property_directory()
     _render_maintenance_board()
+    _render_billing_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 

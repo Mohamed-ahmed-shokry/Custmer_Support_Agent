@@ -2836,3 +2836,115 @@ def test_render_work_order_metrics_and_board(monkeypatch):
     assert any("Status Breakdown:" in m for m in markdowns)
 
 
+def test_render_session_billing_widget(monkeypatch):
+    """Test resident financial ledger and 1-click payment widget in sidebar."""
+    expected_pay_amount = 1450.0
+    st = FakeStreamlit(
+        values={
+            "pay_amt_sess_1": expected_pay_amount,
+            "pay_meth_sess_1": "online_portal",
+            "pay_ref_sess_1": "REF-SESSION-PAY",
+            "pay_desc_sess_1": "Rent payment from chat session",
+        },
+        buttons={"btn_pay_sess_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_ledger = {
+        "tenant_id": "tenant_1",
+        "current_balance": expected_pay_amount,
+        "overdue_amount": expected_pay_amount,
+        "overdue_count": 1,
+        "last_payment": {
+            "amount": 1000.0,
+            "paid_at": "2026-10-01T12:00:00",
+            "payment_method": "ach",
+        },
+    }
+    recorded_payments = []
+    monkeypatch.setattr(sidebar, "get_tenant_ledger", lambda tid: mock_ledger)
+    monkeypatch.setattr(
+        sidebar,
+        "record_session_payment",
+        lambda sid, payload: recorded_payments.append((sid, payload))
+        or {"new_balance": 0.0},
+    )
+
+    tenant_data = {
+        "id": "tenant_1",
+        "balance_due": expected_pay_amount,
+        "monthly_rent": expected_pay_amount,
+    }
+    sidebar._render_session_billing_widget("sess_1", tenant_data)
+
+    expected_recorded = 1
+    assert len(recorded_payments) == expected_recorded
+    sid, payload = recorded_payments[0]
+    assert sid == "sess_1"
+    assert payload["amount"] == expected_pay_amount
+    assert payload["payment_method"] == "online_portal"
+    assert payload["reference_number"] == "REF-SESSION-PAY"
+    assert st.reruns == 1
+
+
+def test_render_billing_board_and_tabs(monkeypatch):
+    """Test billing board view tabs, post charge, and status transitions."""
+    expected_total_billed = 15000.0
+    expected_total_collected = 12000.0
+    expected_charge_amount = 75.0
+    metrics = {
+        "total_billed": expected_total_billed,
+        "total_collected": expected_total_collected,
+        "total_outstanding": 3000.0,
+        "collection_rate": 80.0,
+        "overdue_transactions_count": 2,
+        "overdue_tenants_count": 1,
+        "by_type": {"rent": 10, "parking_fee": 2},
+        "by_status": {"paid": 8, "overdue": 2},
+    }
+    st = FakeStreamlit(
+        values={
+            "billing_board_tab_radio": "Post Charge",
+            "charge_board_tenant_select": "tenant_1",
+            "charge_board_type": "parking_fee",
+            "charge_board_amt": expected_charge_amount,
+            "charge_board_desc": "Assigned Parking Spot #12",
+            "charge_board_due": "2026-11-01",
+        },
+        buttons={"btn_board_post_charge": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_billing_metrics", lambda: metrics)
+
+    posted_charges = []
+    mock_tenants = {
+        "items": [
+            {
+                "id": "tenant_1",
+                "first_name": "Sarah",
+                "last_name": "Connor",
+                "unit_id": "unit_101",
+                "balance_due": 0.0,
+            }
+        ]
+    }
+    monkeypatch.setattr(sidebar, "list_tenants", lambda **kwargs: mock_tenants)
+    monkeypatch.setattr(
+        sidebar,
+        "create_billing_transaction",
+        lambda payload: posted_charges.append(payload) or {"transaction": {"id": "tx_99"}},
+    )
+
+    sidebar._render_billing_board()
+
+    expected_posted = 1
+    assert len(posted_charges) == expected_posted
+    charge = posted_charges[0]
+    assert charge["tenant_id"] == "tenant_1"
+    assert charge["unit_id"] == "unit_101"
+    assert charge["amount"] == expected_charge_amount
+    assert charge["transaction_type"] == "parking_fee"
+    assert st.reruns == 1
+
+
+

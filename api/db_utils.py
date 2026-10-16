@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import uuid
 from collections import Counter
 from contextlib import closing
 from datetime import UTC, datetime
@@ -290,6 +291,10 @@ VALID_WEBHOOK_EVENTS = {
     "work_order.created",
     "work_order.emergency_escalated",
     "work_order.status_changed",
+    "billing.payment_received",
+    "billing.charge_posted",
+    "billing.late_fee_assessed",
+    "billing.overdue_escalated",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
@@ -506,6 +511,83 @@ MAX_WORK_ORDER_TITLE_LENGTH = 200
 MAX_WORK_ORDER_DESC_LENGTH = 5000
 MAX_WORK_ORDER_ASSIGNEE_LENGTH = 100
 MAX_WORK_ORDER_NOTES_LENGTH = 3000
+
+_CREATE_BILLING_TRANSACTIONS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS billing_transactions ("
+    "id TEXT PRIMARY KEY, "
+    "tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, "
+    "unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE, "
+    "session_id TEXT DEFAULT NULL, "
+    "transaction_type TEXT NOT NULL DEFAULT 'rent', "
+    "amount REAL NOT NULL, "
+    "status TEXT NOT NULL DEFAULT 'posted', "
+    "due_date TEXT NOT NULL DEFAULT '', "
+    "paid_at TEXT DEFAULT NULL, "
+    "payment_method TEXT NOT NULL DEFAULT '', "
+    "reference_number TEXT NOT NULL DEFAULT '', "
+    "description TEXT NOT NULL, "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_BILLING_TRANSACTIONS_TENANT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_tenant_id "
+    "ON billing_transactions(tenant_id)"
+)
+_CREATE_BILLING_TRANSACTIONS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_unit_id ON billing_transactions(unit_id)"
+)
+_CREATE_BILLING_TRANSACTIONS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_status ON billing_transactions(status)"
+)
+_CREATE_BILLING_TRANSACTIONS_TYPE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_type "
+    "ON billing_transactions(transaction_type)"
+)
+_CREATE_BILLING_TRANSACTIONS_DUE_DATE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_due_date "
+    "ON billing_transactions(due_date)"
+)
+
+VALID_TRANSACTION_TYPES = {
+    "rent",
+    "security_deposit",
+    "late_fee",
+    "utility",
+    "parking_fee",
+    "pet_rent",
+    "maintenance_charge",
+    "payment",
+    "credit_refund",
+}
+DEFAULT_TRANSACTION_TYPE = "rent"
+
+VALID_TRANSACTION_STATUSES = {
+    "posted",
+    "pending",
+    "paid",
+    "overdue",
+    "waived",
+    "refunded",
+}
+DEFAULT_TRANSACTION_STATUS = "posted"
+
+VALID_PAYMENT_METHODS = {
+    "",
+    "ach",
+    "credit_card",
+    "debit_card",
+    "check",
+    "money_order",
+    "cashier_check",
+    "online_portal",
+}
+DEFAULT_PAYMENT_METHOD = ""
+
+MAX_TRANSACTION_ID_LENGTH = 50
+MAX_TRANSACTION_DESC_LENGTH = 500
+MAX_TRANSACTION_REF_LENGTH = 100
+MAX_TRANSACTION_NOTES_LENGTH = 2000
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -5050,6 +5132,707 @@ def get_work_order_summary_metrics() -> dict[str, Any]:
         }
 
 
+DEFAULT_SEEDED_BILLING_TRANSACTIONS = [
+    {
+        "id": "tx_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "session_id": None,
+        "transaction_type": "payment",
+        "amount": 1450.0,
+        "status": "paid",
+        "due_date": "2026-10-01",
+        "paid_at": "2026-10-01T09:30:00Z",
+        "payment_method": "ach",
+        "reference_number": "ACH-88412",
+        "description": "October 2026 Monthly Rent",
+        "notes": "Auto-pay processed successfully.",
+    },
+    {
+        "id": "tx_102",
+        "tenant_id": "tenant_2",
+        "unit_id": "unit_204",
+        "session_id": None,
+        "transaction_type": "rent",
+        "amount": 1850.0,
+        "status": "overdue",
+        "due_date": "2026-10-01",
+        "paid_at": None,
+        "payment_method": "",
+        "reference_number": "",
+        "description": "October 2026 Monthly Rent",
+        "notes": "Payment overdue past 5-day grace period.",
+    },
+    {
+        "id": "tx_103",
+        "tenant_id": "tenant_2",
+        "unit_id": "unit_204",
+        "session_id": None,
+        "transaction_type": "late_fee",
+        "amount": 75.0,
+        "status": "overdue",
+        "due_date": "2026-10-06",
+        "paid_at": None,
+        "payment_method": "",
+        "reference_number": "",
+        "description": "Late Fee - October Unpaid Rent",
+        "notes": "Standard late fee assessed after grace period.",
+    },
+    {
+        "id": "tx_104",
+        "tenant_id": "tenant_3",
+        "unit_id": "unit_PH1",
+        "session_id": None,
+        "transaction_type": "payment",
+        "amount": 3200.0,
+        "status": "paid",
+        "due_date": "2026-10-01",
+        "paid_at": "2026-09-30T16:45:00Z",
+        "payment_method": "online_portal",
+        "reference_number": "PORTAL-77194",
+        "description": "October 2026 Monthly Rent",
+        "notes": "Early payment received via resident portal.",
+    },
+]
+
+
+def normalize_transaction_id(tx_id: str) -> str:
+    cleaned = (tx_id or "").strip()
+    if not cleaned:
+        raise ValueError("Transaction ID must not be blank.")
+    if len(cleaned) > MAX_TRANSACTION_ID_LENGTH:
+        raise ValueError(
+            f"Transaction ID must be at most {MAX_TRANSACTION_ID_LENGTH} characters."
+        )
+    return cleaned
+
+
+def normalize_transaction_type(val: str) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_TRANSACTION_TYPE
+    if cleaned not in VALID_TRANSACTION_TYPES:
+        valid_types = ", ".join(sorted(VALID_TRANSACTION_TYPES))
+        raise ValueError(
+            f"Invalid transaction type '{cleaned}'. Expected one of: {valid_types}."
+        )
+    return cleaned
+
+
+def normalize_transaction_status(val: str) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_TRANSACTION_STATUS
+    if cleaned not in VALID_TRANSACTION_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_TRANSACTION_STATUSES))
+        raise ValueError(
+            f"Invalid transaction status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_payment_method(val: str) -> str:
+    cleaned = (val or "").strip().lower()
+    if cleaned not in VALID_PAYMENT_METHODS:
+        valid_methods = ", ".join(sorted(m for m in VALID_PAYMENT_METHODS if m))
+        raise ValueError(
+            f"Invalid payment method '{cleaned}'. Expected one of: {valid_methods}."
+        )
+    return cleaned
+
+
+def create_billing_transactions() -> None:
+    """Create billing_transactions table, indexes, and pre-seed initial records if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_BILLING_TRANSACTIONS_TABLE)
+        conn.execute(_CREATE_BILLING_TRANSACTIONS_TENANT_INDEX)
+        conn.execute(_CREATE_BILLING_TRANSACTIONS_UNIT_INDEX)
+        conn.execute(_CREATE_BILLING_TRANSACTIONS_STATUS_INDEX)
+        conn.execute(_CREATE_BILLING_TRANSACTIONS_TYPE_INDEX)
+        conn.execute(_CREATE_BILLING_TRANSACTIONS_DUE_DATE_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM billing_transactions").fetchone()
+        if row and row[0] == 0:
+            for tx in DEFAULT_SEEDED_BILLING_TRANSACTIONS:
+                conn.execute(
+                    "INSERT INTO billing_transactions "
+                    "(id, tenant_id, unit_id, session_id, transaction_type, "
+                    "amount, status, due_date, paid_at, payment_method, "
+                    "reference_number, description, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        tx["id"],
+                        tx["tenant_id"],
+                        tx["unit_id"],
+                        tx["session_id"],
+                        tx["transaction_type"],
+                        tx["amount"],
+                        tx["status"],
+                        tx["due_date"],
+                        tx["paid_at"],
+                        tx["payment_method"],
+                        tx["reference_number"],
+                        tx["description"],
+                        tx["notes"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_billing_transaction(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
+    transaction_id: str,
+    tenant_id: str,
+    unit_id: str,
+    description: str,
+    amount: float,
+    transaction_type: str = "rent",
+    status: str = "posted",
+    due_date: str = "",
+    paid_at: str | None = None,
+    payment_method: str = "",
+    reference_number: str = "",
+    session_id: str | None = None,
+    notes: str = "",
+) -> dict[str, Any]:
+    norm_id = normalize_transaction_id(transaction_id)
+    norm_tenant = normalize_tenant_id(tenant_id)
+    norm_unit = normalize_unit_id(unit_id)
+    norm_type = normalize_transaction_type(transaction_type)
+    norm_status = normalize_transaction_status(status)
+    norm_method = normalize_payment_method(payment_method)
+
+    clean_amount = float(amount)
+    if clean_amount <= 0:
+        raise ValueError("Transaction amount must be greater than zero.")
+
+    clean_desc = (description or "").strip()
+    if not clean_desc:
+        raise ValueError("Transaction description must not be blank.")
+    if len(clean_desc) > MAX_TRANSACTION_DESC_LENGTH:
+        raise ValueError(
+            f"Transaction description must be at most {MAX_TRANSACTION_DESC_LENGTH} characters."
+        )
+
+    clean_ref = (reference_number or "").strip()
+    if len(clean_ref) > MAX_TRANSACTION_REF_LENGTH:
+        raise ValueError(
+            f"Reference number must be at most {MAX_TRANSACTION_REF_LENGTH} characters."
+        )
+
+    clean_notes = (notes or "").strip()
+    if len(clean_notes) > MAX_TRANSACTION_NOTES_LENGTH:
+        raise ValueError(
+            f"Transaction notes must be at most {MAX_TRANSACTION_NOTES_LENGTH} characters."
+        )
+
+    clean_due = (due_date or "").strip()
+    clean_session = (session_id or "").strip() or None
+    clean_paid = (paid_at or "").strip() or None
+    if norm_status == "paid" and clean_paid is None:
+        clean_paid = datetime.now(UTC).isoformat()
+
+    with closing(get_db_connection()) as conn:
+        tenant_row = conn.execute(
+            "SELECT id, balance_due FROM tenants WHERE id = ?", (norm_tenant,)
+        ).fetchone()
+        if not tenant_row:
+            raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
+
+        unit_row = conn.execute(
+            "SELECT id FROM units WHERE id = ?", (norm_unit,)
+        ).fetchone()
+        if not unit_row:
+            raise ValueError(f"Unit with ID '{norm_unit}' does not exist.")
+
+        existing = conn.execute(
+            "SELECT id FROM billing_transactions WHERE id = ?", (norm_id,)
+        ).fetchone()
+        if existing:
+            raise ValueError(
+                f"Billing transaction with ID '{norm_id}' already exists."
+            )
+
+        conn.execute(
+            "INSERT INTO billing_transactions "
+            "(id, tenant_id, unit_id, session_id, transaction_type, "
+            "amount, status, due_date, paid_at, payment_method, "
+            "reference_number, description, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                norm_id,
+                norm_tenant,
+                norm_unit,
+                clean_session,
+                norm_type,
+                clean_amount,
+                norm_status,
+                clean_due,
+                clean_paid,
+                norm_method,
+                clean_ref,
+                clean_desc,
+                clean_notes,
+            ),
+        )
+
+        # If a new charge is created and is unpaid, update tenant balance_due
+        if norm_type not in ("payment", "credit_refund") and norm_status in ("posted", "overdue"):
+            new_bal = round(float(tenant_row["balance_due"]) + clean_amount, 2)
+            conn.execute(
+                "UPDATE tenants SET balance_due = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (new_bal, norm_tenant),
+            )
+
+        conn.commit()
+
+    res = get_billing_transaction(norm_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created billing transaction.")
+    return res
+
+
+def get_billing_transaction(tx_id: str) -> dict[str, Any] | None:
+    cleaned_id = (tx_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT * FROM billing_transactions WHERE id = ?", (cleaned_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_billing_transactions(  # noqa: PLR0912, PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    transaction_type: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM billing_transactions"]
+    count_parts = ["SELECT COUNT(*) FROM billing_transactions"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if tenant_id and tenant_id.strip():
+        where_clauses.append("tenant_id = ?")
+        params.append(tenant_id.strip())
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if transaction_type and transaction_type.strip():
+        where_clauses.append("transaction_type = ?")
+        params.append(transaction_type.strip().lower())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if start_date and start_date.strip():
+        where_clauses.append("due_date >= ?")
+        params.append(start_date.strip())
+
+    if end_date and end_date.strip():
+        where_clauses.append("due_date <= ?")
+        params.append(end_date.strip())
+
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(description) LIKE ? OR LOWER(reference_number) LIKE ? OR LOWER(notes) LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    order_clause = " ORDER BY due_date DESC, created_at DESC LIMIT ? OFFSET ?"
+    query_parts.append(order_clause)
+
+    with closing(get_db_connection()) as conn:
+        count_cursor = conn.execute(" ".join(count_parts), tuple(params))
+        total = int(count_cursor.fetchone()[0])
+        list_params = list(params) + [max(1, limit), max(0, offset)]
+        rows = conn.execute(" ".join(query_parts), tuple(list_params)).fetchall()
+        return [dict(r) for r in rows], total
+
+
+def update_billing_transaction(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
+    transaction_id: str,
+    status: str | None = None,
+    description: str | None = None,
+    due_date: str | None = None,
+    paid_at: str | None = None,
+    payment_method: str | None = None,
+    reference_number: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    current = get_billing_transaction(transaction_id)
+    if not current:
+        return None
+
+    new_status = (
+        normalize_transaction_status(status) if status is not None else current["status"]
+    )
+    new_desc = (
+        description.strip() if description is not None else current["description"]
+    )
+    if not new_desc:
+        raise ValueError("Transaction description must not be blank.")
+    if len(new_desc) > MAX_TRANSACTION_DESC_LENGTH:
+        raise ValueError(
+            f"Transaction description must be at most {MAX_TRANSACTION_DESC_LENGTH} characters."
+        )
+
+    new_method = (
+        normalize_payment_method(payment_method)
+        if payment_method is not None
+        else current["payment_method"]
+    )
+
+    new_ref = (
+        reference_number.strip() if reference_number is not None else current["reference_number"]
+    )
+    if len(new_ref) > MAX_TRANSACTION_REF_LENGTH:
+        raise ValueError(
+            f"Reference number must be at most {MAX_TRANSACTION_REF_LENGTH} characters."
+        )
+
+    new_notes = notes.strip() if notes is not None else current["notes"]
+    if len(new_notes) > MAX_TRANSACTION_NOTES_LENGTH:
+        raise ValueError(
+            f"Transaction notes must be at most {MAX_TRANSACTION_NOTES_LENGTH} characters."
+        )
+
+    new_due = due_date.strip() if due_date is not None else current["due_date"]
+    new_paid = paid_at.strip() if paid_at is not None else current["paid_at"]
+    if new_status == "paid" and not new_paid:
+        new_paid = datetime.now(UTC).isoformat()
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE billing_transactions SET status = ?, description = ?, "
+            "due_date = ?, paid_at = ?, payment_method = ?, reference_number = ?, "
+            "notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (
+                new_status,
+                new_desc,
+                new_due,
+                new_paid,
+                new_method,
+                new_ref,
+                new_notes,
+                current["id"],
+            ),
+        )
+
+        # Rebalance tenant if an overdue or posted charge is marked paid or waived
+        prev_status = current["status"]
+        if (
+            current["transaction_type"] not in ("payment", "credit_refund")
+            and prev_status in ("posted", "overdue")
+            and new_status in ("paid", "waived")
+        ):
+            tenant_row = conn.execute(
+                "SELECT balance_due FROM tenants WHERE id = ?", (current["tenant_id"],)
+            ).fetchone()
+            if tenant_row:
+                updated_bal = max(0.0, round(float(tenant_row[0]) - float(current["amount"]), 2))
+                conn.execute(
+                    "UPDATE tenants SET balance_due = ?, "
+                    "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (updated_bal, current["tenant_id"]),
+                )
+
+        conn.commit()
+
+    return get_billing_transaction(current["id"])
+
+
+def delete_billing_transaction(transaction_id: str) -> bool:
+    cleaned = (transaction_id or "").strip()
+    if not cleaned:
+        return False
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute(
+            "DELETE FROM billing_transactions WHERE id = ?", (cleaned,)
+        )
+        conn.commit()
+        return bool(cursor.rowcount > 0)
+
+
+def record_tenant_payment(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
+    tenant_id: str,
+    amount: float,
+    payment_method: str = "online_portal",
+    reference_number: str = "",
+    description: str = "Resident Rent Payment",
+    session_id: str | None = None,
+    notes: str = "",
+    transaction_id: str | None = None,
+) -> dict[str, Any]:
+    norm_tenant = normalize_tenant_id(tenant_id)
+    norm_method = normalize_payment_method(payment_method)
+    clean_amount = float(amount)
+    if clean_amount <= 0:
+        raise ValueError("Payment amount must be greater than zero.")
+
+    tx_id = normalize_transaction_id(transaction_id or f"tx_{uuid.uuid4().hex[:10]}")
+    clean_desc = (description or "Resident Rent Payment").strip()
+    if len(clean_desc) > MAX_TRANSACTION_DESC_LENGTH:
+        raise ValueError(
+            f"Transaction description must be at most {MAX_TRANSACTION_DESC_LENGTH} characters."
+        )
+    clean_ref = (reference_number or "").strip()
+    if len(clean_ref) > MAX_TRANSACTION_REF_LENGTH:
+        raise ValueError(
+            f"Reference number must be at most {MAX_TRANSACTION_REF_LENGTH} characters."
+        )
+    clean_notes = (notes or "").strip()
+    if len(clean_notes) > MAX_TRANSACTION_NOTES_LENGTH:
+        raise ValueError(
+            f"Transaction notes must be at most {MAX_TRANSACTION_NOTES_LENGTH} characters."
+        )
+    clean_session = (session_id or "").strip() or None
+    paid_now = datetime.now(UTC).isoformat()
+    today_date = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    with closing(get_db_connection()) as conn:
+        tenant_row = conn.execute(
+            "SELECT id, unit_id, balance_due, status FROM tenants WHERE id = ?",
+            (norm_tenant,),
+        ).fetchone()
+        if not tenant_row:
+            raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
+
+        unit_id = tenant_row["unit_id"]
+        prev_balance = float(tenant_row["balance_due"])
+        new_balance = max(0.0, round(prev_balance - clean_amount, 2))
+
+        new_tenant_status = tenant_row["status"]
+        if new_balance <= 0.0 and tenant_row["status"] == "past_due":
+            new_tenant_status = "active"
+
+        # Record payment transaction
+        conn.execute(
+            "INSERT INTO billing_transactions "
+            "(id, tenant_id, unit_id, session_id, transaction_type, "
+            "amount, status, due_date, paid_at, payment_method, "
+            "reference_number, description, notes) "
+            "VALUES (?, ?, ?, ?, 'payment', ?, 'paid', ?, ?, ?, ?, ?, ?)",
+            (
+                tx_id,
+                norm_tenant,
+                unit_id,
+                clean_session,
+                clean_amount,
+                today_date,
+                paid_now,
+                norm_method,
+                clean_ref,
+                clean_desc,
+                clean_notes,
+            ),
+        )
+
+        # Update tenant balance and status
+        conn.execute(
+            "UPDATE tenants SET balance_due = ?, status = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_balance, new_tenant_status, norm_tenant),
+        )
+
+        # Reconcile overdue charges
+        if new_balance == 0.0:
+            conn.execute(
+                "UPDATE billing_transactions SET status = 'paid', paid_at = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND status = 'overdue'",
+                (paid_now, norm_tenant),
+            )
+        else:
+            rem_pay = clean_amount
+            overdue_charges = conn.execute(
+                "SELECT id, amount FROM billing_transactions "
+                "WHERE tenant_id = ? AND status = 'overdue' "
+                "ORDER BY due_date ASC",
+                (norm_tenant,),
+            ).fetchall()
+
+            for ch in overdue_charges:
+                ch_id, ch_amt = ch[0], float(ch[1])
+                if rem_pay >= ch_amt:
+                    conn.execute(
+                        "UPDATE billing_transactions SET status = 'paid', paid_at = ?, "
+                        "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (paid_now, ch_id),
+                    )
+                    rem_pay -= ch_amt
+
+        conn.commit()
+
+    created_tx = get_billing_transaction(tx_id)
+    if not created_tx:
+        raise RuntimeError("Failed to retrieve recorded payment transaction.")
+
+    return {
+        "transaction": created_tx,
+        "previous_balance": prev_balance,
+        "new_balance": new_balance,
+        "amount_paid": clean_amount,
+        "tenant_status": new_tenant_status,
+    }
+
+
+def get_tenant_ledger_summary(tenant_id: str) -> dict[str, Any] | None:
+    norm_tenant = (tenant_id or "").strip()
+    if not norm_tenant:
+        return None
+
+    with closing(get_db_connection()) as conn:
+        tenant_row = conn.execute(
+            "SELECT id, unit_id, monthly_rent, balance_due, status FROM tenants WHERE id = ?",
+            (norm_tenant,),
+        ).fetchone()
+        if not tenant_row:
+            return None
+
+        # Charges sum
+        charges_row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
+            "WHERE tenant_id = ? AND transaction_type NOT IN ('payment', 'credit_refund') "
+            "AND status != 'waived'",
+            (norm_tenant,),
+        ).fetchone()
+        total_charges = float(charges_row[0]) if charges_row else 0.0
+
+        # Payments sum
+        payments_query = (
+            "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
+            "WHERE tenant_id = ? AND transaction_type = 'payment' AND status = 'paid'"
+        )
+        payments_row = conn.execute(payments_query, (norm_tenant,)).fetchone()
+        total_payments = float(payments_row[0]) if payments_row else 0.0
+
+        # Overdue charges sum & count
+        overdue_row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0.0), COUNT(*) FROM billing_transactions "
+            "WHERE tenant_id = ? AND status = 'overdue'",
+            (norm_tenant,),
+        ).fetchone()
+        overdue_amount = float(overdue_row[0]) if overdue_row else 0.0
+        overdue_count = int(overdue_row[1]) if overdue_row else 0
+
+        # Last payment
+        last_pay_query = (
+            "SELECT * FROM billing_transactions "
+            "WHERE tenant_id = ? AND "
+            "(transaction_type = 'payment' OR "
+            "(paid_at IS NOT NULL AND status = 'paid' AND payment_method != '')) "
+            "ORDER BY paid_at DESC, created_at DESC LIMIT 1"
+        )
+        last_pay_row = conn.execute(last_pay_query, (norm_tenant,)).fetchone()
+        last_payment = dict(last_pay_row) if last_pay_row else None
+
+        # Recent transactions
+        recent_rows = conn.execute(
+            "SELECT * FROM billing_transactions WHERE tenant_id = ? "
+            "ORDER BY due_date DESC, created_at DESC LIMIT 5",
+            (norm_tenant,),
+        ).fetchall()
+        recent_transactions = [dict(r) for r in recent_rows]
+
+        return {
+            "tenant_id": tenant_row["id"],
+            "unit_id": tenant_row["unit_id"],
+            "current_balance": float(tenant_row["balance_due"]),
+            "monthly_rent": float(tenant_row["monthly_rent"]),
+            "total_charges": total_charges,
+            "total_payments": total_payments,
+            "overdue_amount": overdue_amount,
+            "overdue_count": overdue_count,
+            "tenant_status": tenant_row["status"],
+            "last_payment": last_payment,
+            "recent_transactions": recent_transactions,
+        }
+
+
+def get_billing_summary_metrics() -> dict[str, Any]:
+    with closing(get_db_connection()) as conn:
+        total_row = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(amount), 0.0) FROM billing_transactions"
+        ).fetchone()
+        total_count = int(total_row[0]) if total_row else 0
+
+        charges_row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
+            "WHERE transaction_type NOT IN ('payment', 'credit_refund') AND status != 'waived'"
+        ).fetchone()
+        total_billed = float(charges_row[0]) if charges_row else 0.0
+
+        collected_row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM billing_transactions "
+            "WHERE transaction_type = 'payment' AND status = 'paid'"
+        ).fetchone()
+        total_collected = float(collected_row[0]) if collected_row else 0.0
+
+        outstanding_row = conn.execute(
+            "SELECT COALESCE(SUM(balance_due), 0.0) FROM tenants"
+        ).fetchone()
+        total_outstanding = float(outstanding_row[0]) if outstanding_row else 0.0
+
+        overdue_tx_row = conn.execute(
+            "SELECT COUNT(*) FROM billing_transactions WHERE status = 'overdue'"
+        ).fetchone()
+        overdue_tx_count = int(overdue_tx_row[0]) if overdue_tx_row else 0
+
+        overdue_tenants_row = conn.execute(
+            "SELECT COUNT(*) FROM tenants WHERE balance_due > 0 OR status = 'past_due'"
+        ).fetchone()
+        overdue_tenants_count = int(overdue_tenants_row[0]) if overdue_tenants_row else 0
+
+        rate = (
+            round((total_collected / total_billed) * 100.0, 2)
+            if total_billed > 0
+            else 100.0
+        )
+
+        by_type_rows = conn.execute(
+            "SELECT transaction_type, COUNT(*) FROM billing_transactions GROUP BY transaction_type"
+        ).fetchall()
+        by_type = {r[0]: int(r[1]) for r in by_type_rows}
+
+        by_status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM billing_transactions GROUP BY status"
+        ).fetchall()
+        by_status = {r[0]: int(r[1]) for r in by_status_rows}
+
+        by_method_rows = conn.execute(
+            "SELECT payment_method, COUNT(*) FROM billing_transactions "
+            "WHERE payment_method != '' GROUP BY payment_method"
+        ).fetchall()
+        by_payment_method = {r[0]: int(r[1]) for r in by_method_rows}
+
+        return {
+            "total_transactions": total_count,
+            "total_billed": total_billed,
+            "total_collected": total_collected,
+            "collection_rate": rate,
+            "total_outstanding": total_outstanding,
+            "overdue_transactions_count": overdue_tx_count,
+            "overdue_tenants_count": overdue_tenants_count,
+            "by_type": by_type,
+            "by_status": by_status,
+            "by_payment_method": by_payment_method,
+        }
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -5057,6 +5840,7 @@ migrate_document_store()
 create_units()
 create_tenants()
 create_work_orders()
+create_billing_transactions()
 create_session_labels()
 migrate_session_labels()
 create_feedback()

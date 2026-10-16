@@ -4083,6 +4083,158 @@ def test_unit_and_tenant_work_orders_routes(monkeypatch, tmp_path):
     assert tenant_wos[0]["id"] == "wo_102"
 
 
+def test_billing_transactions_crud_and_metrics_routes(monkeypatch, tmp_path):
+    """Test /billing/transactions CRUD, list filtering, and /billing/metrics."""
+    db_file = tmp_path / "test_api_billing_crud.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
+    main.db_utils.create_billing_transactions()
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. List pre-seeded transactions
+    res_list = client.get("/billing/transactions")
+    assert res_list.status_code == HTTP_OK
+    data = res_list.json()
+    expected_seed_count = 4
+    assert len(data["items"]) == expected_seed_count
+
+    # 2. Filter by status
+    res_filtered = client.get("/billing/transactions?status=overdue")
+    assert res_filtered.status_code == HTTP_OK
+    overdue_items = res_filtered.json()["items"]
+    expected_overdue_count = 2
+    assert len(overdue_items) == expected_overdue_count
+
+    # 3. Create a new transaction
+    charge_amount = 75.0
+    create_body = {
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "description": "Monthly Parking Space",
+        "amount": charge_amount,
+        "transaction_type": "parking_fee",
+        "status": "posted",
+        "due_date": "2026-11-01",
+    }
+    res_create = client.post("/billing/transactions", json=create_body)
+    assert res_create.status_code == HTTP_CREATED
+    created_tx = res_create.json()["transaction"]
+    created_id = created_tx["id"]
+    assert created_tx["amount"] == charge_amount
+    assert created_tx["transaction_type"] == "parking_fee"
+    assert any(e[0] == "billing.charge_posted" for e in dispatched)
+
+    # 4. Get by ID
+    res_get = client.get(f"/billing/transactions/{created_id}")
+    assert res_get.status_code == HTTP_OK
+    assert res_get.json()["transaction"]["id"] == created_id
+
+    # 5. Patch transaction (mark paid)
+    patch_body = {
+        "status": "paid",
+        "payment_method": "ach",
+        "reference_number": "ACH-PARK-01",
+        "notes": "Paid by resident via portal",
+    }
+    res_patch = client.patch(f"/billing/transactions/{created_id}", json=patch_body)
+    assert res_patch.status_code == HTTP_OK
+    patched_tx = res_patch.json()["transaction"]
+    assert patched_tx["status"] == "paid"
+    assert patched_tx["payment_method"] == "ach"
+    assert any(e[0] == "billing.payment_received" for e in dispatched)
+
+    # 6. Metrics route
+    res_metrics = client.get("/billing/metrics")
+    assert res_metrics.status_code == HTTP_OK
+    metrics = res_metrics.json()
+    expected_min_tx = 5
+    assert metrics["total_transactions"] >= expected_min_tx
+    assert metrics["total_collected"] > 0.0
+
+    # 7. Delete transaction
+    res_del = client.delete(f"/billing/transactions/{created_id}")
+    assert res_del.status_code == HTTP_OK
+
+    res_get_del = client.get(f"/billing/transactions/{created_id}")
+    assert res_get_del.status_code == HTTP_NOT_FOUND
+
+
+def test_tenant_payment_and_ledger_routes(monkeypatch, tmp_path):
+    """Test POST /tenants/{id}/payments, GET /tenants/{id}/ledger, and session payment."""
+    db_file = tmp_path / "test_api_billing_payments.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
+    main.db_utils.create_billing_transactions()
+    main.db_utils.create_session_labels()
+    main.db_utils.create_application_logs()
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. Ledger for tenant_2 (has overdue balance 1850.0)
+    pay_amount = 1850.0
+    res_ledger = client.get("/tenants/tenant_2/ledger")
+    assert res_ledger.status_code == HTTP_OK
+    ledger_data = res_ledger.json()
+    assert ledger_data["tenant_id"] == "tenant_2"
+    assert ledger_data["current_balance"] == pay_amount
+    expected_overdue = 2
+    assert ledger_data["overdue_count"] == expected_overdue
+
+    # 2. Record full payment for tenant_2
+    pay_body = {
+        "amount": pay_amount,
+        "payment_method": "credit_card",
+        "reference_number": "CC-AUTH-9999",
+        "description": "Full overdue balance payment",
+    }
+    res_pay = client.post("/tenants/tenant_2/payments", json=pay_body)
+    assert res_pay.status_code == HTTP_CREATED
+    pay_data = res_pay.json()
+    assert pay_data["amount_paid"] == pay_amount
+    assert pay_data["new_balance"] == 0.0
+    assert pay_data["tenant_status"] == "active"
+    assert any(e[0] == "billing.payment_received" for e in dispatched)
+
+    # 3. Check updated ledger
+    res_ledger_after = client.get("/tenants/tenant_2/ledger")
+    assert res_ledger_after.status_code == HTTP_OK
+    assert res_ledger_after.json()["current_balance"] == 0.0
+    assert res_ledger_after.json()["overdue_count"] == 0
+
+    # 4. Record payment via session route
+    sid = "session_billing_pay_test"
+    main.db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    session_pay_amount = 200.0
+    session_pay_body = {
+        "amount": session_pay_amount,
+        "payment_method": "online_portal",
+        "reference_number": "PORTAL-5544",
+        "description": "Session payment deposit",
+    }
+    res_session_pay = client.post(f"/sessions/{sid}/record-payment", json=session_pay_body)
+    assert res_session_pay.status_code == HTTP_CREATED
+    assert res_session_pay.json()["amount_paid"] == session_pay_amount
+
+    # 5. Non-existent tenant payment -> 404
+    res_bad_tenant = client.post("/tenants/nonexistent_tenant/payments", json=pay_body)
+    assert res_bad_tenant.status_code == HTTP_NOT_FOUND
+
+
+
 
 
 

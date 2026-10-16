@@ -2860,3 +2860,245 @@ def test_get_unit_and_tenant_work_orders_and_metrics(monkeypatch, tmp_path):
     assert metrics["total_estimated_cost"] > 0
 
 
+def test_billing_transactions_pre_seeded_and_crud(monkeypatch, tmp_path):  # noqa: PLR0915
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_billing_transactions()
+
+    expected_rent_1450 = 1450.0
+    expected_water_65_5 = 65.50
+    min_count_5 = 5
+    min_count_2 = 2
+
+    # Pre-seeded billing transactions exist
+    tx101 = db_utils.get_billing_transaction("tx_101")
+    assert tx101 is not None
+    assert tx101["tenant_id"] == "tenant_1"
+    assert tx101["amount"] == expected_rent_1450
+    assert tx101["status"] == "paid"
+    assert tx101["payment_method"] == "ach"
+
+    tx102 = db_utils.get_billing_transaction("tx_102")
+    assert tx102 is not None
+    assert tx102["tenant_id"] == "tenant_2"
+    assert tx102["status"] == "overdue"
+
+    # Create new billing charge
+    initial_tenant2 = db_utils.get_tenant("tenant_2")
+    assert initial_tenant2 is not None
+    initial_bal = initial_tenant2["balance_due"]
+
+    new_tx = db_utils.create_billing_transaction(
+        transaction_id="tx_custom_1",
+        tenant_id="tenant_2",
+        unit_id="unit_204",
+        description="Utility Water Bill - September",
+        amount=expected_water_65_5,
+        transaction_type="utility",
+        status="posted",
+        due_date="2026-10-15",
+    )
+    assert new_tx["id"] == "tx_custom_1"
+    assert new_tx["amount"] == expected_water_65_5
+    assert new_tx["transaction_type"] == "utility"
+
+    # Verify tenant balance was increased by the posted charge
+    updated_tenant2 = db_utils.get_tenant("tenant_2")
+    assert updated_tenant2 is not None
+    assert round(updated_tenant2["balance_due"], 2) == round(initial_bal + expected_water_65_5, 2)
+
+    # Validations:
+    # Duplicate ID
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_billing_transaction(
+            transaction_id="tx_custom_1",
+            tenant_id="tenant_2",
+            unit_id="unit_204",
+            description="Duplicate",
+            amount=50.0,
+        )
+
+    # Invalid amount <= 0
+    with pytest.raises(ValueError, match="greater than zero"):
+        db_utils.create_billing_transaction(
+            transaction_id="tx_neg",
+            tenant_id="tenant_2",
+            unit_id="unit_204",
+            description="Negative",
+            amount=-10.0,
+        )
+
+    # Invalid unit ID
+    with pytest.raises(ValueError, match="Unit with ID 'bad_unit' does not exist"):
+        db_utils.create_billing_transaction(
+            transaction_id="tx_bad_unit",
+            tenant_id="tenant_2",
+            unit_id="bad_unit",
+            description="Bad Unit",
+            amount=50.0,
+        )
+
+    # Invalid tenant ID
+    with pytest.raises(ValueError, match="Tenant with ID 'bad_tenant' does not exist"):
+        db_utils.create_billing_transaction(
+            transaction_id="tx_bad_tenant",
+            tenant_id="bad_tenant",
+            unit_id="unit_204",
+            description="Bad Tenant",
+            amount=50.0,
+        )
+
+    # Invalid normalizations
+    with pytest.raises(ValueError, match="Transaction ID must not be blank"):
+        db_utils.create_billing_transaction("", "tenant_1", "unit_101", "Desc", 100.0)
+
+    with pytest.raises(ValueError, match="Transaction description must not be blank"):
+        db_utils.create_billing_transaction("tx_bl", "tenant_1", "unit_101", "", 100.0)
+
+    with pytest.raises(ValueError, match="Invalid transaction type"):
+        db_utils.create_billing_transaction(
+            "tx_bt", "tenant_1", "unit_101", "Desc", 100.0, transaction_type="cryptocurrency"
+        )
+
+    with pytest.raises(ValueError, match="Invalid transaction status"):
+        db_utils.create_billing_transaction(
+            "tx_bs", "tenant_1", "unit_101", "Desc", 100.0, status="lost_in_transit"
+        )
+
+    with pytest.raises(ValueError, match="Invalid payment method"):
+        db_utils.create_billing_transaction(
+            "tx_bm", "tenant_1", "unit_101", "Desc", 100.0, payment_method="barter"
+        )
+
+    # Filtering in list_billing_transactions
+    items, total = db_utils.list_billing_transactions()
+    assert total >= min_count_5  # 4 seeded + 1 created
+    assert len(items) >= min_count_5
+
+    t1_items, t1_total = db_utils.list_billing_transactions(tenant_id="tenant_1")
+    assert t1_total == 1
+    assert t1_items[0]["id"] == "tx_101"
+
+    u204_items, u204_total = db_utils.list_billing_transactions(unit_id="unit_204")
+    assert u204_total >= min_count_2
+
+    overdue_items, overdue_total = db_utils.list_billing_transactions(status="overdue")
+    assert overdue_total >= min_count_2
+
+    util_items, util_total = db_utils.list_billing_transactions(transaction_type="utility")
+    assert util_total == 1
+    assert util_items[0]["id"] == "tx_custom_1"
+
+    search_items, search_total = db_utils.list_billing_transactions(search="Water Bill")
+    assert search_total == 1
+    assert search_items[0]["id"] == "tx_custom_1"
+
+    # Update billing transaction
+    updated_tx = db_utils.update_billing_transaction(
+        "tx_custom_1",
+        status="waived",
+        notes="Waived courtesy of property manager.",
+    )
+    assert updated_tx is not None
+    assert updated_tx["status"] == "waived"
+    assert "Waived" in updated_tx["notes"]
+
+    # Verify tenant balance adjusted down when charge was waived
+    after_waive_tenant2 = db_utils.get_tenant("tenant_2")
+    assert after_waive_tenant2 is not None
+    assert round(after_waive_tenant2["balance_due"], 2) == round(initial_bal, 2)
+
+    # Update non-existent
+    assert db_utils.update_billing_transaction("non_existent_tx", status="paid") is None
+
+    # Delete billing transaction
+    assert db_utils.delete_billing_transaction("tx_custom_1") is True
+    assert db_utils.delete_billing_transaction("tx_custom_1") is False
+    assert db_utils.get_billing_transaction("tx_custom_1") is None
+    assert db_utils.delete_billing_transaction("") is False
+
+
+def test_record_tenant_payment_and_ledger_summary(monkeypatch, tmp_path):  # noqa: PLR0915
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_billing_transactions()
+
+    rent_1850 = 1850.0
+    pay_1000 = 1000.0
+    pay_850 = 850.0
+    rem_850 = 850.0
+    min_recent_3 = 3
+    min_tx_6 = 6
+
+    # tenant_2 initial state: balance_due = 1850.0, status = "past_due"
+    t2_initial = db_utils.get_tenant("tenant_2")
+    assert t2_initial is not None
+    assert t2_initial["balance_due"] == rent_1850
+    assert t2_initial["status"] == "past_due"
+
+    # Record partial payment of $1000.0
+    res_partial = db_utils.record_tenant_payment(
+        tenant_id="tenant_2",
+        amount=pay_1000,
+        payment_method="online_portal",
+        reference_number="REC-10001",
+        description="Partial rent payment",
+    )
+    assert res_partial["amount_paid"] == pay_1000
+    assert res_partial["previous_balance"] == rent_1850
+    assert res_partial["new_balance"] == rem_850
+    assert res_partial["tenant_status"] == "past_due"
+
+    # Record remaining payment of $850.0
+    res_final = db_utils.record_tenant_payment(
+        tenant_id="tenant_2",
+        amount=pay_850,
+        payment_method="ach",
+        reference_number="REC-10002",
+        description="Remaining balance payoff",
+    )
+    assert res_final["amount_paid"] == pay_850
+    assert res_final["previous_balance"] == rem_850
+    assert res_final["new_balance"] == 0.0
+    assert res_final["tenant_status"] == "active"
+
+    # Overdue charge tx_102 should now be marked paid
+    tx102 = db_utils.get_billing_transaction("tx_102")
+    assert tx102 is not None
+    assert tx102["status"] == "paid"
+
+    # Ledger summary for tenant_2
+    summary = db_utils.get_tenant_ledger_summary("tenant_2")
+    assert summary is not None
+    assert summary["tenant_id"] == "tenant_2"
+    assert summary["unit_id"] == "unit_204"
+    assert summary["current_balance"] == 0.0
+    assert summary["monthly_rent"] == rent_1850
+    assert summary["total_payments"] == rent_1850
+    assert summary["last_payment"] is not None
+    assert summary["last_payment"]["amount"] == pay_850
+    assert len(summary["recent_transactions"]) >= min_recent_3
+
+    # Invalid payment checks
+    with pytest.raises(ValueError, match="greater than zero"):
+        db_utils.record_tenant_payment("tenant_2", amount=0.0)
+
+    with pytest.raises(ValueError, match="Tenant with ID 'fake_tenant' does not exist"):
+        db_utils.record_tenant_payment("fake_tenant", amount=100.0)
+
+    # Empty summary for blank tenant
+    assert db_utils.get_tenant_ledger_summary("") is None
+    assert db_utils.get_tenant_ledger_summary("non_existent") is None
+
+    # Portfolio metrics
+    metrics = db_utils.get_billing_summary_metrics()
+    assert metrics["total_transactions"] >= min_tx_6
+    assert metrics["total_billed"] > 0
+    assert metrics["total_collected"] > 0
+    assert metrics["collection_rate"] > 0
+    assert "rent" in metrics["by_type"]
+    assert "paid" in metrics["by_status"]
+
+

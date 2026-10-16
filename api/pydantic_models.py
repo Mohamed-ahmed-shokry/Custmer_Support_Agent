@@ -2057,6 +2057,198 @@ class WorkOrderMetricsResponse(BaseModel):
     total_actual_cost: float = 0.0
 
 
+class TransactionType(StrEnum):
+    RENT = "rent"
+    SECURITY_DEPOSIT = "security_deposit"
+    LATE_FEE = "late_fee"
+    UTILITY = "utility"
+    PARKING_FEE = "parking_fee"
+    PET_RENT = "pet_rent"
+    MAINTENANCE_CHARGE = "maintenance_charge"
+    PAYMENT = "payment"
+    CREDIT_REFUND = "credit_refund"
+
+
+class TransactionStatus(StrEnum):
+    POSTED = "posted"
+    PENDING = "pending"
+    PAID = "paid"
+    OVERDUE = "overdue"
+    WAIVED = "waived"
+    REFUNDED = "refunded"
+
+
+class PaymentMethod(StrEnum):
+    NONE = ""
+    ACH = "ach"
+    CREDIT_CARD = "credit_card"
+    DEBIT_CARD = "debit_card"
+    CHECK = "check"
+    MONEY_ORDER = "money_order"
+    CASHIER_CHECK = "cashier_check"
+    ONLINE_PORTAL = "online_portal"
+
+
+class BillingTransactionItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    session_id: str | None = None
+    transaction_type: str = "rent"
+    amount: float
+    status: str = "posted"
+    due_date: str = ""
+    paid_at: str | None = None
+    payment_method: str = ""
+    reference_number: str = ""
+    description: str
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class BillingTransactionCreateRequest(BaseModel):
+    id: str | None = Field(default=None, max_length=db_utils.MAX_TRANSACTION_ID_LENGTH)
+    tenant_id: str = Field(min_length=1, max_length=db_utils.MAX_TENANT_ID_LENGTH)
+    unit_id: str = Field(min_length=1, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    description: str = Field(min_length=1, max_length=db_utils.MAX_TRANSACTION_DESC_LENGTH)
+    amount: float = Field(gt=0.0)
+    transaction_type: str = Field(default=db_utils.DEFAULT_TRANSACTION_TYPE)
+    status: str = Field(default=db_utils.DEFAULT_TRANSACTION_STATUS)
+    due_date: str = Field(default="")
+    paid_at: str | None = Field(default=None)
+    payment_method: str = Field(default=db_utils.DEFAULT_PAYMENT_METHOD)
+    reference_number: str = Field(default="", max_length=db_utils.MAX_TRANSACTION_REF_LENGTH)
+    session_id: str | None = Field(default=None)
+    notes: str = Field(default="", max_length=db_utils.MAX_TRANSACTION_NOTES_LENGTH)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return db_utils.normalize_transaction_id(v) if v is not None else None
+
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, v: str) -> str:
+        return db_utils.normalize_tenant_id(v)
+
+    @field_validator("unit_id")
+    @classmethod
+    def validate_unit_id(cls, v: str) -> str:
+        return db_utils.normalize_unit_id(v)
+
+    @field_validator("transaction_type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        return db_utils.normalize_transaction_type(v)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_transaction_status(v)
+
+    @field_validator("payment_method")
+    @classmethod
+    def validate_method(cls, v: str) -> str:
+        return db_utils.normalize_payment_method(v)
+
+
+class BillingTransactionUpdateRequest(BaseModel):
+    status: str | None = Field(default=None)
+    description: str | None = Field(
+        default=None, max_length=db_utils.MAX_TRANSACTION_DESC_LENGTH
+    )
+    due_date: str | None = Field(default=None)
+    paid_at: str | None = Field(default=None)
+    payment_method: str | None = Field(default=None)
+    reference_number: str | None = Field(
+        default=None, max_length=db_utils.MAX_TRANSACTION_REF_LENGTH
+    )
+    notes: str | None = Field(
+        default=None, max_length=db_utils.MAX_TRANSACTION_NOTES_LENGTH
+    )
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return db_utils.normalize_transaction_status(v) if v is not None else None
+
+    @field_validator("payment_method")
+    @classmethod
+    def validate_method(cls, v: str | None) -> str | None:
+        return db_utils.normalize_payment_method(v) if v is not None else None
+
+
+class TenantPaymentRequest(BaseModel):
+    amount: float = Field(gt=0.0)
+    payment_method: str = Field(default="online_portal")
+    reference_number: str = Field(default="", max_length=db_utils.MAX_TRANSACTION_REF_LENGTH)
+    description: str = Field(
+        default="Resident Rent Payment", max_length=db_utils.MAX_TRANSACTION_DESC_LENGTH
+    )
+    session_id: str | None = Field(default=None)
+    notes: str = Field(default="", max_length=db_utils.MAX_TRANSACTION_NOTES_LENGTH)
+    transaction_id: str | None = Field(
+        default=None, max_length=db_utils.MAX_TRANSACTION_ID_LENGTH
+    )
+
+    @field_validator("payment_method")
+    @classmethod
+    def validate_method(cls, v: str) -> str:
+        return db_utils.normalize_payment_method(v)
+
+    @field_validator("transaction_id")
+    @classmethod
+    def validate_tx_id(cls, v: str | None) -> str | None:
+        return db_utils.normalize_transaction_id(v) if v is not None else None
+
+
+class TenantPaymentResponse(BaseModel):
+    transaction: BillingTransactionItem
+    previous_balance: float
+    new_balance: float
+    amount_paid: float
+    tenant_status: str
+
+
+class BillingTransactionResponse(BaseModel):
+    transaction: BillingTransactionItem
+
+
+class BillingTransactionListResponse(BaseModel):
+    items: list[BillingTransactionItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class TenantLedgerSummaryResponse(BaseModel):
+    tenant_id: str
+    unit_id: str
+    current_balance: float
+    monthly_rent: float
+    total_charges: float
+    total_payments: float
+    overdue_amount: float
+    overdue_count: int
+    tenant_status: str
+    last_payment: BillingTransactionItem | None = None
+    recent_transactions: list[BillingTransactionItem] = Field(default_factory=list)
+
+
+class BillingMetricsResponse(BaseModel):
+    total_transactions: int = 0
+    total_billed: float = 0.0
+    total_collected: float = 0.0
+    collection_rate: float = 0.0
+    total_outstanding: float = 0.0
+    overdue_transactions_count: int = 0
+    overdue_tenants_count: int = 0
+    by_type: dict[str, int] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_payment_method: dict[str, int] = Field(default_factory=dict)
+
+
 
 
 

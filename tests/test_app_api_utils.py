@@ -2107,6 +2107,116 @@ def test_work_order_crud_and_session_helpers(fake_requests, monkeypatch):
     assert api_utils.create_work_order_from_session("sess_1", {}) is None
 
 
+def test_billing_api_utils_helpers(fake_requests, fake_st, monkeypatch):  # noqa: PLR0915
+    """Test client helpers for billing transactions, ledger, and payment operations."""
+    mock_tx = {
+        "id": "tx_test_1",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "amount": 1450.0,
+        "transaction_type": "rent",
+        "status": "posted",
+        "description": "October rent",
+    }
+    mock_list = {"items": [mock_tx], "total": 1, "limit": 50, "offset": 0}
+    mock_metrics = {"total_transactions": 5, "total_billed": 5000.0, "total_collected": 3500.0}
+    mock_ledger = {
+        "tenant_id": "tenant_1",
+        "current_balance": 0.0,
+        "recent_transactions": [mock_tx],
+    }
+    mock_pay_resp = {"transaction": mock_tx, "amount_paid": 1450.0, "new_balance": 0.0}
+
+    # 1. list_billing_transactions
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list)
+    res_list = api_utils.list_billing_transactions(
+        tenant_id="tenant_1", unit_id="unit_101", transaction_type="rent", status="posted"
+    )
+    assert res_list == mock_list
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_billing_transactions() is None
+    assert fake_st.errors
+
+    # 2. get_billing_metrics
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_metrics)
+    assert api_utils.get_billing_metrics() == mock_metrics
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_billing_metrics() is None
+
+    # 3. get_billing_transaction
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"transaction": mock_tx}
+    )
+    assert api_utils.get_billing_transaction("tx_test_1") == {"transaction": mock_tx}
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_billing_transaction("tx_test_1") is None
+
+    # 4. create_billing_transaction
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"transaction": mock_tx}
+    )
+    assert api_utils.create_billing_transaction(mock_tx) == {"transaction": mock_tx}
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_billing_transaction(mock_tx) is None
+
+    # 5. update_billing_transaction
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"transaction": mock_tx}
+    )
+    assert (
+        api_utils.update_billing_transaction("tx_test_1", {"status": "paid"})
+        == {"transaction": mock_tx}
+    )
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.update_billing_transaction("tx_test_1", {"status": "paid"}) is None
+
+    # 6. delete_billing_transaction
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK)
+    assert api_utils.delete_billing_transaction("tx_test_1") is True
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_billing_transaction("tx_test_1") is False
+
+    # 7. record_tenant_payment
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=mock_pay_resp)
+    assert api_utils.record_tenant_payment("tenant_1", {"amount": 1450.0}) == mock_pay_resp
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.record_tenant_payment("tenant_1", {"amount": 1450.0}) is None
+
+    # 8. get_tenant_ledger
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_ledger)
+    assert api_utils.get_tenant_ledger("tenant_1") == mock_ledger
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_tenant_ledger("tenant_1") is None
+
+    # 9. record_session_payment
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=mock_pay_resp)
+    assert api_utils.record_session_payment("sess_1", {"amount": 1450.0}) == mock_pay_resp
+
+    fake_requests.response = FakeResponse(status_code=400)
+    assert api_utils.record_session_payment("sess_1", {"amount": 1450.0}) is None
+
+    # 10. BoomRequests exception handling
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_billing_transactions() is None
+    assert api_utils.get_billing_metrics() is None
+    assert api_utils.get_billing_transaction("tx_1") is None
+    assert api_utils.create_billing_transaction({}) is None
+    assert api_utils.update_billing_transaction("tx_1", {}) is None
+    assert api_utils.delete_billing_transaction("tx_1") is False
+    assert api_utils.record_tenant_payment("tenant_1", {}) is None
+    assert api_utils.get_tenant_ledger("tenant_1") is None
+    assert api_utils.record_session_payment("sess_1", {}) is None
+
+
+
 
 
 

@@ -125,6 +125,12 @@ from api.pydantic_models import (
     AgentScorecardItem,
     AgentWorkloadResponse,
     AutoAssignRequest,
+    BillingMetricsResponse,
+    BillingTransactionCreateRequest,
+    BillingTransactionItem,
+    BillingTransactionListResponse,
+    BillingTransactionResponse,
+    BillingTransactionUpdateRequest,
     BulkDeleteFileRequest,
     BulkDeleteFileResult,
     BulkDeleteResponse,
@@ -220,7 +226,10 @@ from api.pydantic_models import (
     TagCount,
     TenantCreateRequest,
     TenantItem,
+    TenantLedgerSummaryResponse,
     TenantListResponse,
+    TenantPaymentRequest,
+    TenantPaymentResponse,
     TenantResponse,
     TenantSupportHistoryResponse,
     TenantSupportHistorySessionItem,
@@ -3167,6 +3176,338 @@ def get_tenant_work_orders_route(tenant_id: str, open_only: bool = False):
         limit=len(items),
         offset=0,
     )
+
+
+# ---------------------------------------------------------------------------
+# Resident Billing, Rent Ledgers, Invoices & Payment Operations
+# ---------------------------------------------------------------------------
+
+
+@app.post("/billing/transactions", response_model=BillingTransactionResponse, status_code=201)
+def create_billing_transaction_route(
+    request: BillingTransactionCreateRequest, background_tasks: BackgroundTasks
+):
+    tx_id = request.id or f"tx_{uuid.uuid4().hex[:10]}"
+    try:
+        created = db_utils.create_billing_transaction(
+            transaction_id=tx_id,
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            description=request.description,
+            amount=request.amount,
+            transaction_type=request.transaction_type,
+            status=request.status,
+            due_date=request.due_date,
+            paid_at=request.paid_at,
+            payment_method=request.payment_method,
+            reference_number=request.reference_number,
+            session_id=request.session_id,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    event_name = (
+        "billing.payment_received"
+        if created["transaction_type"] == "payment"
+        else "billing.charge_posted"
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        event_name,
+        {
+            "transaction_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "transaction_type": created["transaction_type"],
+            "amount": created["amount"],
+            "status": created["status"],
+            "due_date": created["due_date"],
+            "payment_method": created["payment_method"],
+        },
+    )
+    if created["status"] == "overdue":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "billing.overdue_escalated",
+            {
+                "transaction_id": created["id"],
+                "tenant_id": created["tenant_id"],
+                "unit_id": created["unit_id"],
+                "amount": created["amount"],
+                "due_date": created["due_date"],
+            },
+        )
+    elif created["transaction_type"] == "late_fee":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "billing.late_fee_assessed",
+            {
+                "transaction_id": created["id"],
+                "tenant_id": created["tenant_id"],
+                "unit_id": created["unit_id"],
+                "amount": created["amount"],
+            },
+        )
+
+    return BillingTransactionResponse(transaction=BillingTransactionItem(**created))
+
+
+@app.get("/billing/transactions", response_model=BillingTransactionListResponse)
+def list_billing_transactions_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    transaction_type: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List billing transactions with optional filtering and pagination."""
+    items, total = db_utils.list_billing_transactions(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        transaction_type=transaction_type,
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return BillingTransactionListResponse(
+        items=[BillingTransactionItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/billing/metrics", response_model=BillingMetricsResponse)
+def get_billing_metrics_route():
+    """Retrieve portfolio billing and payment financial metrics."""
+    metrics = db_utils.get_billing_summary_metrics()
+    return BillingMetricsResponse(**metrics)
+
+
+@app.get("/billing/transactions/{transaction_id}", response_model=BillingTransactionResponse)
+def get_billing_transaction_route(transaction_id: str):
+    """Retrieve a single billing transaction by ID."""
+    item = db_utils.get_billing_transaction(transaction_id)
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Billing transaction '{transaction_id}' not found.",
+        )
+    return BillingTransactionResponse(transaction=BillingTransactionItem(**item))
+
+
+@app.patch("/billing/transactions/{transaction_id}", response_model=BillingTransactionResponse)
+def update_billing_transaction_route(
+    transaction_id: str,
+    request: BillingTransactionUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update billing transaction details (status, notes, payment info)."""
+    item = db_utils.update_billing_transaction(
+        transaction_id=transaction_id,
+        status=request.status,
+        description=request.description,
+        due_date=request.due_date,
+        paid_at=request.paid_at,
+        payment_method=request.payment_method,
+        reference_number=request.reference_number,
+        notes=request.notes,
+    )
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Billing transaction '{transaction_id}' not found.",
+        )
+
+    if request.status == "paid":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "billing.payment_received",
+            {
+                "transaction_id": item["id"],
+                "tenant_id": item["tenant_id"],
+                "unit_id": item["unit_id"],
+                "amount": item["amount"],
+                "status": "paid",
+            },
+        )
+    elif request.status == "overdue":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "billing.overdue_escalated",
+            {
+                "transaction_id": item["id"],
+                "tenant_id": item["tenant_id"],
+                "unit_id": item["unit_id"],
+                "amount": item["amount"],
+            },
+        )
+
+    return BillingTransactionResponse(transaction=BillingTransactionItem(**item))
+
+
+@app.delete("/billing/transactions/{transaction_id}")
+def delete_billing_transaction_route(transaction_id: str):
+    """Delete a billing transaction record."""
+    deleted = db_utils.delete_billing_transaction(transaction_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Billing transaction '{transaction_id}' not found.",
+        )
+    return {"message": f"Billing transaction '{transaction_id}' deleted successfully."}
+
+
+@app.post("/tenants/{tenant_id}/payments", response_model=TenantPaymentResponse, status_code=201)
+def record_tenant_payment_route(
+    tenant_id: str,
+    request: TenantPaymentRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Record a tenant payment, reconciling tenant balance and overdue charges."""
+    try:
+        result = db_utils.record_tenant_payment(
+            tenant_id=tenant_id,
+            amount=request.amount,
+            payment_method=request.payment_method,
+            reference_number=request.reference_number,
+            description=request.description,
+            session_id=request.session_id,
+            notes=request.notes,
+            transaction_id=request.transaction_id,
+        )
+    except ValueError as exc:
+        if "does not exist" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+
+    tx = result["transaction"]
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "billing.payment_received",
+        {
+            "transaction_id": tx["id"],
+            "tenant_id": tx["tenant_id"],
+            "unit_id": tx["unit_id"],
+            "amount": tx["amount"],
+            "payment_method": tx["payment_method"],
+            "previous_balance": result["previous_balance"],
+            "new_balance": result["new_balance"],
+        },
+    )
+
+    return TenantPaymentResponse(
+        transaction=BillingTransactionItem(**tx),
+        previous_balance=result["previous_balance"],
+        new_balance=result["new_balance"],
+        amount_paid=result["amount_paid"],
+        tenant_status=result["tenant_status"],
+    )
+
+
+@app.get("/tenants/{tenant_id}/ledger", response_model=TenantLedgerSummaryResponse)
+def get_tenant_ledger_route(tenant_id: str):
+    """Retrieve a tenant's complete ledger summary, charges, payments, and balance."""
+    ledger = db_utils.get_tenant_ledger_summary(tenant_id)
+    if not ledger:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tenant '{tenant_id}' not found or has no billing record.",
+        )
+    last_payment = (
+        BillingTransactionItem(**ledger["last_payment"])
+        if ledger.get("last_payment")
+        else None
+    )
+    recent_transactions = [
+        BillingTransactionItem(**item) for item in ledger.get("recent_transactions", [])
+    ]
+    return TenantLedgerSummaryResponse(
+        tenant_id=ledger["tenant_id"],
+        unit_id=ledger["unit_id"],
+        current_balance=ledger["current_balance"],
+        monthly_rent=ledger["monthly_rent"],
+        total_charges=ledger["total_charges"],
+        total_payments=ledger["total_payments"],
+        overdue_amount=ledger["overdue_amount"],
+        overdue_count=ledger["overdue_count"],
+        tenant_status=ledger["tenant_status"],
+        last_payment=last_payment,
+        recent_transactions=recent_transactions,
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/record-payment",
+    response_model=TenantPaymentResponse,
+    status_code=201,
+)
+def record_session_payment_route(
+    session_id: str,
+    request: TenantPaymentRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Record a payment directly from an active support session for its linked tenant."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' has no linked tenant to record payment for.",
+        )
+    tenant_id = context["tenant"]["id"]
+    try:
+        result = db_utils.record_tenant_payment(
+            tenant_id=tenant_id,
+            amount=request.amount,
+            payment_method=request.payment_method,
+            reference_number=request.reference_number,
+            description=request.description,
+            session_id=session_id,
+            notes=request.notes,
+            transaction_id=request.transaction_id,
+        )
+    except ValueError as exc:
+        if "does not exist" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+
+    tx = result["transaction"]
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "billing.payment_received",
+        {
+            "transaction_id": tx["id"],
+            "tenant_id": tx["tenant_id"],
+            "unit_id": tx["unit_id"],
+            "session_id": session_id,
+            "amount": tx["amount"],
+            "previous_balance": result["previous_balance"],
+            "new_balance": result["new_balance"],
+        },
+    )
+
+    return TenantPaymentResponse(
+        transaction=BillingTransactionItem(**tx),
+        previous_balance=result["previous_balance"],
+        new_balance=result["new_balance"],
+        amount_paid=result["amount_paid"],
+        tenant_status=result["tenant_status"],
+    )
+
 
 
 
