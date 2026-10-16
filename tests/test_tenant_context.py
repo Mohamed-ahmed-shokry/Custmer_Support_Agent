@@ -29,6 +29,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_tenants()
     db_utils.create_work_orders()
     db_utils.create_billing_transactions()
+    db_utils.create_lease_renewals()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
