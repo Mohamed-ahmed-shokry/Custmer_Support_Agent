@@ -2521,6 +2521,192 @@ def get_tenant_work_orders(
         return None
 
 
+def create_billing_transaction(
+    payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/billing/transactions",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create billing transaction", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating billing transaction: {str(e)}")
+        return None
+
+
+def list_billing_transactions(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    transaction_type: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+        if unit_id:
+            params["unit_id"] = unit_id
+        if transaction_type:
+            params["transaction_type"] = transaction_type
+        if status:
+            params["status"] = status
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if search:
+            params["search"] = search
+
+        response = requests.get(
+            f"{API_BASE_URL}/billing/transactions",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch billing transactions", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching billing transactions: {str(e)}")
+        return None
+
+
+def get_billing_metrics() -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/billing/metrics",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch billing metrics", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching billing metrics: {str(e)}")
+        return None
+
+
+def get_billing_transaction(transaction_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/billing/transactions/{transaction_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch transaction '{transaction_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching billing transaction: {str(e)}")
+        return None
+
+
+def update_billing_transaction(
+    transaction_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/billing/transactions/{transaction_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update transaction '{transaction_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating billing transaction: {str(e)}")
+        return None
+
+
+def delete_billing_transaction(transaction_id: str) -> bool:
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/billing/transactions/{transaction_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete transaction '{transaction_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting billing transaction: {str(e)}")
+        return False
+
+
+def record_tenant_payment(
+    tenant_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/tenants/{tenant_id}/payments",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to record payment for tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while recording payment: {str(e)}")
+        return None
+
+
+def get_tenant_ledger(tenant_id: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/tenants/{tenant_id}/ledger",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch ledger for tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant ledger: {str(e)}")
+        return None
+
+
+def record_session_payment(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/record-payment",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error(
+            f"Failed to record payment from session '{session_id}'", response
+        )
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while recording session payment: {str(e)}")
+        return None
+
+
+
 
 
 
