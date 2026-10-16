@@ -438,6 +438,41 @@ Persistent repair request engine linking support sessions, property units, and r
   - Query parameter: `open_only=true`.
   - Returns `WorkOrderListResponse`.
 
+## Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine
+
+Financial accounting ledger engine (`billing_transactions`) supporting itemized rent charges, utility assessments, late fees, security deposits, and resident payments. Tracks payments with atomic balance reconciliation, payment method tracking, and auto-generated receipts/reference numbers. RAG prompt grounding automatically injects resident ledger statements (`[RESIDENT BILLING & PAYMENT LEDGER]`) and resolves billing macro variables (`{balance_due}`, `{last_payment_amount}`, `{last_payment_date}`, `{overdue_balance}`).
+
+### Billing & Payment Endpoints
+
+- `POST /billing/transactions`: Create a new billing transaction (charge, fee, deposit, assessment, or manual adjustment).
+  - Body: `{"tenant_id": "tenant_1", "unit_id": "unit_101", "transaction_type": "rent", "description": "November 2026 Monthly Rent", "amount": 1250.0, "status": "posted", "due_date": "2026-11-01", "notes": "Standard lease rent"}`.
+  - Types: `rent`, `security_deposit`, `late_fee`, `utility`, `parking_fee`, `pet_rent`, `maintenance_charge`, `payment`, `credit_refund`.
+  - Statuses: `posted`, `pending`, `paid`, `overdue`, `waived`, `cancelled`.
+  - Returns `201` with `BillingTransactionResponse`.
+  - Triggers background webhook `billing.charge_posted` (or `billing.late_fee_assessed` if type is `late_fee`).
+- `GET /billing/transactions`: List billing transactions with filtering and pagination.
+  - Query parameters: `tenant_id`, `unit_id`, `status`, `transaction_type`, `due_before`, `due_after`, `limit`, `offset`.
+  - Returns `BillingTransactionListResponse` (`items: [...]`, `total: int`).
+- `GET /billing/metrics`: Portfolio-wide financial metrics and billing health summary.
+  - Returns `BillingSummaryMetricsResponse` (`total_transactions`, `total_charges_amount`, `total_payments_amount`, `outstanding_balance`, `overdue_balance`, `overdue_transactions_count`, `overdue_tenants_count`, `by_type: {...}`, `by_status: {...}`).
+- `GET /billing/transactions/{transaction_id}`: Retrieve a specific billing transaction by ID. Returns `404` if not found.
+- `PATCH /billing/transactions/{transaction_id}`: Partially update a billing transaction (status, due_date, notes, payment details).
+  - Returns `BillingTransactionResponse`.
+  - Triggers background webhook `billing.payment_received` if status transitioned to `paid`, or `billing.overdue_escalated` if marked `overdue`.
+- `DELETE /billing/transactions/{transaction_id}`: Delete a billing transaction.
+- `POST /tenants/{tenant_id}/payments`: Record a resident payment against a tenant's account with atomic balance reconciliation.
+  - Body: `{"amount": 1250.0, "payment_method": "ach", "reference_number": "ACH-98214", "description": "Rent payment", "session_id": null}`.
+  - Payment methods: `ach`, `credit_card`, `debit_card`, `check`, `cashier_check`, `money_order`, `online_portal`.
+  - Automatically reconciles oldest pending/posted/overdue charges to `paid`, decrements tenant `balance_due`, creates a paid `payment` ledger record, and logs an audit trail.
+  - Returns `200` with `TenantPaymentRecordResponse` (`transaction: {...}`, `previous_balance: float`, `new_balance: float`, `reconciled_charges_count: int`).
+  - Triggers background webhook `billing.payment_received`.
+- `GET /tenants/{tenant_id}/ledger`: Retrieve complete financial ledger and account statement for a resident.
+  - Returns `TenantLedgerSummaryResponse` (`tenant_id`, `current_balance`, `monthly_rent`, `total_charges`, `total_payments`, `total_credits`, `overdue_balance`, `last_payment: {...}`, `recent_transactions: [...]`).
+- `POST /sessions/{session_id}/record-payment`: 1-click record a resident payment directly from an active support session context.
+  - Body: `{"amount": 1250.0, "payment_method": "ach", "reference_number": "ACH-98214", "description": "Rent payment"}`.
+  - Auto-resolves `tenant_id` from the session's linked resident context.
+  - Returns `200` with `TenantPaymentRecordResponse`.
+
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:
