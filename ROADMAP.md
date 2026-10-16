@@ -1,6 +1,8 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.36.0, 2026-10-15)
+## Current State (v0.37.0, 2026-10-17)
+- Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine (`POST /billing/transactions`, `GET /billing/transactions`, `GET /billing/metrics`, `GET /billing/transactions/{id}`, `PATCH /billing/transactions/{id}`, `DELETE /billing/transactions/{id}`, `POST /tenants/{id}/payments`, `GET /tenants/{id}/ledger`, `POST /sessions/{id}/record-payment`): complete financial ledger and accounting lifecycle linking resident profiles (`tenants`) and units (`units`) with transaction tracking across charges (`rent`, `security_deposit`, `late_fee`, `utility`, `parking_fee`, `pet_rent`, `maintenance_charge`) and payments (`ach`, `credit_card`, `debit_card`, `check`, `money_order`, `cashier_check`, `online_portal`). Supports atomic payment recording, tenant balance reconciliation, automatic overdue charge resolution, portfolio financial metrics, and real-time webhook alerting (`billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, `billing.overdue_escalated`). Active sessions automatically ground financial statements into conversational RAG context (`[RESIDENT FINANCIAL LEDGER & RENT BALANCE]`), and macro variables auto-resolve (`{overdue_balance}`, `{last_payment_amount}`, `{last_payment_date}`, `{last_payment_method}`).
+- Streamlit Billing Board & 1-Click Resident Payment Widget: live "💳 Record Resident Payment" widget directly inside the active session resident card for 1-click invoice settlements and balance payoffs, plus a dedicated "💰 Billing & Rent Ledgers" sidebar panel with live financial KPIs (Billed, Collected, Outstanding, Collection Rate %), searchable filterable transaction ledger with status transitions (`Mark Paid`, `Waive`, `Delete`), resident payment processing form, and charge posting assessment form.
 - Maintenance Work Orders, Service Requests & Resident Dispatch Engine (`POST /work-orders`, `GET /work-orders`, `GET /work-orders/metrics`, `GET /work-orders/{id}`, `PATCH /work-orders/{id}`, `DELETE /work-orders/{id}`, `POST /sessions/{id}/create-work-order`, `GET /units/{id}/work-orders`, `GET /tenants/{id}/work-orders`): persistent maintenance repair tracking (`work_orders` table in SQLite) connected to property units and residents, tracking category (`plumbing`, `electrical`, `hvac`, `appliance`, `pest_control`, `structural`, `general`), priority (`low`, `medium`, `high`, `emergency`), status (`submitted`, `scheduled`, `in_progress`, `completed`, `cancelled`), entry permissions, contractor/staff assignment, scheduled dates, and estimated vs. actual repair costs. Prompt grounding augments chat context with active maintenance work orders (`[ACTIVE MAINTENANCE WORK ORDERS]`), macro variables auto-resolve (`{open_work_orders_count}`, `{latest_work_order_id}`), and real-time webhook events (`work_order.created`, `work_order.emergency_escalated`, `work_order.status_changed`) alert operations teams immediately.
 - Streamlit Maintenance Board & 1-Click Resident Dispatch Widget: live "🛠️ Dispatch Work Order" expander directly on the active session resident card with 1-click conversion of conversational support sessions into persistent work orders with auto-resolved unit/tenant IDs, open work order unit warnings, plus a dedicated "🛠️ Maintenance & Work Orders" sidebar panel with live KPI cards (Total, Open, In Progress, Emergency), searchable filterable board with 1-click status transitions (`Start`, `Done`, `Delete`), new service request creation form, and cost tracking dashboard.
 - Tenant Profiles, Property Unit Directory & Context Grounding Engine (`POST /units`, `GET /units`, `GET /units/{id}`, `PATCH /units/{id}`, `DELETE /units/{id}`, `POST /tenants`, `GET /tenants`, `GET /tenants/{id}`, `PATCH /tenants/{id}`, `DELETE /tenants/{id}`, `POST /sessions/{id}/link-tenant`, `GET /sessions/{id}/tenant-context`, `GET /tenants/{id}/support-history`): persistent property unit directory (`units`) tracking building, floor, parking spot, gate access code, and monthly rent, resident profiles (`tenants`) with lease start/end dates, current balance due, and emergency contacts, and support session-to-tenant linking (`session_labels`). Chat turns (`/chat` and `/chat/stream`) are automatically grounded with verified lease context, and canned macro variables (`{customer_name}`, `{unit_id}`, `{monthly_rent}`, `{balance_due}`) auto-resolve seamlessly.
@@ -1131,7 +1133,7 @@ Bridge the gap between tenant communication and property operations. Maintenance
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
-## v0.37.0 plan — Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine
+## v0.37.0 plan — Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine ✅ COMPLETED
 
 Empower property operators and residents with a complete financial ledger, billing, and payment operations engine. Enable tracking of charges (rent, security deposits, late fees, utilities, pet rent, parking, maintenance) and payments (ACH, credit/debit, check, portal) with balance reconciliation; ground LLM chat responses with real-time financial statements and overdue charge breakdowns; auto-populate financial macro variables (`{last_payment_date}`, `{last_payment_amount}`, `{overdue_balance}`, `{payment_reference}`); provide automated financial webhook triggers (`billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, `billing.overdue_escalated`); and deliver a dedicated "💰 Billing & Rent Ledgers" dashboard in Streamlit with 1-click resident payment recording and charge posting.
 
@@ -1215,16 +1217,16 @@ Equip the customer support platform to answer billing disputes, provide real-tim
 - Automated banking ACH clearinghouse transmissions.
 
 ### Granular Task Breakdown
-- [ ] Task 1: `ROADMAP.md` v0.37.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] Task 2: Database schema, table creation, default seed data, and CRUD operations for `billing_transactions` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] Task 3: Payment recording and tenant balance reconciliation logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] Task 4: Context grounding engine integration for billing & ledgers in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
-- [ ] Task 5: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
-- [ ] Task 6: FastAPI endpoints for billing transactions, ledger statements, and session payment recording in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [ ] Task 7: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [ ] Task 8: Streamlit UI components in `app/sidebar.py` (session payment recording & "💰 Billing & Rent Ledgers" panel) + UI tests in `tests/test_app_ui.py`
-- [ ] Task 9: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 10: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] Task 1: `ROADMAP.md` v0.37.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] Task 2: Database schema, table creation, default seed data, and CRUD operations for `billing_transactions` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 3: Payment recording and tenant balance reconciliation logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 4: Context grounding engine integration for billing & ledgers in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [x] Task 5: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [x] Task 6: FastAPI endpoints for billing transactions, ledger statements, and session payment recording in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] Task 7: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 8: Streamlit UI components in `app/sidebar.py` (session payment recording & "💰 Billing & Rent Ledgers" panel) + UI tests in `tests/test_app_ui.py`
+- [x] Task 9: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 10: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
