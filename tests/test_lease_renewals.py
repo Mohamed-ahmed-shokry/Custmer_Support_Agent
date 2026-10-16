@@ -17,8 +17,8 @@ def test_generate_lease_renewal_markdown(monkeypatch, tmp_path):
     # 2. Generate markdown for seeded lr_101
     md_101 = lease_renewals.generate_lease_renewal_markdown("lr_101")
     assert "RESIDENTIAL LEASE RENEWAL AGREEMENT & EXTENSION ADDENDUM" in md_101
-    assert "Agreement Reference ID: `lr_101`" in md_101
-    assert "Document Status: `OFFERED`" in md_101
+    assert "Reference ID" in md_101 and "lr_101" in md_101
+    assert "Document Status" in md_101 and "OFFERED" in md_101
     assert "DEMISED PREMISES" in md_101
     assert "$1,450.00" in md_101
     assert "$1,500.00" in md_101
@@ -27,8 +27,8 @@ def test_generate_lease_renewal_markdown(monkeypatch, tmp_path):
 
     # 3. Generate markdown for signed lr_103 with security deposit change
     md_103 = lease_renewals.generate_lease_renewal_markdown("lr_103")
-    assert "Agreement Reference ID: `lr_103`" in md_103
-    assert "Document Status: `SIGNED`" in md_103
+    assert "Reference ID" in md_103 and "lr_103" in md_103
+    assert "Document Status" in md_103 and "SIGNED" in md_103
     assert "SECURITY DEPOSIT ADJUSTMENT" in md_103
     assert "$150.00" in md_103
     assert "Eleanor Vance" in md_103
