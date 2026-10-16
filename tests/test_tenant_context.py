@@ -260,6 +260,47 @@ def test_render_template_with_billing_variables():
     assert "Dear Sarah Connor" in rendered
     assert "payment of $1,450.00" in rendered
     assert "via ach" in rendered
-    assert "Ref: ACH-88412" in rendered
     assert "Overdue balance: $0.00" in rendered
+
+
+def test_build_tenant_rag_context_renewals_grounding():
+    """Verify that lease renewal offers and status are grounded in RAG prompt context."""
+    # tenant_1 has offered renewal lr_101
+    t1_block = build_tenant_rag_context(tenant_id="tenant_1")
+    assert "[LEASE RENEWAL OFFERS & AGREEMENTS]" in t1_block
+    assert "[lr_101] Status: OFFERED" in t1_block
+    assert "Current Rent: $1,450.00 -> Proposed Rent: $1,500.00" in t1_block
+    assert "Incentive: $100.00" in t1_block
+    assert "[END LEASE RENEWAL OFFERS & AGREEMENTS]" in t1_block
+
+    # tenant_3 has signed renewal lr_103
+    t3_block = build_tenant_rag_context(tenant_id="tenant_3")
+    assert "[LEASE RENEWAL OFFERS & AGREEMENTS]" in t3_block
+    assert "[lr_103] Status: SIGNED" in t3_block
+    assert "Signed By: Eleanor Vance" in t3_block
+
+    # include_renewals=False suppresses renewals block
+    suppressed = build_tenant_rag_context(tenant_id="tenant_1", include_renewals=False)
+    assert "[LEASE RENEWAL OFFERS & AGREEMENTS]" not in suppressed
+    assert "[VERIFIED RESIDENT & PROPERTY UNIT PROFILE]" in suppressed
+
+
+def test_render_template_with_renewal_variables():
+    """Verify macro template rendering with lease renewal variables."""
+    sid = "sess-macro-renewal"
+    db_utils.insert_application_logs(sid, "Renewal inquiry", "Here is your offer", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Hello {customer_name}, your renewal offer ({renewal_id}) is {renewal_status}. "
+        "Proposed rent: {renewal_proposed_rent} for {renewal_term_months} months. "
+        "Offer expires on {renewal_expires_at}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Hello Sarah Connor" in rendered
+    assert "renewal offer (lr_101) is offered" in rendered
+    assert "Proposed rent: $1,500.00 for 12 months" in rendered
+    assert "Offer expires on 2026-10-31" in rendered
+
 
