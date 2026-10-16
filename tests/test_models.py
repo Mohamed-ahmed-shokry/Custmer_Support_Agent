@@ -8,6 +8,12 @@ from api.pydantic_models import (
     AgentWorkloadItem,
     AgentWorkloadResponse,
     AutoAssignRequest,
+    BillingMetricsResponse,
+    BillingTransactionCreateRequest,
+    BillingTransactionItem,
+    BillingTransactionListResponse,
+    BillingTransactionResponse,
+    BillingTransactionUpdateRequest,
     BusinessHoursStatusResponse,
     ChunkingStrategy,
     CollectionAnalyticsResponse,
@@ -74,7 +80,10 @@ from api.pydantic_models import (
     TagCount,
     TenantCreateRequest,
     TenantItem,
+    TenantLedgerSummaryResponse,
     TenantListResponse,
+    TenantPaymentRequest,
+    TenantPaymentResponse,
     TenantResponse,
     TenantSupportHistoryResponse,
     TenantSupportHistorySessionItem,
@@ -1661,6 +1670,119 @@ def test_work_order_metrics_response():
     assert metrics.open_work_orders == expected_open
     assert metrics.emergency_work_orders == expected_em
     assert metrics.total_estimated_cost == expected_est
+
+
+def test_billing_transaction_models():
+    expected_amount = 1450.0
+    req = BillingTransactionCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        description="Monthly Rent - November 2026",
+        amount=expected_amount,
+        transaction_type="rent",
+        status="posted",
+        due_date="2026-11-01",
+    )
+    assert req.tenant_id == "tenant_1"
+    assert req.amount == expected_amount
+    assert req.transaction_type == "rent"
+    assert req.status == "posted"
+
+    upd = BillingTransactionUpdateRequest(
+        status="paid",
+        notes="Paid via portal",
+    )
+    assert upd.status == "paid"
+    assert upd.notes == "Paid via portal"
+
+    item = BillingTransactionItem(
+        id="tx_test_101",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        transaction_type="rent",
+        amount=expected_amount,
+        status="paid",
+        due_date="2026-11-01",
+        paid_at="2026-11-02T10:00:00",
+        payment_method="ach",
+        reference_number="ACH-9988",
+        description="Monthly Rent",
+    )
+    resp = BillingTransactionResponse(transaction=item)
+    assert resp.transaction.id == "tx_test_101"
+
+    list_resp = BillingTransactionListResponse(items=[item], total=1, limit=50, offset=0)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+
+def test_tenant_payment_and_ledger_models():
+    pay_amount = 500.0
+    expected_new_balance = 950.0
+    pay_req = TenantPaymentRequest(
+        amount=pay_amount,
+        payment_method="online_portal",
+        reference_number="REF-PAY-123",
+        description="Resident partial payment",
+    )
+    assert pay_req.amount == pay_amount
+    assert pay_req.payment_method == "online_portal"
+
+    item = BillingTransactionItem(
+        id="tx_pay_1",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        transaction_type="payment",
+        amount=pay_amount,
+        status="paid",
+        payment_method="online_portal",
+        reference_number="REF-PAY-123",
+        description="Resident partial payment",
+    )
+    pay_resp = TenantPaymentResponse(
+        transaction=item,
+        previous_balance=1450.0,
+        new_balance=expected_new_balance,
+        amount_paid=pay_amount,
+        tenant_status="active",
+    )
+    assert pay_resp.amount_paid == pay_amount
+    assert pay_resp.new_balance == expected_new_balance
+
+    ledger_resp = TenantLedgerSummaryResponse(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        current_balance=expected_new_balance,
+        monthly_rent=1450.0,
+        total_charges=1450.0,
+        total_payments=pay_amount,
+        overdue_amount=0.0,
+        overdue_count=0,
+        tenant_status="active",
+        last_payment=item,
+        recent_transactions=[item],
+    )
+    assert ledger_resp.tenant_id == "tenant_1"
+    assert ledger_resp.current_balance == expected_new_balance
+    assert len(ledger_resp.recent_transactions) == 1
+
+    expected_total_tx = 10
+    expected_col_rate = 80.0
+    metrics_resp = BillingMetricsResponse(
+        total_transactions=expected_total_tx,
+        total_billed=10000.0,
+        total_collected=8000.0,
+        collection_rate=expected_col_rate,
+        total_outstanding=2000.0,
+        overdue_transactions_count=1,
+        overdue_tenants_count=1,
+        by_type={"rent": 8, "payment": 2},
+        by_status={"paid": 7, "overdue": 1, "posted": 2},
+        by_payment_method={"ach": 2},
+    )
+    assert metrics_resp.total_transactions == expected_total_tx
+    assert metrics_resp.collection_rate == expected_col_rate
+
 
 
 
