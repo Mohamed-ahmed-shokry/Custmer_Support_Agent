@@ -91,6 +91,16 @@ from api.pydantic_models import (
     WebhookPingResponse,
     WebhookResponse,
     WebhookUpdateRequest,
+    WorkOrderCategory,
+    WorkOrderCreateRequest,
+    WorkOrderFromSessionRequest,
+    WorkOrderItem,
+    WorkOrderListResponse,
+    WorkOrderMetricsResponse,
+    WorkOrderPriority,
+    WorkOrderResponse,
+    WorkOrderStatus,
+    WorkOrderUpdateRequest,
     model_from_value,
 )
 from pydantic import ValidationError
@@ -1481,6 +1491,177 @@ def test_session_tenant_link_and_context_models():
     )
     assert hist_resp.total_sessions == 1
     assert hist_resp.sessions[0].label == "HVAC Ticket"
+
+
+def test_work_order_enums():
+    assert WorkOrderCategory.PLUMBING == "plumbing"
+    assert WorkOrderCategory.HVAC == "hvac"
+    assert WorkOrderCategory.ELECTRICAL == "electrical"
+    assert WorkOrderCategory.APPLIANCE == "appliance"
+    assert WorkOrderCategory.PEST == "pest"
+    assert WorkOrderCategory.STRUCTURAL == "structural"
+    assert WorkOrderCategory.SECURITY == "security"
+    assert WorkOrderCategory.GENERAL == "general"
+
+    assert WorkOrderPriority.LOW == "low"
+    assert WorkOrderPriority.MEDIUM == "medium"
+    assert WorkOrderPriority.HIGH == "high"
+    assert WorkOrderPriority.EMERGENCY == "emergency"
+
+    assert WorkOrderStatus.SUBMITTED == "submitted"
+    assert WorkOrderStatus.SCHEDULED == "scheduled"
+    assert WorkOrderStatus.IN_PROGRESS == "in_progress"
+    assert WorkOrderStatus.ON_HOLD == "on_hold"
+    assert WorkOrderStatus.COMPLETED == "completed"
+    assert WorkOrderStatus.CANCELLED == "cancelled"
+
+
+def test_work_order_create_request_validation():
+    # Valid creation request
+    expected_est = 150.0
+    req = WorkOrderCreateRequest(
+        id="wo_req_1",
+        unit_id="unit_101",
+        title="Kitchen Sink Leak",
+        description="Steady dripping under sink",
+        category="plumbing",
+        priority="high",
+        status="submitted",
+        entry_permission="call_first",
+        assigned_to="Apex Plumbing",
+        estimated_cost=expected_est,
+    )
+    assert req.id == "wo_req_1"
+    assert req.unit_id == "unit_101"
+    assert req.title == "Kitchen Sink Leak"
+    assert req.category == "plumbing"
+    assert req.priority == "high"
+    assert req.estimated_cost == expected_est
+
+    # Auto-normalization to lowercase
+    normalized_req = WorkOrderCreateRequest(
+        unit_id="unit_204",
+        title="AC Issue",
+        description="AC not blowing cold",
+        category="HVAC",
+        priority="EMERGENCY",
+        status="SCHEDULED",
+        entry_permission="PERMISSION_GRANTED",
+    )
+    assert normalized_req.category == "hvac"
+    assert normalized_req.priority == "emergency"
+    assert normalized_req.status == "scheduled"
+    assert normalized_req.entry_permission == "permission_granted"
+
+    # Validation errors on invalid fields
+    with pytest.raises(ValidationError):
+        WorkOrderCreateRequest(
+            unit_id="unit_101",
+            title="",
+            description="Testing blank title",
+        )
+
+    with pytest.raises(ValidationError):
+        WorkOrderCreateRequest(
+            unit_id="unit_101",
+            title="Valid Title",
+            description="",
+        )
+
+    with pytest.raises(ValidationError):
+        WorkOrderCreateRequest(
+            unit_id="unit_101",
+            title="Valid Title",
+            description="Valid Desc",
+            category="invalid_category",
+        )
+
+    with pytest.raises(ValidationError):
+        WorkOrderCreateRequest(
+            unit_id="unit_101",
+            title="Valid Title",
+            description="Valid Desc",
+            priority="invalid_priority",
+        )
+
+
+def test_work_order_update_request_validation():
+    # Valid partial update
+    expected_cost = 175.0
+    up_req = WorkOrderUpdateRequest(
+        title="Updated title",
+        priority="emergency",
+        status="completed",
+        completed_at="2026-10-15T12:00:00",
+        actual_cost=expected_cost,
+    )
+    assert up_req.title == "Updated title"
+    assert up_req.priority == "emergency"
+    assert up_req.status == "completed"
+    assert up_req.actual_cost == expected_cost
+
+    # Invalid status update raises ValidationError
+    with pytest.raises(ValidationError):
+        WorkOrderUpdateRequest(status="invalid_status")
+
+
+def test_work_order_from_session_request():
+    req = WorkOrderFromSessionRequest(
+        title="Noise complaint / Lock repair",
+        description="Front door lock jammed",
+        category="security",
+        priority="high",
+        entry_permission="appointment_only",
+    )
+    assert req.title == "Noise complaint / Lock repair"
+    assert req.category == "security"
+    assert req.priority == "high"
+    assert req.entry_permission == "appointment_only"
+
+
+def test_work_order_response_and_list_models():
+    item = WorkOrderItem(
+        id="wo_test_item",
+        unit_id="unit_101",
+        title="Ceiling fan wobbling",
+        description="Wobbles on high speed",
+        category="electrical",
+        priority="low",
+        status="submitted",
+        entry_permission="permission_granted",
+    )
+    resp = WorkOrderResponse(work_order=item)
+    assert resp.work_order.id == "wo_test_item"
+    assert resp.work_order.title == "Ceiling fan wobbling"
+
+    list_resp = WorkOrderListResponse(items=[item], total=1, limit=50, offset=0)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+    assert list_resp.items[0].id == "wo_test_item"
+
+
+def test_work_order_metrics_response():
+    expected_tot = 10
+    expected_open = 6
+    expected_em = 2
+    expected_est = 1200.0
+    metrics = WorkOrderMetricsResponse(
+        total_work_orders=expected_tot,
+        open_work_orders=expected_open,
+        emergency_work_orders=expected_em,
+        in_progress_work_orders=3,
+        completed_work_orders=4,
+        by_status={"submitted": 3, "in_progress": 3, "completed": 4},
+        by_priority={"low": 2, "medium": 4, "high": 2, "emergency": 2},
+        by_category={"plumbing": 4, "hvac": 4, "general": 2},
+        total_estimated_cost=expected_est,
+        total_actual_cost=1150.0,
+    )
+    assert metrics.total_work_orders == expected_tot
+    assert metrics.open_work_orders == expected_open
+    assert metrics.emergency_work_orders == expected_em
+    assert metrics.total_estimated_cost == expected_est
+
 
 
 

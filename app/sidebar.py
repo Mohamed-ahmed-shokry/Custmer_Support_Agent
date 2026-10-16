@@ -14,6 +14,8 @@ from app.api_utils import (
     create_tenant,
     create_unit,
     create_webhook,
+    create_work_order,
+    create_work_order_from_session,
     delete_collection,
     delete_document,
     delete_documents,
@@ -24,6 +26,7 @@ from app.api_utils import (
     delete_tenant,
     delete_unit,
     delete_webhook,
+    delete_work_order,
     draft_article_from_session,
     evaluate_sla_alerts,
     export_session,
@@ -49,6 +52,8 @@ from app.api_utils import (
     get_stats,
     get_support_triage_analytics,
     get_tenant_support_history,
+    get_unit_work_orders,
+    get_work_order_metrics,
     link_session_tenant,
     list_collections,
     list_documents,
@@ -65,6 +70,7 @@ from app.api_utils import (
     list_units,
     list_webhook_deliveries,
     list_webhooks,
+    list_work_orders,
     ping_webhook,
     publish_knowledge_article,
     rechunk_collection,
@@ -81,6 +87,7 @@ from app.api_utils import (
     update_session,
     update_support_agent,
     update_webhook,
+    update_work_order,
     upload_document,
     upload_documents,
 )
@@ -562,6 +569,73 @@ def _render_session_sla_card(selected):
     col2.metric("Resolution", resol_text)
 
 
+def _render_session_work_order_dispatch(selected: str):
+    with st.sidebar.expander("🛠️ Dispatch Work Order"):
+        wo_title = st.text_input(
+            "Issue Title",
+            key=f"wo_title_{selected}",
+            placeholder="e.g. Leaking kitchen faucet",
+        )
+        wo_desc = st.text_area(
+            "Issue Description",
+            key=f"wo_desc_{selected}",
+            placeholder="Describe problem details, symptoms, and urgency",
+        )
+        c_cat, c_prio = st.columns(2)
+        wo_cat = c_cat.selectbox(
+            "Category",
+            [
+                "plumbing",
+                "electrical",
+                "hvac",
+                "appliance",
+                "pest_control",
+                "structural",
+                "general",
+            ],
+            key=f"wo_cat_{selected}",
+        )
+        wo_prio = c_prio.selectbox(
+            "Priority",
+            ["low", "medium", "high", "emergency"],
+            index=1,
+            key=f"wo_prio_{selected}",
+        )
+        wo_perm = st.selectbox(
+            "Entry Permission",
+            ["permission_granted", "call_first", "resident_must_be_present"],
+            key=f"wo_perm_{selected}",
+        )
+        wo_est = st.number_input(
+            "Est. Cost ($)",
+            min_value=0.0,
+            step=25.0,
+            value=0.0,
+            key=f"wo_est_{selected}",
+        )
+
+        if st.button("🚀 Create Work Order", key=f"btn_create_wo_{selected}"):
+            if not wo_title.strip() or not wo_desc.strip():
+                st.error("Title and description are required.")
+            else:
+                wo_payload = {
+                    "title": wo_title.strip(),
+                    "description": wo_desc.strip(),
+                    "category": wo_cat,
+                    "priority": wo_prio,
+                    "entry_permission": wo_perm,
+                    "estimated_cost": float(wo_est) if wo_est > 0 else None,
+                }
+                res = create_work_order_from_session(selected, wo_payload)
+                if res:
+                    st.success(
+                        f"Work order created! ID: {res.get('work_order', {}).get('id', '')}"
+                    )
+                    st.rerun()
+                else:
+                    st.error("Failed to create work order.")
+
+
 def _render_linked_tenant_details(selected, tenant, unit):
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
     st.sidebar.markdown(f"**Resident:** {t_name}")
@@ -586,6 +660,14 @@ def _render_linked_tenant_details(selected, tenant, unit):
     bal_val = tenant.get("balance_due", 0.0)
     bal_warn = " ⚠️" if bal_val > 0 else ""
     st.sidebar.caption(f"Rent: ${rent_val:,.2f}/mo | Balance: ${bal_val:,.2f}{bal_warn}")
+
+    if unit and unit.get("id"):
+        unit_wos = get_unit_work_orders(unit["id"], open_only=True)
+        open_count = len(unit_wos.get("items", [])) if unit_wos else 0
+        if open_count > 0:
+            st.sidebar.warning(f"⚠️ {open_count} Open Work Order(s) for Unit")
+
+    _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
         with st.spinner("Unlinking tenant..."):
@@ -2092,6 +2174,180 @@ def _render_tenant_and_property_directory():
             _render_tenant_history_tab()
 
 
+def _render_work_orders_board_tab():
+    f_col1, f_col2 = st.columns(2)
+    s_filter = f_col1.selectbox(
+        "Status",
+        ["All", "submitted", "scheduled", "in_progress", "completed", "cancelled"],
+        key="wo_filter_status",
+    )
+    p_filter = f_col2.selectbox(
+        "Priority",
+        ["All", "low", "medium", "high", "emergency"],
+        key="wo_filter_prio",
+    )
+    search_query = st.text_input("Search issues...", key="wo_search_input")
+
+    wos_resp = list_work_orders(
+        status=None if s_filter == "All" else s_filter,
+        priority=None if p_filter == "All" else p_filter,
+        search=search_query.strip() or None,
+        limit=30,
+    )
+    items = wos_resp.get("items", []) if wos_resp else []
+    total_items = wos_resp.get("total", 0) if wos_resp else 0
+    st.caption(f"Showing {len(items)} of {total_items} work order(s)")
+
+    if not items:
+        st.info("No work orders found matching the filter.")
+
+    for wo in items:
+        wo_id = wo["id"]
+        prio_badge = (
+            "🚨"
+            if wo["priority"] == "emergency"
+            else "⚡"
+            if wo["priority"] == "high"
+            else "🔧"
+        )
+        st.markdown(f"**{prio_badge} {wo['title']}** (`{wo_id}`)")
+        st.caption(
+            f"Unit: {wo['unit_id']} | Status: {wo['status']} | "
+            f"Cat: {wo['category']} | Prio: {wo['priority']}"
+        )
+        if wo.get("description"):
+            st.text(wo["description"][:120])
+
+        b_col1, b_col2, b_col3 = st.columns(3)
+        if wo["status"] not in ("in_progress", "completed") and b_col1.button(
+            "▶️ Start", key=f"btn_start_wo_{wo_id}"
+        ):
+            update_work_order(wo_id, {"status": "in_progress"})
+            st.rerun()
+        if wo["status"] != "completed" and b_col2.button(
+            "✅ Done", key=f"btn_done_wo_{wo_id}"
+        ):
+            update_work_order(wo_id, {"status": "completed"})
+            st.rerun()
+        if b_col3.button("🗑️ Del", key=f"btn_del_wo_{wo_id}") and delete_work_order(
+            wo_id
+        ):
+            st.success(f"Deleted {wo_id}")
+            st.rerun()
+        st.markdown("---")
+
+
+def _render_create_work_order_tab():
+    st.markdown("##### ➕ Create New Service Request")
+    all_units = list_units(limit=100)
+    unit_list = all_units.get("items", []) if all_units else []
+    unit_opts = [u["id"] for u in unit_list] if unit_list else ["unit_101"]
+
+    new_unit = st.selectbox("Property Unit", options=unit_opts, key="new_wo_unit")
+    new_title = st.text_input(
+        "Title", key="new_wo_title", placeholder="e.g. AC unit buzzing"
+    )
+    new_desc = st.text_area("Description", key="new_wo_desc")
+    new_cat = st.selectbox(
+        "Category",
+        [
+            "plumbing",
+            "electrical",
+            "hvac",
+            "appliance",
+            "pest_control",
+            "structural",
+            "general",
+        ],
+        key="new_wo_cat",
+    )
+    new_prio = st.selectbox(
+        "Priority",
+        ["low", "medium", "high", "emergency"],
+        index=1,
+        key="new_wo_prio",
+    )
+    new_perm = st.selectbox(
+        "Permission to Enter",
+        ["permission_granted", "call_first", "resident_must_be_present"],
+        key="new_wo_perm",
+    )
+    new_assigned = st.text_input(
+        "Assigned Staff", key="new_wo_assigned", placeholder="e.g. Bob HVAC"
+    )
+    new_est = st.number_input(
+        "Estimated Cost ($)",
+        min_value=0.0,
+        step=25.0,
+        value=0.0,
+        key="new_wo_est",
+    )
+
+    if st.button("Save Work Order", key="btn_save_new_wo"):
+        if not new_title.strip() or not new_desc.strip():
+            st.warning("Please fill in title and description.")
+        else:
+            payload = {
+                "unit_id": new_unit,
+                "title": new_title.strip(),
+                "description": new_desc.strip(),
+                "category": new_cat,
+                "priority": new_prio,
+                "entry_permission": new_perm,
+                "assigned_to": new_assigned.strip(),
+                "estimated_cost": float(new_est) if new_est > 0 else None,
+            }
+            res = create_work_order(payload)
+            if res:
+                st.success(
+                    f"Work order created with ID: {res.get('work_order', {}).get('id', '')}"
+                )
+                st.rerun()
+            else:
+                st.error("Failed to create work order.")
+
+
+def _render_work_order_metrics_tab(metrics: dict):
+    st.markdown("##### 📊 Maintenance Costs & Metrics")
+    est_total = metrics.get("total_estimated_cost", 0.0)
+    act_total = metrics.get("total_actual_cost", 0.0)
+    mc1, mc2 = st.columns(2)
+    mc1.metric("Est. Total Cost", f"${est_total:,.2f}")
+    mc2.metric("Actual Total Cost", f"${act_total:,.2f}")
+
+    st.markdown("**Status Breakdown:**")
+    for st_name, count in (metrics.get("by_status") or {}).items():
+        st.caption(f"- **{st_name}**: {count}")
+
+    st.markdown("**Priority Breakdown:**")
+    for pr_name, count in (metrics.get("by_priority") or {}).items():
+        st.caption(f"- **{pr_name}**: {count}")
+
+
+def _render_maintenance_board():
+    with st.sidebar.expander("🛠️ Maintenance & Work Orders"):
+        metrics = get_work_order_metrics() or {}
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total", metrics.get("total_work_orders", 0))
+        c2.metric("Open", metrics.get("open_work_orders", 0))
+        c3.metric("In Progress", metrics.get("in_progress_work_orders", 0))
+        c4.metric("Emergency", metrics.get("emergency_work_orders", 0))
+
+        sub_tab = st.radio(
+            "Board View",
+            ["Work Orders", "Create Order", "Metrics & Costs"],
+            horizontal=True,
+            key="wo_board_tab_radio",
+        )
+
+        if sub_tab == "Work Orders":
+            _render_work_orders_board_tab()
+        elif sub_tab == "Create Order":
+            _render_create_work_order_tab()
+        else:
+            _render_work_order_metrics_tab(metrics)
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -2116,7 +2372,9 @@ def display_sidebar():
     _render_sla_manager()
     _render_support_agents_and_workload()
     _render_tenant_and_property_directory()
+    _render_maintenance_board()
     _render_knowledge_studio()
     _render_ops_metrics()
+
 
 

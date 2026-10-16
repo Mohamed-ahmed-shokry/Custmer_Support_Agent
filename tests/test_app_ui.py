@@ -2554,6 +2554,7 @@ def test_render_session_tenant_card_linked(monkeypatch):
 
     monkeypatch.setattr(sidebar, "get_session_tenant_context", lambda sid: mock_ctx)
     monkeypatch.setattr(sidebar, "link_session_tenant", fake_link)
+    monkeypatch.setattr(sidebar, "get_unit_work_orders", lambda uid, open_only=False: {"items": []})
 
     sidebar._render_session_tenant_card("sess_1")
 
@@ -2685,4 +2686,153 @@ def test_render_tenant_and_property_directory_tabs(monkeypatch):
     sidebar._render_tenant_history_tab()
     markdowns_h = [c.args[0] for c in st_h.calls if c.fn == "markdown"]
     assert any("Total Linked Sessions:" in m for m in markdowns_h)
+
+
+def test_render_session_work_order_dispatch(monkeypatch):
+    """Test 1-click work order dispatch from session card."""
+    expected_cost = 250.0
+    st = FakeStreamlit(
+        values={
+            "wo_title_sess_1": "Heater Broken",
+            "wo_desc_sess_1": "No heat in apartment",
+            "wo_cat_sess_1": "hvac",
+            "wo_prio_sess_1": "emergency",
+            "wo_perm_sess_1": "permission_granted",
+            "wo_est_sess_1": expected_cost,
+        },
+        buttons={"btn_create_wo_sess_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    dispatched = []
+
+    def fake_create(sid, payload):
+        dispatched.append((sid, payload))
+        return {"work_order": {"id": "wo_999"}}
+
+    monkeypatch.setattr(sidebar, "create_work_order_from_session", fake_create)
+
+    sidebar._render_session_work_order_dispatch("sess_1")
+
+    expected_calls = 1
+    assert len(dispatched) == expected_calls
+    sid, payload = dispatched[0]
+    assert sid == "sess_1"
+    assert payload["title"] == "Heater Broken"
+    assert payload["description"] == "No heat in apartment"
+    assert payload["category"] == "hvac"
+    assert payload["priority"] == "emergency"
+    assert payload["estimated_cost"] == expected_cost
+    assert st.reruns == 1
+
+
+def test_render_work_orders_board_tab(monkeypatch):
+    """Test work orders board tab listing and status progression."""
+    st = FakeStreamlit(
+        values={
+            "wo_filter_status": "All",
+            "wo_filter_prio": "All",
+            "wo_search_input": "",
+        },
+        buttons={"btn_start_wo_wo_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_wos = {
+        "items": [
+            {
+                "id": "wo_1",
+                "unit_id": "unit_101",
+                "title": "Kitchen faucet leaking",
+                "category": "plumbing",
+                "priority": "high",
+                "status": "submitted",
+                "description": "Drips continuously.",
+            }
+        ],
+        "total": 1,
+    }
+    updated_calls = []
+
+    monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
+    monkeypatch.setattr(
+        sidebar,
+        "update_work_order",
+        lambda woid, payload: updated_calls.append((woid, payload)) or {"id": woid},
+    )
+
+    sidebar._render_work_orders_board_tab()
+
+    expected_updates = 1
+    assert len(updated_calls) == expected_updates
+    assert updated_calls[0] == ("wo_1", {"status": "in_progress"})
+    assert st.reruns == 1
+
+
+def test_render_create_work_order_tab(monkeypatch):
+    """Test manual work order creation form."""
+    expected_est = 120.0
+    st = FakeStreamlit(
+        values={
+            "new_wo_unit": "unit_101",
+            "new_wo_title": "Buzzing outlet",
+            "new_wo_desc": "Wall outlet buzzing in bedroom",
+            "new_wo_cat": "electrical",
+            "new_wo_prio": "high",
+            "new_wo_perm": "call_first",
+            "new_wo_assigned": "Bob Electrical",
+            "new_wo_est": expected_est,
+        },
+        buttons={"btn_save_new_wo": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_wos = []
+    mock_units = {"items": [{"id": "unit_101", "unit_number": "101"}]}
+
+    monkeypatch.setattr(sidebar, "list_units", lambda **kwargs: mock_units)
+    monkeypatch.setattr(
+        sidebar,
+        "create_work_order",
+        lambda payload: created_wos.append(payload)
+        or {"work_order": {"id": "wo_new_42"}},
+    )
+
+    sidebar._render_create_work_order_tab()
+
+    expected_created = 1
+    assert len(created_wos) == expected_created
+    p = created_wos[0]
+    assert p["unit_id"] == "unit_101"
+    assert p["title"] == "Buzzing outlet"
+    assert p["category"] == "electrical"
+    assert p["priority"] == "high"
+    assert p["assigned_to"] == "Bob Electrical"
+    assert p["estimated_cost"] == expected_est
+    assert st.reruns == 1
+
+
+def test_render_work_order_metrics_and_board(monkeypatch):
+    """Test maintenance board and metrics summary display."""
+    expected_total = 5
+    metrics = {
+        "total_work_orders": expected_total,
+        "open_work_orders": 3,
+        "in_progress_work_orders": 2,
+        "emergency_work_orders": 1,
+        "total_estimated_cost": 500.0,
+        "total_actual_cost": 420.0,
+        "by_status": {"submitted": 1, "in_progress": 2, "completed": 2},
+        "by_priority": {"high": 2, "emergency": 1, "medium": 2},
+    }
+    st = FakeStreamlit(values={"wo_board_tab_radio": "Metrics & Costs"})
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_work_order_metrics", lambda: metrics)
+
+    sidebar._render_maintenance_board()
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Maintenance Costs & Metrics" in m for m in markdowns)
+    assert any("Status Breakdown:" in m for m in markdowns)
+
 

@@ -1968,6 +1968,147 @@ def test_tenant_and_session_linking_client_helpers(fake_requests, fake_st, monke
     assert api_utils.get_tenant_support_history("tenant_1") is None
 
 
+def test_work_order_list_and_metrics_helpers(fake_requests, fake_st, monkeypatch):
+    """Test work orders list, metrics, and unit/tenant queries."""
+    mock_wo = {
+        "id": "wo_101",
+        "unit_id": "unit_101",
+        "title": "Leaking sink",
+        "category": "plumbing",
+        "priority": "medium",
+        "status": "submitted",
+    }
+    mock_list = {"items": [mock_wo], "total": 1, "limit": 50, "offset": 0}
+    mock_metrics = {
+        "total_work_orders": 3,
+        "open_work_orders": 2,
+        "emergency_work_orders": 0,
+        "by_status": {"submitted": 1},
+    }
+
+    # 1. list_work_orders
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list)
+    res_list = api_utils.list_work_orders(
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        status="submitted",
+        priority="medium",
+        category="plumbing",
+        search="sink",
+    )
+    assert res_list == mock_list
+    _, _, kwargs = fake_requests.calls[0]
+    assert kwargs["params"]["unit_id"] == "unit_101"
+    assert kwargs["params"]["tenant_id"] == "tenant_1"
+    assert kwargs["params"]["status"] == "submitted"
+    assert kwargs["params"]["priority"] == "medium"
+    assert kwargs["params"]["category"] == "plumbing"
+    assert kwargs["params"]["search"] == "sink"
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_work_orders() is None
+    assert fake_st.errors
+
+    # 2. get_work_order
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"work_order": mock_wo}
+    )
+    assert api_utils.get_work_order("wo_101") == {"work_order": mock_wo}
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_work_order("wo_101") is None
+
+    # 3. get_work_order_metrics
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_metrics
+    )
+    assert api_utils.get_work_order_metrics() == mock_metrics
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_work_order_metrics() is None
+
+    # 4. get_unit_work_orders
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list)
+    assert api_utils.get_unit_work_orders("unit_101", open_only=True) == mock_list
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_unit_work_orders("unit_101") is None
+
+    # 5. get_tenant_work_orders
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list)
+    assert api_utils.get_tenant_work_orders("tenant_1", open_only=True) == mock_list
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_tenant_work_orders("tenant_1") is None
+
+    # 6. BoomRequests check
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_work_orders() is None
+    assert api_utils.get_work_order("wo_101") is None
+    assert api_utils.get_work_order_metrics() is None
+    assert api_utils.get_unit_work_orders("unit_101") is None
+    assert api_utils.get_tenant_work_orders("tenant_1") is None
+
+
+def test_work_order_crud_and_session_helpers(fake_requests, monkeypatch):
+    """Test create, update, delete, and session conversion helpers."""
+    mock_wo = {
+        "id": "wo_101",
+        "unit_id": "unit_101",
+        "title": "Leaking sink",
+        "category": "plumbing",
+        "priority": "medium",
+        "status": "submitted",
+    }
+
+    # 1. create_work_order
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"work_order": mock_wo}
+    )
+    assert api_utils.create_work_order(mock_wo) == {"work_order": mock_wo}
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_work_order(mock_wo) is None
+
+    # 2. update_work_order
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"work_order": mock_wo}
+    )
+    assert api_utils.update_work_order("wo_101", {"status": "in_progress"}) == {
+        "work_order": mock_wo
+    }
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.update_work_order("wo_101", {"status": "in_progress"}) is None
+
+    # 3. delete_work_order
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK)
+    assert api_utils.delete_work_order("wo_101") is True
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_work_order("wo_101") is False
+
+    # 4. create_work_order_from_session
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"work_order": mock_wo}
+    )
+    assert api_utils.create_work_order_from_session("sess_1", mock_wo) == {
+        "work_order": mock_wo
+    }
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_work_order_from_session("sess_1", mock_wo) is None
+
+    # 5. BoomRequests check
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.create_work_order(mock_wo) is None
+    assert api_utils.update_work_order("wo_101", {}) is None
+    assert api_utils.delete_work_order("wo_101") is False
+    assert api_utils.create_work_order_from_session("sess_1", {}) is None
+
+
+
+
 
 
 

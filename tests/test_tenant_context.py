@@ -27,6 +27,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_application_logs()
     db_utils.create_units()
     db_utils.create_tenants()
+    db_utils.create_work_orders()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -69,6 +70,10 @@ def test_build_tenant_rag_context_with_tenant_and_unit():
     assert "Emergency Contact: John Connor (+1-555-0198)" in block
     assert "Tenant Account Notes: Prefers email notifications for routine maintenance." in block
     assert "[END RESIDENT & PROPERTY UNIT PROFILE]" in block
+    assert "[ACTIVE MAINTENANCE WORK ORDERS]" in block
+    assert "[wo_101] Kitchen faucet leaking constantly" in block
+    assert "Status: scheduled" in block
+    assert "[END ACTIVE MAINTENANCE WORK ORDERS]" in block
 
 
 def test_build_tenant_rag_context_from_session():
@@ -142,6 +147,46 @@ def test_extract_tenant_macro_variables():
     assert vars_dict["trash_day"] == "Tuesday"
     assert vars_dict["emergency_contact_name"] == "John Connor"
     assert vars_dict["emergency_contact_phone"] == "+1-555-0198"
+    assert vars_dict["open_work_orders_count"] == "1"
+    assert vars_dict["latest_work_order_id"] == "wo_101"
+    assert vars_dict["latest_work_order_title"] == "Kitchen faucet leaking constantly"
+    assert vars_dict["latest_work_order_status"] == "scheduled"
+
+
+def test_build_tenant_rag_context_work_orders_grounding():
+    """Verify that open work orders are grounded and completed orders are omitted."""
+    # tenant_2 has open work order wo_102
+    block = build_tenant_rag_context(tenant_id="tenant_2")
+    assert "[ACTIVE MAINTENANCE WORK ORDERS]" in block
+    assert "[wo_102] Living room AC blowing ambient air" in block
+    assert "Priority: high" in block
+    assert "Status: in_progress" in block
+
+    # tenant_3 only has completed work order wo_103, so no active orders
+    t3_block = build_tenant_rag_context(tenant_id="tenant_3")
+    assert "[ACTIVE MAINTENANCE WORK ORDERS]" not in t3_block
+
+    # include_work_orders=False suppresses work orders block
+    suppressed = build_tenant_rag_context(tenant_id="tenant_2", include_work_orders=False)
+    assert "[ACTIVE MAINTENANCE WORK ORDERS]" not in suppressed
+    assert "[VERIFIED RESIDENT & PROPERTY UNIT PROFILE]" in suppressed
+
+
+def test_render_template_with_work_orders():
+    """Verify macro template rendering with work order variables from linked session."""
+    sid = "sess-macro-wo"
+    db_utils.insert_application_logs(sid, "When is repair?", "Tomorrow", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Hi {customer_name}, you have {open_work_orders_count} open ticket: "
+        "{latest_work_order_id} ({latest_work_order_title}) is "
+        "currently {latest_work_order_status}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Hi Sarah Connor, you have 1 open ticket:" in rendered
+    assert "wo_101 (Kitchen faucet leaking constantly) is currently scheduled." in rendered
 
 
 def test_render_template_with_session_tenant_resolution():
@@ -175,3 +220,4 @@ def test_render_template_overrides_tenant_variables():
     rendered, unresolved = render_template(template, variables=custom_vars, session_id=sid)
     assert unresolved == []
     assert rendered == "Resident Ms. Sarah Connor, VIP, rent balance is $100.00."
+
