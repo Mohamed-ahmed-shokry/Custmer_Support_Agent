@@ -1131,6 +1131,101 @@ Bridge the gap between tenant communication and property operations. Maintenance
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.36.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
+## v0.37.0 plan — Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine
+
+Empower property operators and residents with a complete financial ledger, billing, and payment operations engine. Enable tracking of charges (rent, security deposits, late fees, utilities, pet rent, parking, maintenance) and payments (ACH, credit/debit, check, portal) with balance reconciliation; ground LLM chat responses with real-time financial statements and overdue charge breakdowns; auto-populate financial macro variables (`{last_payment_date}`, `{last_payment_amount}`, `{overdue_balance}`, `{payment_reference}`); provide automated financial webhook triggers (`billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, `billing.overdue_escalated`); and deliver a dedicated "💰 Billing & Rent Ledgers" dashboard in Streamlit with 1-click resident payment recording and charge posting.
+
+### Objective & Expected Outcome
+Equip the customer support platform to answer billing disputes, provide real-time ledger statements, verify payment receipts, assess late fees, and record resident payments directly from support conversations. This resolves the second-most frequent operational support workload in property management after maintenance, with zero third-party dependencies and 100% local-first reliability.
+
+### Scope & Objectives
+- **Database Schema & Persistence (`api/db_utils.py`)**:
+  - SQLite table `billing_transactions`:
+    - `id TEXT PRIMARY KEY` (`tx_` prefix)
+    - `tenant_id TEXT NOT NULL REFERENCES tenants(id)`
+    - `unit_id TEXT NOT NULL REFERENCES units(id)`
+    - `session_id TEXT` (optional link to originating chat session)
+    - `transaction_type TEXT NOT NULL` (`rent`, `security_deposit`, `late_fee`, `utility`, `parking_fee`, `pet_rent`, `maintenance_charge`, `payment`, `credit_refund`)
+    - `amount REAL NOT NULL` (positive for charges, positive magnitude for payments/credits)
+    - `status TEXT NOT NULL DEFAULT 'posted'` (`posted`, `pending`, `paid`, `overdue`, `waived`, `refunded`)
+    - `due_date TEXT` (YYYY-MM-DD)
+    - `paid_at TEXT` (ISO timestamp when payment was recorded)
+    - `payment_method TEXT` (`ach`, `credit_card`, `debit_card`, `check`, `money_order`, `online_portal`)
+    - `reference_number TEXT` (transaction receipt or check number)
+    - `description TEXT NOT NULL`
+    - `notes TEXT DEFAULT ''`
+    - `created_at TEXT NOT NULL`
+    - `updated_at TEXT NOT NULL`
+  - Pre-seeded default ledger transactions for existing test units/tenants (`unit_101`, `unit_204`, etc.).
+  - Database operations:
+    - `create_billing_transaction()`
+    - `get_billing_transaction()`
+    - `list_billing_transactions()` (filters: `tenant_id`, `unit_id`, `transaction_type`, `status`, `start_date`, `end_date`)
+    - `update_billing_transaction()`
+    - `delete_billing_transaction()`
+    - `record_tenant_payment()`: atomic transaction recording payment, auto-reconciling tenant `balance_due`, marking matching overdue charges paid
+    - `get_tenant_ledger_summary()`: computes total billed, total paid, current balance, overdue amount, transaction count
+    - `get_billing_summary_metrics()`: portfolio metrics (total billed, total collected, collection rate %, total outstanding, overdue accounts count)
+- **RAG Context Grounding & Macro Engine Integration (`api/tenant_context.py` & `api/macros.py`)**:
+  - Extend `build_tenant_rag_context()` to query active financial balances, overdue charges, and last payment details.
+  - Inject a structured `[RESIDENT BILLING & PAYMENT LEDGER]` block into prompt contexts so the assistant can answer balance inquiries ("How much do I owe?", "Did my rent payment go through?").
+  - Auto-resolve macro variables: `{last_payment_date}`, `{last_payment_amount}`, `{overdue_balance}`, `{payment_reference}`.
+- **Webhooks & Financial Alerting (`api/webhooks.py`, `api/db_utils.py`)**:
+  - Support `billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, and `billing.overdue_escalated`.
+- **Pydantic Validation Models (`api/pydantic_models.py`)**:
+  - Request/response schemas for transactions, payments, ledger summaries, filters, and portfolio metrics.
+- **FastAPI Endpoints (`api/main.py`)**:
+  - `POST /billing/transactions`: post a new charge or transaction
+  - `GET /billing/transactions`: list transactions with filters
+  - `GET /billing/metrics`: portfolio billing & collection metrics
+  - `GET /billing/transactions/{id}`: get transaction by ID
+  - `PATCH /billing/transactions/{id}`: update transaction status or details
+  - `DELETE /billing/transactions/{id}`: void/delete transaction
+  - `POST /tenants/{id}/payments`: record a resident payment with automatic balance reconciliation
+  - `GET /tenants/{id}/ledger`: retrieve resident ledger statement with running balance
+  - `POST /sessions/{id}/record-payment`: 1-click recording of a payment from active support session
+- **Streamlit Client Helpers (`app/api_utils.py`)**:
+  - Typed helper functions forwarding `X-API-Key` headers for all billing and ledger endpoints.
+- **Streamlit UI Components (`app/sidebar.py`)**:
+  - "💰 Billing & Rent Ledgers" sidebar panel with portfolio KPI cards, searchable ledger browser with 1-click status transitions (`Mark Paid`, `Waive`, `Void`), charge posting form, and payment recording form.
+  - 1-click "💳 Record Payment" widget directly inside the active session resident card.
+
+### Acceptance Criteria
+1. `billing_transactions` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, ledger summaries, and portfolio metrics in `api/db_utils.py`.
+2. `api/tenant_context.py` augments grounding prompt context with `[RESIDENT BILLING & PAYMENT LEDGER]` and auto-resolves billing macro variables.
+3. Webhook events `billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, and `billing.overdue_escalated` trigger correctly on transaction events.
+4. Pydantic schemas in `api/pydantic_models.py` validate transaction creation, payments, ledger queries, and summary responses.
+5. FastAPI endpoints `/billing/*`, `/tenants/{id}/payments`, `/tenants/{id}/ledger`, and `/sessions/{id}/record-payment` are wired and tested.
+6. Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling.
+7. Streamlit UI in `app/sidebar.py` provides the 1-click payment recording widget in session card and the "💰 Billing & Rent Ledgers" management panel.
+8. Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`) are complete.
+9. Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions.
+
+### Validation Plan
+- Unit tests in `tests/test_db_utils.py` covering transactions CRUD, payment reconciliation, balance math, and portfolio metrics.
+- Unit tests in `tests/test_tenant_context.py` covering billing prompt injection and macro resolution.
+- Unit tests in `tests/test_models.py` covering Pydantic models.
+- Route tests in `tests/test_api_routes.py` covering all billing endpoints.
+- Client tests in `tests/test_app_api_utils.py` covering billing API methods.
+- UI tests in `tests/test_app_ui.py` covering the billing sidebar panel and session payment widget.
+- Full verification suite: `python -m pytest`, `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`.
+
+### Exclusions
+- Third-party payment gateway integration (Stripe, Plaid, Authorize.net) — financial records and reconciliation are local-first.
+- Automated banking ACH clearinghouse transmissions.
+
+### Granular Task Breakdown
+- [ ] Task 1: `ROADMAP.md` v0.37.0 plan specification and `docs/PROGRESS.md` initialization
+- [ ] Task 2: Database schema, table creation, default seed data, and CRUD operations for `billing_transactions` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] Task 3: Payment recording and tenant balance reconciliation logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] Task 4: Context grounding engine integration for billing & ledgers in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [ ] Task 5: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [ ] Task 6: FastAPI endpoints for billing transactions, ledger statements, and session payment recording in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] Task 7: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] Task 8: Streamlit UI components in `app/sidebar.py` (session payment recording & "💰 Billing & Rent Ledgers" panel) + UI tests in `tests/test_app_ui.py`
+- [ ] Task 9: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] Task 10: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
