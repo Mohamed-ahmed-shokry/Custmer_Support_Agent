@@ -12,6 +12,7 @@ from typing import Any
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
+    get_tenant_lease_renewals,
     get_tenant_ledger_summary,
     get_tenant_work_orders,
     get_unit,
@@ -191,14 +192,46 @@ def _format_billing_lines(ledger_summary: dict[str, Any]) -> list[str]:
     return lines
 
 
-def build_tenant_rag_context(
+def _format_lease_renewal_lines(renewals: list[dict[str, Any]]) -> list[str]:
+    """Format active lease renewal offers and agreement terms."""
+    lines: list[str] = ["[LEASE RENEWAL OFFERS & AGREEMENTS]"]
+    for lr in renewals:
+        lr_id = lr.get("id", "Unknown")
+        curr = format_currency(lr.get("current_rent"))
+        prop = format_currency(lr.get("proposed_rent"))
+        term = lr.get("term_months", 12)
+        st = lr.get("status", "offered").upper()
+        start = lr.get("start_date", "N/A")
+        end = lr.get("end_date", "N/A")
+        exp = lr.get("expires_at", "N/A")
+        concession = lr.get("concession_amount", 0.0)
+
+        parts = [
+            f"[{lr_id}] Status: {st}",
+            f"Term: {term} mos ({start} to {end})",
+            f"Current Rent: {curr} -> Proposed Rent: {prop}",
+            f"Expires: {exp}",
+        ]
+        if concession > 0:
+            c_str = format_currency(concession)
+            c_notes = lr.get("concession_notes") or "Concession credit"
+            parts.append(f"Incentive: {c_str} ({c_notes})")
+        if lr.get("signature_name"):
+            parts.append(f"Signed By: {lr['signature_name']} on {lr.get('signed_at')}")
+        lines.append("  - " + " | ".join(parts))
+    lines.append("[END LEASE RENEWAL OFFERS & AGREEMENTS]")
+    return lines
+
+
+def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
     session_id: str | None = None,
     include_work_orders: bool = True,
     include_billing: bool = True,
+    include_renewals: bool = True,
 ) -> str:
-    """Build structured Markdown block of verified tenant, unit, work orders, and billing."""
+    """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
     resolved_tenant_id = tenant.get("id") if tenant else tenant_id
     resolved_unit_id = unit.get("id") if unit else unit_id
@@ -214,7 +247,11 @@ def build_tenant_rag_context(
     if include_billing and resolved_tenant_id:
         ledger_summary = get_tenant_ledger_summary(resolved_tenant_id)
 
-    if not tenant and not unit and not work_orders and not ledger_summary:
+    renewals: list[dict[str, Any]] = []
+    if include_renewals and resolved_tenant_id:
+        renewals = get_tenant_lease_renewals(resolved_tenant_id)
+
+    if not tenant and not unit and not work_orders and not ledger_summary and not renewals:
         return ""
 
     lines: list[str] = []
@@ -235,6 +272,11 @@ def build_tenant_rag_context(
         if lines:
             lines.append("")
         lines.extend(_format_billing_lines(ledger_summary))
+
+    if renewals:
+        if lines:
+            lines.append("")
+        lines.extend(_format_lease_renewal_lines(renewals))
 
     return "\n".join(lines)
 
@@ -316,7 +358,7 @@ def _extract_unit_vars(unit: dict[str, Any]) -> dict[str, str]:
     return vars_dict
 
 
-def extract_tenant_macro_variables(
+def extract_tenant_macro_variables(  # noqa: PLR0915
     session_id: str | None = None,
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -365,5 +407,36 @@ def extract_tenant_macro_variables(
 
             variables["overdue_balance"] = format_currency(ledger.get("overdue_amount", 0.0))
             variables["overdue_charges_count"] = str(ledger.get("overdue_count", 0))
+
+        renewals = get_tenant_lease_renewals(resolved_tenant_id)
+        if renewals:
+            latest_renewal = renewals[0]
+            variables["renewal_id"] = str(latest_renewal.get("id", ""))
+            variables["renewal_proposed_rent"] = format_currency(
+                latest_renewal.get("proposed_rent")
+            )
+            variables["renewal_current_rent"] = format_currency(
+                latest_renewal.get("current_rent")
+            )
+            variables["renewal_term_months"] = str(
+                latest_renewal.get("term_months", 12)
+            )
+            variables["renewal_status"] = str(latest_renewal.get("status", ""))
+            variables["renewal_start_date"] = str(latest_renewal.get("start_date", ""))
+            variables["renewal_end_date"] = str(latest_renewal.get("end_date", ""))
+            variables["renewal_expires_at"] = str(latest_renewal.get("expires_at", ""))
+            variables["renewal_concession"] = format_currency(
+                latest_renewal.get("concession_amount", 0.0)
+            )
+        else:
+            variables["renewal_id"] = ""
+            variables["renewal_proposed_rent"] = "$0.00"
+            variables["renewal_current_rent"] = "$0.00"
+            variables["renewal_term_months"] = "12"
+            variables["renewal_status"] = "none"
+            variables["renewal_start_date"] = ""
+            variables["renewal_end_date"] = ""
+            variables["renewal_expires_at"] = ""
+            variables["renewal_concession"] = "$0.00"
 
     return variables
