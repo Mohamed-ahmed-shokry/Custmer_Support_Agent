@@ -38,6 +38,15 @@ from api.pydantic_models import (
     KnowledgeGapListResponse,
     KnowledgeGapScanResponse,
     KnowledgeGapUpdateRequest,
+    LeaseRenewalCreateRequest,
+    LeaseRenewalDocumentPublishRequest,
+    LeaseRenewalDocumentPublishResponse,
+    LeaseRenewalItem,
+    LeaseRenewalListResponse,
+    LeaseRenewalMetricsResponse,
+    LeaseRenewalResponse,
+    LeaseRenewalSignRequest,
+    LeaseRenewalUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -1782,6 +1791,127 @@ def test_tenant_payment_and_ledger_models():
     )
     assert metrics_resp.total_transactions == expected_total_tx
     assert metrics_resp.collection_rate == expected_col_rate
+
+
+def test_lease_renewal_models():
+    # 1. Valid create request
+    req = LeaseRenewalCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        proposed_rent=1500.0,
+        current_rent=1450.0,
+        term_months=12,
+        start_date="2026-11-01",
+        end_date="2027-10-31",
+        concession_amount=100.0,
+        concession_notes="Credit upon signing",
+        status="offered",
+        notes="Standard offer",
+    )
+    assert req.tenant_id == "tenant_1"
+    assert req.proposed_rent == 1500.0  # noqa: PLR2004
+    assert req.term_months == 12  # noqa: PLR2004
+    assert req.status == "offered"
+
+    # Validation errors
+    with pytest.raises(ValidationError):
+        LeaseRenewalCreateRequest(tenant_id="tenant_1", proposed_rent=0.0)
+
+    with pytest.raises(ValidationError):
+        LeaseRenewalCreateRequest(tenant_id="tenant_1", term_months=5)
+
+    with pytest.raises(ValidationError):
+        LeaseRenewalCreateRequest(tenant_id="tenant_1", status="bad_status")
+
+    # 2. Update request
+    up_req = LeaseRenewalUpdateRequest(
+        proposed_rent=1550.0,
+        term_months=24,
+        status="negotiating",
+        concession_amount=150.0,
+    )
+    assert up_req.proposed_rent == 1550.0  # noqa: PLR2004
+    assert up_req.term_months == 24  # noqa: PLR2004
+    assert up_req.status == "negotiating"
+
+    # 3. Sign request
+    sign_req = LeaseRenewalSignRequest(
+        signature_name="Sarah Connor",
+        signature_ip="192.168.1.10",
+        notes="Executed via resident portal",
+    )
+    assert sign_req.signature_name == "Sarah Connor"
+    assert sign_req.signature_ip == "192.168.1.10"
+
+    with pytest.raises(ValidationError):
+        LeaseRenewalSignRequest(signature_name="")
+
+    # 4. Item and Response models
+    item = LeaseRenewalItem(
+        id="lr_101",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        current_rent=1450.0,
+        proposed_rent=1500.0,
+        term_months=12,
+        start_date="2026-11-01",
+        end_date="2027-10-31",
+        concession_amount=100.0,
+        concession_notes="Discount",
+        security_deposit_change=0.0,
+        status="signed",
+        expires_at="2026-10-31",
+        signature_name="Sarah Connor",
+        signature_ip="192.168.1.10",
+        signed_at="2026-10-15T10:00:00Z",
+        notes="Executed",
+        document_file_id=42,
+        created_at="2026-10-01T09:00:00Z",
+        updated_at="2026-10-15T10:00:00Z",
+    )
+    resp = LeaseRenewalResponse(renewal=item)
+    assert resp.renewal.id == "lr_101"
+    assert resp.renewal.status == "signed"
+
+    list_resp = LeaseRenewalListResponse(items=[item], total=1, limit=50, offset=0)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+    # 5. Publish models
+    pub_req = LeaseRenewalDocumentPublishRequest(
+        collection="default", chunking_strategy="markdown", chunk_size=1000, chunk_overlap=200
+    )
+    assert pub_req.chunking_strategy == "markdown"
+
+    pub_resp = LeaseRenewalDocumentPublishResponse(
+        renewal_id="lr_101",
+        file_id=42,
+        filename="lease_renewal_lr_101.md",
+        collection="default",
+        sha256="abc123hash",
+        content_length=1500,
+        indexed_in_chroma=True,
+    )
+    assert pub_resp.file_id == 42  # noqa: PLR2004
+    assert pub_resp.indexed_in_chroma is True
+
+    # 6. Metrics model
+    expected_total_lr = 5
+    expected_rate = 60.0
+    metrics_resp = LeaseRenewalMetricsResponse(
+        total_renewals=expected_total_lr,
+        signed_renewals=3,
+        pending_renewals=1,
+        draft_renewals=1,
+        declined_renewals=0,
+        renewal_rate=expected_rate,
+        avg_rent_increase_pct=4.5,
+        by_status={"signed": 3, "offered": 1, "draft": 1},
+        by_term={"12": 4, "24": 1},
+    )
+    assert metrics_resp.total_renewals == expected_total_lr
+    assert metrics_resp.renewal_rate == expected_rate
+
 
 
 
