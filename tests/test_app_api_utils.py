@@ -2216,6 +2216,145 @@ def test_billing_api_utils_helpers(fake_requests, fake_st, monkeypatch):  # noqa
     assert api_utils.record_session_payment("sess_1", {}) is None
 
 
+def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # noqa: PLR0915
+    """Test all lease renewal and document client API helpers in app/api_utils.py."""
+    mock_lr = {
+        "id": "lr_test_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "proposed_rent": 1650.0,
+        "term_months": 12,
+        "status": "offered",
+    }
+    mock_list_resp = {"items": [mock_lr], "total": 1, "limit": 50, "offset": 0}
+    mock_metrics_resp = {"total_renewals": 3, "renewal_rate": 75.0}
+    mock_pub_resp = {"renewal_id": "lr_test_101", "indexed_in_chroma": True}
+
+    # 1. list_lease_renewals
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_list_resp
+    )
+    res = api_utils.list_lease_renewals(tenant_id="tenant_1", status="offered")
+    assert res == mock_list_resp
+    _, url, kwargs = fake_requests.calls[0]
+    assert url.endswith("/lease-renewals")
+    assert kwargs["params"]["tenant_id"] == "tenant_1"
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_lease_renewals() is None
+
+    # 2. get_lease_renewal
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"renewal": mock_lr}
+    )
+    assert api_utils.get_lease_renewal("lr_test_101") == {"renewal": mock_lr}
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_lease_renewal("lr_missing") is None
+
+    # 3. get_lease_renewal_metrics
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_metrics_resp
+    )
+    assert api_utils.get_lease_renewal_metrics() == mock_metrics_resp
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_lease_renewal_metrics() is None
+
+    # 4. create_lease_renewal
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"renewal": mock_lr}
+    )
+    assert api_utils.create_lease_renewal(mock_lr) == {"renewal": mock_lr}
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.create_lease_renewal(mock_lr) is None
+
+    # 5. update_lease_renewal
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"renewal": mock_lr}
+    )
+    assert (
+        api_utils.update_lease_renewal("lr_test_101", {"status": "accepted"})
+        == {"renewal": mock_lr}
+    )
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert (
+        api_utils.update_lease_renewal("lr_test_101", {"status": "accepted"})
+        is None
+    )
+
+    # 6. delete_lease_renewal
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK)
+    assert api_utils.delete_lease_renewal("lr_test_101") is True
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_lease_renewal("lr_test_101") is False
+
+    # 7. sign_lease_renewal
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"renewal": mock_lr}
+    )
+    assert (
+        api_utils.sign_lease_renewal("lr_test_101", {"signature_name": "Test Signer"})
+        == {"renewal": mock_lr}
+    )
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert (
+        api_utils.sign_lease_renewal("lr_test_101", {"signature_name": "Test Signer"})
+        is None
+    )
+
+    # 8. publish_lease_renewal_document
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_pub_resp
+    )
+    assert (
+        api_utils.publish_lease_renewal_document("lr_test_101", {})
+        == mock_pub_resp
+    )
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.publish_lease_renewal_document("lr_test_101", {}) is None
+
+    # 9. create_session_lease_renewal
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"renewal": mock_lr}
+    )
+    assert (
+        api_utils.create_session_lease_renewal("sess_101", mock_lr)
+        == {"renewal": mock_lr}
+    )
+
+    fake_requests.response = FakeResponse(status_code=400)
+    assert api_utils.create_session_lease_renewal("sess_101", mock_lr) is None
+
+    # 10. get_tenant_lease_renewals
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_list_resp
+    )
+    assert api_utils.get_tenant_lease_renewals("tenant_1") == mock_list_resp
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_tenant_lease_renewals("tenant_1") is None
+
+    # 11. Exception handling via BoomRequests
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_lease_renewals() is None
+    assert api_utils.get_lease_renewal("lr_1") is None
+    assert api_utils.get_lease_renewal_metrics() is None
+    assert api_utils.create_lease_renewal({}) is None
+    assert api_utils.update_lease_renewal("lr_1", {}) is None
+    assert api_utils.delete_lease_renewal("lr_1") is False
+    assert api_utils.sign_lease_renewal("lr_1", {}) is None
+    assert api_utils.publish_lease_renewal_document("lr_1", {}) is None
+    assert api_utils.create_session_lease_renewal("sess_1", {}) is None
+    assert api_utils.get_tenant_lease_renewals("tenant_1") is None
+
+
+
 
 
 

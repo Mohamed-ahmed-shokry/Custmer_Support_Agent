@@ -1,6 +1,8 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.37.0, 2026-10-17)
+## Current State (v0.38.0, 2026-10-17)
+- Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine (`POST /lease-renewals`, `GET /lease-renewals`, `GET /lease-renewals/metrics`, `GET /lease-renewals/{id}`, `PATCH /lease-renewals/{id}`, `DELETE /lease-renewals/{id}`, `POST /lease-renewals/{id}/sign`, `POST /sessions/{id}/create-lease-renewal`, `GET /tenants/{id}/lease-renewals`): full digital lease agreement lifecycle connecting residents (`tenants`) and units (`units`) with customizable terms (6-month, 12-month, 18-month, 24-month, month-to-month), proposed rent, concessions, security deposit updates, renewal status state machine (`draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`), simulated digital e-signatures (`signature_name`, `signature_ip`, `signed_at`), and Markdown lease agreement document generation with auto-publishing to RAG knowledge base. Webhook notifications (`lease_renewal.offered`, `lease_renewal.accepted`, `lease_renewal.signed`, `lease_renewal.declined`) trigger automated leasing team alerts. Active support conversations ground renewal terms into prompt context (`[LEASE RENEWAL OFFERS & AGREEMENTS]`), and macro variables auto-resolve (`{renewal_proposed_rent}`, `{renewal_term_months}`, `{renewal_status}`, `{renewal_expires_at}`).
+- Streamlit Lease Renewals Board & 1-Click Resident Offer Widget: live "📄 Generate Renewal Offer" widget directly inside the active session resident card for 1-click renewal contract creation, plus a dedicated "📝 Lease Renewals & Documents" sidebar panel with portfolio renewal KPIs (Total, Offered, Signed, Renewal Rate %), searchable agreement board with status filters and 1-click actions (`Offer`, `Sign / Execute`, `Decline`), digital signing form, and renewal document generator.
 - Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine (`POST /billing/transactions`, `GET /billing/transactions`, `GET /billing/metrics`, `GET /billing/transactions/{id}`, `PATCH /billing/transactions/{id}`, `DELETE /billing/transactions/{id}`, `POST /tenants/{id}/payments`, `GET /tenants/{id}/ledger`, `POST /sessions/{id}/record-payment`): complete financial ledger and accounting lifecycle linking resident profiles (`tenants`) and units (`units`) with transaction tracking across charges (`rent`, `security_deposit`, `late_fee`, `utility`, `parking_fee`, `pet_rent`, `maintenance_charge`) and payments (`ach`, `credit_card`, `debit_card`, `check`, `money_order`, `cashier_check`, `online_portal`). Supports atomic payment recording, tenant balance reconciliation, automatic overdue charge resolution, portfolio financial metrics, and real-time webhook alerting (`billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, `billing.overdue_escalated`). Active sessions automatically ground financial statements into conversational RAG context (`[RESIDENT FINANCIAL LEDGER & RENT BALANCE]`), and macro variables auto-resolve (`{overdue_balance}`, `{last_payment_amount}`, `{last_payment_date}`, `{last_payment_method}`).
 - Streamlit Billing Board & 1-Click Resident Payment Widget: live "💳 Record Resident Payment" widget directly inside the active session resident card for 1-click invoice settlements and balance payoffs, plus a dedicated "💰 Billing & Rent Ledgers" sidebar panel with live financial KPIs (Billed, Collected, Outstanding, Collection Rate %), searchable filterable transaction ledger with status transitions (`Mark Paid`, `Waive`, `Delete`), resident payment processing form, and charge posting assessment form.
 - Maintenance Work Orders, Service Requests & Resident Dispatch Engine (`POST /work-orders`, `GET /work-orders`, `GET /work-orders/metrics`, `GET /work-orders/{id}`, `PATCH /work-orders/{id}`, `DELETE /work-orders/{id}`, `POST /sessions/{id}/create-work-order`, `GET /units/{id}/work-orders`, `GET /tenants/{id}/work-orders`): persistent maintenance repair tracking (`work_orders` table in SQLite) connected to property units and residents, tracking category (`plumbing`, `electrical`, `hvac`, `appliance`, `pest_control`, `structural`, `general`), priority (`low`, `medium`, `high`, `emergency`), status (`submitted`, `scheduled`, `in_progress`, `completed`, `cancelled`), entry permissions, contractor/staff assignment, scheduled dates, and estimated vs. actual repair costs. Prompt grounding augments chat context with active maintenance work orders (`[ACTIVE MAINTENANCE WORK ORDERS]`), macro variables auto-resolve (`{open_work_orders_count}`, `{latest_work_order_id}`), and real-time webhook events (`work_order.created`, `work_order.emergency_escalated`, `work_order.status_changed`) alert operations teams immediately.
@@ -1227,6 +1229,115 @@ Equip the customer support platform to answer billing disputes, provide real-tim
 - [x] Task 8: Streamlit UI components in `app/sidebar.py` (session payment recording & "💰 Billing & Rent Ledgers" panel) + UI tests in `tests/test_app_ui.py`
 - [x] Task 9: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 10: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+
+## v0.38.0 plan — Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine ✅ COMPLETED
+
+Empower property operators and residents with a complete digital lease renewal lifecycle, addenda generator, and agreement execution engine. Enable tracking of renewal offers with customizable term lengths (6, 12, 18, 24 months, month-to-month), proposed rent, rent changes, concession discounts, security deposit adjustments, renewal deadlines, and status progression (`draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`); support simulated electronic signatures (`signature_name`, `signature_ip`, `signed_at`) with automatic tenant lease date updates; generate structured Markdown lease renewal contracts with 1-click publishing directly into the RAG document store (`document_store` / `document_sources` + Chroma vector store); ground active support sessions with live renewal offers and pending addenda (`[LEASE RENEWAL OFFERS & AGREEMENTS]`); auto-populate renewal macro variables (`{renewal_proposed_rent}`, `{renewal_term_months}`, `{renewal_status}`, `{renewal_expires_at}`); provide automated real-time leasing webhook alerts (`lease_renewal.offered`, `lease_renewal.accepted`, `lease_renewal.signed`, `lease_renewal.declined`); and deliver a dedicated "📝 Lease Renewals & Documents" dashboard in Streamlit with 1-click resident renewal offer creation from active support sessions.
+
+### Objective & Expected Outcome
+Equip the customer support platform to answer lease expiration and renewal inquiries ("When does my lease expire?", "Can I renew for 12 months?", "What is my renewal rate?"), generate renewal contracts with custom concessions, record simulated digital signatures, update resident lease terms automatically, and publish binding lease addenda into the RAG knowledge base. This closes the third primary customer service pillar in property management (after maintenance and billing), operating 100% locally with zero external dependencies.
+
+### Scope & Objectives
+- **Database Schema & Persistence (`api/db_utils.py`)**:
+  - SQLite table `lease_renewals`:
+    - `id TEXT PRIMARY KEY` (`lr_` prefix)
+    - `tenant_id TEXT NOT NULL REFERENCES tenants(id)`
+    - `unit_id TEXT NOT NULL REFERENCES units(id)`
+    - `session_id TEXT` (optional link to originating chat session)
+    - `current_rent REAL NOT NULL`
+    - `proposed_rent REAL NOT NULL`
+    - `term_months INTEGER NOT NULL DEFAULT 12`
+    - `start_date TEXT NOT NULL` (YYYY-MM-DD)
+    - `end_date TEXT NOT NULL` (YYYY-MM-DD)
+    - `concession_amount REAL NOT NULL DEFAULT 0.0`
+    - `concession_notes TEXT DEFAULT ''`
+    - `security_deposit_change REAL NOT NULL DEFAULT 0.0`
+    - `status TEXT NOT NULL DEFAULT 'offered'` (`draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`)
+    - `expires_at TEXT` (YYYY-MM-DD offer expiration deadline)
+    - `signature_name TEXT DEFAULT ''`
+    - `signature_ip TEXT DEFAULT ''`
+    - `signed_at TEXT` (ISO timestamp)
+    - `notes TEXT DEFAULT ''`
+    - `document_file_id INTEGER DEFAULT NULL` (optional link to published `document_store`)
+    - `created_at TEXT NOT NULL`
+    - `updated_at TEXT NOT NULL`
+  - Pre-seeded default renewal records for existing test tenants (`tenant_sarah`, `tenant_marcus`, etc.).
+  - Database operations in `api/db_utils.py`:
+    - `create_lease_renewal()`
+    - `get_lease_renewal()`
+    - `list_lease_renewals()` (filters: `tenant_id`, `unit_id`, `status`)
+    - `update_lease_renewal()`
+    - `delete_lease_renewal()`
+    - `sign_lease_renewal()`: records simulated e-signature, transitions status to `signed`, updates `tenants.lease_start`, `tenants.lease_end`, and `tenants.monthly_rent` automatically.
+    - `get_tenant_lease_renewals()`: fetches renewals for a specific tenant.
+    - `get_lease_renewal_summary_metrics()`: portfolio metrics (total offers, pending/offered, signed, renewal rate %, average rent increase %).
+- **Lease Document Generator & Knowledge Base Integration (`api/lease_renewals.py`)**:
+  - `generate_lease_renewal_markdown(renewal_id: str) -> str`: synthesizes a legally structured, human-readable Markdown lease renewal agreement and addendum with resident names, unit address, terms, rent schedule, concessions, and execution signature block.
+  - `publish_lease_renewal_document(renewal_id: str, collection: str = 'default') -> dict`: saves agreement Markdown into `document_store` and `document_sources`, indexes into Chroma vector store, and links `document_file_id`.
+- **RAG Context Grounding & Macro Engine Integration (`api/tenant_context.py` & `api/macros.py`)**:
+  - Extend `build_tenant_rag_context()` to query active/pending lease renewals.
+  - Inject a structured `[LEASE RENEWAL OFFERS & AGREEMENTS]` block into prompt contexts so the assistant can answer renewal inquiries accurately.
+  - Auto-resolve macro variables: `{renewal_proposed_rent}`, `{renewal_term_months}`, `{renewal_status}`, `{renewal_expires_at}`, `{renewal_start_date}`, `{renewal_end_date}`.
+- **Webhooks & Leasing Alerting (`api/webhooks.py`, `api/db_utils.py`)**:
+  - Support `lease_renewal.offered`, `lease_renewal.accepted`, `lease_renewal.signed`, and `lease_renewal.declined`.
+- **Pydantic Validation Models (`api/pydantic_models.py`)**:
+  - Request/response schemas for renewal creation, updates, digital signing, filters, and portfolio metrics.
+- **FastAPI Endpoints (`api/main.py`)**:
+  - `POST /lease-renewals`: create a renewal offer
+  - `GET /lease-renewals`: list renewal offers with filters
+  - `GET /lease-renewals/metrics`: portfolio renewal metrics
+  - `GET /lease-renewals/{id}`: get renewal by ID
+  - `PATCH /lease-renewals/{id}`: update renewal details or status
+  - `DELETE /lease-renewals/{id}`: delete/cancel renewal offer
+  - `POST /lease-renewals/{id}/sign`: digitally sign agreement and update tenant lease records
+  - `POST /lease-renewals/{id}/publish-document`: generate Markdown agreement and publish to RAG document store
+  - `POST /sessions/{id}/create-lease-renewal`: 1-click renewal offer creation from active support session
+  - `GET /tenants/{id}/lease-renewals`: retrieve renewal offers for a tenant
+- **Streamlit Client Helpers (`app/api_utils.py`)**:
+  - Typed helper functions forwarding `X-API-Key` headers for all lease renewal endpoints.
+- **Streamlit UI Components (`app/sidebar.py`)**:
+  - "📝 Lease Renewals & Documents" sidebar panel with portfolio renewal KPI cards, searchable agreement table with 1-click status transitions (`Offer`, `Sign / Execute`, `Decline`), digital signing form, and renewal offer generator.
+  - 1-click "📄 Generate Renewal Offer" widget directly inside the active session resident card.
+
+### Acceptance Criteria
+1. `lease_renewals` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, signing, and portfolio metrics in `api/db_utils.py`.
+2. `sign_lease_renewal()` records digital signature and automatically updates tenant's `lease_start`, `lease_end`, and `monthly_rent` in `tenants`.
+3. `api/lease_renewals.py` synthesizes structured Markdown renewal agreements and publishes them into `document_store` and Chroma.
+4. `api/tenant_context.py` augments grounding prompt context with `[LEASE RENEWAL OFFERS & AGREEMENTS]` and auto-resolves renewal macro variables.
+5. Webhook events `lease_renewal.offered`, `lease_renewal.accepted`, `lease_renewal.signed`, and `lease_renewal.declined` trigger correctly on renewal events.
+6. Pydantic schemas in `api/pydantic_models.py` validate renewal creation, updates, signing, and summary responses.
+7. FastAPI endpoints `/lease-renewals/*`, `/sessions/{id}/create-lease-renewal`, and `/tenants/{id}/lease-renewals` are wired and tested.
+8. Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling.
+9. Streamlit UI in `app/sidebar.py` provides the 1-click renewal offer generator in session card and the "📝 Lease Renewals & Documents" management panel.
+10. Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`) are complete.
+11. Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions.
+
+### Validation Plan
+- Unit tests in `tests/test_db_utils.py` covering renewal CRUD, signing transition, tenant term updates, and portfolio metrics.
+- Unit tests in `tests/test_lease_renewals.py` covering agreement Markdown generation and RAG publication.
+- Unit tests in `tests/test_tenant_context.py` covering renewal prompt grounding injection and macro resolution.
+- Unit tests in `tests/test_models.py` covering Pydantic models.
+- Route tests in `tests/test_api_routes.py` covering all lease renewal endpoints.
+- Client tests in `tests/test_app_api_utils.py` covering lease renewal API methods.
+- UI tests in `tests/test_app_ui.py` covering the lease renewals sidebar panel and session offer widget.
+- Full verification suite: `python -m pytest`, `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`.
+
+### Exclusions
+- Integration with external DocuSign, HelloSign, or Adobe Sign APIs — digital signing simulation is local-first.
+- Automated notary public or court filing workflows.
+
+### Granular Task Breakdown
+- [x] Task 1: `ROADMAP.md` v0.38.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] Task 2: Database schema, table creation, default seed data, and CRUD operations for `lease_renewals` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 3: Digital signing and tenant lease update logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 4: Agreement Markdown synthesis and RAG document publishing in `api/lease_renewals.py` + unit tests in `tests/test_lease_renewals.py`
+- [x] Task 5: Context grounding engine integration for lease renewals in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [x] Task 6: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [x] Task 7: FastAPI endpoints for lease renewals, signing, and session offer creation in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] Task 8: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 9: Streamlit UI components in `app/sidebar.py` (session renewal offer widget & "📝 Lease Renewals & Documents" panel) + UI tests in `tests/test_app_ui.py`
+- [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

@@ -11,7 +11,9 @@ from app.api_utils import (
     assign_session,
     auto_assign_session,
     create_billing_transaction,
+    create_lease_renewal,
     create_macro,
+    create_session_lease_renewal,
     create_sla_policy,
     create_support_agent,
     create_tenant,
@@ -23,6 +25,7 @@ from app.api_utils import (
     delete_collection,
     delete_document,
     delete_documents,
+    delete_lease_renewal,
     delete_macro,
     delete_session,
     delete_sessions,
@@ -46,6 +49,7 @@ from app.api_utils import (
     get_feedback_analytics,
     get_health,
     get_knowledge_analytics,
+    get_lease_renewal_metrics,
     get_metrics,
     get_quota,
     get_session_assignment_history,
@@ -56,6 +60,7 @@ from app.api_utils import (
     get_sla_compliance_analytics,
     get_stats,
     get_support_triage_analytics,
+    get_tenant_lease_renewals,
     get_tenant_ledger,
     get_tenant_support_history,
     get_unit_work_orders,
@@ -68,6 +73,7 @@ from app.api_utils import (
     list_feedback_review_queue,
     list_knowledge_articles,
     list_knowledge_gaps,
+    list_lease_renewals,
     list_macro_categories,
     list_macros,
     list_sessions,
@@ -80,6 +86,7 @@ from app.api_utils import (
     list_work_orders,
     ping_webhook,
     publish_knowledge_article,
+    publish_lease_renewal_document,
     rechunk_collection,
     rechunk_document,
     record_session_payment,
@@ -89,6 +96,7 @@ from app.api_utils import (
     render_macro,
     scan_knowledge_gaps,
     search_sessions,
+    sign_lease_renewal,
     suggest_macros,
     summarize_session,
     update_billing_transaction,
@@ -723,6 +731,137 @@ def _render_session_billing_widget(selected: str, tenant: dict):
                     st.error("Failed to record payment.")
 
 
+def _render_session_lease_renewal_widget(selected: str, tenant: dict):  # noqa: PLR0915
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    renewals_resp = get_tenant_lease_renewals(tenant_id)
+    renewals = renewals_resp.get("items", []) if renewals_resp else []
+    active_renewals = [
+        r for r in renewals if r.get("status") in ("draft", "offered", "accepted")
+    ]
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📝 Lease Renewal & Agreements")
+
+    if active_renewals:
+        for lr in active_renewals:
+            status_val = lr.get("status", "")
+            status_badge = "📄 Offered" if status_val == "offered" else f"📌 {status_val.title()}"
+            prop_rent = lr.get("proposed_rent", 0.0)
+            diff_rent = prop_rent - lr.get("current_rent", 0.0)
+            sign_str = f"+${diff_rent:,.2f}" if diff_rent >= 0 else f"-${abs(diff_rent):,.2f}"
+
+            st.sidebar.info(
+                f"**Active Offer ({lr.get('id')}):** {status_badge}\n\n"
+                f"- **New Rent:** ${prop_rent:,.2f}/mo ({sign_str})\n"
+                f"- **Term:** {lr.get('term_months', 12)} mos "
+                f"({lr.get('start_date', '')} to {lr.get('end_date', '')})\n"
+                f"- **Expires:** {lr.get('expires_at', '')[:10]}"
+            )
+
+            if status_val in ("offered", "accepted"):
+                with st.sidebar.expander(f"✍️ E-Sign Offer {lr.get('id')}"):
+                    t_full_name = (
+                        f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
+                    )
+                    sig_name = st.text_input(
+                        "Resident Signature Name",
+                        value=t_full_name,
+                        key=f"lr_sign_name_{selected}_{lr.get('id')}",
+                    )
+                    sig_notes = st.text_input(
+                        "Signature Audit Notes",
+                        value="Signed during active concierge support session",
+                        key=f"lr_sign_notes_{selected}_{lr.get('id')}",
+                    )
+                    if st.button(
+                        "Confirm Digital E-Signature",
+                        key=f"btn_sign_lr_{selected}_{lr.get('id')}",
+                    ):
+                        if not sig_name.strip():
+                            st.error("Signature name is required to execute agreement.")
+                        else:
+                            with st.spinner("Executing digital signature..."):
+                                sign_res = sign_lease_renewal(
+                                    lr["id"],
+                                    {
+                                        "signature_name": sig_name.strip(),
+                                        "signature_ip": "127.0.0.1",
+                                        "notes": sig_notes.strip(),
+                                    },
+                                )
+                                if sign_res:
+                                    st.success("Lease renewal digitally executed!")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to sign renewal offer.")
+
+    with st.sidebar.expander("📄 Generate 1-Click Renewal Offer"):
+        curr_rent = float(tenant.get("monthly_rent", 1000.0))
+        calc_default_prop = round(curr_rent * 1.05, 2)
+        prop_rent_in = st.number_input(
+            "Proposed Monthly Rent ($)",
+            min_value=1.0,
+            value=calc_default_prop,
+            step=25.0,
+            key=f"sess_prop_rent_{selected}",
+        )
+        term_in = st.selectbox(
+            "Renewal Term",
+            [6, 12, 18, 24],
+            index=1,
+            format_func=lambda x: f"{x} Months",
+            key=f"sess_term_{selected}",
+        )
+        c_conc, c_dep = st.columns(2)
+        conc_amt = c_conc.number_input(
+            "Concession ($)",
+            min_value=0.0,
+            value=0.0,
+            step=50.0,
+            key=f"sess_conc_amt_{selected}",
+        )
+        dep_chg = c_dep.number_input(
+            "Sec. Dep. Change ($)",
+            value=0.0,
+            step=50.0,
+            key=f"sess_dep_chg_{selected}",
+        )
+        conc_notes_in = st.text_input(
+            "Concession Notes",
+            placeholder="e.g. First month $100 off incentive",
+            key=f"sess_conc_notes_{selected}",
+        )
+        offer_notes_in = st.text_area(
+            "Offer Notes",
+            value="Standard renewal offer generated during support session",
+            key=f"sess_offer_notes_{selected}",
+        )
+
+        if st.button("🚀 Create Renewal Offer", key=f"btn_create_lr_{selected}"):
+            with st.spinner("Creating renewal offer..."):
+                payload = {
+                    "tenant_id": tenant_id,
+                    "unit_id": tenant.get("unit_id"),
+                    "proposed_rent": float(prop_rent_in),
+                    "current_rent": curr_rent,
+                    "term_months": int(term_in),
+                    "concession_amount": float(conc_amt),
+                    "concession_notes": conc_notes_in.strip(),
+                    "security_deposit_change": float(dep_chg),
+                    "notes": offer_notes_in.strip(),
+                    "status": "offered",
+                }
+                res = create_session_lease_renewal(selected, payload)
+                if res:
+                    new_id = res.get("renewal", {}).get("id", "")
+                    st.success(f"Renewal offer created! ID: {new_id}")
+                    st.rerun()
+                else:
+                    st.error("Failed to create renewal offer.")
+
 
 def _render_linked_tenant_details(selected, tenant, unit):
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
@@ -756,6 +895,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
             st.sidebar.warning(f"⚠️ {open_count} Open Work Order(s) for Unit")
 
     _render_session_billing_widget(selected, tenant)
+    _render_session_lease_renewal_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -2687,6 +2827,187 @@ def _render_billing_metrics_tab(metrics: dict):
         st.caption(f"- **{s_name.title()}**: {count}")
 
 
+def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
+    with st.sidebar.expander("📝 Lease Renewals & Documents"):
+        lr_tab = st.radio(
+            "Renewal Section",
+            ["Offers", "New Offer", "Portfolio Metrics"],
+            horizontal=True,
+            key="lr_board_tab_radio",
+        )
+
+        if lr_tab == "Offers":
+            col_f1, col_f2 = st.columns(2)
+            status_filter = col_f1.selectbox(
+                "Filter Status",
+                ["All", "draft", "offered", "accepted", "signed", "declined", "expired"],
+                key="lr_status_filter",
+            )
+            term_filter = col_f2.selectbox(
+                "Filter Term",
+                ["All", "6 mos", "12 mos", "18 mos", "24 mos"],
+                key="lr_term_filter",
+            )
+
+            status_param = None if status_filter == "All" else status_filter
+            renewals_resp = list_lease_renewals(status=status_param, limit=50)
+            renewals = renewals_resp.get("items", []) if renewals_resp else []
+
+            if term_filter != "All":
+                selected_term = int(term_filter.split()[0])
+                renewals = [r for r in renewals if r.get("term_months") == selected_term]
+
+            if not renewals:
+                st.info("No lease renewal agreements match the current filter.")
+            else:
+                st.caption(f"Showing **{len(renewals)}** renewal agreement(s)")
+                for r in renewals:
+                    status = r.get("status", "draft")
+                    status_emoji = {
+                        "offered": "📄",
+                        "signed": "✅",
+                        "accepted": "👍",
+                        "draft": "📝",
+                        "declined": "❌",
+                        "expired": "⌛",
+                    }.get(status, "📄")
+
+                    with st.container():
+                        st.markdown(
+                            f"**{status_emoji} {r.get('id')} — "
+                            f"{r.get('tenant_id')} (Unit: {r.get('unit_id')})**"
+                        )
+                        diff = r.get("proposed_rent", 0.0) - r.get("current_rent", 0.0)
+                        diff_str = f"+${diff:,.2f}" if diff >= 0 else f"-${abs(diff):,.2f}"
+                        st.caption(
+                            f"**Rent:** ${r.get('current_rent', 0):,.2f} ➔ "
+                            f"**${r.get('proposed_rent', 0):,.2f}** ({diff_str}) | "
+                            f"**Term:** {r.get('term_months')}m | **Status:** `{status}`"
+                        )
+                        st.caption(
+                            f"Dates: {r.get('start_date')} to {r.get('end_date')} | "
+                            f"Expires: {r.get('expires_at', '')[:10]}"
+                        )
+
+                        action_c1, action_c2, action_c3 = st.columns(3)
+                        # Publish to RAG
+                        if action_c1.button("📚 Index RAG", key=f"btn_pub_rag_{r.get('id')}"):
+                            with st.spinner("Publishing to vector store..."):
+                                pub_res = publish_lease_renewal_document(r.get("id"))
+                                if pub_res:
+                                    st.success("Indexed in RAG store!")
+                                else:
+                                    st.error("Failed to index.")
+
+                        # E-Sign if offered or accepted
+                        if (
+                            status in ("offered", "accepted")
+                            and action_c2.button("✍️ E-Sign", key=f"btn_sign_table_{r.get('id')}")
+                        ):
+                            sign_res = sign_lease_renewal(
+                                r["id"],
+                                {
+                                    "signature_name": "Resident E-Sign",
+                                    "signature_ip": "127.0.0.1",
+                                    "notes": "Signed via Lease Renewals management board",
+                                },
+                            )
+                            if sign_res:
+                                st.success(f"Renewal {r.get('id')} digitally executed!")
+                                st.rerun()
+
+                        # Delete
+                        if action_c3.button(
+                            "🗑️", key=f"btn_del_lr_{r.get('id')}"
+                        ) and delete_lease_renewal(r["id"]):
+                            st.success("Renewal deleted.")
+                            st.rerun()
+
+                        st.divider()
+
+        elif lr_tab == "New Offer":
+            st.markdown("##### Create Manual Renewal Offer")
+            all_tenants = list_tenants(limit=100)
+            t_items = all_tenants.get("items", []) if all_tenants else []
+            t_map = {t["id"]: f"{t['first_name']} {t['last_name']} ({t['id']})" for t in t_items}
+
+            sel_t = st.selectbox(
+                "Select Resident",
+                options=list(t_map.keys()),
+                format_func=lambda x: t_map.get(x, x),
+                key="manual_lr_tenant",
+            )
+            col_p1, col_p2 = st.columns(2)
+            manual_prop_rent = col_p1.number_input(
+                "Proposed Rent ($)",
+                min_value=1.0,
+                value=1500.0,
+                step=25.0,
+                key="manual_lr_prop_rent",
+            )
+            manual_term = col_p2.selectbox(
+                "Term Months", [6, 12, 18, 24], index=1, key="manual_lr_term"
+            )
+            col_c1, col_c2 = st.columns(2)
+            manual_conc = col_c1.number_input(
+                "Concession Credit ($)", min_value=0.0, value=0.0, step=50.0, key="manual_lr_conc"
+            )
+            manual_dep = col_c2.number_input(
+                "Deposit Adjustment ($)", value=0.0, step=50.0, key="manual_lr_dep"
+            )
+            manual_notes = st.text_area(
+                "Notes", placeholder="Optional renewal notes", key="manual_lr_notes"
+            )
+
+            if st.button("📄 Dispatch Renewal Offer", key="btn_dispatch_manual_lr") and sel_t:
+                with st.spinner("Dispatching offer..."):
+                    t_obj = next((t for t in t_items if t["id"] == sel_t), None)
+                    unit_val = t_obj.get("unit_id") if t_obj else None
+                    curr_val = (
+                        float(t_obj.get("monthly_rent", 1000.0)) if t_obj else 1000.0
+                    )
+                    create_res = create_lease_renewal(
+                        {
+                            "tenant_id": sel_t,
+                            "unit_id": unit_val,
+                            "proposed_rent": float(manual_prop_rent),
+                            "current_rent": curr_val,
+                            "term_months": int(manual_term),
+                            "concession_amount": float(manual_conc),
+                            "security_deposit_change": float(manual_dep),
+                            "notes": manual_notes.strip(),
+                            "status": "offered",
+                        }
+                    )
+                    if create_res:
+                        new_id = create_res.get("renewal", {}).get("id", "")
+                        st.success(f"Offer created! ID: {new_id}")
+                        st.rerun()
+                    else:
+                        st.error("Failed to create offer.")
+
+        else:
+            st.markdown("##### Portfolio Renewal Conversion Analytics")
+            m = get_lease_renewal_metrics()
+            if m:
+                mc1, mc2, mc3 = st.columns(3)
+                mc1.metric("Total Offers", m.get("total_renewals", 0))
+                mc2.metric("Executed", m.get("signed_renewals", 0))
+                mc3.metric("Renewal Rate", f"{m.get('renewal_rate', 0.0):.1f}%")
+
+                st.caption(
+                    f"**Average Rent Increase:** {m.get('avg_rent_increase_pct', 0.0):.2f}%"
+                )
+
+                st.markdown("**Status Distribution:**")
+                for st_name, count in (m.get("by_status") or {}).items():
+                    st.caption(f"- **{st_name.title()}**: {count}")
+
+                st.markdown("**Term Preference:**")
+                for term_name, count in (m.get("by_term") or {}).items():
+                    st.caption(f"- **{term_name}**: {count}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -2713,6 +3034,7 @@ def display_sidebar():
     _render_tenant_and_property_directory()
     _render_maintenance_board()
     _render_billing_board()
+    _render_lease_renewals_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 

@@ -1,4 +1,4 @@
-# API Reference (v0.37.0)
+# API Reference (v0.38.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -472,6 +472,42 @@ Financial accounting ledger engine (`billing_transactions`) supporting itemized 
   - Body: `{"amount": 1250.0, "payment_method": "ach", "reference_number": "ACH-98214", "description": "Rent payment"}`.
   - Auto-resolves `tenant_id` from the session's linked resident context.
   - Returns `200` with `TenantPaymentRecordResponse`.
+
+## Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine
+
+Digital lease renewal and agreement execution engine (`lease_renewals`) managing renewal proposals, multi-term offers, rent adjustments, concession incentives, e-signatures with audit trails, and automatic agreement synthesis for RAG search. Active renewal offers are automatically injected into conversational RAG prompt context (`[ACTIVE LEASE RENEWAL OFFERS]`), and renewal macro variables auto-resolve (`{renewal_status}`, `{proposed_rent}`, `{renewal_term_months}`, `{renewal_concession}`, `{renewal_expires_at}`).
+
+### Lease Renewal Endpoints
+
+- `POST /lease-renewals`: Create a new lease renewal proposal.
+  - Body: `{"tenant_id": "tenant_1", "unit_id": "unit_101", "proposed_rent": 1600.0, "current_rent": 1500.0, "term_months": 12, "start_date": "2027-01-01", "end_date": "2027-12-31", "concession_amount": 100.0, "security_deposit_change": 0.0, "concession_notes": "Early renewal credit", "notes": "Standard renewal offer", "status": "offered", "expires_at": "2026-12-15T00:00:00"}`.
+  - Statuses: `draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`.
+  - Returns `201` with `LeaseRenewalResponse`.
+  - Triggers background webhook `lease_renewal.created`.
+- `GET /lease-renewals`: List lease renewal offers with multi-parameter filtering and pagination.
+  - Query parameters: `tenant_id`, `unit_id`, `status`, `term_months`, `limit`, `offset`.
+  - Returns `LeaseRenewalListResponse` (`items: [...]`, `total: int`).
+- `GET /lease-renewals/metrics`: Aggregate portfolio lease renewal conversion KPIs.
+  - Returns `LeaseRenewalMetricsResponse` (`total_renewals`, `signed_renewals`, `offered_renewals`, `negotiating_renewals`, `declined_renewals`, `expired_renewals`, `renewal_rate`, `avg_rent_increase_pct`, `total_concessions_amount`, `by_status: {...}`, `by_term: {...}`).
+- `GET /lease-renewals/{renewal_id}`: Retrieve full details of a specific lease renewal proposal. Returns `404` if not found.
+- `PATCH /lease-renewals/{renewal_id}`: Partially update a lease renewal offer (status, proposed rent, term, concessions, notes).
+  - Returns `LeaseRenewalResponse`.
+  - Triggers background webhook `lease_renewal.status_changed`.
+- `DELETE /lease-renewals/{renewal_id}`: Delete a lease renewal offer.
+- `POST /lease-renewals/{renewal_id}/sign`: Execute digital signature on lease renewal agreement.
+  - Body: `{"signer_name": "Sarah Connor", "signer_email": "sarah@example.com", "signer_ip": "192.168.1.50", "notes": "E-signed via resident portal"}`.
+  - Automatically records signature audit log (`signer_name`, `signed_at`, `signer_ip`, `signature_digest`), sets status to `signed`, and updates linked tenant's `monthly_rent`, `lease_start`, and `lease_end`.
+  - Returns `200` with `LeaseRenewalSignResponse` (`renewal: {...}`, `audit_trail: {...}`).
+  - Triggers background webhook `lease_renewal.signed`.
+- `POST /lease-renewals/{renewal_id}/publish`: Synthesize legal markdown agreement and index directly into Chroma RAG collection (`leases-agreements`).
+  - Synthesizes comprehensive markdown agreement containing parties, terms, rent schedule, concessions, signature blocks, and legal addenda clauses.
+  - Returns `200` with `{"message": "Agreement published to RAG collection.", "file_id": int, "filename": str, "collection": "leases-agreements", "renewal_id": str}`.
+- `POST /sessions/{session_id}/create-lease-renewal`: 1-click create a lease renewal offer directly from an active support session context.
+  - Auto-resolves `tenant_id`, `unit_id`, and `current_rent` from linked resident context.
+  - Returns `201` with `LeaseRenewalResponse`.
+- `GET /tenants/{tenant_id}/lease-renewals`: Retrieve lease renewal history and active offers for a resident.
+  - Query parameter: `active_only=true` (filters to `draft`, `offered`, `negotiating`).
+  - Returns `LeaseRenewalListResponse`.
 
 ## Evaluation Harness
 

@@ -278,6 +278,17 @@ class FakeStreamlit:
         self.calls.append(Call("st", "columns", (count,), {}))
         return [self for _ in range(count)]
 
+    def tabs(self, tabs_list):
+        self.calls.append(Call("st", "tabs", (tabs_list,), {}))
+        return [self for _ in tabs_list]
+
+    def container(self):
+        self.calls.append(Call("st", "container", (), {}))
+        return self
+
+    def divider(self):
+        self.calls.append(Call("st", "divider", (), {}))
+
     def empty(self):
         self.calls.append(Call("st", "empty", (), {}))
         return _Placeholder(self, "placeholder")

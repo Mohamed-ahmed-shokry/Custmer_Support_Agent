@@ -4234,6 +4234,334 @@ def test_tenant_payment_and_ledger_routes(monkeypatch, tmp_path):
     assert res_bad_tenant.status_code == HTTP_NOT_FOUND
 
 
+def test_lease_renewals_crud_metrics_and_signing_routes(monkeypatch, tmp_path):  # noqa: PLR0915
+    """Test /lease-renewals CRUD, list filtering, metrics, and digital e-signing."""
+    db_file = tmp_path / "test_api_renewals_crud.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
+    main.db_utils.create_lease_renewals()
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. List pre-seeded lease renewals
+    res_list = client.get("/lease-renewals")
+    assert res_list.status_code == HTTP_OK
+    data = res_list.json()
+    expected_seed_count = 3
+    assert len(data["items"]) == expected_seed_count
+    assert data["total"] == expected_seed_count
+
+    # 2. Filter by status
+    res_filtered = client.get("/lease-renewals?status=offered")
+    assert res_filtered.status_code == HTTP_OK
+    offered_items = res_filtered.json()["items"]
+    assert len(offered_items) == 1
+    assert offered_items[0]["id"] == "lr_101"
+
+    # 3. Create a new lease renewal offer
+    prop_rent = 1600.0
+    create_body = {
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "proposed_rent": prop_rent,
+        "current_rent": 1450.0,
+        "term_months": 12,
+        "start_date": "2027-01-01",
+        "end_date": "2027-12-31",
+        "concession_amount": 100.0,
+        "concession_notes": "Early bird renewal incentive",
+        "status": "offered",
+        "notes": "Standard annual renewal offer",
+    }
+    res_create = client.post("/lease-renewals", json=create_body)
+    assert res_create.status_code == HTTP_CREATED
+    created_lr = res_create.json()["renewal"]
+    created_id = created_lr["id"]
+    assert created_lr["proposed_rent"] == prop_rent
+    assert created_lr["status"] == "offered"
+    assert any(e[0] == "lease_renewal.offered" for e in dispatched)
+
+    # 4. Get by ID
+    res_get = client.get(f"/lease-renewals/{created_id}")
+    assert res_get.status_code == HTTP_OK
+    assert res_get.json()["renewal"]["id"] == created_id
+
+    # 5. Patch lease renewal (status -> accepted)
+    patch_body = {
+        "status": "accepted",
+        "notes": "Resident verbally agreed to renewal terms",
+    }
+    res_patch = client.patch(f"/lease-renewals/{created_id}", json=patch_body)
+    assert res_patch.status_code == HTTP_OK
+    patched_lr = res_patch.json()["renewal"]
+    assert patched_lr["status"] == "accepted"
+    assert any(e[0] == "lease_renewal.accepted" for e in dispatched)
+
+    # 6. Metrics route
+    res_metrics = client.get("/lease-renewals/metrics")
+    assert res_metrics.status_code == HTTP_OK
+    metrics = res_metrics.json()
+    expected_min_renewals = 4
+    assert metrics["total_renewals"] >= expected_min_renewals
+    assert metrics["renewal_rate"] >= 0.0
+
+    # 7. Sign lease renewal (digital e-signature)
+    sign_body = {
+        "signature_name": "Sarah Connor",
+        "signature_ip": "192.168.1.100",
+        "notes": "Digitally accepted via tenant portal",
+    }
+    res_sign = client.post(f"/lease-renewals/{created_id}/sign", json=sign_body)
+    assert res_sign.status_code == HTTP_OK
+    signed_lr = res_sign.json()["renewal"]
+    assert signed_lr["status"] == "signed"
+    assert signed_lr["signature_name"] == "Sarah Connor"
+    assert any(e[0] == "lease_renewal.signed" for e in dispatched)
+
+    # Verify tenant was updated in DB
+    updated_tenant = main.db_utils.get_tenant("tenant_1")
+    assert updated_tenant is not None
+    assert updated_tenant["monthly_rent"] == prop_rent
+    assert updated_tenant["lease_start"] == "2027-01-01"
+    assert updated_tenant["lease_end"] == "2027-12-31"
+
+    # 8. Delete lease renewal
+    res_del = client.delete(f"/lease-renewals/{created_id}")
+    assert res_del.status_code == HTTP_OK
+
+    res_get_del = client.get(f"/lease-renewals/{created_id}")
+    assert res_get_del.status_code == HTTP_NOT_FOUND
+
+
+def test_lease_renewal_agreement_and_session_routes(monkeypatch, tmp_path):
+    """Test document publishing, tenant renewal list, and session renewal creation."""
+    db_file = tmp_path / "test_api_renewals_publishing.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.lease_renewals.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
+    main.db_utils.create_lease_renewals()
+    main.db_utils.create_session_labels()
+    main.db_utils.create_application_logs()
+    main.db_utils.create_document_store()
+
+    # Stub chroma reindexing to succeed cleanly without hitting vector store
+    monkeypatch.setattr(
+        main.lease_renewals, "reindex_chunks_in_chroma", lambda **kwargs: True
+    )
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. Publish renewal document for lr_101
+    pub_body = {
+        "collection": "default",
+        "chunking_strategy": "markdown",
+        "chunk_size": 1000,
+        "chunk_overlap": 200,
+    }
+    res_pub = client.post("/lease-renewals/lr_101/publish-document", json=pub_body)
+    assert res_pub.status_code == HTTP_OK
+    pub_data = res_pub.json()
+    assert pub_data["renewal_id"] == "lr_101"
+    assert pub_data["filename"] == "lease_renewal_lr_101.md"
+    assert pub_data["content_length"] > 0
+    assert len(pub_data["sha256"]) == 64  # noqa: PLR2004
+
+    # 2. Get renewals by tenant
+    res_tenant_lr = client.get("/tenants/tenant_1/lease-renewals")
+    assert res_tenant_lr.status_code == HTTP_OK
+    t1_items = res_tenant_lr.json()["items"]
+    assert len(t1_items) >= 1
+    assert any(r["id"] == "lr_101" for r in t1_items)
+
+    # 3. Create renewal offer from support session
+    sid = "sess_renewal_test"
+    main.db_utils.link_session_tenant(sid, tenant_id="tenant_2")
+
+    sess_offer_body = {
+        "tenant_id": "tenant_2",
+        "proposed_rent": 1950.0,
+        "current_rent": 1850.0,
+        "term_months": 12,
+        "start_date": "2027-02-01",
+        "end_date": "2028-01-31",
+        "status": "offered",
+        "notes": "Generated during resident chat inquiry",
+    }
+    res_sess_offer = client.post(f"/sessions/{sid}/create-lease-renewal", json=sess_offer_body)
+    assert res_sess_offer.status_code == HTTP_CREATED
+    sess_lr = res_sess_offer.json()["renewal"]
+    assert sess_lr["tenant_id"] == "tenant_2"
+    assert sess_lr["session_id"] == sid
+    assert sess_lr["proposed_rent"] == 1950.0  # noqa: PLR2004
+    assert any(e[0] == "lease_renewal.offered" for e in dispatched)
+
+    # 4. Unlinked session renewal creation -> 400
+    res_unlinked = client.post(
+        "/sessions/unlinked_sess/create-lease-renewal", json=sess_offer_body
+    )
+    assert res_unlinked.status_code == HTTP_BAD_REQUEST
+
+
+
+def test_lease_renewal_routes(monkeypatch, tmp_path):  # noqa: PLR0915
+    """Test full lifecycle of lease renewal routes, webhooks, signing, and RAG publishing."""
+    db_file = tmp_path / "test_api_lease_renewals.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.lease_renewals.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_webhooks()
+    main.db_utils.create_lease_renewals()
+    main.db_utils.create_session_labels()
+    main.db_utils.create_document_store()
+    main.db_utils.create_application_logs()
+
+    # Stub chroma reindexing to succeed cleanly without hitting vector store
+    monkeypatch.setattr(
+        main.lease_renewals, "reindex_chunks_in_chroma", lambda **kwargs: True
+    )
+
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
+
+    # 1. Seeded renewals list
+    res_list = client.get("/lease-renewals")
+    assert res_list.status_code == HTTP_OK
+    list_data = res_list.json()
+    min_seeded = 2
+    assert list_data["total"] >= min_seeded
+
+    # 2. Metrics route
+    res_metrics = client.get("/lease-renewals/metrics")
+    assert res_metrics.status_code == HTTP_OK
+    metrics = res_metrics.json()
+    assert metrics["total_renewals"] >= min_seeded
+
+    # 3. Create renewal route
+    expected_rent_1650 = 1650.0
+    create_payload = {
+        "tenant_id": "tenant_1",
+        "proposed_rent": expected_rent_1650,
+        "term_months": 12,
+        "concession_amount": 250.0,
+        "concession_notes": "First month renewal discount",
+        "notes": "Route creation test",
+    }
+    res_create = client.post("/lease-renewals", json=create_payload)
+    assert res_create.status_code == HTTP_CREATED
+    renewal = res_create.json()["renewal"]
+    created_id = renewal["id"]
+    assert renewal["tenant_id"] == "tenant_1"
+    assert renewal["proposed_rent"] == expected_rent_1650
+    assert any(e[0] == "lease_renewal.offered" for e in dispatched)
+
+    # 4. Get renewal by ID
+    res_get = client.get(f"/lease-renewals/{created_id}")
+    assert res_get.status_code == HTTP_OK
+    assert res_get.json()["renewal"]["id"] == created_id
+
+    # 5. Patch renewal route
+    res_patch = client.patch(
+        f"/lease-renewals/{created_id}",
+        json={"notes": "Updated notes via PATCH", "status": "accepted"},
+    )
+    assert res_patch.status_code == HTTP_OK
+    assert res_patch.json()["renewal"]["status"] == "accepted"
+    assert any(e[0] == "lease_renewal.accepted" for e in dispatched)
+
+    # 6. Sign renewal route
+    sign_payload = {
+        "signature_name": "Alice Resident",
+        "signature_ip": "192.168.1.100",
+        "notes": "E-signed online via portal",
+    }
+    res_sign = client.post(f"/lease-renewals/{created_id}/sign", json=sign_payload)
+    assert res_sign.status_code == HTTP_OK
+    signed_renewal = res_sign.json()["renewal"]
+    assert signed_renewal["status"] == "signed"
+    assert signed_renewal["signature_name"] == "Alice Resident"
+    assert any(e[0] == "lease_renewal.signed" for e in dispatched)
+
+    # Verify tenant was updated
+    tenant = main.db_utils.get_tenant("tenant_1")
+    assert tenant is not None
+    assert tenant["monthly_rent"] == expected_rent_1650
+
+    # 7. Publish agreement document route
+    res_pub = client.post(
+        f"/lease-renewals/{created_id}/publish-document",
+        json={"collection": "default", "chunking_strategy": "markdown"},
+    )
+    assert res_pub.status_code == HTTP_OK
+    pub_data = res_pub.json()
+    assert pub_data["renewal_id"] == created_id
+    assert pub_data["indexed_in_chroma"] is True
+
+    # 8. Create renewal from session
+    sid = "session_renewal_test_1"
+    main.db_utils.link_session_tenant(sid, tenant_id="tenant_2")
+    expected_rent_1950 = 1950.0
+    session_renewal_payload = {
+        "tenant_id": "tenant_2",
+        "proposed_rent": expected_rent_1950,
+        "term_months": 24,
+    }
+    res_sess_renewal = client.post(
+        f"/sessions/{sid}/create-lease-renewal",
+        json=session_renewal_payload,
+    )
+    assert res_sess_renewal.status_code == HTTP_CREATED
+    sess_renewal_data = res_sess_renewal.json()["renewal"]
+    assert sess_renewal_data["session_id"] == sid
+    assert sess_renewal_data["proposed_rent"] == expected_rent_1950
+
+    # 9. Tenant renewals list route
+    res_t_renewals = client.get("/tenants/tenant_1/lease-renewals")
+    assert res_t_renewals.status_code == HTTP_OK
+    assert any(r["id"] == created_id for r in res_t_renewals.json()["items"])
+
+    # 10. Delete renewal route
+    res_del = client.delete(f"/lease-renewals/{created_id}")
+    assert res_del.status_code == HTTP_OK
+    res_get_del = client.get(f"/lease-renewals/{created_id}")
+    assert res_get_del.status_code == HTTP_NOT_FOUND
+
+    # 11. Error handling tests
+    # Non-existent renewal get -> 404
+    res_not_found = client.get("/lease-renewals/lr_nonexistent_99")
+    assert res_not_found.status_code == HTTP_NOT_FOUND
+
+    # Session with no linked tenant -> 400
+    res_bad_sess = client.post(
+        "/sessions/unlinked_session_99/create-lease-renewal",
+        json={"tenant_id": "tenant_1", "proposed_rent": 1500.0},
+    )
+    assert res_bad_sess.status_code == HTTP_BAD_REQUEST
+
+    # Non-existent tenant for renewal -> 404
+    res_bad_tenant = client.post(
+        "/lease-renewals",
+        json={"tenant_id": "tenant_ghost_99", "proposed_rent": 1500.0},
+    )
+    assert res_bad_tenant.status_code == HTTP_NOT_FOUND
+
+
+
 
 
 
