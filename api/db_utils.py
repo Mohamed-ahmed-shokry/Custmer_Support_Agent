@@ -6943,6 +6943,115 @@ def create_inspection(  # noqa: PLR0913, PLR0915, PLR0917
     return created
 
 
+def list_inspections(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    inspection_type: str | None = None,
+    status: str | None = None,
+    overall_condition: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM inspections"]
+    count_parts = ["SELECT COUNT(*) FROM inspections"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if tenant_id and tenant_id.strip():
+        where_clauses.append("tenant_id = ?")
+        params.append(tenant_id.strip())
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if inspection_type and inspection_type.strip():
+        where_clauses.append("inspection_type = ?")
+        params.append(inspection_type.strip().lower())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if overall_condition and overall_condition.strip():
+        where_clauses.append("overall_condition = ?")
+        params.append(overall_condition.strip().lower())
+
+    if search and search.strip():
+        s = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(id) LIKE ? OR LOWER(notes) LIKE ? OR LOWER(inspector_name) LIKE ?)"
+        )
+        params.extend([s, s, s])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY scheduled_date DESC, id DESC LIMIT ? OFFSET ?")
+    params_for_query = list(params) + [max(1, limit), max(0, offset)]
+
+    full_query = "".join(query_parts)
+    full_count_query = "".join(count_parts)
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(full_count_query, params).fetchone()[0]
+        rows = conn.execute(full_query, params_for_query).fetchall()
+        result_list = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.get("items_json") or "[]")
+            except Exception:
+                d["items"] = []
+            result_list.append(d)
+        return result_list, int(total)
+
+
+def get_tenant_inspections(tenant_id: str) -> list[dict[str, Any]]:
+    """Retrieve all inspection records for a tenant ordered by scheduled_date DESC."""
+    cleaned_id = (tenant_id or "").strip()
+    if not cleaned_id:
+        return []
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM inspections WHERE tenant_id = ? ORDER BY scheduled_date DESC",
+            (cleaned_id,),
+        ).fetchall()
+        result_list = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.get("items_json") or "[]")
+            except Exception:
+                d["items"] = []
+            result_list.append(d)
+        return result_list
+
+
+def get_unit_inspections(unit_id: str) -> list[dict[str, Any]]:
+    """Retrieve all inspection records for a unit ordered by scheduled_date DESC."""
+    cleaned_id = (unit_id or "").strip()
+    if not cleaned_id:
+        return []
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM inspections WHERE unit_id = ? ORDER BY scheduled_date DESC",
+            (cleaned_id,),
+        ).fetchall()
+        result_list = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.get("items_json") or "[]")
+            except Exception:
+                d["items"] = []
+            result_list.append(d)
+        return result_list
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()

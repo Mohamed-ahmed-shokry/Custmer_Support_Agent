@@ -3346,6 +3346,53 @@ def test_create_and_get_inspection(monkeypatch, tmp_path):
     assert db_utils.get_inspection("nonexistent_insp") is None
 
 
+def test_list_and_query_inspections(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    # List all
+    all_insps, total = db_utils.list_inspections()
+    assert total >= 3  # noqa: PLR2004
+    assert len(all_insps) >= 3  # noqa: PLR2004
+
+    # Filter by tenant_id
+    t1_insps, t1_total = db_utils.list_inspections(tenant_id="tenant_1")
+    assert t1_total >= 1
+    assert all(i["tenant_id"] == "tenant_1" for i in t1_insps)
+
+    # Filter by unit_id
+    u101_insps, u101_total = db_utils.list_inspections(unit_id="unit_101")
+    assert u101_total >= 1
+    assert all(i["unit_id"] == "unit_101" for i in u101_insps)
+
+    # Filter by inspection_type
+    move_in_insps, mi_total = db_utils.list_inspections(inspection_type="move_in")
+    assert mi_total >= 1
+    assert all(i["inspection_type"] == "move_in" for i in move_in_insps)
+
+    # Filter by status
+    scheduled_insps, s_total = db_utils.list_inspections(status="scheduled")
+    assert s_total >= 1
+    assert all(i["status"] == "scheduled" for i in scheduled_insps)
+
+    # Search filter
+    searched, s_count = db_utils.list_inspections(search="Rivera")
+    assert s_count >= 1
+
+    # Tenant-specific helper
+    tenant_res = db_utils.get_tenant_inspections("tenant_1")
+    assert len(tenant_res) >= 1
+    assert all(i["tenant_id"] == "tenant_1" for i in tenant_res)
+
+    # Unit-specific helper
+    unit_res = db_utils.get_unit_inspections("unit_101")
+    assert len(unit_res) >= 1
+    assert all(i["unit_id"] == "unit_101" for i in unit_res)
+
+
+
 
 
 
