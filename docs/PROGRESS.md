@@ -36,7 +36,7 @@
 | AC8 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling | ✅ PASSED | `tests/test_app_api_utils.py` tests `test_lease_renewal_api_utils` pass |
 | AC9 | Streamlit UI in `app/sidebar.py` provides the 1-click renewal offer generator in session card and the "📝 Lease Renewals & Documents" management panel | ✅ PASSED | `tests/test_app_ui.py` tests `test_session_lease_renewal_widget`, `test_lease_renewals_board` pass |
 | AC10 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`) are complete | ✅ PASSED | All docs updated, endpoints documented in `docs/API.md`, version `0.38.0` verified |
-| AC11 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | ✅ PASSED | 388 unit/route/UI tests passing, 0 ruff errors, 0 mypy errors, 99.58% total coverage |
+| AC11 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | ✅ PASSED | 801 unit/route/UI tests passing, 0 ruff errors, 0 mypy errors, 92.54% total coverage |
 
 ---
 
@@ -64,5 +64,8 @@
 
 - **Local Verification Suite**:
   - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
-  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 27 source files`)
-  - `python -m pytest` -> ✅ Passed (`388 passed, 2 skipped, 3 warnings, 99.58% coverage`)
+  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 31 source files`)
+  - `python -m pytest` -> ✅ Passed (`801 passed, 21 deselected, 48 warnings, 92.54% coverage >= 80% required`)
+- **Remote CI Pipeline**:
+  - Push run `39049061991` (`test` + `e2e`) -> ✅ Passed (100% green)
+  - Pull Request run `39049065594` (`test` + `e2e`) -> ✅ Passed (100% green)
