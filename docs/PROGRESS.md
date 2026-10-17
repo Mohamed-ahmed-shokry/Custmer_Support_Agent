@@ -16,7 +16,7 @@
 - [x] **Task 6**: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [x] **Task 7**: FastAPI endpoints for inspections, completion, work order dispatch, and session linking in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [x] **Task 8**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [ ] **Task 9**: Streamlit UI components in `app/sidebar.py` (session inspection widget & "📋 Move-In/Out & Inspections" panel) + UI tests in `tests/test_app_ui.py`
+- [x] **Task 9**: Streamlit UI components in `app/sidebar.py` (session inspection widget & "📋 Move-In/Out & Inspections" panel) + UI tests in `tests/test_app_ui.py`
 - [ ] **Task 10**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] **Task 11**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
@@ -35,7 +35,7 @@
 | AC7 | Pydantic schemas in `api/pydantic_models.py` validate inspection creation, items, updates, completion, and summary responses | ✅ PASSED | `tests/test_models.py` test `test_inspection_models_lifecycle_and_validation` passes |
 | AC8 | FastAPI endpoints `/inspections/*`, `/sessions/{id}/create-inspection`, `/tenants/{id}/inspections`, and `/units/{id}/inspections` are wired and tested | ✅ PASSED | `tests/test_api_routes.py` test `test_inspection_routes_full_lifecycle` passes covering all 12 endpoints |
 | AC9 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling | ✅ PASSED | `tests/test_app_api_utils.py` tests `test_inspection_api_utils_crud`, `test_inspection_api_utils_actions`, `test_inspection_api_utils_queries_and_errors` pass (129 tests passing in suite) |
-| AC10 | Streamlit UI in `app/sidebar.py` provides the 1-click inspection scheduling widget in session card and the "📋 Move-In/Out & Inspections" management panel | ⏳ PENDING | Pending Task 9 |
+| AC10 | Streamlit UI in `app/sidebar.py` provides the 1-click inspection scheduling widget in session card and the "📋 Move-In/Out & Inspections" management panel | ✅ PASSED | `tests/test_app_ui.py` tests `test_render_session_inspection_widget`, `test_render_inspections_board_records_tab`, `test_render_inspections_board_schedule_tab`, `test_render_inspections_board_metrics_tab` pass (123 tests passing in suite) |
 | AC11 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`) are complete | ⏳ PENDING | Pending Task 10 |
 | AC12 | All local CI-parity checks and remote CI workflow runs pass 100% | ⏳ PENDING | Pending Task 11 |
 
