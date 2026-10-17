@@ -3289,6 +3289,64 @@ def test_create_inspections_and_default_seeds(monkeypatch, tmp_path):
         assert "insp_103" in ids
 
 
+def test_create_and_get_inspection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    items = [
+        {
+            "id": "item_1",
+            "room": "Living Room",
+            "item_name": "Carpet",
+            "condition": "fair",
+            "notes": "Small stain",
+            "action_needed": "clean",
+            "estimated_cost": 50.0,
+        }
+    ]
+    created = db_utils.create_inspection(
+        tenant_id="tenant_1",
+        inspection_type="routine",
+        scheduled_date="2026-11-15",
+        inspector_name="Inspector Gadget",
+        overall_condition="fair",
+        items=items,
+        notes="Semi-annual routine inspection.",
+        insp_id="insp_custom_1",
+    )
+    assert created["id"] == "insp_custom_1"
+    assert created["tenant_id"] == "tenant_1"
+    assert created["unit_id"] == "unit_101"
+    assert created["inspection_type"] == "routine"
+    assert created["overall_condition"] == "fair"
+    assert len(created["items"]) == 1
+    assert created["items"][0]["item_name"] == "Carpet"
+
+    # Duplicate ID raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_inspection(tenant_id="tenant_1", insp_id="insp_custom_1")
+
+    # Invalid tenant raises ValueError
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.create_inspection(tenant_id="nonexistent_tenant")
+
+    # Invalid unit raises ValueError
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.create_inspection(tenant_id="tenant_1", unit_id="nonexistent_unit")
+
+    # Get by ID
+    fetched = db_utils.get_inspection("insp_custom_1")
+    assert fetched is not None
+    assert fetched["inspector_name"] == "Inspector Gadget"
+    assert len(fetched["items"]) == 1
+
+    # Non-existent ID returns None
+    assert db_utils.get_inspection("nonexistent_insp") is None
+
+
+
 
 
 

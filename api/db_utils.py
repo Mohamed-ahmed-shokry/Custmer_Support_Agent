@@ -6824,6 +6824,125 @@ def create_inspections() -> None:
         conn.commit()
 
 
+def get_inspection(insp_id: str) -> dict[str, Any] | None:
+    """Retrieve an inspection by ID, parsing items_json into a list of dicts."""
+    norm_id = (insp_id or "").strip()
+    if not norm_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT id, tenant_id, unit_id, session_id, inspection_type, "
+            "scheduled_date, completed_date, inspector_name, status, "
+            "overall_condition, items_json, deposit_deduction_total, "
+            "deposit_refund_amount, key_return_status, notes, document_file_id, "
+            "created_at, updated_at "
+            "FROM inspections WHERE id = ?",
+            (norm_id,),
+        ).fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        try:
+            res["items"] = json.loads(res.get("items_json") or "[]")
+        except Exception:
+            res["items"] = []
+        return res
+
+
+def create_inspection(  # noqa: PLR0913, PLR0915, PLR0917
+    tenant_id: str,
+    unit_id: str | None = None,
+    inspection_type: str = "move_out",
+    scheduled_date: str | None = None,
+    inspector_name: str = "Property Inspector",
+    status: str = "scheduled",
+    overall_condition: str = "good",
+    items: list[dict[str, Any]] | str | None = None,
+    deposit_deduction_total: float = 0.0,
+    deposit_refund_amount: float = 0.0,
+    key_return_status: str = "pending",
+    notes: str = "",
+    session_id: str | None = None,
+    insp_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a new unit move-in/out or turnover inspection with validation."""
+    norm_tenant = (tenant_id or "").strip()
+    if not norm_tenant:
+        raise ValueError("Tenant ID must not be blank.")
+
+    tenant_record = get_tenant(norm_tenant)
+    if not tenant_record:
+        raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
+
+    resolved_unit = (unit_id or tenant_record.get("unit_id") or "").strip()
+    if not resolved_unit:
+        raise ValueError("Unit ID is required or must be linked to the tenant.")
+    unit_record = get_unit(resolved_unit)
+    if not unit_record:
+        raise ValueError(f"Unit with ID '{resolved_unit}' does not exist.")
+
+    norm_type = normalize_inspection_type(inspection_type)
+    norm_status = normalize_inspection_status(status)
+    norm_condition = normalize_inspection_condition(overall_condition)
+    norm_key_return = normalize_key_return_status(key_return_status)
+    cleaned_items = normalize_inspection_items(items)
+    items_json_str = json.dumps(cleaned_items)
+
+    resolved_scheduled = (scheduled_date or "").strip()
+    if not resolved_scheduled:
+        resolved_scheduled = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    clean_inspector = (
+        inspector_name or "Property Inspector"
+    ).strip()[:MAX_INSPECTOR_NAME_LENGTH]
+    clean_notes = (notes or "").strip()[:MAX_INSPECTION_NOTES_LENGTH]
+    clean_session = (session_id or "").strip() or None
+    deduction_val = max(0.0, float(deposit_deduction_total or 0.0))
+    refund_val = max(0.0, float(deposit_refund_amount or 0.0))
+
+    inspection_id = normalize_inspection_id(
+        insp_id or f"insp_{uuid.uuid4().hex[:8]}"
+    )
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(
+            "SELECT id FROM inspections WHERE id = ?", (inspection_id,)
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Inspection with ID '{inspection_id}' already exists.")
+
+        conn.execute(
+            "INSERT INTO inspections "
+            "(id, tenant_id, unit_id, session_id, inspection_type, "
+            "scheduled_date, completed_date, inspector_name, status, "
+            "overall_condition, items_json, deposit_deduction_total, "
+            "deposit_refund_amount, key_return_status, notes, document_file_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            (
+                inspection_id,
+                norm_tenant,
+                resolved_unit,
+                clean_session,
+                norm_type,
+                resolved_scheduled,
+                clean_inspector,
+                norm_status,
+                norm_condition,
+                items_json_str,
+                deduction_val,
+                refund_val,
+                norm_key_return,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+
+    created = get_inspection(inspection_id)
+    if not created:
+        raise RuntimeError("Failed to retrieve newly created inspection.")
+    return created
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
