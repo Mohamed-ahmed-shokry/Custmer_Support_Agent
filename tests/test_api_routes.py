@@ -1649,10 +1649,9 @@ def test_rechunk_document_route_success(monkeypatch):
     monkeypatch.setattr(
         main,
         "reindex_chunks_in_chroma",
-        lambda file_id, source_text, filename, collection, options: reindexed_calls.append(
-            (file_id, filename, collection, options)
-        )
-        or True,
+        lambda file_id, source_text, filename, collection, options: (
+            reindexed_calls.append((file_id, filename, collection, options)) or True
+        ),
     )
     monkeypatch.setattr(
         main,
@@ -1710,9 +1709,7 @@ def test_rechunk_document_route_not_found(monkeypatch):
 
 def test_rechunk_document_route_no_source_text(monkeypatch):
     file_id = 42
-    monkeypatch.setattr(
-        main, "get_document_record", lambda fid: {"id": fid, "filename": "doc.pdf"}
-    )
+    monkeypatch.setattr(main, "get_document_record", lambda fid: {"id": fid, "filename": "doc.pdf"})
     monkeypatch.setattr(main, "get_document_source", lambda fid: None)
 
     response = client.post(f"/docs/{file_id}/rechunk", json={})
@@ -1742,7 +1739,6 @@ def test_rechunk_document_route_reindex_failure(monkeypatch):
     response = client.post(f"/docs/{file_id}/rechunk", json={})
     assert response.status_code == HTTP_INTERNAL_ERROR
     assert "failed to re-chunk" in response.json()["detail"].lower()
-
 
 
 def test_delete_many_documents_success(monkeypatch):
@@ -2204,9 +2200,7 @@ def test_feedback_negative_triggers_webhook(monkeypatch):
         "dispatch_event",
         lambda ev, data: dispatched.append((ev, data)),
     )
-    monkeypatch.setattr(
-        main, "get_chat_history", lambda sid: [{"role": "human", "content": "Hi"}]
-    )
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: [{"role": "human", "content": "Hi"}])
     monkeypatch.setattr(main, "insert_feedback", lambda sid, rating, comment: 42)
 
     # Positive feedback does not dispatch
@@ -2233,9 +2227,7 @@ def test_session_status_update_triggers_webhooks(monkeypatch):
         "dispatch_event",
         lambda ev, data: dispatched.append((ev, data)),
     )
-    monkeypatch.setattr(
-        main, "get_chat_history", lambda sid: [{"role": "human", "content": "Hi"}]
-    )
+    monkeypatch.setattr(main, "get_chat_history", lambda sid: [{"role": "human", "content": "Hi"}])
 
     state = {"status": "active", "label": "Session 1", "session_id": "s-1"}
 
@@ -2341,9 +2333,7 @@ def test_list_and_get_macros_routes(monkeypatch):
     }
     monkeypatch.setattr(main, "list_macros", lambda **kwargs: [fake_macro])
     monkeypatch.setattr(main, "list_macro_categories", lambda: ["Maintenance", "Leasing"])
-    monkeypatch.setattr(
-        main, "get_macro", lambda mid: fake_macro if mid == target_id else None
-    )
+    monkeypatch.setattr(main, "get_macro", lambda mid: fake_macro if mid == target_id else None)
 
     resp_list = client.get("/macros?category=Maintenance")
     assert resp_list.status_code == HTTP_OK
@@ -2658,9 +2648,7 @@ def test_sla_policies_crud_routes(monkeypatch):
 
     monkeypatch.setattr(main, "list_sla_policies", lambda **kwargs: [fake_policy])
     monkeypatch.setattr(main, "create_sla_policy", lambda **kwargs: 1)
-    monkeypatch.setattr(
-        main, "get_sla_policy", lambda pid: fake_policy if pid == 1 else None
-    )
+    monkeypatch.setattr(main, "get_sla_policy", lambda pid: fake_policy if pid == 1 else None)
     monkeypatch.setattr(main, "update_sla_policy", lambda pid, **kwargs: pid == 1)
     monkeypatch.setattr(main, "delete_sla_policy", lambda pid: pid == 1)
 
@@ -3339,9 +3327,9 @@ def test_knowledge_gap_routes(monkeypatch):
     monkeypatch.setattr(
         main.db_utils,
         "update_knowledge_gap",
-        lambda gap_id, **kw: {**fake_gap, **{k: v for k, v in kw.items() if v is not None}}
-        if gap_id == 1
-        else None,
+        lambda gap_id, **kw: (
+            {**fake_gap, **{k: v for k, v in kw.items() if v is not None}} if gap_id == 1 else None
+        ),
     )
     monkeypatch.setattr(main.db_utils, "delete_knowledge_gap", lambda gid: gid == 1)
 
@@ -3442,9 +3430,11 @@ def test_knowledge_article_routes(monkeypatch):
     monkeypatch.setattr(
         main.db_utils,
         "update_knowledge_article",
-        lambda article_id, **kw: {**fake_art, **{k: v for k, v in kw.items() if v is not None}}
-        if article_id == target_aid
-        else None,
+        lambda article_id, **kw: (
+            {**fake_art, **{k: v for k, v in kw.items() if v is not None}}
+            if article_id == target_aid
+            else None
+        ),
     )
     monkeypatch.setattr(
         main.db_utils,
@@ -4354,9 +4344,7 @@ def test_lease_renewal_agreement_and_session_routes(monkeypatch, tmp_path):
     main.db_utils.create_document_store()
 
     # Stub chroma reindexing to succeed cleanly without hitting vector store
-    monkeypatch.setattr(
-        main.lease_renewals, "reindex_chunks_in_chroma", lambda **kwargs: True
-    )
+    monkeypatch.setattr(main.lease_renewals, "reindex_chunks_in_chroma", lambda **kwargs: True)
 
     dispatched = []
     monkeypatch.setattr(
@@ -4408,11 +4396,8 @@ def test_lease_renewal_agreement_and_session_routes(monkeypatch, tmp_path):
     assert any(e[0] == "lease_renewal.offered" for e in dispatched)
 
     # 4. Unlinked session renewal creation -> 400
-    res_unlinked = client.post(
-        "/sessions/unlinked_sess/create-lease-renewal", json=sess_offer_body
-    )
+    res_unlinked = client.post("/sessions/unlinked_sess/create-lease-renewal", json=sess_offer_body)
     assert res_unlinked.status_code == HTTP_BAD_REQUEST
-
 
 
 def test_lease_renewal_routes(monkeypatch, tmp_path):  # noqa: PLR0915
@@ -4430,9 +4415,7 @@ def test_lease_renewal_routes(monkeypatch, tmp_path):  # noqa: PLR0915
     main.db_utils.create_application_logs()
 
     # Stub chroma reindexing to succeed cleanly without hitting vector store
-    monkeypatch.setattr(
-        main.lease_renewals, "reindex_chunks_in_chroma", lambda **kwargs: True
-    )
+    monkeypatch.setattr(main.lease_renewals, "reindex_chunks_in_chroma", lambda **kwargs: True)
 
     dispatched = []
     monkeypatch.setattr(
@@ -4561,9 +4544,194 @@ def test_lease_renewal_routes(monkeypatch, tmp_path):  # noqa: PLR0915
     assert res_bad_tenant.status_code == HTTP_NOT_FOUND
 
 
+def test_inspection_routes_full_lifecycle(monkeypatch, tmp_path):  # noqa: PLR0915
+    """Test full lifecycle of inspection routes, webhooks, work orders, and RAG publishing."""
+    db_file = tmp_path / "test_api_inspections.db"
+    monkeypatch.setattr(main.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.webhooks.db_utils, "DB_NAME", str(db_file))
+    monkeypatch.setattr(main.inspections.db_utils, "DB_NAME", str(db_file))
+    main.db_utils.create_units()
+    main.db_utils.create_tenants()
+    main.db_utils.create_work_orders()
+    main.db_utils.create_webhooks()
+    main.db_utils.create_inspections()
+    main.db_utils.create_session_labels()
+    main.db_utils.create_document_store()
+    main.db_utils.create_application_logs()
 
+    # Stub chroma reindexing to succeed cleanly without hitting external vector store
+    monkeypatch.setattr(main.inspections, "reindex_chunks_in_chroma", lambda **kwargs: True)
 
+    dispatched = []
+    monkeypatch.setattr(
+        main.webhooks, "dispatch_event", lambda ev, data: dispatched.append((ev, data))
+    )
 
+    # 1. Metrics route
+    res_m = client.get("/inspections/metrics")
+    assert res_m.status_code == HTTP_OK
+    metrics = res_m.json()
+    assert "total_inspections" in metrics
+    assert "scheduled_count" in metrics
 
+    # 2. Create inspection route
+    items_payload = [
+        {
+            "id": "item_window_1",
+            "room": "Bedroom",
+            "item_name": "Window Blind",
+            "condition": "damaged",
+            "notes": "Bent slats needing replacement",
+            "action_needed": "replace",
+            "estimated_cost": 85.0,
+        },
+        {
+            "id": "item_flooring_1",
+            "room": "Living Room",
+            "item_name": "Hardwood Floor",
+            "condition": "good",
+            "notes": "Normal wear and tear",
+            "action_needed": "none",
+            "estimated_cost": 0.0,
+        },
+    ]
+    create_payload = {
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "inspection_type": "move_out",
+        "scheduled_date": "2026-11-15",
+        "inspector_name": "Taylor Smith",
+        "status": "scheduled",
+        "overall_condition": "fair",
+        "items": items_payload,
+        "notes": "Tenant moving out end of month.",
+    }
+    res_create = client.post("/inspections", json=create_payload)
+    assert res_create.status_code == HTTP_CREATED
+    insp_data = res_create.json()["inspection"]
+    created_id = insp_data["id"]
+    assert insp_data["tenant_id"] == "tenant_1"
+    assert insp_data["unit_id"] == "unit_101"
+    assert insp_data["inspector_name"] == "Taylor Smith"
+    assert len(insp_data["items"]) == 2  # noqa: PLR2004
+    assert any(e[0] == "inspection.scheduled" for e in dispatched)
 
+    # 3. Get inspection route
+    res_get = client.get(f"/inspections/{created_id}")
+    assert res_get.status_code == HTTP_OK
+    assert res_get.json()["inspection"]["id"] == created_id
 
+    # 4. List inspections route with filters
+    res_list = client.get("/inspections", params={"tenant_id": "tenant_1", "status": "scheduled"})
+    assert res_list.status_code == HTTP_OK
+    assert res_list.json()["total"] >= 1
+    assert any(i["id"] == created_id for i in res_list.json()["items"])
+
+    # 5. Patch inspection route
+    res_patch = client.patch(
+        f"/inspections/{created_id}",
+        json={"status": "in_progress", "overall_condition": "fair"},
+    )
+    assert res_patch.status_code == HTTP_OK
+    assert res_patch.json()["inspection"]["status"] == "in_progress"
+
+    # 6. Complete inspection route
+    res_comp = client.post(
+        f"/inspections/{created_id}/complete",
+        json={
+            "deposit_held": 1450.0,
+            "key_return_status": "returned",
+            "overall_condition": "fair",
+            "notes": "Deductions assessed and keys returned.",
+        },
+    )
+    assert res_comp.status_code == HTTP_OK
+    comp_data = res_comp.json()["inspection"]
+    assert comp_data["status"] == "completed"
+    assert comp_data["key_return_status"] == "returned"
+    assert comp_data["deposit_deduction_total"] == 85.0  # noqa: PLR2004
+    assert comp_data["deposit_refund_amount"] == 1365.0  # noqa: PLR2004
+    assert any(e[0] == "inspection.completed" for e in dispatched)
+    assert any(e[0] == "inspection.deposit_deductions_assessed" for e in dispatched)
+    assert any(e[0] == "inspection.keys_returned" for e in dispatched)
+
+    # 7. Convert deficiency item to work order route
+    res_wo = client.post(
+        f"/inspections/{created_id}/convert-to-work-order",
+        json={
+            "item_id": "item_window_1",
+            "title": "Replace broken window blinds",
+            "category": "general",
+            "priority": "medium",
+        },
+    )
+    assert res_wo.status_code == HTTP_OK
+    wo_data = res_wo.json()
+    assert wo_data["status"] == "converted"
+    assert wo_data["work_order"]["title"] == "Replace broken window blinds"
+    assert any(e[0] == "work_order.created" for e in dispatched)
+
+    # 8. Publish inspection report document route
+    res_pub = client.post(
+        f"/inspections/{created_id}/publish-document",
+        json={"collection": "default", "chunking_strategy": "markdown"},
+    )
+    assert res_pub.status_code == HTTP_OK
+    pub_data = res_pub.json()
+    assert pub_data["inspection_id"] == created_id
+    assert pub_data["indexed_in_chroma"] is True
+
+    # 9. Create inspection from session route
+    sid = "session_insp_test_1"
+    main.db_utils.link_session_tenant(sid, tenant_id="tenant_2")
+    res_sess = client.post(
+        f"/sessions/{sid}/create-inspection",
+        json={
+            "inspection_type": "move_out",
+            "scheduled_date": "2026-11-20",
+            "notes": "Move-out inspection requested in chat",
+        },
+    )
+    assert res_sess.status_code == HTTP_CREATED
+    sess_insp = res_sess.json()["inspection"]
+    assert sess_insp["session_id"] == sid
+    assert sess_insp["tenant_id"] == "tenant_2"
+
+    # 10. Tenant inspections list route
+    res_t = client.get("/tenants/tenant_1/inspections")
+    assert res_t.status_code == HTTP_OK
+    assert any(i["id"] == created_id for i in res_t.json()["items"])
+
+    # 11. Unit inspections list route
+    res_u = client.get("/units/unit_101/inspections")
+    assert res_u.status_code == HTTP_OK
+    assert any(i["id"] == created_id for i in res_u.json()["items"])
+
+    # 12. Delete inspection route
+    res_del = client.delete(f"/inspections/{created_id}")
+    assert res_del.status_code == HTTP_OK
+    res_get_del = client.get(f"/inspections/{created_id}")
+    assert res_get_del.status_code == HTTP_NOT_FOUND
+
+    # 13. Error handling
+    # Non-existent inspection GET -> 404
+    res_not_found = client.get("/inspections/insp_ghost_999")
+    assert res_not_found.status_code == HTTP_NOT_FOUND
+
+    # Session with no linked tenant -> 400
+    res_bad_sess = client.post(
+        "/sessions/unlinked_sess_999/create-inspection",
+        json={"inspection_type": "move_out"},
+    )
+    assert res_bad_sess.status_code == HTTP_BAD_REQUEST
+
+    # Non-existent tenant for inspection creation -> 422
+    res_bad_tenant = client.post(
+        "/inspections",
+        json={"tenant_id": "ghost_tenant_999"},
+    )
+    assert res_bad_tenant.status_code == HTTP_UNPROCESSABLE_ENTITY
+
+    # Non-existent unit query -> 404
+    res_bad_unit = client.get("/units/ghost_unit_999/inspections")
+    assert res_bad_unit.status_code == HTTP_NOT_FOUND
