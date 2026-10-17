@@ -3441,6 +3441,55 @@ def test_inspection_summary_metrics(monkeypatch, tmp_path):
     assert "pending" in metrics["by_key_return"]
 
 
+def test_complete_inspection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    items = [
+        {
+            "id": "item_1",
+            "room": "Bedroom",
+            "item_name": "Door",
+            "condition": "damaged",
+            "action_needed": "repair",
+            "estimated_cost": 120.0,
+        },
+        {
+            "id": "item_2",
+            "room": "Kitchen",
+            "item_name": "Cabinets",
+            "condition": "good",
+            "action_needed": "none",
+            "estimated_cost": 0.0,
+        },
+    ]
+    created = db_utils.create_inspection(
+        tenant_id="tenant_1",
+        inspection_type="move_out",
+        scheduled_date="2026-10-20",
+        items=items,
+        status="scheduled",
+    )
+    insp_id = created["id"]
+
+    completed = db_utils.complete_inspection(
+        insp_id,
+        key_return_status="returned",
+        notes="Final checkout walkthrough completed.",
+    )
+    assert completed["status"] == "completed"
+    assert completed["deposit_deduction_total"] == 120.0  # noqa: PLR2004
+    assert completed["deposit_refund_amount"] == 1330.0  # noqa: PLR2004
+    assert completed["key_return_status"] == "returned"
+    assert completed["completed_date"] is not None
+
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.complete_inspection("nonexistent_id")
+
+
+
 
 
 

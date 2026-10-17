@@ -7222,6 +7222,95 @@ def get_inspection_summary_metrics() -> dict[str, Any]:
         }
 
 
+def complete_inspection(  # noqa: PLR0913, PLR0917
+    insp_id: str,
+    completed_date: str | None = None,
+    items: list[dict[str, Any]] | str | None = None,
+    deposit_deduction_total: float | None = None,
+    deposit_refund_amount: float | None = None,
+    key_return_status: str | None = None,
+    notes: str | None = None,
+    security_deposit_base: float | None = None,
+) -> dict[str, Any]:
+    """Finalize an inspection, computing itemized deposit deductions and refund."""
+    current = get_inspection(insp_id)
+    if not current:
+        raise ValueError(f"Inspection with ID '{insp_id}' does not exist.")
+
+    resolved_items = (
+        normalize_inspection_items(items)
+        if items is not None
+        else current.get("items", [])
+    )
+    items_json_str = json.dumps(resolved_items)
+
+    if deposit_deduction_total is not None:
+        deductions = max(0.0, float(deposit_deduction_total))
+    else:
+        # Sum itemized deficiency costs where action is needed
+        deductions = sum(
+            float(item.get("estimated_cost", 0.0))
+            for item in resolved_items
+            if item.get("action_needed", "none") != "none"
+        )
+    deductions = round(deductions, 2)
+
+    tenant = get_tenant(current["tenant_id"])
+    if security_deposit_base is not None:
+        base_deposit = max(0.0, float(security_deposit_base))
+    elif tenant and tenant.get("monthly_rent"):
+        base_deposit = float(tenant["monthly_rent"])
+    else:
+        base_deposit = 1000.0
+
+    if deposit_refund_amount is not None:
+        refund = max(0.0, float(deposit_refund_amount))
+    else:
+        refund = max(0.0, round(base_deposit - deductions, 2))
+
+    resolved_completed = (completed_date or "").strip()
+    if not resolved_completed:
+        resolved_completed = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    norm_key = (
+        normalize_key_return_status(key_return_status)
+        if key_return_status
+        else current.get("key_return_status", "pending")
+    )
+    combined_notes = current.get("notes", "")
+    if notes and notes.strip():
+        combined_notes = f"{combined_notes} | {notes.strip()}".strip(" |")
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE inspections SET "
+            "status = 'completed', "
+            "completed_date = ?, "
+            "items_json = ?, "
+            "deposit_deduction_total = ?, "
+            "deposit_refund_amount = ?, "
+            "key_return_status = ?, "
+            "notes = ?, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            (
+                resolved_completed,
+                items_json_str,
+                deductions,
+                refund,
+                norm_key,
+                combined_notes,
+                insp_id,
+            ),
+        )
+        conn.commit()
+
+    updated = get_inspection(insp_id)
+    if not updated:
+        raise RuntimeError("Failed to retrieve completed inspection.")
+    return updated
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
