@@ -3423,6 +3423,25 @@ def test_update_and_delete_inspection(monkeypatch, tmp_path):
     assert db_utils.delete_inspection("") is False
 
 
+def test_inspection_summary_metrics(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    metrics = db_utils.get_inspection_summary_metrics()
+    assert metrics["total_inspections"] >= 3  # noqa: PLR2004
+    assert metrics["completed_inspections"] >= 2  # noqa: PLR2004
+    assert metrics["scheduled_inspections"] >= 1
+    assert metrics["total_deposit_deductions"] >= 150.0  # noqa: PLR2004
+    assert metrics["total_deposit_refunds"] >= 1850.0  # noqa: PLR2004
+    assert "move_in" in metrics["by_type"]
+    assert "move_out" in metrics["by_type"]
+    assert "good" in metrics["by_condition"]
+    assert "pending" in metrics["by_key_return"]
+
+
+
 
 
 

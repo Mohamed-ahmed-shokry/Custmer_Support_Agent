@@ -7149,6 +7149,79 @@ def delete_inspection(insp_id: str) -> bool:
         return deleted
 
 
+def get_inspection_summary_metrics() -> dict[str, Any]:
+    """Compute aggregated portfolio inspection and turnover metrics."""
+    with closing(get_db_connection()) as conn:
+        total_row = conn.execute("SELECT COUNT(*) FROM inspections").fetchone()
+        total_count = int(total_row[0]) if total_row else 0
+
+        completed_row = conn.execute(
+            "SELECT COUNT(*) FROM inspections WHERE status = 'completed'"
+        ).fetchone()
+        completed_count = int(completed_row[0]) if completed_row else 0
+
+        scheduled_row = conn.execute(
+            "SELECT COUNT(*) FROM inspections WHERE status = 'scheduled'"
+        ).fetchone()
+        scheduled_count = int(scheduled_row[0]) if scheduled_row else 0
+
+        in_progress_row = conn.execute(
+            "SELECT COUNT(*) FROM inspections WHERE status = 'in_progress'"
+        ).fetchone()
+        in_progress_count = int(in_progress_row[0]) if in_progress_row else 0
+
+        deductions_row = conn.execute(
+            "SELECT SUM(deposit_deduction_total) FROM inspections"
+        ).fetchone()
+        total_deductions = (
+            round(float(deductions_row[0]), 2)
+            if deductions_row and deductions_row[0] is not None
+            else 0.0
+        )
+
+        refunds_row = conn.execute(
+            "SELECT SUM(deposit_refund_amount) FROM inspections"
+        ).fetchone()
+        total_refunds = (
+            round(float(refunds_row[0]), 2)
+            if refunds_row and refunds_row[0] is not None
+            else 0.0
+        )
+
+        by_type_rows = conn.execute(
+            "SELECT inspection_type, COUNT(*) FROM inspections GROUP BY inspection_type"
+        ).fetchall()
+        by_type = {r[0]: int(r[1]) for r in by_type_rows}
+
+        by_status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM inspections GROUP BY status"
+        ).fetchall()
+        by_status = {r[0]: int(r[1]) for r in by_status_rows}
+
+        by_cond_rows = conn.execute(
+            "SELECT overall_condition, COUNT(*) FROM inspections GROUP BY overall_condition"
+        ).fetchall()
+        by_condition = {r[0]: int(r[1]) for r in by_cond_rows}
+
+        by_key_rows = conn.execute(
+            "SELECT key_return_status, COUNT(*) FROM inspections GROUP BY key_return_status"
+        ).fetchall()
+        by_key_return = {r[0]: int(r[1]) for r in by_key_rows}
+
+        return {
+            "total_inspections": total_count,
+            "completed_inspections": completed_count,
+            "scheduled_inspections": scheduled_count,
+            "in_progress_inspections": in_progress_count,
+            "total_deposit_deductions": total_deductions,
+            "total_deposit_refunds": total_refunds,
+            "by_type": by_type,
+            "by_status": by_status,
+            "by_condition": by_condition,
+            "by_key_return": by_key_return,
+        }
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
