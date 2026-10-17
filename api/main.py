@@ -18,6 +18,7 @@ from api import (
     csat,
     db_utils,
     knowledge_base,
+    lease_renewals,
     macro_suggestions,
     macros,
     sla,
@@ -176,6 +177,15 @@ from api.pydantic_models import (
     KnowledgeGapListResponse,
     KnowledgeGapScanResponse,
     KnowledgeGapUpdateRequest,
+    LeaseRenewalCreateRequest,
+    LeaseRenewalDocumentPublishRequest,
+    LeaseRenewalDocumentPublishResponse,
+    LeaseRenewalItem,
+    LeaseRenewalListResponse,
+    LeaseRenewalMetricsResponse,
+    LeaseRenewalResponse,
+    LeaseRenewalSignRequest,
+    LeaseRenewalUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -3507,6 +3517,302 @@ def record_session_payment_route(
         amount_paid=result["amount_paid"],
         tenant_status=result["tenant_status"],
     )
+
+
+# ============================================================================
+# Lease Renewals & Digital Agreements Endpoints
+# ============================================================================
+
+
+@app.post("/lease-renewals", response_model=LeaseRenewalResponse, status_code=201)
+def create_lease_renewal_route(
+    request: LeaseRenewalCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Create a new lease renewal offer, generating default dates/rent if omitted."""
+    try:
+        item = db_utils.create_lease_renewal(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            proposed_rent=request.proposed_rent,
+            current_rent=request.current_rent,
+            term_months=request.term_months,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            concession_amount=request.concession_amount,
+            concession_notes=request.concession_notes,
+            security_deposit_change=request.security_deposit_change,
+            status=request.status,
+            expires_at=request.expires_at,
+            session_id=request.session_id,
+            notes=request.notes,
+            lr_id=request.renewal_id,
+        )
+    except ValueError as exc:
+        if "does not exist" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "lease_renewal.offered",
+        {
+            "renewal_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "proposed_rent": item["proposed_rent"],
+            "term_months": item["term_months"],
+            "status": item["status"],
+            "expires_at": item["expires_at"],
+        },
+    )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.get("/lease-renewals", response_model=LeaseRenewalListResponse)
+def list_lease_renewals_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List lease renewals with filtering by tenant, unit, status, and search."""
+    items, total = db_utils.list_lease_renewals(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return LeaseRenewalListResponse(
+        items=[LeaseRenewalItem(**r) for r in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/lease-renewals/metrics", response_model=LeaseRenewalMetricsResponse)
+def get_lease_renewal_metrics_route():
+    """Retrieve portfolio lease renewal metrics (totals, renewal rate, terms)."""
+    metrics = db_utils.get_lease_renewal_summary_metrics()
+    return LeaseRenewalMetricsResponse(**metrics)
+
+
+@app.get("/lease-renewals/{renewal_id}", response_model=LeaseRenewalResponse)
+def get_lease_renewal_route(renewal_id: str):
+    """Retrieve a single lease renewal record by its ID."""
+    item = db_utils.get_lease_renewal(renewal_id)
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lease renewal '{renewal_id}' not found.",
+        )
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.patch("/lease-renewals/{renewal_id}", response_model=LeaseRenewalResponse)
+def update_lease_renewal_route(
+    renewal_id: str,
+    request: LeaseRenewalUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update lease renewal terms, financial fields, or status."""
+    try:
+        item = db_utils.update_lease_renewal(
+            renewal_id=renewal_id,
+            proposed_rent=request.proposed_rent,
+            term_months=request.term_months,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            concession_amount=request.concession_amount,
+            concession_notes=request.concession_notes,
+            security_deposit_change=request.security_deposit_change,
+            status=request.status,
+            expires_at=request.expires_at,
+            notes=request.notes,
+            document_file_id=request.document_file_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lease renewal '{renewal_id}' not found.",
+        )
+
+    if request.status == "accepted":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "lease_renewal.accepted",
+            {"renewal_id": item["id"], "tenant_id": item["tenant_id"]},
+        )
+    elif request.status == "declined":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "lease_renewal.declined",
+            {"renewal_id": item["id"], "tenant_id": item["tenant_id"]},
+        )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.delete("/lease-renewals/{renewal_id}")
+def delete_lease_renewal_route(renewal_id: str):
+    """Delete a lease renewal record."""
+    deleted = db_utils.delete_lease_renewal(renewal_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lease renewal '{renewal_id}' not found.",
+        )
+    return {"message": f"Lease renewal '{renewal_id}' deleted successfully."}
+
+
+@app.post("/lease-renewals/{renewal_id}/sign", response_model=LeaseRenewalResponse)
+def sign_lease_renewal_route(
+    renewal_id: str,
+    request: LeaseRenewalSignRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Execute digital e-signature on renewal, updating tenant lease dates and rent."""
+    try:
+        item = db_utils.sign_lease_renewal(
+            renewal_id=renewal_id,
+            signature_name=request.signature_name,
+            signature_ip=request.signature_ip,
+            signed_at=request.signed_at,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "lease_renewal.signed",
+        {
+            "renewal_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "proposed_rent": item["proposed_rent"],
+            "term_months": item["term_months"],
+            "signed_at": item["signed_at"],
+            "signature_name": item["signature_name"],
+        },
+    )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.post(
+    "/lease-renewals/{renewal_id}/publish-document",
+    response_model=LeaseRenewalDocumentPublishResponse,
+)
+def publish_lease_renewal_document_route(
+    renewal_id: str,
+    request: LeaseRenewalDocumentPublishRequest,
+):
+    """Synthesize legal renewal agreement in Markdown and index into RAG vector store."""
+    try:
+        result = lease_renewals.publish_lease_renewal_document(
+            renewal_id=renewal_id,
+            collection=request.collection,
+            chunking_strategy=request.chunking_strategy,
+            chunk_size=request.chunk_size,
+            chunk_overlap=request.chunk_overlap,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return LeaseRenewalDocumentPublishResponse(**result)
+
+
+@app.post(
+    "/sessions/{session_id}/create-lease-renewal",
+    response_model=LeaseRenewalResponse,
+    status_code=201,
+)
+def create_session_lease_renewal_route(
+    session_id: str,
+    request: LeaseRenewalCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Generate a 1-click renewal offer from active support session for linked resident."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' has no linked tenant to create lease renewal for.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = request.unit_id or tenant.get("unit_id")
+
+    try:
+        item = db_utils.create_lease_renewal(
+            tenant_id=resolved_tenant_id,
+            unit_id=resolved_unit_id,
+            proposed_rent=request.proposed_rent,
+            current_rent=request.current_rent,
+            term_months=request.term_months,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            concession_amount=request.concession_amount,
+            concession_notes=request.concession_notes,
+            security_deposit_change=request.security_deposit_change,
+            status=request.status,
+            expires_at=request.expires_at,
+            session_id=session_id,
+            notes=request.notes,
+            lr_id=request.renewal_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "lease_renewal.offered",
+        {
+            "renewal_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "session_id": session_id,
+            "proposed_rent": item["proposed_rent"],
+            "term_months": item["term_months"],
+            "status": item["status"],
+            "expires_at": item["expires_at"],
+        },
+    )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.get("/tenants/{tenant_id}/lease-renewals", response_model=LeaseRenewalListResponse)
+def get_tenant_lease_renewals_route(tenant_id: str):
+    """Retrieve all lease renewals associated with a specific resident."""
+    tenant = db_utils.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tenant '{tenant_id}' not found.",
+        )
+    items, total = db_utils.list_lease_renewals(tenant_id=tenant_id, limit=100)
+    return LeaseRenewalListResponse(
+        items=[LeaseRenewalItem(**r) for r in items],
+        total=total,
+        limit=100,
+        offset=0,
+    )
+
 
 
 
