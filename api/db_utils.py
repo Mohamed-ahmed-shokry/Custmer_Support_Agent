@@ -299,6 +299,10 @@ VALID_WEBHOOK_EVENTS = {
     "lease_renewal.accepted",
     "lease_renewal.signed",
     "lease_renewal.declined",
+    "inspection.scheduled",
+    "inspection.completed",
+    "inspection.deposit_deductions_assessed",
+    "inspection.keys_returned",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
