@@ -3232,4 +3232,45 @@ def test_lease_renewal_crud_and_metrics(monkeypatch, tmp_path):  # noqa: PLR0915
     assert "12" in metrics["by_term"]
 
 
+def test_inspection_normalizers():
+    assert db_utils.normalize_inspection_id("insp_1") == "insp_1"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_inspection_id("   ")
+
+    assert db_utils.normalize_inspection_type(None) == "move_out"
+    assert db_utils.normalize_inspection_type("MOVE_IN") == "move_in"
+    with pytest.raises(ValueError, match="Invalid inspection type"):
+        db_utils.normalize_inspection_type("invalid_type")
+
+    assert db_utils.normalize_inspection_status(None) == "scheduled"
+    assert db_utils.normalize_inspection_status("COMPLETED") == "completed"
+    with pytest.raises(ValueError, match="Invalid inspection status"):
+        db_utils.normalize_inspection_status("unknown_status")
+
+    assert db_utils.normalize_inspection_condition(None) == "good"
+    assert db_utils.normalize_inspection_condition("EXCELLENT") == "excellent"
+    with pytest.raises(ValueError, match="Invalid inspection condition"):
+        db_utils.normalize_inspection_condition("perfect")
+
+    assert db_utils.normalize_key_return_status(None) == "pending"
+    assert db_utils.normalize_key_return_status("RETURNED") == "returned"
+    with pytest.raises(ValueError, match="Invalid key return status"):
+        db_utils.normalize_key_return_status("lost")
+
+    # Items normalizer
+    assert db_utils.normalize_inspection_items(None) == []
+    raw_json = (
+        '[{"room": "Kitchen", "item_name": "Sink", "condition": "good", '
+        '"action_needed": "repair", "estimated_cost": 45.5}]'
+    )
+    items = db_utils.normalize_inspection_items(raw_json)
+    assert len(items) == 1
+    assert items[0]["room"] == "Kitchen"
+    assert items[0]["item_name"] == "Sink"
+    assert items[0]["estimated_cost"] == 45.5  # noqa: PLR2004
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        db_utils.normalize_inspection_items("not-a-json")
+
+
+
 

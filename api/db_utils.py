@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 import uuid
@@ -6552,6 +6553,110 @@ def get_lease_renewal_summary_metrics() -> dict[str, Any]:
             "by_status": by_status,
             "by_term": by_term,
         }
+
+
+def normalize_inspection_id(insp_id: str) -> str:
+    cleaned = (insp_id or "").strip()
+    if not cleaned:
+        raise ValueError("Inspection ID must not be blank.")
+    if len(cleaned) > MAX_INSPECTION_ID_LENGTH:
+        raise ValueError(
+            f"Inspection ID must be at most {MAX_INSPECTION_ID_LENGTH} characters."
+        )
+    return cleaned
+
+
+def normalize_inspection_type(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_INSPECTION_TYPE
+    if cleaned not in VALID_INSPECTION_TYPES:
+        valid_types = ", ".join(sorted(VALID_INSPECTION_TYPES))
+        raise ValueError(
+            f"Invalid inspection type '{cleaned}'. Expected one of: {valid_types}."
+        )
+    return cleaned
+
+
+def normalize_inspection_status(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_INSPECTION_STATUS
+    if cleaned not in VALID_INSPECTION_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_INSPECTION_STATUSES))
+        raise ValueError(
+            f"Invalid inspection status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_inspection_condition(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_INSPECTION_CONDITION
+    if cleaned not in VALID_INSPECTION_CONDITIONS:
+        valid_conditions = ", ".join(sorted(VALID_INSPECTION_CONDITIONS))
+        raise ValueError(
+            f"Invalid inspection condition '{cleaned}'. Expected one of: {valid_conditions}."
+        )
+    return cleaned
+
+
+def normalize_key_return_status(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_KEY_RETURN_STATUS
+    if cleaned not in VALID_KEY_RETURN_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_KEY_RETURN_STATUSES))
+        raise ValueError(
+            f"Invalid key return status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_inspection_items(items_val: Any) -> list[dict[str, Any]]:
+    if items_val is None:
+        return []
+    if isinstance(items_val, str):
+        if not items_val.strip():
+            return []
+        try:
+            parsed = json.loads(items_val)
+        except Exception as exc:
+            raise ValueError(f"Invalid JSON for inspection items: {exc}") from exc
+    elif isinstance(items_val, list):
+        parsed = items_val
+    else:
+        raise ValueError("Inspection items must be a list of items or JSON string.")
+
+    cleaned_items: list[dict[str, Any]] = []
+    for idx, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            raise ValueError(f"Item #{idx+1} must be a dictionary.")
+        item_id = str(item.get("id") or f"item_{idx+1}").strip()
+        room = str(item.get("room") or "General").strip()
+        item_name = str(item.get("item_name") or item.get("name") or "Area").strip()
+        cond = str(item.get("condition") or "good").strip().lower()
+        if cond not in VALID_INSPECTION_CONDITIONS:
+            cond = "good"
+        notes = str(item.get("notes") or "").strip()
+        action = str(item.get("action_needed") or "none").strip().lower()
+        if action not in VALID_INSPECTION_ITEM_ACTIONS:
+            action = "none"
+        try:
+            cost = max(0.0, float(item.get("estimated_cost") or 0.0))
+        except (ValueError, TypeError):
+            cost = 0.0
+        cleaned_items.append({
+            "id": item_id,
+            "room": room,
+            "item_name": item_name,
+            "condition": cond,
+            "notes": notes,
+            "action_needed": action,
+            "estimated_cost": round(cost, 2),
+        })
+    return cleaned_items
 
 
 # Initialize the database tables
