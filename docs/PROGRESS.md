@@ -8,8 +8,8 @@
 
 ## 1. Task Breakdown & Execution Status
 
-- [ ] **Task 1**: `ROADMAP.md` v0.39.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] **Task 1**: `ROADMAP.md` v0.39.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] **Task 3**: Inspection completion, deposit deduction accounting, and punchlist-to-work-order conversion in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] **Task 4**: Inspection report Markdown synthesis and RAG document publishing in `api/inspections.py` + unit tests in `tests/test_inspections.py`
 - [ ] **Task 5**: Context grounding engine integration for inspections in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
@@ -26,7 +26,7 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `inspections` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, completion, and portfolio metrics in `api/db_utils.py` | ⏳ PENDING | Pending Task 2 |
+| AC1 | `inspections` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, completion, and portfolio metrics in `api/db_utils.py` | ✅ PASSED | `tests/test_db_utils.py` tests `test_create_inspections_and_default_seeds`, `test_create_and_get_inspection`, `test_list_and_query_inspections`, `test_update_and_delete_inspection`, `test_inspection_summary_metrics` pass |
 | AC2 | `complete_inspection()` calculates total itemized deposit deductions, net deposit refund, and records completion timestamp | ⏳ PENDING | Pending Task 3 |
 | AC3 | `convert_inspection_item_to_work_order()` converts an inspection deficiency item into an active maintenance work order in `work_orders` | ⏳ PENDING | Pending Task 3 |
 | AC4 | `api/inspections.py` synthesizes structured Markdown inspection condition & deposit reports and publishes them into `document_store` and Chroma | ⏳ PENDING | Pending Task 4 |
