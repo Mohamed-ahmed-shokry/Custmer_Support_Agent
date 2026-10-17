@@ -3392,6 +3392,38 @@ def test_list_and_query_inspections(monkeypatch, tmp_path):
     assert all(i["unit_id"] == "unit_101" for i in unit_res)
 
 
+def test_update_and_delete_inspection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    # Update existing
+    updated = db_utils.update_inspection(
+        "insp_102",
+        status="in_progress",
+        overall_condition="fair",
+        notes="Pre-inspection commenced on schedule.",
+        key_return_status="pending",
+    )
+    assert updated is not None
+    assert updated["status"] == "in_progress"
+    assert updated["overall_condition"] == "fair"
+    assert "commenced" in updated["notes"]
+
+    # Update non-existent returns None
+    assert db_utils.update_inspection("nonexistent_id", status="completed") is None
+
+    # Delete existing
+    assert db_utils.delete_inspection("insp_102") is True
+    assert db_utils.get_inspection("insp_102") is None
+
+    # Delete non-existent returns False
+    assert db_utils.delete_inspection("nonexistent_id") is False
+    assert db_utils.delete_inspection("") is False
+
+
+
 
 
 

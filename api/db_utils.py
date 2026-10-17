@@ -7052,6 +7052,103 @@ def get_unit_inspections(unit_id: str) -> list[dict[str, Any]]:
         return result_list
 
 
+def update_inspection(  # noqa: PLR0912, PLR0913, PLR0917
+    insp_id: str,
+    inspection_type: str | None = None,
+    scheduled_date: str | None = None,
+    completed_date: str | None = None,
+    inspector_name: str | None = None,
+    status: str | None = None,
+    overall_condition: str | None = None,
+    items: list[dict[str, Any]] | str | None = None,
+    deposit_deduction_total: float | None = None,
+    deposit_refund_amount: float | None = None,
+    key_return_status: str | None = None,
+    notes: str | None = None,
+    document_file_id: int | None = None,
+) -> dict[str, Any] | None:
+    current = get_inspection(insp_id)
+    if not current:
+        return None
+
+    updates: list[str] = []
+    params: list[Any] = []
+
+    if inspection_type is not None:
+        updates.append("inspection_type = ?")
+        params.append(normalize_inspection_type(inspection_type))
+
+    if scheduled_date is not None:
+        updates.append("scheduled_date = ?")
+        params.append(scheduled_date.strip())
+
+    if completed_date is not None:
+        updates.append("completed_date = ?")
+        params.append(completed_date.strip() or None)
+
+    if inspector_name is not None:
+        updates.append("inspector_name = ?")
+        params.append(inspector_name.strip()[:MAX_INSPECTOR_NAME_LENGTH])
+
+    if status is not None:
+        updates.append("status = ?")
+        params.append(normalize_inspection_status(status))
+
+    if overall_condition is not None:
+        updates.append("overall_condition = ?")
+        params.append(normalize_inspection_condition(overall_condition))
+
+    if items is not None:
+        cleaned_items = normalize_inspection_items(items)
+        updates.append("items_json = ?")
+        params.append(json.dumps(cleaned_items))
+
+    if deposit_deduction_total is not None:
+        updates.append("deposit_deduction_total = ?")
+        params.append(max(0.0, float(deposit_deduction_total)))
+
+    if deposit_refund_amount is not None:
+        updates.append("deposit_refund_amount = ?")
+        params.append(max(0.0, float(deposit_refund_amount)))
+
+    if key_return_status is not None:
+        updates.append("key_return_status = ?")
+        params.append(normalize_key_return_status(key_return_status))
+
+    if notes is not None:
+        updates.append("notes = ?")
+        params.append(notes.strip()[:MAX_INSPECTION_NOTES_LENGTH])
+
+    if document_file_id is not None:
+        updates.append("document_file_id = ?")
+        params.append(document_file_id)
+
+    if not updates:
+        return current
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    sql = f"UPDATE inspections SET {', '.join(updates)} WHERE id = ?"
+    params.append(insp_id)
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(sql, params)
+        conn.commit()
+
+    return get_inspection(insp_id)
+
+
+def delete_inspection(insp_id: str) -> bool:
+    """Delete an inspection by ID, returning True if deleted."""
+    cleaned = (insp_id or "").strip()
+    if not cleaned:
+        return False
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute("DELETE FROM inspections WHERE id = ?", (cleaned,))
+        deleted = bool(cursor.rowcount and cursor.rowcount > 0)
+        conn.commit()
+        return deleted
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
