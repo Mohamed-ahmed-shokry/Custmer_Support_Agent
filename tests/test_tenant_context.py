@@ -30,6 +30,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_work_orders()
     db_utils.create_billing_transactions()
     db_utils.create_lease_renewals()
+    db_utils.create_inspections()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -305,3 +306,51 @@ def test_render_template_with_renewal_variables():
     assert "Offer expires on 2026-10-31" in rendered
 
 
+def test_build_tenant_rag_context_inspections_grounding():
+    """Verify that resident move-in/out inspections and deposit settlements are grounded."""
+    # tenant_2 has scheduled pre-move-out inspection insp_102
+    t2_block = build_tenant_rag_context(tenant_id="tenant_2")
+    assert "[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]" in t2_block
+    assert "[insp_102] Type: PRE-MOVE-OUT" in t2_block
+    assert "Status: SCHEDULED" in t2_block
+    assert "Condition: GOOD" in t2_block
+    assert "Inspector: Alex Rivera" in t2_block
+    assert "Keys: PENDING" in t2_block
+    assert "Kitchen:Oven & Stove(clean)" in t2_block
+    assert "[END RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]" in t2_block
+
+    # tenant_3 has completed move-out inspection insp_103 with deductions
+    t3_block = build_tenant_rag_context(tenant_id="tenant_3")
+    assert "[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]" in t3_block
+    assert "[insp_103] Type: MOVE-OUT" in t3_block
+    assert "Status: COMPLETED" in t3_block
+    assert "Condition: FAIR" in t3_block
+    assert "Deductions: $150.00" in t3_block
+    assert "Net Refund: $1,850.00" in t3_block
+    assert "Keys: RETURNED" in t3_block
+    assert "Living Room:Drywall(repair)" in t3_block
+
+    # include_inspections=False suppresses inspection block
+    suppressed = build_tenant_rag_context(tenant_id="tenant_2", include_inspections=False)
+    assert "[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]" not in suppressed
+    assert "[VERIFIED RESIDENT & PROPERTY UNIT PROFILE]" in suppressed
+
+
+def test_render_template_with_inspection_variables():
+    """Verify macro template rendering with inspection and deposit settlement variables."""
+    sid = "sess-macro-inspection"
+    db_utils.insert_application_logs(sid, "Inspection inquiry", "Here is your inspection", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    template = (
+        "Dear {customer_name}, inspection {inspection_id} ({inspection_type}) "
+        "is {inspection_status}. Total deductions: {inspection_deposit_deductions}, "
+        "net refund: {inspection_deposit_refund}, keys: {key_return_status}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Dear Elena Rostova" in rendered
+    assert "inspection insp_103 (move_out) is completed" in rendered
+    assert "Total deductions: $150.00" in rendered
+    assert "net refund: $1,850.00" in rendered
+    assert "keys: returned" in rendered

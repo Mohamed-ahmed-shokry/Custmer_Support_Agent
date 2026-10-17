@@ -12,10 +12,12 @@ from typing import Any
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
+    get_tenant_inspections,
     get_tenant_lease_renewals,
     get_tenant_ledger_summary,
     get_tenant_work_orders,
     get_unit,
+    get_unit_inspections,
     get_unit_work_orders,
 )
 
@@ -169,9 +171,7 @@ def _format_billing_lines(ledger_summary: dict[str, Any]) -> list[str]:
         pay_date = last_pay.get("paid_at") or last_pay.get("due_date") or "N/A"
         pay_method = last_pay.get("payment_method") or "N/A"
         pay_ref = last_pay.get("reference_number") or "N/A"
-        lines.append(
-            f"Last Payment: {pay_amt} on {pay_date} via {pay_method} (Ref: {pay_ref})"
-        )
+        lines.append(f"Last Payment: {pay_amt} on {pay_date} via {pay_method} (Ref: {pay_ref})")
     else:
         lines.append("Last Payment: No recorded payments")
 
@@ -185,9 +185,7 @@ def _format_billing_lines(ledger_summary: dict[str, Any]) -> list[str]:
             st = tx.get("status", "")
             desc = tx.get("description", "")
             dt = tx.get("due_date") or tx.get("created_at") or ""
-            lines.append(
-                f"  - [{tx_id}] {dt} | {tx_type.upper()} | {amt} | Status: {st} | {desc}"
-            )
+            lines.append(f"  - [{tx_id}] {dt} | {tx_type.upper()} | {amt} | Status: {st} | {desc}")
     lines.append("[END RESIDENT BILLING & PAYMENT LEDGER]")
     return lines
 
@@ -223,6 +221,44 @@ def _format_lease_renewal_lines(renewals: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _format_inspection_lines(inspections: list[dict[str, Any]]) -> list[str]:
+    """Format active resident inspections, punchlist condition, and deposit settlement."""
+    lines: list[str] = ["[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]"]
+    for insp in inspections:
+        insp_id = insp.get("id", "Unknown")
+        itype = str(insp.get("inspection_type", "move_out")).upper().replace("_", "-")
+        st = str(insp.get("status", "scheduled")).upper()
+        cond = str(insp.get("overall_condition", "good")).upper()
+        sched = insp.get("scheduled_date", "N/A")
+        comp = insp.get("completed_date") or "Pending"
+        inspector = insp.get("inspector_name", "Staff")
+        deductions = format_currency(insp.get("deposit_deduction_total", 0.0))
+        refund = format_currency(insp.get("deposit_refund_amount", 0.0))
+        key_st = str(insp.get("key_return_status", "pending")).upper().replace("_", " ")
+
+        parts = [
+            f"[{insp_id}] Type: {itype}",
+            f"Status: {st}",
+            f"Condition: {cond}",
+            f"Scheduled: {sched} (Completed: {comp})",
+            f"Inspector: {inspector}",
+            f"Deductions: {deductions}",
+            f"Net Refund: {refund}",
+            f"Keys: {key_st}",
+        ]
+        items = insp.get("items") or []
+        deficiencies = [
+            f"{it.get('room')}:{it.get('item_name')}({it.get('action_needed')})"
+            for it in items
+            if it.get("action_needed") and it.get("action_needed") != "none"
+        ]
+        if deficiencies:
+            parts.append(f"Punchlist: {', '.join(deficiencies)}")
+        lines.append("  - " + " | ".join(parts))
+    lines.append("[END RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]")
+    return lines
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -230,6 +266,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
     include_work_orders: bool = True,
     include_billing: bool = True,
     include_renewals: bool = True,
+    include_inspections: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -251,7 +288,21 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
     if include_renewals and resolved_tenant_id:
         renewals = get_tenant_lease_renewals(resolved_tenant_id)
 
-    if not tenant and not unit and not work_orders and not ledger_summary and not renewals:
+    inspections: list[dict[str, Any]] = []
+    if include_inspections:
+        if resolved_tenant_id:
+            inspections = get_tenant_inspections(resolved_tenant_id)
+        elif resolved_unit_id:
+            inspections = get_unit_inspections(resolved_unit_id)
+
+    if (
+        not tenant
+        and not unit
+        and not work_orders
+        and not ledger_summary
+        and not renewals
+        and not inspections
+    ):
         return ""
 
     lines: list[str] = []
@@ -278,6 +329,11 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
             lines.append("")
         lines.extend(_format_lease_renewal_lines(renewals))
 
+    if inspections:
+        if lines:
+            lines.append("")
+        lines.extend(_format_inspection_lines(inspections))
+
     return "\n".join(lines)
 
 
@@ -294,10 +350,7 @@ def inject_tenant_context_into_prompt(
     if not context_block:
         return query
 
-    return (
-        f"{context_block}\n\n"
-        f"Resident Inquiry / Question:\n{query}"
-    )
+    return f"{context_block}\n\nResident Inquiry / Question:\n{query}"
 
 
 def _extract_tenant_vars(tenant: dict[str, Any]) -> dict[str, str]:
@@ -358,7 +411,36 @@ def _extract_unit_vars(unit: dict[str, Any]) -> dict[str, str]:
     return vars_dict
 
 
-def extract_tenant_macro_variables(  # noqa: PLR0915
+def _extract_inspection_vars(inspection: dict[str, Any] | None) -> dict[str, str]:
+    """Extract string variables from active or latest resident inspection record."""
+    if not inspection:
+        return {
+            "inspection_id": "",
+            "inspection_type": "",
+            "inspection_status": "none",
+            "inspection_condition": "",
+            "inspection_scheduled_date": "",
+            "inspection_completed_date": "",
+            "inspection_deposit_deductions": "$0.00",
+            "inspection_deposit_refund": "$0.00",
+            "key_return_status": "pending",
+        }
+    return {
+        "inspection_id": str(inspection.get("id", "")),
+        "inspection_type": str(inspection.get("inspection_type", "")),
+        "inspection_status": str(inspection.get("status", "")),
+        "inspection_condition": str(inspection.get("overall_condition", "")),
+        "inspection_scheduled_date": str(inspection.get("scheduled_date", "")),
+        "inspection_completed_date": str(inspection.get("completed_date") or ""),
+        "inspection_deposit_deductions": format_currency(
+            inspection.get("deposit_deduction_total", 0.0)
+        ),
+        "inspection_deposit_refund": format_currency(inspection.get("deposit_refund_amount", 0.0)),
+        "key_return_status": str(inspection.get("key_return_status", "pending")),
+    }
+
+
+def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     session_id: str | None = None,
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -415,12 +497,8 @@ def extract_tenant_macro_variables(  # noqa: PLR0915
             variables["renewal_proposed_rent"] = format_currency(
                 latest_renewal.get("proposed_rent")
             )
-            variables["renewal_current_rent"] = format_currency(
-                latest_renewal.get("current_rent")
-            )
-            variables["renewal_term_months"] = str(
-                latest_renewal.get("term_months", 12)
-            )
+            variables["renewal_current_rent"] = format_currency(latest_renewal.get("current_rent"))
+            variables["renewal_term_months"] = str(latest_renewal.get("term_months", 12))
             variables["renewal_status"] = str(latest_renewal.get("status", ""))
             variables["renewal_start_date"] = str(latest_renewal.get("start_date", ""))
             variables["renewal_end_date"] = str(latest_renewal.get("end_date", ""))
@@ -438,5 +516,13 @@ def extract_tenant_macro_variables(  # noqa: PLR0915
             variables["renewal_end_date"] = ""
             variables["renewal_expires_at"] = ""
             variables["renewal_concession"] = "$0.00"
+
+    inspections: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        inspections = get_tenant_inspections(resolved_tenant_id)
+    elif resolved_unit_id:
+        inspections = get_unit_inspections(resolved_unit_id)
+
+    variables.update(_extract_inspection_vars(inspections[0] if inspections else None))
 
     return variables
