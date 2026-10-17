@@ -653,6 +653,84 @@ MAX_SIGNATURE_IP_LENGTH = 50
 MAX_CONCESSION_NOTES_LENGTH = 1000
 MAX_LEASE_RENEWAL_NOTES_LENGTH = 3000
 
+_CREATE_INSPECTIONS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS inspections ("
+    "id TEXT PRIMARY KEY, "
+    "tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, "
+    "unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE, "
+    "session_id TEXT DEFAULT NULL, "
+    "inspection_type TEXT NOT NULL DEFAULT 'move_out', "
+    "scheduled_date TEXT NOT NULL DEFAULT '', "
+    "completed_date TEXT DEFAULT NULL, "
+    "inspector_name TEXT NOT NULL DEFAULT 'Property Inspector', "
+    "status TEXT NOT NULL DEFAULT 'scheduled', "
+    "overall_condition TEXT NOT NULL DEFAULT 'good', "
+    "items_json TEXT NOT NULL DEFAULT '[]', "
+    "deposit_deduction_total REAL NOT NULL DEFAULT 0.0, "
+    "deposit_refund_amount REAL NOT NULL DEFAULT 0.0, "
+    "key_return_status TEXT NOT NULL DEFAULT 'pending', "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "document_file_id INTEGER DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_INSPECTIONS_TENANT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_tenant_id ON inspections(tenant_id)"
+)
+_CREATE_INSPECTIONS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_unit_id ON inspections(unit_id)"
+)
+_CREATE_INSPECTIONS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_status ON inspections(status)"
+)
+_CREATE_INSPECTIONS_TYPE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_type ON inspections(inspection_type)"
+)
+_CREATE_INSPECTIONS_SCHEDULED_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_scheduled_date ON inspections(scheduled_date)"
+)
+
+VALID_INSPECTION_TYPES = {
+    "move_in",
+    "move_out",
+    "routine",
+    "annual",
+    "pre_move_out",
+}
+DEFAULT_INSPECTION_TYPE = "move_out"
+
+VALID_INSPECTION_STATUSES = {
+    "scheduled",
+    "in_progress",
+    "completed",
+    "cancelled",
+}
+DEFAULT_INSPECTION_STATUS = "scheduled"
+
+VALID_INSPECTION_CONDITIONS = {
+    "excellent",
+    "good",
+    "fair",
+    "poor",
+    "damaged",
+}
+DEFAULT_INSPECTION_CONDITION = "good"
+
+VALID_KEY_RETURN_STATUSES = {
+    "pending",
+    "returned",
+    "missing_keys",
+    "not_applicable",
+}
+DEFAULT_KEY_RETURN_STATUS = "pending"
+
+VALID_INSPECTION_ITEM_ACTIONS = {"none", "clean", "repair", "replace"}
+DEFAULT_INSPECTION_ITEM_ACTION = "none"
+
+MAX_INSPECTION_ID_LENGTH = 50
+MAX_INSPECTOR_NAME_LENGTH = 100
+MAX_INSPECTION_NOTES_LENGTH = 3000
+
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
