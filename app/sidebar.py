@@ -2829,9 +2829,14 @@ def _render_billing_metrics_tab(metrics: dict):
 
 def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
     with st.sidebar.expander("📝 Lease Renewals & Documents"):
-        tabs = st.tabs(["📋 Offers", "➕ New Offer", "📊 Portfolio Metrics"])
+        lr_tab = st.radio(
+            "Renewal Section",
+            ["Offers", "New Offer", "Portfolio Metrics"],
+            horizontal=True,
+            key="lr_board_tab_radio",
+        )
 
-        with tabs[0]:
+        if lr_tab == "Offers":
             col_f1, col_f2 = st.columns(2)
             status_filter = col_f1.selectbox(
                 "Filter Status",
@@ -2920,7 +2925,7 @@ def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
 
                         st.divider()
 
-        with tabs[1]:
+        elif lr_tab == "New Offer":
             st.markdown("##### Create Manual Renewal Offer")
             all_tenants = list_tenants(limit=100)
             t_items = all_tenants.get("items", []) if all_tenants else []
@@ -2956,32 +2961,32 @@ def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
 
             if st.button("📄 Dispatch Renewal Offer", key="btn_dispatch_manual_lr") and sel_t:
                 with st.spinner("Dispatching offer..."):
-                        t_obj = next((t for t in t_items if t["id"] == sel_t), None)
-                        unit_val = t_obj.get("unit_id") if t_obj else None
-                        curr_val = (
-                            float(t_obj.get("monthly_rent", 1000.0)) if t_obj else 1000.0
-                        )
-                        create_res = create_lease_renewal(
-                            {
-                                "tenant_id": sel_t,
-                                "unit_id": unit_val,
-                                "proposed_rent": float(manual_prop_rent),
-                                "current_rent": curr_val,
-                                "term_months": int(manual_term),
-                                "concession_amount": float(manual_conc),
-                                "security_deposit_change": float(manual_dep),
-                                "notes": manual_notes.strip(),
-                                "status": "offered",
-                            }
-                        )
-                        if create_res:
-                            new_id = create_res.get("renewal", {}).get("id", "")
-                            st.success(f"Offer created! ID: {new_id}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to create offer.")
+                    t_obj = next((t for t in t_items if t["id"] == sel_t), None)
+                    unit_val = t_obj.get("unit_id") if t_obj else None
+                    curr_val = (
+                        float(t_obj.get("monthly_rent", 1000.0)) if t_obj else 1000.0
+                    )
+                    create_res = create_lease_renewal(
+                        {
+                            "tenant_id": sel_t,
+                            "unit_id": unit_val,
+                            "proposed_rent": float(manual_prop_rent),
+                            "current_rent": curr_val,
+                            "term_months": int(manual_term),
+                            "concession_amount": float(manual_conc),
+                            "security_deposit_change": float(manual_dep),
+                            "notes": manual_notes.strip(),
+                            "status": "offered",
+                        }
+                    )
+                    if create_res:
+                        new_id = create_res.get("renewal", {}).get("id", "")
+                        st.success(f"Offer created! ID: {new_id}")
+                        st.rerun()
+                    else:
+                        st.error("Failed to create offer.")
 
-        with tabs[2]:
+        else:
             st.markdown("##### Portfolio Renewal Conversion Analytics")
             m = get_lease_renewal_metrics()
             if m:
