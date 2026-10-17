@@ -1,7 +1,7 @@
 # v0.39.0 Progress Record: Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine
 
 **Phase Branch**: `phase/v0.39.0-move-in-out-inspections`  
-**Status**: ⏳ IN PROGRESS  
+**Status**: ✅ COMPLETED  
 **Target Version**: 0.39.0  
 
 ---
@@ -18,7 +18,7 @@
 - [x] **Task 8**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] **Task 9**: Streamlit UI components in `app/sidebar.py` (session inspection widget & "📋 Move-In/Out & Inspections" panel) + UI tests in `tests/test_app_ui.py`
 - [x] **Task 10**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] **Task 11**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] **Task 11**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ---
 
@@ -37,7 +37,7 @@
 | AC9 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling | ✅ PASSED | `tests/test_app_api_utils.py` tests `test_inspection_api_utils_crud`, `test_inspection_api_utils_actions`, `test_inspection_api_utils_queries_and_errors` pass (129 tests passing in suite) |
 | AC10 | Streamlit UI in `app/sidebar.py` provides the 1-click inspection scheduling widget in session card and the "📋 Move-In/Out & Inspections" management panel | ✅ PASSED | `tests/test_app_ui.py` tests `test_render_session_inspection_widget`, `test_render_inspections_board_records_tab`, `test_render_inspections_board_schedule_tab`, `test_render_inspections_board_metrics_tab` pass (123 tests passing in suite) |
 | AC11 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`) are complete | ✅ PASSED | `pyproject.toml` and `api/settings.py` bumped to 0.39.0, `docs/API.md` and `README.md` documented with inspection lifecycle, punchlists, deposit accounting, and UI panels |
-| AC12 | All local CI-parity checks and remote CI workflow runs pass 100% | ⏳ PENDING | Pending Task 11 |
+| AC12 | All local CI-parity checks and remote CI workflow runs pass 100% | ✅ PASSED | Local full suite: 822 passed (92.48% coverage >= 80% floor), ruff clean (0 errors), mypy clean (0 errors in 32 files), remote GitHub Actions CI 100% green |
 
 ---
 
@@ -53,4 +53,9 @@
 
 ## 4. Validation Commands & Results
 
-- Baseline verification passed: `ruff check` (0 errors), `mypy` (0 errors), `pytest` (801 passed, 92.54% coverage).
+- Baseline check suite passed: `ruff check` (0 errors), `mypy` (0 errors), `pytest` (801 passed, 92.54% coverage).
+- Final full check suite passed:
+  - `python -m pytest`: 822 passed, 21 deselected in 83.32s; **92.48% total coverage** (required floor: >= 80.0%).
+  - `python -m ruff check api/ app/ tests/ scripts/`: 0 errors (all checks passed).
+  - `python -m mypy api/ app/ scripts/`: 0 errors in 32 source files.
+  - Remote CI workflow runs (`CI` on GitHub Actions): 100% green across push and pull request events.
