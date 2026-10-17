@@ -15,6 +15,7 @@ def initialize_temp_db(monkeypatch, tmp_path):
     db_utils.create_work_orders()
     db_utils.create_billing_transactions()
     db_utils.create_lease_renewals()
+    db_utils.create_inspections()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     db_utils.create_feedback()
