@@ -10,9 +10,13 @@ from app.api_utils import (
     apply_macro_to_session,
     assign_session,
     auto_assign_session,
+    complete_inspection,
+    convert_inspection_item_to_work_order,
     create_billing_transaction,
+    create_inspection,
     create_lease_renewal,
     create_macro,
+    create_session_inspection,
     create_session_lease_renewal,
     create_sla_policy,
     create_support_agent,
@@ -25,6 +29,7 @@ from app.api_utils import (
     delete_collection,
     delete_document,
     delete_documents,
+    delete_inspection,
     delete_lease_renewal,
     delete_macro,
     delete_session,
@@ -48,6 +53,7 @@ from app.api_utils import (
     get_document_details,
     get_feedback_analytics,
     get_health,
+    get_inspection_metrics,
     get_knowledge_analytics,
     get_lease_renewal_metrics,
     get_metrics,
@@ -60,6 +66,7 @@ from app.api_utils import (
     get_sla_compliance_analytics,
     get_stats,
     get_support_triage_analytics,
+    get_tenant_inspections,
     get_tenant_lease_renewals,
     get_tenant_ledger,
     get_tenant_support_history,
@@ -71,6 +78,7 @@ from app.api_utils import (
     list_documents,
     list_feedback,
     list_feedback_review_queue,
+    list_inspections,
     list_knowledge_articles,
     list_knowledge_gaps,
     list_lease_renewals,
@@ -85,6 +93,7 @@ from app.api_utils import (
     list_webhooks,
     list_work_orders,
     ping_webhook,
+    publish_inspection_document,
     publish_knowledge_article,
     publish_lease_renewal_document,
     rechunk_collection,
@@ -101,6 +110,7 @@ from app.api_utils import (
     summarize_session,
     update_billing_transaction,
     update_feedback_review,
+    update_inspection,
     update_knowledge_gap,
     update_session,
     update_support_agent,
@@ -863,6 +873,78 @@ def _render_session_lease_renewal_widget(selected: str, tenant: dict):  # noqa: 
                     st.error("Failed to create renewal offer.")
 
 
+def _render_session_inspection_widget(selected: str, tenant: dict):
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    inspections_resp = get_tenant_inspections(tenant_id)
+    inspections = inspections_resp.get("items", []) if inspections_resp else []
+    active_insps = [
+        insp for insp in inspections if insp.get("status") in ("scheduled", "in_progress")
+    ]
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📋 Move-In/Out Inspections")
+
+    if active_insps:
+        for insp in active_insps:
+            insp_id = insp.get("inspection_id", "")
+            itype = insp.get("inspection_type", "move_out").replace("_", " ").title()
+            istatus = insp.get("status", "scheduled")
+            badge = "🔍 In Progress" if istatus == "in_progress" else "📅 Scheduled"
+            date_str = insp.get("scheduled_date") or "Pending"
+            ded_est = insp.get("total_estimated_deductions", 0.0)
+
+            st.sidebar.info(
+                f"**{badge} ({insp_id}):** {itype}\n\n"
+                f"- **Scheduled:** {date_str}\n"
+                f"- **Inspector:** {insp.get('inspector_name') or 'Unassigned'}\n"
+                f"- **Est. Deductions:** ${ded_est:,.2f}"
+            )
+
+    with st.sidebar.expander("📋 Schedule Move-In/Out Inspection"):
+        insp_type_sel = st.selectbox(
+            "Inspection Type",
+            ["move_in", "move_out", "pre_move_out", "annual", "turnover_punchlist"],
+            format_func=lambda x: x.replace("_", " ").title(),
+            key=f"sess_insp_type_{selected}",
+        )
+        insp_date_in = st.text_input(
+            "Scheduled Date (YYYY-MM-DD)",
+            value="2026-10-25",
+            key=f"sess_insp_date_{selected}",
+        )
+        inspector_in = st.text_input(
+            "Inspector Name",
+            value="Property Operations Specialist",
+            key=f"sess_insp_agent_{selected}",
+        )
+        notes_in = st.text_area(
+            "Inspection Notes",
+            value="Scheduled during resident support session",
+            key=f"sess_insp_notes_{selected}",
+        )
+
+        if st.button("🚀 Schedule Inspection", key=f"btn_create_insp_{selected}"):
+            with st.spinner("Scheduling inspection..."):
+                insp_payload = {
+                    "unit_id": tenant.get("unit_id"),
+                    "inspection_type": insp_type_sel,
+                    "scheduled_date": insp_date_in.strip() if insp_date_in.strip() else None,
+                    "inspector_name": inspector_in.strip() if inspector_in.strip() else None,
+                    "notes": notes_in.strip(),
+                    "status": "scheduled",
+                }
+                res = create_session_inspection(selected, insp_payload)
+                if res:
+                    new_insp_id = res.get("inspection", {}).get("inspection_id", "")
+                    st.success(f"Inspection scheduled! ID: {new_insp_id}")
+                    st.rerun()
+                else:
+                    st.error("Failed to schedule inspection.")
+
+
 def _render_linked_tenant_details(selected, tenant, unit):
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
     st.sidebar.markdown(f"**Resident:** {t_name}")
@@ -896,6 +978,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
 
     _render_session_billing_widget(selected, tenant)
     _render_session_lease_renewal_widget(selected, tenant)
+    _render_session_inspection_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -3008,6 +3091,274 @@ def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
                     st.caption(f"- **{term_name}**: {count}")
 
 
+def _render_punchlist_deficiencies(insp_id: str, items: list):
+    deficiencies = [
+        it
+        for it in items
+        if isinstance(it, dict)
+        and (
+            it.get("has_damage")
+            or it.get("condition") in ("poor", "damaged")
+            or it.get("requires_repair")
+        )
+    ]
+    if not deficiencies:
+        return
+
+    st.markdown(f"**Punchlist Deficiencies ({len(deficiencies)}):**")
+    for d_item in deficiencies:
+        d_id = d_item.get("id", "item")
+        d_name = d_item.get("item_name") or d_item.get("name") or "Deficiency"
+        d_room = d_item.get("room") or "General"
+        d_cost = d_item.get("estimated_cost", 0.0)
+        col_d1, col_d2 = st.columns(2)
+        col_d1.caption(f"• **[{d_room}] {d_name}** (${d_cost:,.2f})")
+        if col_d2.button("🛠️ WO", key=f"btn_wo_{insp_id}_{d_id}"):
+            with st.spinner("Dispatching punchlist work order..."):
+                wo_res = convert_inspection_item_to_work_order(
+                    insp_id, {"item_id": d_id}
+                )
+                if wo_res:
+                    st.success("Work order dispatched!")
+                    st.rerun()
+                else:
+                    st.error("Failed to convert punchlist item.")
+
+
+def _render_inspection_actions(insp_id: str, istatus: str):
+    act_c1, act_c2, act_c3 = st.columns(3)
+    if istatus == "scheduled" and act_c1.button(
+        "▶️ Start", key=f"btn_start_insp_{insp_id}"
+    ):
+        with st.spinner("Starting inspection..."):
+            if update_inspection(insp_id, {"status": "in_progress"}):
+                st.success("Inspection in progress.")
+                st.rerun()
+            else:
+                st.error("Failed to start inspection.")
+
+    if istatus in ("scheduled", "in_progress") and act_c2.button(
+        "✅ Complete", key=f"btn_comp_insp_{insp_id}"
+    ):
+        with st.spinner("Finalizing inspection & deposit..."):
+            comp_res = complete_inspection(
+                insp_id,
+                {
+                    "security_deposit_base": 1500.0,
+                    "overall_condition": "good",
+                },
+            )
+            if comp_res:
+                st.success("Inspection completed and deposit settled!")
+                st.rerun()
+            else:
+                st.error("Failed to complete inspection.")
+
+    if act_c3.button("📚 Index RAG", key=f"btn_pub_rag_insp_{insp_id}"):
+        with st.spinner("Indexing inspection report in RAG..."):
+            if publish_inspection_document(insp_id):
+                st.success("Indexed in RAG store!")
+            else:
+                st.error("Failed to index report.")
+
+    if st.button("🗑️ Delete Inspection", key=f"btn_del_insp_{insp_id}"):
+        if delete_inspection(insp_id):
+            st.success("Inspection deleted.")
+            st.rerun()
+        else:
+            st.error("Failed to delete inspection.")
+
+
+def _render_inspection_records_tab():
+    st.markdown("##### Resident Inspection Records & Punchlists")
+    col_f1, col_f2 = st.columns(2)
+    status_filter = col_f1.selectbox(
+        "Status",
+        ["All", "scheduled", "in_progress", "completed", "cancelled"],
+        key="filter_insp_status",
+    )
+    type_filter = col_f2.selectbox(
+        "Type",
+        [
+            "All",
+            "move_in",
+            "move_out",
+            "pre_move_out",
+            "annual",
+            "turnover_punchlist",
+        ],
+        key="filter_insp_type",
+    )
+
+    status_param = None if status_filter == "All" else status_filter
+    type_param = None if type_filter == "All" else type_filter
+    params = {}
+    if status_param:
+        params["status"] = status_param
+    if type_param:
+        params["inspection_type"] = type_param
+
+    insps_resp = list_inspections(params=params)
+    insps = insps_resp.get("items", []) if insps_resp else []
+
+    if not insps:
+        st.info("No inspection records match the current filter.")
+        return
+
+    st.caption(f"Showing **{len(insps)}** inspection record(s)")
+    for insp in insps:
+        insp_id = insp.get("inspection_id", "")
+        itype = insp.get("inspection_type", "move_out").replace("_", " ").title()
+        istatus = insp.get("status", "scheduled")
+        status_emoji = {
+            "scheduled": "📅",
+            "in_progress": "🔍",
+            "completed": "✅",
+            "cancelled": "❌",
+        }.get(istatus, "📋")
+
+        with st.container():
+            st.markdown(f"**{status_emoji} {insp_id} — {itype}**")
+            st.caption(
+                f"**Unit:** {insp.get('unit_id', 'N/A')} | "
+                f"**Resident:** {insp.get('tenant_id', 'N/A')} | "
+                f"**Status:** `{istatus}`"
+            )
+            st.caption(
+                f"**Date:** {insp.get('scheduled_date') or 'N/A'} | "
+                f"**Inspector:** {insp.get('inspector_name') or 'N/A'} | "
+                f"**Keys Returned:** {'Yes' if insp.get('keys_returned') else 'No'}"
+            )
+
+            est_ded = insp.get("total_estimated_deductions", 0.0)
+            act_ded = insp.get("total_actual_deductions", 0.0)
+            ref_amt = insp.get("net_deposit_refund", 0.0)
+            st.caption(
+                f"**Est. Deductions:** ${est_ded:,.2f} | "
+                f"**Actual:** ${act_ded:,.2f} | "
+                f"**Refund:** ${ref_amt:,.2f}"
+            )
+
+            _render_punchlist_deficiencies(insp_id, insp.get("items") or [])
+            _render_inspection_actions(insp_id, istatus)
+            st.divider()
+
+
+def _render_schedule_inspection_tab():
+    st.markdown("##### Schedule Move-In/Move-Out Inspection")
+    all_tenants = list_tenants(limit=100)
+    t_items = all_tenants.get("items", []) if all_tenants else []
+    t_map = {t["id"]: f"{t['first_name']} {t['last_name']} ({t['id']})" for t in t_items}
+
+    sel_t = st.selectbox(
+        "Select Resident",
+        options=list(t_map.keys()),
+        format_func=lambda x: t_map.get(x, x),
+        key="manual_insp_tenant",
+    )
+    t_obj = next((t for t in t_items if t["id"] == sel_t), None)
+    unit_val = t_obj.get("unit_id") if t_obj else "unit_101"
+
+    col_t1, col_t2 = st.columns(2)
+    manual_itype = col_t1.selectbox(
+        "Inspection Type",
+        ["move_in", "move_out", "pre_move_out", "annual", "turnover_punchlist"],
+        format_func=lambda x: x.replace("_", " ").title(),
+        key="manual_insp_type",
+    )
+    manual_date = col_t2.text_input(
+        "Date (YYYY-MM-DD)", value="2026-10-25", key="manual_insp_date"
+    )
+
+    col_i1, col_i2 = st.columns(2)
+    manual_inspector = col_i1.text_input(
+        "Inspector", value="Property Operations Specialist", key="manual_insp_agent"
+    )
+    manual_dep_base = col_i2.number_input(
+        "Base Security Deposit ($)",
+        min_value=0.0,
+        value=1500.0,
+        step=50.0,
+        key="manual_insp_dep",
+    )
+    manual_notes = st.text_area(
+        "Notes", placeholder="Optional inspection notes", key="manual_insp_notes"
+    )
+
+    if st.button("📋 Schedule Inspection", key="btn_dispatch_manual_insp") and sel_t:
+        with st.spinner("Scheduling inspection..."):
+            create_res = create_inspection(
+                {
+                    "tenant_id": sel_t,
+                    "unit_id": unit_val,
+                    "inspection_type": manual_itype,
+                    "scheduled_date": manual_date.strip() if manual_date.strip() else None,
+                    "inspector_name": (
+                        manual_inspector.strip() if manual_inspector.strip() else None
+                    ),
+                    "security_deposit_base": float(manual_dep_base),
+                    "notes": manual_notes.strip(),
+                    "status": "scheduled",
+                }
+            )
+            if create_res:
+                new_id = create_res.get("inspection", {}).get("inspection_id", "")
+                st.success(f"Inspection scheduled! ID: {new_id}")
+                st.rerun()
+            else:
+                st.error("Failed to schedule inspection.")
+
+
+def _render_inspection_metrics_tab():
+    st.markdown("##### Portfolio Turnover & Inspection Analytics")
+    m = get_inspection_metrics()
+    if not m:
+        st.info("No inspection metrics available.")
+        return
+
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("Total Inspections", m.get("total_inspections", 0))
+    dep_summary = m.get("deposit_accounting_summary") or {}
+    mc2.metric(
+        "Total Deductions", f"${dep_summary.get('total_estimated_deductions', 0.0):,.2f}"
+    )
+    mc3.metric(
+        "Total Refunds", f"${dep_summary.get('total_refund_amounts', 0.0):,.2f}"
+    )
+
+    punch_summary = m.get("turnover_punchlist_summary") or {}
+    st.caption(
+        f"**Turnover Punchlist Items:** {punch_summary.get('total_punchlist_items', 0)} total | "
+        f"**Converted to WOs:** {punch_summary.get('total_converted_to_work_orders', 0)} | "
+        f"**Pending:** {punch_summary.get('pending_punchlist_actions', 0)}"
+    )
+
+    st.markdown("**Status Breakdown:**")
+    for st_name, count in (m.get("status_distribution") or {}).items():
+        st.caption(f"- **{st_name.title()}**: {count}")
+
+    st.markdown("**Type Breakdown:**")
+    for type_name, count in (m.get("type_distribution") or {}).items():
+        st.caption(f"- **{type_name.replace('_', ' ').title()}**: {count}")
+
+
+def _render_inspections_board():
+    with st.sidebar.expander("📋 Move-In/Out & Inspections"):
+        insp_tab = st.radio(
+            "Inspections View",
+            ["Inspection Records", "Schedule Inspection", "Portfolio Turnover Metrics"],
+            horizontal=True,
+            key="insp_board_tab_radio",
+        )
+
+        if insp_tab == "Inspection Records":
+            _render_inspection_records_tab()
+        elif insp_tab == "Schedule Inspection":
+            _render_schedule_inspection_tab()
+        else:
+            _render_inspection_metrics_tab()
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -3035,6 +3386,7 @@ def display_sidebar():
     _render_maintenance_board()
     _render_billing_board()
     _render_lease_renewals_board()
+    _render_inspections_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
