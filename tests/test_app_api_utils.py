@@ -2354,6 +2354,238 @@ def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # 
     assert api_utils.get_tenant_lease_renewals("tenant_1") is None
 
 
+def test_inspection_api_utils_crud(fake_requests):
+    mock_insp = {
+        "inspection_id": "insp_test_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "inspection_type": "move_out",
+        "status": "scheduled",
+        "total_estimated_deductions": 0.0,
+    }
+    mock_list_resp = {"items": [mock_insp], "total": 1, "limit": 50, "offset": 0}
+
+    # 1. create_inspection
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"inspection": mock_insp}
+    )
+    assert api_utils.create_inspection(mock_insp) == {"inspection": mock_insp}
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/inspections")
+    assert kwargs["json"] == mock_insp
+
+    fake_requests.response = FakeResponse(status_code=400)
+    assert api_utils.create_inspection(mock_insp) is None
+
+    # 2. list_inspections
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_list_resp
+    )
+    assert api_utils.list_inspections({"status": "scheduled", "empty": ""}) == mock_list_resp
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "get"
+    assert url.endswith("/inspections")
+    assert kwargs["params"] == {"status": "scheduled"}
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.list_inspections() is None
+
+    # 3. get_inspection
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"inspection": mock_insp}
+    )
+    assert api_utils.get_inspection("insp_test_101") == {"inspection": mock_insp}
+    method, url, _ = fake_requests.calls[-1]
+    assert method == "get"
+    assert url.endswith("/inspections/insp_test_101")
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_inspection("insp_test_101") is None
+
+    # 4. update_inspection
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"inspection": mock_insp}
+    )
+    assert api_utils.update_inspection("insp_test_101", {"status": "in_progress"}) == {
+        "inspection": mock_insp
+    }
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "patch"
+    assert url.endswith("/inspections/insp_test_101")
+    assert kwargs["json"] == {"status": "in_progress"}
+
+    fake_requests.response = FakeResponse(status_code=422)
+    assert api_utils.update_inspection("insp_test_101", {"status": "in_progress"}) is None
+
+    # 5. delete_inspection
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"ok": True})
+    assert api_utils.delete_inspection("insp_test_101") is True
+    method, url, _ = fake_requests.calls[-1]
+    assert method == "delete"
+    assert url.endswith("/inspections/insp_test_101")
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_inspection("insp_test_101") is False
+
+
+def test_inspection_api_utils_actions(fake_requests):
+    mock_insp = {
+        "inspection_id": "insp_test_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "inspection_type": "move_out",
+        "status": "scheduled",
+    }
+    mock_pub_resp = {
+        "status": "indexed",
+        "inspection_id": "insp_test_101",
+        "chunks_indexed": 3,
+        "collection": "default",
+    }
+
+    # 6. complete_inspection
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"inspection": mock_insp}
+    )
+    assert api_utils.complete_inspection("insp_test_101") == {"inspection": mock_insp}
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/inspections/insp_test_101/complete")
+    assert kwargs["json"] == {}
+
+    fake_requests.response = FakeResponse(status_code=400)
+    assert api_utils.complete_inspection("insp_test_101", {"deposit_base": 1500.0}) is None
+
+    # 7. convert_inspection_item_to_work_order
+    mock_wo_resp = {"work_order": {"id": "wo_99", "title": "Fix lock"}, "item_id": "item_1"}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_wo_resp
+    )
+    assert (
+        api_utils.convert_inspection_item_to_work_order("insp_test_101", {"item_id": "item_1"})
+        == mock_wo_resp
+    )
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/inspections/insp_test_101/convert-to-work-order")
+    assert kwargs["json"] == {"item_id": "item_1"}
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert (
+        api_utils.convert_inspection_item_to_work_order("insp_test_101", {"item_id": "item_1"})
+        is None
+    )
+
+    # 8. publish_inspection_document
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_pub_resp
+    )
+    assert api_utils.publish_inspection_document("insp_test_101") == mock_pub_resp
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/inspections/insp_test_101/publish-document")
+    assert kwargs["json"]["collection"] == "default"
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.publish_inspection_document("insp_test_101") is None
+
+    # 9. create_session_inspection
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"inspection": mock_insp}
+    )
+    assert api_utils.create_session_inspection("sess_101", mock_insp) == {
+        "inspection": mock_insp
+    }
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/sessions/sess_101/create-inspection")
+    assert kwargs["json"] == mock_insp
+
+    fake_requests.response = FakeResponse(status_code=400)
+    assert api_utils.create_session_inspection("sess_101", mock_insp) is None
+
+
+def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
+    mock_insp = {
+        "inspection_id": "insp_test_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "inspection_type": "move_out",
+        "status": "scheduled",
+    }
+    mock_list_resp = {"items": [mock_insp], "total": 1, "limit": 50, "offset": 0}
+    mock_metrics = {
+        "total_inspections": 10,
+        "status_distribution": {"completed": 5, "scheduled": 3},
+        "type_distribution": {"move_in": 6, "move_out": 4},
+        "condition_distribution": {"good": 5},
+        "deposit_accounting_summary": {
+            "total_estimated_deductions": 450.0,
+            "total_actual_deductions": 400.0,
+            "total_refund_amounts": 1600.0,
+            "average_turnover_deduction": 200.0,
+        },
+        "turnover_punchlist_summary": {
+            "total_punchlist_items": 8,
+            "total_converted_to_work_orders": 3,
+            "pending_punchlist_actions": 5,
+        },
+    }
+
+    # 10. get_tenant_inspections
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_list_resp
+    )
+    assert api_utils.get_tenant_inspections("tenant_1") == mock_list_resp
+    method, url, _ = fake_requests.calls[-1]
+    assert method == "get"
+    assert url.endswith("/tenants/tenant_1/inspections")
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_tenant_inspections("tenant_1") is None
+
+    # 11. get_unit_inspections
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_list_resp
+    )
+    assert api_utils.get_unit_inspections("unit_101") == mock_list_resp
+    method, url, _ = fake_requests.calls[-1]
+    assert method == "get"
+    assert url.endswith("/units/unit_101/inspections")
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.get_unit_inspections("unit_101") is None
+
+    # 12. get_inspection_metrics
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=mock_metrics
+    )
+    assert api_utils.get_inspection_metrics() == mock_metrics
+    method, url, _ = fake_requests.calls[-1]
+    assert method == "get"
+    assert url.endswith("/inspections/metrics")
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_inspection_metrics() is None
+
+    # 13. Exception handling via BoomRequests
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.create_inspection({}) is None
+    assert api_utils.list_inspections() is None
+    assert api_utils.get_inspection("insp_1") is None
+    assert api_utils.update_inspection("insp_1", {}) is None
+    assert api_utils.delete_inspection("insp_1") is False
+    assert api_utils.complete_inspection("insp_1") is None
+    assert api_utils.convert_inspection_item_to_work_order("insp_1", {}) is None
+    assert api_utils.publish_inspection_document("insp_1") is None
+    assert api_utils.create_session_inspection("sess_1", {}) is None
+    assert api_utils.get_tenant_inspections("tenant_1") is None
+    assert api_utils.get_unit_inspections("unit_1") is None
+    assert api_utils.get_inspection_metrics() is None
+
+
+
 
 
 

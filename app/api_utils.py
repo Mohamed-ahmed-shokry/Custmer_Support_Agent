@@ -2920,6 +2920,240 @@ def get_tenant_lease_renewals(tenant_id: str) -> dict[str, Any] | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Resident Move-In/Move-Out Inspection & Turnover Helpers (v0.39.0)
+# ---------------------------------------------------------------------------
+
+
+def create_inspection(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Schedule and create a resident inspection."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/inspections",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create inspection", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating inspection: {str(e)}")
+        return None
+
+
+def list_inspections(params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """List inspection records with optional status/type/tenant filters."""
+    try:
+        clean_params = {k: v for k, v in (params or {}).items() if v is not None and v != ""}
+        response = requests.get(
+            f"{API_BASE_URL}/inspections",
+            params=clean_params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch inspections", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching inspections: {str(e)}")
+        return None
+
+
+def get_inspection(insp_id: str) -> dict[str, Any] | None:
+    """Fetch inspection details by ID."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/inspections/{insp_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch inspection '{insp_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching inspection: {str(e)}")
+        return None
+
+
+def update_inspection(insp_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update inspection details, status, or checklist items."""
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/inspections/{insp_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update inspection '{insp_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating inspection: {str(e)}")
+        return None
+
+
+def delete_inspection(insp_id: str) -> bool:
+    """Delete or cancel an inspection record."""
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/inspections/{insp_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete inspection '{insp_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting inspection: {str(e)}")
+        return False
+
+
+def complete_inspection(
+    insp_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Finalize an inspection and calculate deposit settlement."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/inspections/{insp_id}/complete",
+            json=payload or {},
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to complete inspection '{insp_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while completing inspection: {str(e)}")
+        return None
+
+
+def convert_inspection_item_to_work_order(
+    insp_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Convert an inspection deficiency item to a maintenance work order."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/inspections/{insp_id}/convert-to-work-order",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to convert punchlist item for inspection '{insp_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while converting inspection punchlist item: {str(e)}")
+        return None
+
+
+def publish_inspection_document(
+    insp_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Synthesize inspection Markdown statement and index into vector knowledge base."""
+    try:
+        body = payload or {
+            "collection": "default",
+            "chunking_strategy": "markdown",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+        }
+        response = requests.post(
+            f"{API_BASE_URL}/inspections/{insp_id}/publish-document",
+            json=body,
+            headers=_request_headers(),
+            timeout=15,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to publish report for inspection '{insp_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while publishing inspection report: {str(e)}")
+        return None
+
+
+def create_session_inspection(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Schedule inspection directly from resident support chat session card."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/create-inspection",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error(
+            f"Failed to schedule inspection from session '{session_id}'", response
+        )
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating session inspection: {str(e)}")
+        return None
+
+
+def get_tenant_inspections(tenant_id: str) -> dict[str, Any] | None:
+    """Retrieve all inspection records for a resident."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/tenants/{tenant_id}/inspections",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch inspections for tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant inspections: {str(e)}")
+        return None
+
+
+def get_unit_inspections(unit_id: str) -> dict[str, Any] | None:
+    """Retrieve all inspection records for a unit."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/units/{unit_id}/inspections",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch inspections for unit '{unit_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching unit inspections: {str(e)}")
+        return None
+
+
+def get_inspection_metrics() -> dict[str, Any] | None:
+    """Retrieve portfolio turnover & inspection KPI metrics."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/inspections/metrics",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch inspection metrics", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching inspection metrics: {str(e)}")
+        return None
+
+
+
 
 
 
