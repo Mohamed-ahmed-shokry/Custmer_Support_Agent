@@ -2706,6 +2706,222 @@ def record_session_payment(
         return None
 
 
+# ---------------------------------------------------------------------------
+# Lease Renewals & Documents Client Helpers (v0.38.0)
+# ---------------------------------------------------------------------------
+
+
+def list_lease_renewals(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """Retrieve paginated list of lease renewal offers and agreements."""
+    try:
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+        if unit_id:
+            params["unit_id"] = unit_id
+        if status:
+            params["status"] = status
+        if search:
+            params["search"] = search
+
+        response = requests.get(
+            f"{API_BASE_URL}/lease-renewals",
+            params=params,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch lease renewals", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching lease renewals: {str(e)}")
+        return None
+
+
+def get_lease_renewal(renewal_id: str) -> dict[str, Any] | None:
+    """Retrieve single lease renewal offer details by ID."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/lease-renewals/{renewal_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch lease renewal '{renewal_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching lease renewal: {str(e)}")
+        return None
+
+
+def get_lease_renewal_metrics() -> dict[str, Any] | None:
+    """Retrieve portfolio-level lease renewal analytics and conversion metrics."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/lease-renewals/metrics",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to fetch lease renewal metrics", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching renewal metrics: {str(e)}")
+        return None
+
+
+def create_lease_renewal(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a new lease renewal offer for a resident."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/lease-renewals",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error("Failed to create lease renewal offer", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating lease renewal offer: {str(e)}")
+        return None
+
+
+def update_lease_renewal(
+    renewal_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update renewal offer terms, concessions, or status."""
+    try:
+        response = requests.patch(
+            f"{API_BASE_URL}/lease-renewals/{renewal_id}",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to update lease renewal '{renewal_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while updating lease renewal: {str(e)}")
+        return None
+
+
+def delete_lease_renewal(renewal_id: str) -> bool:
+    """Delete a lease renewal record."""
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/lease-renewals/{renewal_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete lease renewal '{renewal_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting lease renewal: {str(e)}")
+        return False
+
+
+def sign_lease_renewal(
+    renewal_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Record digital e-signature and execute lease renewal."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/lease-renewals/{renewal_id}/sign",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to digitally sign renewal '{renewal_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while signing lease renewal: {str(e)}")
+        return None
+
+
+def publish_lease_renewal_document(
+    renewal_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Synthesize Markdown agreement and publish to vector knowledge base."""
+    try:
+        body = payload or {
+            "collection": "default",
+            "chunking_strategy": "markdown",
+            "chunk_size": 1000,
+            "chunk_overlap": 200,
+        }
+        response = requests.post(
+            f"{API_BASE_URL}/lease-renewals/{renewal_id}/publish-document",
+            json=body,
+            headers=_request_headers(),
+            timeout=15,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to publish agreement for renewal '{renewal_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while publishing renewal agreement: {str(e)}")
+        return None
+
+
+def create_session_lease_renewal(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Generate 1-click renewal offer directly from active session card."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sessions/{session_id}/create-lease-renewal",
+            json=payload,
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_CREATED:
+            return cast(dict[str, Any], response.json())
+        show_api_error(
+            f"Failed to create renewal offer from session '{session_id}'", response
+        )
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while creating session renewal offer: {str(e)}")
+        return None
+
+
+def get_tenant_lease_renewals(tenant_id: str) -> dict[str, Any] | None:
+    """Retrieve all lease renewal records for a resident."""
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/tenants/{tenant_id}/lease-renewals",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return cast(dict[str, Any], response.json())
+        show_api_error(f"Failed to fetch renewals for tenant '{tenant_id}'", response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while fetching tenant renewals: {str(e)}")
+        return None
+
+
+
+
 
 
 
