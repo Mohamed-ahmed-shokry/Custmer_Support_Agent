@@ -12,7 +12,7 @@
 - [x] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [x] **Task 3**: Inspection completion, deposit deduction accounting, and punchlist-to-work-order conversion in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [x] **Task 4**: Inspection report Markdown synthesis and RAG document publishing in `api/inspections.py` + unit tests in `tests/test_inspections.py`
-- [ ] **Task 5**: Context grounding engine integration for inspections in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [x] **Task 5**: Context grounding engine integration for inspections in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
 - [ ] **Task 6**: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
 - [ ] **Task 7**: FastAPI endpoints for inspections, completion, work order dispatch, and session linking in `api/main.py` + route tests in `tests/test_api_routes.py`
 - [ ] **Task 8**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
@@ -30,7 +30,7 @@
 | AC2 | `complete_inspection()` calculates total itemized deposit deductions, net deposit refund, and records completion timestamp | ✅ PASSED | `tests/test_db_utils.py` test `test_complete_inspection` passes, verifying deduction and net refund math |
 | AC3 | `convert_inspection_item_to_work_order()` converts an inspection deficiency item into an active maintenance work order in `work_orders` | ✅ PASSED | `tests/test_db_utils.py` test `test_convert_inspection_item_to_work_order` passes, creating and persisting linked work order |
 | AC4 | `api/inspections.py` synthesizes structured Markdown inspection condition & deposit reports and publishes them into `document_store` and Chroma | ✅ PASSED | `tests/test_inspections.py` tests `test_generate_inspection_report_markdown`, `test_publish_inspection_document` pass |
-| AC5 | `api/tenant_context.py` augments grounding prompt context with `[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]` and auto-resolves inspection macro variables | ⏳ PENDING | Pending Task 5 |
+| AC5 | `api/tenant_context.py` augments grounding prompt context with `[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]` and auto-resolves inspection macro variables | ✅ PASSED | `tests/test_tenant_context.py` tests `test_build_tenant_rag_context_inspections_grounding`, `test_render_template_with_inspection_variables` pass |
 | AC6 | Webhook events `inspection.scheduled`, `inspection.completed`, `inspection.deposit_deductions_assessed`, and `inspection.keys_returned` trigger correctly on inspection events | ⏳ PENDING | Pending Task 2 & 3 |
 | AC7 | Pydantic schemas in `api/pydantic_models.py` validate inspection creation, items, updates, completion, and summary responses | ⏳ PENDING | Pending Task 6 |
 | AC8 | FastAPI endpoints `/inspections/*`, `/sessions/{id}/create-inspection`, `/tenants/{id}/inspections`, and `/units/{id}/inspections` are wired and tested | ⏳ PENDING | Pending Task 7 |
