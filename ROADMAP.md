@@ -1230,7 +1230,7 @@ Equip the customer support platform to answer billing disputes, provide real-tim
 - [x] Task 9: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 10: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
-## v0.38.0 plan — Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine
+## v0.38.0 plan — Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine ✅ COMPLETED
 
 Empower property operators and residents with a complete digital lease renewal lifecycle, addenda generator, and agreement execution engine. Enable tracking of renewal offers with customizable term lengths (6, 12, 18, 24 months, month-to-month), proposed rent, rent changes, concession discounts, security deposit adjustments, renewal deadlines, and status progression (`draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`); support simulated electronic signatures (`signature_name`, `signature_ip`, `signed_at`) with automatic tenant lease date updates; generate structured Markdown lease renewal contracts with 1-click publishing directly into the RAG document store (`document_store` / `document_sources` + Chroma vector store); ground active support sessions with live renewal offers and pending addenda (`[LEASE RENEWAL OFFERS & AGREEMENTS]`); auto-populate renewal macro variables (`{renewal_proposed_rent}`, `{renewal_term_months}`, `{renewal_status}`, `{renewal_expires_at}`); provide automated real-time leasing webhook alerts (`lease_renewal.offered`, `lease_renewal.accepted`, `lease_renewal.signed`, `lease_renewal.declined`); and deliver a dedicated "📝 Lease Renewals & Documents" dashboard in Streamlit with 1-click resident renewal offer creation from active support sessions.
 
@@ -1327,17 +1327,17 @@ Equip the customer support platform to answer lease expiration and renewal inqui
 - Automated notary public or court filing workflows.
 
 ### Granular Task Breakdown
-- [ ] Task 1: `ROADMAP.md` v0.38.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] Task 2: Database schema, table creation, default seed data, and CRUD operations for `lease_renewals` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] Task 3: Digital signing and tenant lease update logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [ ] Task 4: Agreement Markdown synthesis and RAG document publishing in `api/lease_renewals.py` + unit tests in `tests/test_lease_renewals.py`
-- [ ] Task 5: Context grounding engine integration for lease renewals in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
-- [ ] Task 6: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
-- [ ] Task 7: FastAPI endpoints for lease renewals, signing, and session offer creation in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [ ] Task 8: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [ ] Task 9: Streamlit UI components in `app/sidebar.py` (session renewal offer widget & "📝 Lease Renewals & Documents" panel) + UI tests in `tests/test_app_ui.py`
-- [ ] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] Task 1: `ROADMAP.md` v0.38.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] Task 2: Database schema, table creation, default seed data, and CRUD operations for `lease_renewals` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 3: Digital signing and tenant lease update logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 4: Agreement Markdown synthesis and RAG document publishing in `api/lease_renewals.py` + unit tests in `tests/test_lease_renewals.py`
+- [x] Task 5: Context grounding engine integration for lease renewals in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [x] Task 6: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [x] Task 7: FastAPI endpoints for lease renewals, signing, and session offer creation in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] Task 8: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 9: Streamlit UI components in `app/sidebar.py` (session renewal offer widget & "📝 Lease Renewals & Documents" panel) + UI tests in `tests/test_app_ui.py`
+- [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
