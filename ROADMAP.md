@@ -1437,8 +1437,8 @@ Equip the customer support platform to handle all move-in and move-out inquiries
 - Formal court eviction legal filings.
 
 ### Granular Task Breakdown
-- [ ] Task 1: `ROADMAP.md` v0.39.0 plan specification and `docs/PROGRESS.md` initialization
-- [ ] Task 2: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] Task 1: `ROADMAP.md` v0.39.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] Task 2: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] Task 3: Inspection completion, deposit deduction accounting, and punchlist-to-work-order conversion in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
 - [ ] Task 4: Inspection report Markdown synthesis and RAG document publishing in `api/inspections.py` + unit tests in `tests/test_inspections.py`
 - [ ] Task 5: Context grounding engine integration for inspections in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
