@@ -3272,5 +3272,23 @@ def test_inspection_normalizers():
         db_utils.normalize_inspection_items("not-a-json")
 
 
+def test_create_inspections_and_default_seeds(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    with db_utils.closing(db_utils.get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT id, inspection_type, status FROM inspections ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 3  # noqa: PLR2004
+        ids = [r["id"] for r in rows]
+        assert "insp_101" in ids
+        assert "insp_102" in ids
+        assert "insp_103" in ids
+
+
+
 
 

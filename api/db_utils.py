@@ -6659,6 +6659,171 @@ def normalize_inspection_items(items_val: Any) -> list[dict[str, Any]]:
     return cleaned_items
 
 
+DEFAULT_SEEDED_INSPECTIONS = [
+    {
+        "id": "insp_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "session_id": None,
+        "inspection_type": "move_in",
+        "scheduled_date": "2025-11-01",
+        "completed_date": "2025-11-01",
+        "inspector_name": "Alex Rivera",
+        "status": "completed",
+        "overall_condition": "good",
+        "items_json": json.dumps([
+            {
+                "id": "item_1",
+                "room": "Living Room",
+                "item_name": "Hardwood Flooring",
+                "condition": "good",
+                "notes": "Minor scuff near balcony door",
+                "action_needed": "none",
+                "estimated_cost": 0.0,
+            },
+            {
+                "id": "item_2",
+                "room": "Kitchen",
+                "item_name": "Refrigerator & Freezer",
+                "condition": "excellent",
+                "notes": "Spotless and working properly",
+                "action_needed": "none",
+                "estimated_cost": 0.0,
+            },
+            {
+                "id": "item_3",
+                "room": "Master Bedroom",
+                "item_name": "Window Blinds",
+                "condition": "fair",
+                "notes": "One slat slightly bent",
+                "action_needed": "none",
+                "estimated_cost": 0.0,
+            },
+        ]),
+        "deposit_deduction_total": 0.0,
+        "deposit_refund_amount": 0.0,
+        "key_return_status": "not_applicable",
+        "notes": "Move-in baseline walkthrough signed by resident.",
+        "document_file_id": None,
+    },
+    {
+        "id": "insp_102",
+        "tenant_id": "tenant_2",
+        "unit_id": "unit_204",
+        "session_id": None,
+        "inspection_type": "pre_move_out",
+        "scheduled_date": "2026-10-25",
+        "completed_date": None,
+        "inspector_name": "Alex Rivera",
+        "status": "scheduled",
+        "overall_condition": "good",
+        "items_json": json.dumps([
+            {
+                "id": "item_1",
+                "room": "Entryway",
+                "item_name": "Front Door Lock",
+                "condition": "good",
+                "notes": "Deadbolt operational",
+                "action_needed": "none",
+                "estimated_cost": 0.0,
+            },
+            {
+                "id": "item_2",
+                "room": "Kitchen",
+                "item_name": "Oven & Stove",
+                "condition": "good",
+                "notes": "Deep clean required prior to final checkout",
+                "action_needed": "clean",
+                "estimated_cost": 75.0,
+            },
+        ]),
+        "deposit_deduction_total": 0.0,
+        "deposit_refund_amount": 0.0,
+        "key_return_status": "pending",
+        "notes": "Courtesy pre-inspection before upcoming lease termination.",
+        "document_file_id": None,
+    },
+    {
+        "id": "insp_103",
+        "tenant_id": "tenant_3",
+        "unit_id": "unit_305",
+        "session_id": None,
+        "inspection_type": "move_out",
+        "scheduled_date": "2026-09-30",
+        "completed_date": "2026-09-30",
+        "inspector_name": "Carlos Gomez",
+        "status": "completed",
+        "overall_condition": "fair",
+        "items_json": json.dumps([
+            {
+                "id": "item_1",
+                "room": "Living Room",
+                "item_name": "Drywall",
+                "condition": "damaged",
+                "notes": "Wall anchor holes unpatched",
+                "action_needed": "repair",
+                "estimated_cost": 150.0,
+            },
+            {
+                "id": "item_2",
+                "room": "Hallway",
+                "item_name": "Smoke Detector",
+                "condition": "good",
+                "notes": "Tested and functioning",
+                "action_needed": "none",
+                "estimated_cost": 0.0,
+            },
+        ]),
+        "deposit_deduction_total": 150.0,
+        "deposit_refund_amount": 1850.0,
+        "key_return_status": "returned",
+        "notes": "Checkout finalized. Key and fob returned. $150 deducted for drywall repair.",
+        "document_file_id": None,
+    },
+]
+
+
+def create_inspections() -> None:
+    """Create inspections table, indexes, and pre-seed initial records if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_INSPECTIONS_TABLE)
+        conn.execute(_CREATE_INSPECTIONS_TENANT_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_UNIT_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_STATUS_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_TYPE_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_SCHEDULED_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM inspections").fetchone()
+        if row and row[0] == 0:
+            for insp in DEFAULT_SEEDED_INSPECTIONS:
+                conn.execute(
+                    "INSERT INTO inspections "
+                    "(id, tenant_id, unit_id, session_id, inspection_type, "
+                    "scheduled_date, completed_date, inspector_name, status, "
+                    "overall_condition, items_json, deposit_deduction_total, "
+                    "deposit_refund_amount, key_return_status, notes, document_file_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        insp["id"],
+                        insp["tenant_id"],
+                        insp["unit_id"],
+                        insp["session_id"],
+                        insp["inspection_type"],
+                        insp["scheduled_date"],
+                        insp["completed_date"],
+                        insp["inspector_name"],
+                        insp["status"],
+                        insp["overall_condition"],
+                        insp["items_json"],
+                        insp["deposit_deduction_total"],
+                        insp["deposit_refund_amount"],
+                        insp["key_return_status"],
+                        insp["notes"],
+                        insp["document_file_id"],
+                    ),
+                )
+        conn.commit()
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -6668,6 +6833,7 @@ create_tenants()
 create_work_orders()
 create_billing_transactions()
 create_lease_renewals()
+create_inspections()
 create_session_labels()
 migrate_session_labels()
 create_feedback()
