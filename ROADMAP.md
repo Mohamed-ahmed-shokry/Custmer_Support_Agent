@@ -1339,7 +1339,7 @@ Equip the customer support platform to answer lease expiration and renewal inqui
 - [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
-## v0.39.0 plan — Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine ⏳ IN PROGRESS
+## v0.39.0 plan — Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine ✅ COMPLETED
 
 Empower property operators and residents with a complete digital move-in, move-out, and turnover inspection engine, itemized punchlist deficiency tracking, maintenance work order dispatch integration, and security deposit deduction and refund accounting. Enable tracking of unit inspections with configurable inspection types (`move_in`, `move_out`, `routine`, `annual`, `pre_move_out`), scheduled and completed dates, inspector attribution, overall condition rating (`excellent`, `good`, `fair`, `poor`, `damaged`), room-by-room itemized checklists (condition, notes, estimated repair cost, action required), key and access device return tracking (`pending`, `returned`, `missing_keys`, `not_applicable`), and automated security deposit settlement calculation; support direct conversion of punchlist deficiencies into maintenance work orders (`work_orders`); generate structured Markdown inspection condition & deposit settlement reports with 1-click publishing into the RAG knowledge base (`document_store` / `document_sources` + Chroma vector store); ground active support sessions with live inspection and deposit settlement status (`[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]`); auto-populate inspection macro variables (`{inspection_type}`, `{inspection_scheduled_date}`, `{inspection_status}`, `{inspection_deposit_deductions}`, `{inspection_deposit_refund}`, `{key_return_status}`); provide real-time leasing & turnover webhook alerts (`inspection.scheduled`, `inspection.completed`, `inspection.deposit_deductions_assessed`, `inspection.keys_returned`); and deliver a dedicated "📋 Move-In/Out & Inspections" dashboard in Streamlit with 1-click resident inspection scheduling from active support sessions.
 
@@ -1447,7 +1447,7 @@ Equip the customer support platform to handle all move-in and move-out inquiries
 - [x] Task 8: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [x] Task 9: Streamlit UI components in `app/sidebar.py` (session inspection widget & "📋 Move-In/Out & Inspections" panel) + UI tests in `tests/test_app_ui.py`
 - [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
