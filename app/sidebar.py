@@ -878,71 +878,80 @@ def _render_session_inspection_widget(selected: str, tenant: dict):
     if not tenant_id:
         return
 
-    inspections_resp = get_tenant_inspections(tenant_id)
-    inspections = inspections_resp.get("items", []) if inspections_resp else []
-    active_insps = [
-        insp for insp in inspections if insp.get("status") in ("scheduled", "in_progress")
-    ]
+    try:
+        inspections_resp = get_tenant_inspections(tenant_id)
+        inspections = inspections_resp.get("items", []) if inspections_resp else []
+        active_insps = [
+            insp for insp in inspections if insp.get("status") in ("scheduled", "in_progress")
+        ]
 
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📋 Move-In/Out Inspections")
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 📋 Move-In/Out Inspections")
 
-    if active_insps:
-        for insp in active_insps:
-            insp_id = insp.get("inspection_id", "")
-            itype = insp.get("inspection_type", "move_out").replace("_", " ").title()
-            istatus = insp.get("status", "scheduled")
-            badge = "🔍 In Progress" if istatus == "in_progress" else "📅 Scheduled"
-            date_str = insp.get("scheduled_date") or "Pending"
-            ded_est = insp.get("total_estimated_deductions", 0.0)
+        if active_insps:
+            for insp in active_insps:
+                insp_id = insp.get("id") or insp.get("inspection_id", "")
+                itype = insp.get("inspection_type", "move_out").replace("_", " ").title()
+                istatus = insp.get("status", "scheduled")
+                badge = "🔍 In Progress" if istatus == "in_progress" else "📅 Scheduled"
+                date_str = insp.get("scheduled_date") or "Pending"
+                ded_est = insp.get(
+                    "deposit_deduction_total",
+                    insp.get("total_estimated_deductions", 0.0),
+                )
 
-            st.sidebar.info(
-                f"**{badge} ({insp_id}):** {itype}\n\n"
-                f"- **Scheduled:** {date_str}\n"
-                f"- **Inspector:** {insp.get('inspector_name') or 'Unassigned'}\n"
-                f"- **Est. Deductions:** ${ded_est:,.2f}"
+                st.sidebar.info(
+                    f"**{badge} ({insp_id}):** {itype}\n\n"
+                    f"- **Scheduled:** {date_str}\n"
+                    f"- **Inspector:** {insp.get('inspector_name') or 'Unassigned'}\n"
+                    f"- **Est. Deductions:** ${ded_est:,.2f}"
+                )
+
+        with st.sidebar.expander("📋 Schedule Move-In/Out Inspection"):
+            insp_type_sel = st.selectbox(
+                "Inspection Type",
+                ["move_in", "move_out", "pre_move_out", "annual", "turnover_punchlist"],
+                format_func=lambda x: x.replace("_", " ").title(),
+                key=f"sess_insp_type_{selected}",
+            )
+            insp_date_in = st.text_input(
+                "Scheduled Date (YYYY-MM-DD)",
+                value="2026-10-25",
+                key=f"sess_insp_date_{selected}",
+            )
+            inspector_in = st.text_input(
+                "Inspector Name",
+                value="Property Operations Specialist",
+                key=f"sess_insp_agent_{selected}",
+            )
+            notes_in = st.text_area(
+                "Inspection Notes",
+                value="Scheduled during resident support session",
+                key=f"sess_insp_notes_{selected}",
             )
 
-    with st.sidebar.expander("📋 Schedule Move-In/Out Inspection"):
-        insp_type_sel = st.selectbox(
-            "Inspection Type",
-            ["move_in", "move_out", "pre_move_out", "annual", "turnover_punchlist"],
-            format_func=lambda x: x.replace("_", " ").title(),
-            key=f"sess_insp_type_{selected}",
-        )
-        insp_date_in = st.text_input(
-            "Scheduled Date (YYYY-MM-DD)",
-            value="2026-10-25",
-            key=f"sess_insp_date_{selected}",
-        )
-        inspector_in = st.text_input(
-            "Inspector Name",
-            value="Property Operations Specialist",
-            key=f"sess_insp_agent_{selected}",
-        )
-        notes_in = st.text_area(
-            "Inspection Notes",
-            value="Scheduled during resident support session",
-            key=f"sess_insp_notes_{selected}",
-        )
-
-        if st.button("🚀 Schedule Inspection", key=f"btn_create_insp_{selected}"):
-            with st.spinner("Scheduling inspection..."):
-                insp_payload = {
-                    "unit_id": tenant.get("unit_id"),
-                    "inspection_type": insp_type_sel,
-                    "scheduled_date": insp_date_in.strip() if insp_date_in.strip() else None,
-                    "inspector_name": inspector_in.strip() if inspector_in.strip() else None,
-                    "notes": notes_in.strip(),
-                    "status": "scheduled",
-                }
-                res = create_session_inspection(selected, insp_payload)
-                if res:
-                    new_insp_id = res.get("inspection", {}).get("inspection_id", "")
-                    st.success(f"Inspection scheduled! ID: {new_insp_id}")
-                    st.rerun()
-                else:
-                    st.error("Failed to schedule inspection.")
+            if st.button("🚀 Schedule Inspection", key=f"btn_create_insp_{selected}"):
+                with st.spinner("Scheduling inspection..."):
+                    insp_payload = {
+                        "unit_id": tenant.get("unit_id"),
+                        "inspection_type": insp_type_sel,
+                        "scheduled_date": insp_date_in.strip() if insp_date_in.strip() else None,
+                        "inspector_name": inspector_in.strip() if inspector_in.strip() else None,
+                        "notes": notes_in.strip(),
+                        "status": "scheduled",
+                    }
+                    res = create_session_inspection(selected, insp_payload)
+                    if res:
+                        new_insp_id = (
+                            res.get("inspection", {}).get("id")
+                            or res.get("inspection", {}).get("inspection_id", "")
+                        )
+                        st.success(f"Inspection scheduled! ID: {new_insp_id}")
+                        st.rerun()
+                    else:
+                        st.error("Failed to schedule inspection.")
+    except Exception as e:
+        st.sidebar.caption(f"Inspection scheduling unavailable: {e}")
 
 
 def _render_linked_tenant_details(selected, tenant, unit):
@@ -3207,7 +3216,7 @@ def _render_inspection_records_tab():
 
     st.caption(f"Showing **{len(insps)}** inspection record(s)")
     for insp in insps:
-        insp_id = insp.get("inspection_id", "")
+        insp_id = insp.get("id") or insp.get("inspection_id", "")
         itype = insp.get("inspection_type", "move_out").replace("_", " ").title()
         istatus = insp.get("status", "scheduled")
         status_emoji = {
@@ -3224,15 +3233,24 @@ def _render_inspection_records_tab():
                 f"**Resident:** {insp.get('tenant_id', 'N/A')} | "
                 f"**Status:** `{istatus}`"
             )
+            key_ret = insp.get("key_return_status") or (
+                "Yes" if insp.get("keys_returned") else "No"
+            )
             st.caption(
                 f"**Date:** {insp.get('scheduled_date') or 'N/A'} | "
                 f"**Inspector:** {insp.get('inspector_name') or 'N/A'} | "
-                f"**Keys Returned:** {'Yes' if insp.get('keys_returned') else 'No'}"
+                f"**Keys Returned:** {key_ret}"
             )
 
-            est_ded = insp.get("total_estimated_deductions", 0.0)
+            est_ded = insp.get(
+                "deposit_deduction_total",
+                insp.get("total_estimated_deductions", 0.0),
+            )
             act_ded = insp.get("total_actual_deductions", 0.0)
-            ref_amt = insp.get("net_deposit_refund", 0.0)
+            ref_amt = insp.get(
+                "deposit_refund_amount",
+                insp.get("net_deposit_refund", 0.0),
+            )
             st.caption(
                 f"**Est. Deductions:** ${est_ded:,.2f} | "
                 f"**Actual:** ${act_ded:,.2f} | "
@@ -3302,7 +3320,10 @@ def _render_schedule_inspection_tab():
                 }
             )
             if create_res:
-                new_id = create_res.get("inspection", {}).get("inspection_id", "")
+                new_id = (
+                    create_res.get("inspection", {}).get("id")
+                    or create_res.get("inspection", {}).get("inspection_id", "")
+                )
                 st.success(f"Inspection scheduled! ID: {new_id}")
                 st.rerun()
             else:
@@ -3344,19 +3365,22 @@ def _render_inspection_metrics_tab():
 
 def _render_inspections_board():
     with st.sidebar.expander("📋 Move-In/Out & Inspections"):
-        insp_tab = st.radio(
-            "Inspections View",
-            ["Inspection Records", "Schedule Inspection", "Portfolio Turnover Metrics"],
-            horizontal=True,
-            key="insp_board_tab_radio",
-        )
+        try:
+            insp_tab = st.radio(
+                "Inspections View",
+                ["Inspection Records", "Schedule Inspection", "Portfolio Turnover Metrics"],
+                horizontal=True,
+                key="insp_board_tab_radio",
+            )
 
-        if insp_tab == "Inspection Records":
-            _render_inspection_records_tab()
-        elif insp_tab == "Schedule Inspection":
-            _render_schedule_inspection_tab()
-        else:
-            _render_inspection_metrics_tab()
+            if insp_tab == "Inspection Records":
+                _render_inspection_records_tab()
+            elif insp_tab == "Schedule Inspection":
+                _render_schedule_inspection_tab()
+            else:
+                _render_inspection_metrics_tab()
+        except Exception as e:
+            st.caption(f"Inspection panel temporarily unavailable: {e}")
 
 
 def display_sidebar():
