@@ -1339,6 +1339,116 @@ Equip the customer support platform to answer lease expiration and renewal inqui
 - [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.38.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
+## v0.39.0 plan — Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine ⏳ IN PROGRESS
+
+Empower property operators and residents with a complete digital move-in, move-out, and turnover inspection engine, itemized punchlist deficiency tracking, maintenance work order dispatch integration, and security deposit deduction and refund accounting. Enable tracking of unit inspections with configurable inspection types (`move_in`, `move_out`, `routine`, `annual`, `pre_move_out`), scheduled and completed dates, inspector attribution, overall condition rating (`excellent`, `good`, `fair`, `poor`, `damaged`), room-by-room itemized checklists (condition, notes, estimated repair cost, action required), key and access device return tracking (`pending`, `returned`, `missing_keys`, `not_applicable`), and automated security deposit settlement calculation; support direct conversion of punchlist deficiencies into maintenance work orders (`work_orders`); generate structured Markdown inspection condition & deposit settlement reports with 1-click publishing into the RAG knowledge base (`document_store` / `document_sources` + Chroma vector store); ground active support sessions with live inspection and deposit settlement status (`[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]`); auto-populate inspection macro variables (`{inspection_type}`, `{inspection_scheduled_date}`, `{inspection_status}`, `{inspection_deposit_deductions}`, `{inspection_deposit_refund}`, `{key_return_status}`); provide real-time leasing & turnover webhook alerts (`inspection.scheduled`, `inspection.completed`, `inspection.deposit_deductions_assessed`, `inspection.keys_returned`); and deliver a dedicated "📋 Move-In/Out & Inspections" dashboard in Streamlit with 1-click resident inspection scheduling from active support sessions.
+
+### Objective & Expected Outcome
+Equip the customer support platform to handle all move-in and move-out inquiries ("When is my move-out inspection?", "What was noted on my move-in report?", "Why was $150 deducted from my deposit?", "How do I return keys?"), track turnover condition items, bridge punchlist repair needs to maintenance work orders, calculate deposit refunds deterministically, and publish inspection records into RAG knowledge stores. This completes the essential move-in/move-out lifecycle in property management customer support, running 100% locally with zero external dependencies.
+
+### Scope & Objectives
+- **Database Schema & Persistence (`api/db_utils.py`)**:
+  - SQLite table `inspections`:
+    - `id TEXT PRIMARY KEY` (`insp_` prefix)
+    - `tenant_id TEXT NOT NULL REFERENCES tenants(id)`
+    - `unit_id TEXT NOT NULL REFERENCES units(id)`
+    - `session_id TEXT` (optional link to originating chat session)
+    - `inspection_type TEXT NOT NULL` (`move_in`, `move_out`, `routine`, `annual`, `pre_move_out`)
+    - `scheduled_date TEXT NOT NULL` (YYYY-MM-DD)
+    - `completed_date TEXT` (YYYY-MM-DD or ISO timestamp)
+    - `inspector_name TEXT NOT NULL`
+    - `status TEXT NOT NULL DEFAULT 'scheduled'` (`scheduled`, `in_progress`, `completed`, `cancelled`)
+    - `overall_condition TEXT NOT NULL DEFAULT 'good'` (`excellent`, `good`, `fair`, `poor`, `damaged`)
+    - `items_json TEXT NOT NULL DEFAULT '[]'` (JSON array of inspection checklist items: room, item_name, condition, notes, photo_count, action_needed, estimated_cost)
+    - `deposit_deduction_total REAL NOT NULL DEFAULT 0.0`
+    - `deposit_refund_amount REAL NOT NULL DEFAULT 0.0`
+    - `key_return_status TEXT NOT NULL DEFAULT 'pending'` (`pending`, `returned`, `missing_keys`, `not_applicable`)
+    - `notes TEXT DEFAULT ''`
+    - `document_file_id INTEGER DEFAULT NULL` (optional link to published `document_store`)
+    - `created_at TEXT NOT NULL`
+    - `updated_at TEXT NOT NULL`
+  - Pre-seeded default inspection records for sample test tenants (`tenant_sarah`, `tenant_marcus`, etc.).
+  - Database operations in `api/db_utils.py`:
+    - `create_inspection()`
+    - `get_inspection()`
+    - `list_inspections()` (filters: `tenant_id`, `unit_id`, `inspection_type`, `status`)
+    - `update_inspection()`
+    - `delete_inspection()`
+    - `complete_inspection()`: computes deduction totals and refund amount, updates status to `completed`.
+    - `convert_inspection_item_to_work_order()`: bridges punchlist item directly into a new maintenance work order.
+    - `get_tenant_inspections()`: fetches inspections for a specific tenant.
+    - `get_unit_inspections()`: fetches inspections for a specific unit.
+    - `get_inspection_summary_metrics()`: portfolio metrics (total inspections, scheduled, completed, move-in vs move-out, total deductions assessed, average condition).
+- **Inspection Report Generator & RAG Publication (`api/inspections.py`)**:
+  - `generate_inspection_report_markdown(inspection_id: str) -> str`: synthesizes a comprehensive, human-readable Markdown condition report and deposit settlement statement.
+  - `publish_inspection_document(inspection_id: str, collection: str = 'default') -> dict`: saves inspection Markdown into `document_store` and `document_sources`, indexes into Chroma vector store, and links `document_file_id`.
+- **RAG Context Grounding & Macro Engine Integration (`api/tenant_context.py` & `api/macros.py`)**:
+  - Extend `build_tenant_rag_context()` with `[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]`.
+  - Auto-resolve macro variables: `{inspection_type}`, `{inspection_scheduled_date}`, `{inspection_status}`, `{inspection_deposit_deductions}`, `{inspection_deposit_refund}`, `{key_return_status}`.
+- **Webhooks & Leasing Alerting (`api/webhooks.py`, `api/db_utils.py`)**:
+  - Support `inspection.scheduled`, `inspection.completed`, `inspection.deposit_deductions_assessed`, and `inspection.keys_returned`.
+- **Pydantic Validation Models (`api/pydantic_models.py`)**:
+  - Request/response schemas for inspection creation, checklist items, updates, completion, work order dispatch, filters, and portfolio metrics.
+- **FastAPI Endpoints (`api/main.py`)**:
+  - `POST /inspections`: schedule a new inspection
+  - `GET /inspections`: list inspections with filters
+  - `GET /inspections/metrics`: portfolio turnover & inspection metrics
+  - `GET /inspections/{id}`: get inspection details
+  - `PATCH /inspections/{id}`: update inspection
+  - `DELETE /inspections/{id}`: cancel/delete inspection
+  - `POST /inspections/{id}/complete`: finalize inspection and calculate deposit settlement
+  - `POST /inspections/{id}/convert-to-work-order`: create maintenance work order from punchlist item
+  - `POST /inspections/{id}/publish-document`: generate Markdown report and publish to RAG document store
+  - `POST /sessions/{id}/create-inspection`: 1-click inspection creation from active chat session
+  - `GET /tenants/{id}/inspections`: list inspections for tenant
+  - `GET /units/{id}/inspections`: list inspections for unit
+- **Streamlit Client Helpers (`app/api_utils.py`)**:
+  - Typed helper functions forwarding `X-API-Key` headers for all inspection endpoints.
+- **Streamlit UI Components (`app/sidebar.py`)**:
+  - "📋 Move-In/Out & Inspections" sidebar panel with turnover KPI cards, searchable inspection table with 1-click status actions (`Start`, `Complete`, `Delete`), itemized checklist viewer, report generator, and punchlist-to-work-order dispatch.
+  - 1-click "📋 Schedule Move-In/Out Inspection" widget inside the active session resident card.
+
+### Acceptance Criteria
+1. `inspections` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, completion, and portfolio metrics in `api/db_utils.py`.
+2. `complete_inspection()` calculates total itemized deposit deductions, net deposit refund, and records completion timestamp.
+3. `convert_inspection_item_to_work_order()` converts an inspection deficiency item into an active maintenance work order in `work_orders`.
+4. `api/inspections.py` synthesizes structured Markdown inspection condition & deposit reports and publishes them into `document_store` and Chroma.
+5. `api/tenant_context.py` augments grounding prompt context with `[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]` and auto-resolves inspection macro variables.
+6. Webhook events `inspection.scheduled`, `inspection.completed`, `inspection.deposit_deductions_assessed`, and `inspection.keys_returned` trigger correctly on inspection events.
+7. Pydantic schemas in `api/pydantic_models.py` validate inspection creation, items, updates, completion, and summary responses.
+8. FastAPI endpoints `/inspections/*`, `/sessions/{id}/create-inspection`, `/tenants/{id}/inspections`, and `/units/{id}/inspections` are wired and tested.
+9. Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling.
+10. Streamlit UI in `app/sidebar.py` provides the 1-click inspection scheduling widget in session card and the "📋 Move-In/Out & Inspections" management panel.
+11. Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`) are complete.
+12. All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Validation Plan
+- Unit tests in `tests/test_db_utils.py` covering inspections CRUD, item validation, deposit calculation, work order conversion, and portfolio metrics.
+- Unit tests in `tests/test_inspections.py` covering inspection report Markdown generation and RAG publication.
+- Unit tests in `tests/test_tenant_context.py` covering inspection prompt grounding injection and macro resolution.
+- Unit tests in `tests/test_models.py` covering Pydantic models.
+- Route tests in `tests/test_api_routes.py` covering all inspection endpoints.
+- Client tests in `tests/test_app_api_utils.py` covering inspection API methods.
+- UI tests in `tests/test_app_ui.py` covering the inspections sidebar panel and session inspection widget.
+- Full verification suite: `python -m pytest`, `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`.
+
+### Exclusions
+- External digital camera / smart lock hardware integration — photo counts and key states are recorded digitally in local SQLite records.
+- Formal court eviction legal filings.
+
+### Granular Task Breakdown
+- [ ] Task 1: `ROADMAP.md` v0.39.0 plan specification and `docs/PROGRESS.md` initialization
+- [ ] Task 2: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] Task 3: Inspection completion, deposit deduction accounting, and punchlist-to-work-order conversion in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [ ] Task 4: Inspection report Markdown synthesis and RAG document publishing in `api/inspections.py` + unit tests in `tests/test_inspections.py`
+- [ ] Task 5: Context grounding engine integration for inspections in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [ ] Task 6: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [ ] Task 7: FastAPI endpoints for inspections, completion, work order dispatch, and session linking in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [ ] Task 8: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] Task 9: Streamlit UI components in `app/sidebar.py` (session inspection widget & "📋 Move-In/Out & Inspections" panel) + UI tests in `tests/test_app_ui.py`
+- [ ] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
