@@ -3489,6 +3489,43 @@ def test_complete_inspection(monkeypatch, tmp_path):
         db_utils.complete_inspection("nonexistent_id")
 
 
+def test_convert_inspection_item_to_work_order(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+    db_utils.create_inspections()
+
+    # insp_102 has item_2 (Kitchen Oven & Stove, clean, $75)
+    wo = db_utils.convert_inspection_item_to_work_order(
+        insp_id="insp_102",
+        item_id="item_2",
+        priority="high",
+        assigned_to="Maintenance Tech Bob",
+    )
+    assert wo is not None
+    assert wo["unit_id"] == "unit_204"
+    assert "Punchlist" in wo["title"]
+    assert "Oven & Stove" in wo["title"]
+    assert "clean" in wo["description"]
+    assert wo["priority"] == "high"
+    assert wo["assigned_to"] == "Maintenance Tech Bob"
+    assert wo["estimated_cost"] == 75.0  # noqa: PLR2004
+
+    # Verify work order can be retrieved
+    fetched_wo = db_utils.get_work_order(wo["id"])
+    assert fetched_wo is not None
+
+    # Error on non-existent inspection
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.convert_inspection_item_to_work_order("nonexistent_insp", "item_1")
+
+    # Error on non-existent item
+    with pytest.raises(ValueError, match="not found"):
+        db_utils.convert_inspection_item_to_work_order("insp_102", "nonexistent_item")
+
+
+
 
 
 

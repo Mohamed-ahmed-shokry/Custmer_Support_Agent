@@ -7311,6 +7311,65 @@ def complete_inspection(  # noqa: PLR0913, PLR0917
     return updated
 
 
+def convert_inspection_item_to_work_order(  # noqa: PLR0913, PLR0917
+    insp_id: str,
+    item_id: str,
+    priority: str = "medium",
+    assigned_to: str = "",
+    scheduled_date: str = "",
+    category: str = "general",
+) -> dict[str, Any]:
+    """Convert a deficiency item from an inspection into a maintenance work order."""
+    inspection = get_inspection(insp_id)
+    if not inspection:
+        raise ValueError(f"Inspection with ID '{insp_id}' does not exist.")
+
+    items = inspection.get("items", [])
+    target_item = None
+    for it in items:
+        if it.get("id") == item_id:
+            target_item = it
+            break
+
+    if not target_item:
+        raise ValueError(
+            f"Item with ID '{item_id}' not found in inspection '{insp_id}'."
+        )
+
+    room = target_item.get("room") or "General"
+    item_name = target_item.get("item_name") or "Deficiency"
+    notes = target_item.get("notes") or ""
+    action = target_item.get("action_needed") or "repair"
+    cost = float(target_item.get("estimated_cost", 0.0))
+
+    wo_id = f"wo_insp_{uuid.uuid4().hex[:8]}"
+    title = f"Punchlist: {room} - {item_name}"[:MAX_WORK_ORDER_TITLE_LENGTH]
+    desc = (
+        f"Turnover punchlist item from inspection {insp_id} ({inspection['inspection_type']}): "
+        f"{room} {item_name} condition is {target_item.get('condition', 'damaged')}. "
+        f"Action required: {action}. Notes: {notes}."
+    )
+
+    norm_category = category if category in VALID_WORK_ORDER_CATEGORIES else "general"
+    norm_priority = priority if priority in VALID_WORK_ORDER_PRIORITIES else "medium"
+
+    return create_work_order(
+        work_order_id=wo_id,
+        unit_id=inspection["unit_id"],
+        title=title,
+        description=desc,
+        category=norm_category,
+        priority=norm_priority,
+        status="submitted",
+        tenant_id=inspection.get("tenant_id"),
+        session_id=inspection.get("session_id"),
+        entry_permission="permission_granted",
+        assigned_to=assigned_to.strip(),
+        scheduled_date=scheduled_date.strip() or inspection.get("scheduled_date", ""),
+        estimated_cost=cost if cost > 0 else None,
+    )
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
