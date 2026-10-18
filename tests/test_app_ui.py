@@ -2947,4 +2947,406 @@ def test_render_billing_board_and_tabs(monkeypatch):
     assert st.reruns == 1
 
 
+def test_render_session_lease_renewal_widget_create_and_sign(monkeypatch):  # noqa: PLR0915
+    """Test 1-click renewal generation and digital signing in active session card."""
+    sid = "sess_renewal_ui"
+    expected_prop_rent = 1650.0
+    expected_conc = 100.0
+    st = FakeStreamlit(
+        values={
+            f"sess_prop_rent_{sid}": expected_prop_rent,
+            f"sess_term_{sid}": 12,
+            f"sess_conc_amt_{sid}": expected_conc,
+            f"sess_dep_chg_{sid}": 0.0,
+            f"sess_conc_notes_{sid}": "Renewal discount",
+            f"sess_offer_notes_{sid}": "Generated during chat",
+            f"lr_sign_name_{sid}_lr_101": "Sarah Connor",
+            f"lr_sign_notes_{sid}_lr_101": "Verified identity via portal",
+        },
+        buttons={f"btn_create_lr_{sid}": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_renewals = []
+    signed_renewals = []
+    mock_tenant = {
+        "id": "tenant_1",
+        "first_name": "Sarah",
+        "last_name": "Connor",
+        "unit_id": "unit_101",
+        "monthly_rent": 1500.0,
+    }
+    mock_active_lr = {
+        "id": "lr_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "status": "offered",
+        "current_rent": 1500.0,
+        "proposed_rent": 1600.0,
+        "term_months": 12,
+        "start_date": "2027-01-01",
+        "end_date": "2027-12-31",
+        "expires_at": "2026-12-15T00:00:00",
+    }
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_tenant_lease_renewals",
+        lambda tid: {"items": [mock_active_lr], "total": 1},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "create_session_lease_renewal",
+        lambda s, payload: created_renewals.append((s, payload))
+        or {"renewal": {"id": "lr_new"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "sign_lease_renewal",
+        lambda lr_id, payload: signed_renewals.append((lr_id, payload))
+        or {"renewal": {"id": lr_id}},
+    )
+
+    sidebar._render_session_lease_renewal_widget(sid, mock_tenant)
+
+    expected_created = 1
+    assert len(created_renewals) == expected_created
+    s, payload = created_renewals[0]
+    assert s == sid
+    assert payload["tenant_id"] == "tenant_1"
+    assert payload["proposed_rent"] == expected_prop_rent
+    assert payload["concession_amount"] == expected_conc
+    assert st.reruns == 1
+
+
+def test_render_lease_renewals_board_offers_tab(monkeypatch):  # noqa: PLR0915
+    """Test renewal board listing, RAG indexing, signing, and deletion."""
+    st = FakeStreamlit(
+        values={
+            "lr_board_tab_radio": "Offers",
+            "lr_status_filter": "All",
+            "lr_term_filter": "All",
+        },
+        buttons={
+            "btn_pub_rag_lr_101": True,
+            "btn_sign_table_lr_101": True,
+            "btn_del_lr_lr_101": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_lr = {
+        "id": "lr_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "status": "offered",
+        "current_rent": 1500.0,
+        "proposed_rent": 1600.0,
+        "term_months": 12,
+        "start_date": "2027-01-01",
+        "end_date": "2027-12-31",
+        "expires_at": "2026-12-15T00:00:00",
+    }
+    published = []
+    signed = []
+    deleted = []
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_lease_renewals",
+        lambda **kwargs: {"items": [mock_lr], "total": 1},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "publish_lease_renewal_document",
+        lambda lr_id: published.append(lr_id) or {"file_id": 1},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "sign_lease_renewal",
+        lambda lr_id, payload: signed.append((lr_id, payload)) or {"renewal": {}},
+    )
+    monkeypatch.setattr(
+        sidebar, "delete_lease_renewal", lambda lr_id: deleted.append(lr_id) or True
+    )
+
+    sidebar._render_lease_renewals_board()
+
+    expected_action_count = 1
+    assert len(published) == expected_action_count
+    assert published[0] == "lr_101"
+    assert len(signed) == expected_action_count
+    assert signed[0][0] == "lr_101"
+    assert len(deleted) == expected_action_count
+    assert deleted[0] == "lr_101"
+
+
+def test_render_lease_renewals_board_new_offer_tab(monkeypatch):  # noqa: PLR0915
+    """Test manual renewal offer dispatch via the New Offer tab."""
+    expected_manual_rent = 1750.0
+    st = FakeStreamlit(
+        values={
+            "lr_board_tab_radio": "New Offer",
+            "manual_lr_tenant": "tenant_1",
+            "manual_lr_prop_rent": expected_manual_rent,
+            "manual_lr_term": 12,
+            "manual_lr_conc": 50.0,
+            "manual_lr_dep": 0.0,
+            "manual_lr_notes": "Board test notes",
+        },
+        buttons={
+            "btn_dispatch_manual_lr": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenants",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "tenant_1",
+                    "first_name": "Sarah",
+                    "last_name": "Connor",
+                    "unit_id": "unit_101",
+                    "monthly_rent": 1500.0,
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "create_lease_renewal",
+        lambda payload: created.append(payload) or {"renewal": {"id": "lr_202"}},
+    )
+
+    sidebar._render_lease_renewals_board()
+
+    expected_action_count = 1
+    assert len(created) == expected_action_count
+    assert created[0]["tenant_id"] == "tenant_1"
+    assert created[0]["proposed_rent"] == expected_manual_rent
+    assert st.reruns == 1
+
+
+def test_render_lease_renewals_board_metrics_tab(monkeypatch):
+    """Test portfolio conversion metrics tab display."""
+    st = FakeStreamlit(
+        values={"lr_board_tab_radio": "Portfolio Metrics"},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar,
+        "get_lease_renewal_metrics",
+        lambda: {
+            "total_renewals": 5,
+            "signed_renewals": 3,
+            "renewal_rate": 60.0,
+            "avg_rent_increase_pct": 5.2,
+            "by_status": {"signed": 3, "offered": 2},
+            "by_term": {"12 Months": 4, "24 Months": 1},
+        },
+    )
+
+    sidebar._render_lease_renewals_board()
+
+    metrics_calls = [c for c in st.calls if c.fn == "metric"]
+    assert len(metrics_calls) >= 3  # noqa: PLR2004
+
+
+def test_render_session_inspection_widget(monkeypatch):
+    mock_insp = {
+        "inspection_id": "insp_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "inspection_type": "move_out",
+        "status": "scheduled",
+        "scheduled_date": "2026-10-25",
+        "total_estimated_deductions": 150.0,
+    }
+    st = FakeStreamlit(
+        values={
+            "sess_insp_type_sess_1": "move_out",
+            "sess_insp_date_sess_1": "2026-10-25",
+            "sess_insp_agent_sess_1": "Inspector Gadget",
+            "sess_insp_notes_sess_1": "Session inspection notes",
+        },
+        buttons={"btn_create_insp_sess_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar, "get_tenant_inspections", lambda tid: {"items": [mock_insp]}
+    )
+    created = []
+    monkeypatch.setattr(
+        sidebar,
+        "create_session_inspection",
+        lambda sid, payload: created.append((sid, payload)) or {"inspection": mock_insp},
+    )
+
+    sidebar._render_session_inspection_widget(
+        "sess_1", {"id": "tenant_1", "unit_id": "unit_101"}
+    )
+
+    expected_action_count = 1
+    assert len(created) == expected_action_count
+    assert created[0][0] == "sess_1"
+    assert created[0][1]["inspection_type"] == "move_out"
+    assert st.reruns == 1
+
+
+def test_render_inspections_board_records_tab(monkeypatch):
+    mock_insp = {
+        "inspection_id": "insp_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "inspection_type": "move_out",
+        "status": "scheduled",
+        "scheduled_date": "2026-10-25",
+        "total_estimated_deductions": 200.0,
+        "total_actual_deductions": 0.0,
+        "net_deposit_refund": 1300.0,
+        "items": [
+            {
+                "id": "item_1",
+                "item_name": "Broken blinds",
+                "room": "living_room",
+                "condition": "damaged",
+                "estimated_cost": 75.0,
+                "has_damage": True,
+            }
+        ],
+    }
+    st = FakeStreamlit(
+        values={
+            "insp_board_tab_radio": "Inspection Records",
+            "filter_insp_status": "All",
+            "filter_insp_type": "All",
+        },
+        buttons={
+            "btn_start_insp_insp_101": True,
+            "btn_comp_insp_insp_101": True,
+            "btn_pub_rag_insp_insp_101": True,
+            "btn_wo_insp_101_item_1": True,
+            "btn_del_insp_insp_101": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    started = []
+    completed = []
+    published = []
+    wo_converted = []
+    deleted = []
+
+    monkeypatch.setattr(
+        sidebar, "list_inspections", lambda **kwargs: {"items": [mock_insp], "total": 1}
+    )
+    monkeypatch.setattr(
+        sidebar, "update_inspection", lambda iid, p: started.append(iid) or {"inspection": {}}
+    )
+    monkeypatch.setattr(
+        sidebar, "complete_inspection", lambda iid, p: completed.append(iid) or {"inspection": {}}
+    )
+    monkeypatch.setattr(
+        sidebar, "publish_inspection_document", lambda iid: published.append(iid) or {"file_id": 1}
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "convert_inspection_item_to_work_order",
+        lambda iid, p: wo_converted.append((iid, p)) or {"work_order": {}},
+    )
+    monkeypatch.setattr(
+        sidebar, "delete_inspection", lambda iid: deleted.append(iid) or True
+    )
+
+    sidebar._render_inspections_board()
+
+    assert started == ["insp_101"]
+    assert completed == ["insp_101"]
+    assert published == ["insp_101"]
+    assert wo_converted == [("insp_101", {"item_id": "item_1"})]
+    assert deleted == ["insp_101"]
+
+
+def test_render_inspections_board_schedule_tab(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "insp_board_tab_radio": "Schedule Inspection",
+            "manual_insp_tenant": "tenant_1",
+            "manual_insp_type": "move_out",
+            "manual_insp_date": "2026-10-25",
+            "manual_insp_agent": "Lead Inspector",
+            "manual_insp_dep": 1500.0,
+            "manual_insp_notes": "Board test notes",
+        },
+        buttons={"btn_dispatch_manual_insp": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenants",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "tenant_1",
+                    "first_name": "Sarah",
+                    "last_name": "Connor",
+                    "unit_id": "unit_101",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "create_inspection",
+        lambda payload: created.append(payload) or {"inspection": {"inspection_id": "insp_202"}},
+    )
+
+    sidebar._render_inspections_board()
+
+    expected_action_count = 1
+    assert len(created) == expected_action_count
+    assert created[0]["tenant_id"] == "tenant_1"
+    assert created[0]["inspection_type"] == "move_out"
+    assert st.reruns == 1
+
+
+def test_render_inspections_board_metrics_tab(monkeypatch):
+    st = FakeStreamlit(
+        values={"insp_board_tab_radio": "Portfolio Turnover Metrics"},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar,
+        "get_inspection_metrics",
+        lambda: {
+            "total_inspections": 8,
+            "status_distribution": {"completed": 5, "scheduled": 3},
+            "type_distribution": {"move_in": 4, "move_out": 4},
+            "deposit_accounting_summary": {
+                "total_estimated_deductions": 600.0,
+                "total_refund_amounts": 3400.0,
+            },
+            "turnover_punchlist_summary": {
+                "total_punchlist_items": 12,
+                "total_converted_to_work_orders": 4,
+                "pending_punchlist_actions": 8,
+            },
+        },
+    )
+
+    sidebar._render_inspections_board()
+
+    metrics_calls = [c for c in st.calls if c.fn == "metric"]
+    assert len(metrics_calls) >= 3  # noqa: PLR2004
+
+
+
+
+
 

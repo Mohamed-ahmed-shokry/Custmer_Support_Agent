@@ -10,6 +10,12 @@ def initialize_temp_db(monkeypatch, tmp_path):
     monkeypatch.setattr(db_utils, "DB_NAME", str(db_path))
     db_utils.create_application_logs()
     db_utils.create_document_store()
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+    db_utils.create_billing_transactions()
+    db_utils.create_lease_renewals()
+    db_utils.create_inspections()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     db_utils.create_feedback()
@@ -3100,5 +3106,432 @@ def test_record_tenant_payment_and_ledger_summary(monkeypatch, tmp_path):  # noq
     assert metrics["collection_rate"] > 0
     assert "rent" in metrics["by_type"]
     assert "paid" in metrics["by_status"]
+
+
+def test_lease_renewal_crud_and_metrics(monkeypatch, tmp_path):  # noqa: PLR0915
+    initialize_temp_db(monkeypatch, tmp_path)
+
+    # 1. Normalization tests
+    assert db_utils.normalize_lease_renewal_id("  lr_custom_99  ") == "lr_custom_99"
+    with pytest.raises(ValueError, match="blank"):
+        db_utils.normalize_lease_renewal_id("   ")
+
+    assert db_utils.normalize_lease_renewal_status("Offered") == "offered"
+    assert db_utils.normalize_lease_renewal_status("SIGNED") == "signed"
+    with pytest.raises(ValueError, match="Invalid lease renewal status"):
+        db_utils.normalize_lease_renewal_status("invalid_status")
+
+    assert db_utils.normalize_renewal_term_months(12) == 12  # noqa: PLR2004
+    assert db_utils.normalize_renewal_term_months(6) == 6  # noqa: PLR2004
+    with pytest.raises(ValueError, match="Invalid renewal term months"):
+        db_utils.normalize_renewal_term_months(5)
+
+    # 2. Pre-seeded renewals
+    initial_renewals, count = db_utils.list_lease_renewals()
+    assert count >= 3  # noqa: PLR2004
+    seeded_ids = [r["id"] for r in initial_renewals]
+    assert "lr_101" in seeded_ids
+    assert "lr_102" in seeded_ids
+    assert "lr_103" in seeded_ids
+
+    # 3. Create a new lease renewal offer
+    new_lr = db_utils.create_lease_renewal(
+        tenant_id="tenant_1",
+        proposed_rent=1550.0,
+        term_months=12,
+        start_date="2026-11-01",
+        end_date="2027-10-31",
+        concession_amount=150.0,
+        concession_notes="$150 signing discount",
+        notes="Standard 1-year renewal",
+        lr_id="lr_test_new",
+    )
+    assert new_lr["id"] == "lr_test_new"
+    assert new_lr["tenant_id"] == "tenant_1"
+    assert new_lr["unit_id"] == "unit_101"
+    assert new_lr["proposed_rent"] == 1550.0  # noqa: PLR2004
+    assert new_lr["status"] == "offered"
+    assert new_lr["concession_amount"] == 150.0  # noqa: PLR2004
+
+    # Duplicate ID check
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_lease_renewal(tenant_id="tenant_1", lr_id="lr_test_new")
+
+    # Invalid tenant check
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.create_lease_renewal(tenant_id="non_existent_tenant")
+
+    # 4. Get by ID
+    fetched = db_utils.get_lease_renewal("lr_test_new")
+    assert fetched is not None
+    assert fetched["id"] == "lr_test_new"
+    assert fetched["proposed_rent"] == 1550.0  # noqa: PLR2004
+
+    # 5. List with filters
+    t1_renewals, t1_count = db_utils.list_lease_renewals(tenant_id="tenant_1")
+    assert t1_count >= 2  # noqa: PLR2004
+    assert all(r["tenant_id"] == "tenant_1" for r in t1_renewals)
+
+    offered_renewals, off_count = db_utils.list_lease_renewals(status="offered")
+    assert off_count >= 2  # noqa: PLR2004
+    assert all(r["status"] == "offered" for r in offered_renewals)
+
+    search_renewals, s_count = db_utils.list_lease_renewals(search="standard")
+    assert s_count >= 1
+
+    # 6. Tenant-specific renewals
+    tenant_lrs = db_utils.get_tenant_lease_renewals("tenant_1")
+    assert len(tenant_lrs) >= 2  # noqa: PLR2004
+
+    # 7. Update renewal
+    updated = db_utils.update_lease_renewal(
+        "lr_test_new",
+        proposed_rent=1525.0,
+        concession_amount=200.0,
+        status="negotiating",
+        notes="Tenant countered with $1525 and $200 concession",
+    )
+    assert updated is not None
+    assert updated["proposed_rent"] == 1525.0  # noqa: PLR2004
+    assert updated["concession_amount"] == 200.0  # noqa: PLR2004
+    assert updated["status"] == "negotiating"
+
+    # 8. Digital Signing & Tenant Update
+    signed = db_utils.sign_lease_renewal(
+        "lr_test_new",
+        signature_name="Sarah Connor",
+        signature_ip="192.168.1.50",
+        notes="Signed electronically via resident portal",
+    )
+    assert signed["status"] == "signed"
+    assert signed["signature_name"] == "Sarah Connor"
+    assert signed["signature_ip"] == "192.168.1.50"
+    assert signed["signed_at"] is not None
+
+    # Verify tenant was updated
+    tenant_after = db_utils.get_tenant("tenant_1")
+    assert tenant_after is not None
+    assert tenant_after["lease_start"] == "2026-11-01"
+    assert tenant_after["lease_end"] == "2027-10-31"
+    assert tenant_after["monthly_rent"] == 1525.0  # noqa: PLR2004
+
+    # Cannot sign twice
+    with pytest.raises(ValueError, match="already been signed"):
+        db_utils.sign_lease_renewal("lr_test_new", signature_name="Sarah Connor")
+
+    # 9. Delete renewal
+    deleted = db_utils.delete_lease_renewal("lr_test_new")
+    assert deleted is True
+    assert db_utils.get_lease_renewal("lr_test_new") is None
+
+    # 10. Summary metrics
+    metrics = db_utils.get_lease_renewal_summary_metrics()
+    assert metrics["total_renewals"] >= 3  # noqa: PLR2004
+    assert metrics["signed_renewals"] >= 1
+    assert metrics["pending_renewals"] >= 1
+    assert "draft" in metrics["by_status"]
+    assert "12" in metrics["by_term"]
+
+
+def test_inspection_normalizers():
+    assert db_utils.normalize_inspection_id("insp_1") == "insp_1"
+    with pytest.raises(ValueError, match="must not be blank"):
+        db_utils.normalize_inspection_id("   ")
+
+    assert db_utils.normalize_inspection_type(None) == "move_out"
+    assert db_utils.normalize_inspection_type("MOVE_IN") == "move_in"
+    with pytest.raises(ValueError, match="Invalid inspection type"):
+        db_utils.normalize_inspection_type("invalid_type")
+
+    assert db_utils.normalize_inspection_status(None) == "scheduled"
+    assert db_utils.normalize_inspection_status("COMPLETED") == "completed"
+    with pytest.raises(ValueError, match="Invalid inspection status"):
+        db_utils.normalize_inspection_status("unknown_status")
+
+    assert db_utils.normalize_inspection_condition(None) == "good"
+    assert db_utils.normalize_inspection_condition("EXCELLENT") == "excellent"
+    with pytest.raises(ValueError, match="Invalid inspection condition"):
+        db_utils.normalize_inspection_condition("perfect")
+
+    assert db_utils.normalize_key_return_status(None) == "pending"
+    assert db_utils.normalize_key_return_status("RETURNED") == "returned"
+    with pytest.raises(ValueError, match="Invalid key return status"):
+        db_utils.normalize_key_return_status("lost")
+
+    # Items normalizer
+    assert db_utils.normalize_inspection_items(None) == []
+    raw_json = (
+        '[{"room": "Kitchen", "item_name": "Sink", "condition": "good", '
+        '"action_needed": "repair", "estimated_cost": 45.5}]'
+    )
+    items = db_utils.normalize_inspection_items(raw_json)
+    assert len(items) == 1
+    assert items[0]["room"] == "Kitchen"
+    assert items[0]["item_name"] == "Sink"
+    assert items[0]["estimated_cost"] == 45.5  # noqa: PLR2004
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        db_utils.normalize_inspection_items("not-a-json")
+
+
+def test_create_inspections_and_default_seeds(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    with db_utils.closing(db_utils.get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT id, inspection_type, status FROM inspections ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 3  # noqa: PLR2004
+        ids = [r["id"] for r in rows]
+        assert "insp_101" in ids
+        assert "insp_102" in ids
+        assert "insp_103" in ids
+
+
+def test_create_and_get_inspection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    items = [
+        {
+            "id": "item_1",
+            "room": "Living Room",
+            "item_name": "Carpet",
+            "condition": "fair",
+            "notes": "Small stain",
+            "action_needed": "clean",
+            "estimated_cost": 50.0,
+        }
+    ]
+    created = db_utils.create_inspection(
+        tenant_id="tenant_1",
+        inspection_type="routine",
+        scheduled_date="2026-11-15",
+        inspector_name="Inspector Gadget",
+        overall_condition="fair",
+        items=items,
+        notes="Semi-annual routine inspection.",
+        insp_id="insp_custom_1",
+    )
+    assert created["id"] == "insp_custom_1"
+    assert created["tenant_id"] == "tenant_1"
+    assert created["unit_id"] == "unit_101"
+    assert created["inspection_type"] == "routine"
+    assert created["overall_condition"] == "fair"
+    assert len(created["items"]) == 1
+    assert created["items"][0]["item_name"] == "Carpet"
+
+    # Duplicate ID raises ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        db_utils.create_inspection(tenant_id="tenant_1", insp_id="insp_custom_1")
+
+    # Invalid tenant raises ValueError
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.create_inspection(tenant_id="nonexistent_tenant")
+
+    # Invalid unit raises ValueError
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.create_inspection(tenant_id="tenant_1", unit_id="nonexistent_unit")
+
+    # Get by ID
+    fetched = db_utils.get_inspection("insp_custom_1")
+    assert fetched is not None
+    assert fetched["inspector_name"] == "Inspector Gadget"
+    assert len(fetched["items"]) == 1
+
+    # Non-existent ID returns None
+    assert db_utils.get_inspection("nonexistent_insp") is None
+
+
+def test_list_and_query_inspections(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    # List all
+    all_insps, total = db_utils.list_inspections()
+    assert total >= 3  # noqa: PLR2004
+    assert len(all_insps) >= 3  # noqa: PLR2004
+
+    # Filter by tenant_id
+    t1_insps, t1_total = db_utils.list_inspections(tenant_id="tenant_1")
+    assert t1_total >= 1
+    assert all(i["tenant_id"] == "tenant_1" for i in t1_insps)
+
+    # Filter by unit_id
+    u101_insps, u101_total = db_utils.list_inspections(unit_id="unit_101")
+    assert u101_total >= 1
+    assert all(i["unit_id"] == "unit_101" for i in u101_insps)
+
+    # Filter by inspection_type
+    move_in_insps, mi_total = db_utils.list_inspections(inspection_type="move_in")
+    assert mi_total >= 1
+    assert all(i["inspection_type"] == "move_in" for i in move_in_insps)
+
+    # Filter by status
+    scheduled_insps, s_total = db_utils.list_inspections(status="scheduled")
+    assert s_total >= 1
+    assert all(i["status"] == "scheduled" for i in scheduled_insps)
+
+    # Search filter
+    searched, s_count = db_utils.list_inspections(search="Rivera")
+    assert s_count >= 1
+
+    # Tenant-specific helper
+    tenant_res = db_utils.get_tenant_inspections("tenant_1")
+    assert len(tenant_res) >= 1
+    assert all(i["tenant_id"] == "tenant_1" for i in tenant_res)
+
+    # Unit-specific helper
+    unit_res = db_utils.get_unit_inspections("unit_101")
+    assert len(unit_res) >= 1
+    assert all(i["unit_id"] == "unit_101" for i in unit_res)
+
+
+def test_update_and_delete_inspection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    # Update existing
+    updated = db_utils.update_inspection(
+        "insp_102",
+        status="in_progress",
+        overall_condition="fair",
+        notes="Pre-inspection commenced on schedule.",
+        key_return_status="pending",
+    )
+    assert updated is not None
+    assert updated["status"] == "in_progress"
+    assert updated["overall_condition"] == "fair"
+    assert "commenced" in updated["notes"]
+
+    # Update non-existent returns None
+    assert db_utils.update_inspection("nonexistent_id", status="completed") is None
+
+    # Delete existing
+    assert db_utils.delete_inspection("insp_102") is True
+    assert db_utils.get_inspection("insp_102") is None
+
+    # Delete non-existent returns False
+    assert db_utils.delete_inspection("nonexistent_id") is False
+    assert db_utils.delete_inspection("") is False
+
+
+def test_inspection_summary_metrics(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    metrics = db_utils.get_inspection_summary_metrics()
+    assert metrics["total_inspections"] >= 3  # noqa: PLR2004
+    assert metrics["completed_inspections"] >= 2  # noqa: PLR2004
+    assert metrics["scheduled_inspections"] >= 1
+    assert metrics["total_deposit_deductions"] >= 150.0  # noqa: PLR2004
+    assert metrics["total_deposit_refunds"] >= 1850.0  # noqa: PLR2004
+    assert "move_in" in metrics["by_type"]
+    assert "move_out" in metrics["by_type"]
+    assert "good" in metrics["by_condition"]
+    assert "pending" in metrics["by_key_return"]
+
+
+def test_complete_inspection(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_inspections()
+
+    items = [
+        {
+            "id": "item_1",
+            "room": "Bedroom",
+            "item_name": "Door",
+            "condition": "damaged",
+            "action_needed": "repair",
+            "estimated_cost": 120.0,
+        },
+        {
+            "id": "item_2",
+            "room": "Kitchen",
+            "item_name": "Cabinets",
+            "condition": "good",
+            "action_needed": "none",
+            "estimated_cost": 0.0,
+        },
+    ]
+    created = db_utils.create_inspection(
+        tenant_id="tenant_1",
+        inspection_type="move_out",
+        scheduled_date="2026-10-20",
+        items=items,
+        status="scheduled",
+    )
+    insp_id = created["id"]
+
+    completed = db_utils.complete_inspection(
+        insp_id,
+        key_return_status="returned",
+        notes="Final checkout walkthrough completed.",
+    )
+    assert completed["status"] == "completed"
+    assert completed["deposit_deduction_total"] == 120.0  # noqa: PLR2004
+    assert completed["deposit_refund_amount"] == 1330.0  # noqa: PLR2004
+    assert completed["key_return_status"] == "returned"
+    assert completed["completed_date"] is not None
+
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.complete_inspection("nonexistent_id")
+
+
+def test_convert_inspection_item_to_work_order(monkeypatch, tmp_path):
+    initialize_temp_db(monkeypatch, tmp_path)
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+    db_utils.create_inspections()
+
+    # insp_102 has item_2 (Kitchen Oven & Stove, clean, $75)
+    wo = db_utils.convert_inspection_item_to_work_order(
+        insp_id="insp_102",
+        item_id="item_2",
+        priority="high",
+        assigned_to="Maintenance Tech Bob",
+    )
+    assert wo is not None
+    assert wo["unit_id"] == "unit_204"
+    assert "Punchlist" in wo["title"]
+    assert "Oven & Stove" in wo["title"]
+    assert "clean" in wo["description"]
+    assert wo["priority"] == "high"
+    assert wo["assigned_to"] == "Maintenance Tech Bob"
+    assert wo["estimated_cost"] == 75.0  # noqa: PLR2004
+
+    # Verify work order can be retrieved
+    fetched_wo = db_utils.get_work_order(wo["id"])
+    assert fetched_wo is not None
+
+    # Error on non-existent inspection
+    with pytest.raises(ValueError, match="does not exist"):
+        db_utils.convert_inspection_item_to_work_order("nonexistent_insp", "item_1")
+
+    # Error on non-existent item
+    with pytest.raises(ValueError, match="not found"):
+        db_utils.convert_inspection_item_to_work_order("insp_102", "nonexistent_item")
+
+
+
+
+
+
+
+
+
 
 

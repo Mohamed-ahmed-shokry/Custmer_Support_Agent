@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 import uuid
@@ -209,8 +210,7 @@ _CREATE_WEBHOOK_DELIVERY_LOGS_TABLE = (
 )
 
 _INSERT_WEBHOOK = (
-    "INSERT INTO webhooks (url, events, secret, is_active, failure_count) "
-    "VALUES (?, ?, ?, ?, 0)"
+    "INSERT INTO webhooks (url, events, secret, is_active, failure_count) VALUES (?, ?, ?, ?, 0)"
 )
 _SELECT_WEBHOOK_BY_ID = (
     "SELECT id, url, events, secret, is_active, failure_count, created_at "
@@ -223,12 +223,8 @@ _INSERT_WEBHOOK_DELIVERY = (
     "(webhook_id, event, url, status_code, success, payload_preview, error_message) "
     "VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
-_INCREMENT_WEBHOOK_FAILURE = (
-    "UPDATE webhooks SET failure_count = failure_count + 1 WHERE id = ?"
-)
-_RESET_WEBHOOK_FAILURE = (
-    "UPDATE webhooks SET failure_count = 0 WHERE id = ?"
-)
+_INCREMENT_WEBHOOK_FAILURE = "UPDATE webhooks SET failure_count = failure_count + 1 WHERE id = ?"
+_RESET_WEBHOOK_FAILURE = "UPDATE webhooks SET failure_count = 0 WHERE id = ?"
 
 _CREATE_SUPPORT_MACROS_TABLE = (
     "CREATE TABLE IF NOT EXISTS support_macros ("
@@ -262,9 +258,7 @@ _SELECT_MACRO_BY_SHORTCUT = (
     "FROM support_macros WHERE LOWER(shortcut) = LOWER(?)"
 )
 _DELETE_SUPPORT_MACRO = "DELETE FROM support_macros WHERE id = ?"
-_SELECT_MACRO_CATEGORIES = (
-    "SELECT DISTINCT category FROM support_macros ORDER BY category ASC"
-)
+_SELECT_MACRO_CATEGORIES = "SELECT DISTINCT category FROM support_macros ORDER BY category ASC"
 
 MAX_MACRO_TITLE_LENGTH = 100
 MAX_MACRO_SHORTCUT_LENGTH = 50
@@ -295,6 +289,14 @@ VALID_WEBHOOK_EVENTS = {
     "billing.charge_posted",
     "billing.late_fee_assessed",
     "billing.overdue_escalated",
+    "lease_renewal.offered",
+    "lease_renewal.accepted",
+    "lease_renewal.signed",
+    "lease_renewal.declined",
+    "inspection.scheduled",
+    "inspection.completed",
+    "inspection.deposit_deductions_assessed",
+    "inspection.keys_returned",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
@@ -314,8 +316,7 @@ _CREATE_KNOWLEDGE_GAPS_TABLE = (
     "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 _CREATE_KNOWLEDGE_GAP_NORM_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_knowledge_gaps_norm_query "
-    "ON knowledge_gaps(normalized_query)"
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_gaps_norm_query ON knowledge_gaps(normalized_query)"
 )
 
 VALID_KNOWLEDGE_GAP_STATUSES = {"open", "drafting", "resolved", "dismissed"}
@@ -356,8 +357,7 @@ _CREATE_KNOWLEDGE_ARTICLES_TABLE = (
     "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
 )
 _CREATE_KNOWLEDGE_ARTICLE_CAT_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_knowledge_articles_category "
-    "ON knowledge_articles(category)"
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_articles_category ON knowledge_articles(category)"
 )
 
 VALID_KNOWLEDGE_ARTICLE_STATUSES = {"draft", "published", "archived"}
@@ -386,9 +386,7 @@ _CREATE_UNITS_TABLE = (
 _CREATE_UNITS_PROPERTY_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_units_property ON units(property_name)"
 )
-_CREATE_UNITS_UNIT_NUM_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_units_number ON units(unit_number)"
-)
+_CREATE_UNITS_UNIT_NUM_INDEX = "CREATE INDEX IF NOT EXISTS idx_units_number ON units(unit_number)"
 
 MAX_UNIT_ID_LENGTH = 50
 MAX_PROPERTY_NAME_LENGTH = 100
@@ -421,12 +419,8 @@ _CREATE_TENANTS_TABLE = (
 _CREATE_TENANTS_EMAIL_INDEX = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_email ON tenants(email)"
 )
-_CREATE_TENANTS_UNIT_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_tenants_unit_id ON tenants(unit_id)"
-)
-_CREATE_TENANTS_STATUS_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status)"
-)
+_CREATE_TENANTS_UNIT_INDEX = "CREATE INDEX IF NOT EXISTS idx_tenants_unit_id ON tenants(unit_id)"
+_CREATE_TENANTS_STATUS_INDEX = "CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status)"
 
 VALID_TENANT_STATUSES = {"active", "pending", "past_due", "moved_out", "evicted"}
 DEFAULT_TENANT_STATUS = "active"
@@ -545,8 +539,7 @@ _CREATE_BILLING_TRANSACTIONS_TYPE_INDEX = (
     "ON billing_transactions(transaction_type)"
 )
 _CREATE_BILLING_TRANSACTIONS_DUE_DATE_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_due_date "
-    "ON billing_transactions(due_date)"
+    "CREATE INDEX IF NOT EXISTS idx_billing_transactions_due_date ON billing_transactions(due_date)"
 )
 
 VALID_TRANSACTION_TYPES = {
@@ -588,6 +581,141 @@ MAX_TRANSACTION_ID_LENGTH = 50
 MAX_TRANSACTION_DESC_LENGTH = 500
 MAX_TRANSACTION_REF_LENGTH = 100
 MAX_TRANSACTION_NOTES_LENGTH = 2000
+
+_CREATE_LEASE_RENEWALS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS lease_renewals ("
+    "id TEXT PRIMARY KEY, "
+    "tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, "
+    "unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE, "
+    "session_id TEXT DEFAULT NULL, "
+    "current_rent REAL NOT NULL, "
+    "proposed_rent REAL NOT NULL, "
+    "term_months INTEGER NOT NULL DEFAULT 12, "
+    "start_date TEXT NOT NULL DEFAULT '', "
+    "end_date TEXT NOT NULL DEFAULT '', "
+    "concession_amount REAL NOT NULL DEFAULT 0.0, "
+    "concession_notes TEXT NOT NULL DEFAULT '', "
+    "security_deposit_change REAL NOT NULL DEFAULT 0.0, "
+    "status TEXT NOT NULL DEFAULT 'offered', "
+    "expires_at TEXT NOT NULL DEFAULT '', "
+    "signature_name TEXT NOT NULL DEFAULT '', "
+    "signature_ip TEXT NOT NULL DEFAULT '', "
+    "signed_at TEXT DEFAULT NULL, "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "document_file_id INTEGER DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_LEASE_RENEWALS_TENANT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_tenant_id ON lease_renewals(tenant_id)"
+)
+_CREATE_LEASE_RENEWALS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_unit_id ON lease_renewals(unit_id)"
+)
+_CREATE_LEASE_RENEWALS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_status ON lease_renewals(status)"
+)
+_CREATE_LEASE_RENEWALS_EXPIRES_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_lease_renewals_expires_at ON lease_renewals(expires_at)"
+)
+
+VALID_LEASE_RENEWAL_STATUSES = {
+    "draft",
+    "offered",
+    "negotiating",
+    "accepted",
+    "signed",
+    "declined",
+    "expired",
+}
+DEFAULT_LEASE_RENEWAL_STATUS = "offered"
+VALID_RENEWAL_TERM_MONTHS = {1, 3, 6, 9, 12, 18, 24, 36}
+DEFAULT_RENEWAL_TERM_MONTHS = 12
+
+MAX_LEASE_RENEWAL_ID_LENGTH = 50
+MAX_SIGNATURE_NAME_LENGTH = 150
+MAX_SIGNATURE_IP_LENGTH = 50
+MAX_CONCESSION_NOTES_LENGTH = 1000
+MAX_LEASE_RENEWAL_NOTES_LENGTH = 3000
+
+_CREATE_INSPECTIONS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS inspections ("
+    "id TEXT PRIMARY KEY, "
+    "tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, "
+    "unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE, "
+    "session_id TEXT DEFAULT NULL, "
+    "inspection_type TEXT NOT NULL DEFAULT 'move_out', "
+    "scheduled_date TEXT NOT NULL DEFAULT '', "
+    "completed_date TEXT DEFAULT NULL, "
+    "inspector_name TEXT NOT NULL DEFAULT 'Property Inspector', "
+    "status TEXT NOT NULL DEFAULT 'scheduled', "
+    "overall_condition TEXT NOT NULL DEFAULT 'good', "
+    "items_json TEXT NOT NULL DEFAULT '[]', "
+    "deposit_deduction_total REAL NOT NULL DEFAULT 0.0, "
+    "deposit_refund_amount REAL NOT NULL DEFAULT 0.0, "
+    "key_return_status TEXT NOT NULL DEFAULT 'pending', "
+    "notes TEXT NOT NULL DEFAULT '', "
+    "document_file_id INTEGER DEFAULT NULL, "
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+)
+_CREATE_INSPECTIONS_TENANT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_tenant_id ON inspections(tenant_id)"
+)
+_CREATE_INSPECTIONS_UNIT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_unit_id ON inspections(unit_id)"
+)
+_CREATE_INSPECTIONS_STATUS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_status ON inspections(status)"
+)
+_CREATE_INSPECTIONS_TYPE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_type ON inspections(inspection_type)"
+)
+_CREATE_INSPECTIONS_SCHEDULED_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_inspections_scheduled_date ON inspections(scheduled_date)"
+)
+
+VALID_INSPECTION_TYPES = {
+    "move_in",
+    "move_out",
+    "routine",
+    "annual",
+    "pre_move_out",
+}
+DEFAULT_INSPECTION_TYPE = "move_out"
+
+VALID_INSPECTION_STATUSES = {
+    "scheduled",
+    "in_progress",
+    "completed",
+    "cancelled",
+}
+DEFAULT_INSPECTION_STATUS = "scheduled"
+
+VALID_INSPECTION_CONDITIONS = {
+    "excellent",
+    "good",
+    "fair",
+    "poor",
+    "damaged",
+}
+DEFAULT_INSPECTION_CONDITION = "good"
+
+VALID_KEY_RETURN_STATUSES = {
+    "pending",
+    "returned",
+    "missing_keys",
+    "not_applicable",
+}
+DEFAULT_KEY_RETURN_STATUS = "pending"
+
+VALID_INSPECTION_ITEM_ACTIONS = {"none", "clean", "repair", "replace"}
+DEFAULT_INSPECTION_ITEM_ACTION = "none"
+
+MAX_INSPECTION_ID_LENGTH = 50
+MAX_INSPECTOR_NAME_LENGTH = 100
+MAX_INSPECTION_NOTES_LENGTH = 3000
+
 MAX_KNOWLEDGE_TITLE_LENGTH = 200
 MAX_KNOWLEDGE_CONTENT_LENGTH = 15000
 MAX_KNOWLEDGE_TAGS_LENGTH = 300
@@ -653,8 +781,7 @@ _SELECT_CHAT_HISTORY = (
     "WHERE session_id = ? ORDER BY created_at ASC, id ASC"
 )
 _SELECT_LATEST_USER_QUERY = (
-    "SELECT user_query FROM application_logs "
-    "WHERE session_id = ? ORDER BY id DESC LIMIT 1"
+    "SELECT user_query FROM application_logs WHERE session_id = ? ORDER BY id DESC LIMIT 1"
 )
 
 _INSERT_DOC_RECORD = "INSERT INTO document_store (filename, collection, sha256) VALUES (?, ?, ?)"
@@ -878,9 +1005,7 @@ def normalize_feedback_review_status(value: str | None) -> str:
     cleaned = (value or DEFAULT_FEEDBACK_REVIEW_STATUS).strip().lower()
     if cleaned not in VALID_FEEDBACK_REVIEW_STATUSES:
         valid_statuses = sorted(VALID_FEEDBACK_REVIEW_STATUSES)
-        raise ValueError(
-            f"Invalid review status '{value}'. Must be one of: {valid_statuses}."
-        )
+        raise ValueError(f"Invalid review status '{value}'. Must be one of: {valid_statuses}.")
     return cleaned
 
 
@@ -906,9 +1031,7 @@ def normalize_reviewer_notes(value: str | None) -> str:
         return ""
     cleaned = value.strip()
     if len(cleaned) > MAX_REVIEWER_NOTES_LENGTH:
-        raise ValueError(
-            f"Reviewer notes must be at most {MAX_REVIEWER_NOTES_LENGTH} characters."
-        )
+        raise ValueError(f"Reviewer notes must be at most {MAX_REVIEWER_NOTES_LENGTH} characters.")
     return cleaned
 
 
@@ -953,9 +1076,7 @@ def normalize_webhook_secret(value: str | None) -> str:
         return ""
     secret = value.strip()
     if len(secret) > MAX_WEBHOOK_SECRET_LENGTH:
-        raise ValueError(
-            f"Webhook secret must be at most {MAX_WEBHOOK_SECRET_LENGTH} characters."
-        )
+        raise ValueError(f"Webhook secret must be at most {MAX_WEBHOOK_SECRET_LENGTH} characters.")
     return secret
 
 
@@ -976,9 +1097,7 @@ def normalize_macro_shortcut(value: str | None) -> str:
         raise ValueError("Macro shortcut must not be blank.")
     shortcut = raw if raw.startswith("/") else f"/{raw}"
     if len(shortcut) > MAX_MACRO_SHORTCUT_LENGTH:
-        raise ValueError(
-            f"Macro shortcut must be at most {MAX_MACRO_SHORTCUT_LENGTH} characters."
-        )
+        raise ValueError(f"Macro shortcut must be at most {MAX_MACRO_SHORTCUT_LENGTH} characters.")
     identifier = shortcut[1:]
     if not identifier or not all(c.isalnum() or c in "-_" for c in identifier):
         raise ValueError(
@@ -993,9 +1112,7 @@ def normalize_macro_category(value: str | None) -> str:
     if not category:
         return "General"
     if len(category) > MAX_MACRO_CATEGORY_LENGTH:
-        raise ValueError(
-            f"Macro category must be at most {MAX_MACRO_CATEGORY_LENGTH} characters."
-        )
+        raise ValueError(f"Macro category must be at most {MAX_MACRO_CATEGORY_LENGTH} characters.")
     return category
 
 
@@ -1005,9 +1122,7 @@ def normalize_macro_content(value: str | None) -> str:
     if not content:
         raise ValueError("Macro content must not be blank.")
     if len(content) > MAX_MACRO_CONTENT_LENGTH:
-        raise ValueError(
-            f"Macro content must be at most {MAX_MACRO_CONTENT_LENGTH} characters."
-        )
+        raise ValueError(f"Macro content must be at most {MAX_MACRO_CONTENT_LENGTH} characters.")
     return content
 
 
@@ -1389,11 +1504,7 @@ def search_sessions(query: str, limit: int = 20) -> list[dict]:
             matched_queries = [r["user_query"] for r in q_cursor.fetchall() if r["user_query"]]
             prio_val = row["priority"] if row["priority"] else DEFAULT_SESSION_PRIORITY
             agent_val = row["assigned_agent"] if row["assigned_agent"] else None
-            tier_val = (
-                row["escalation_tier"]
-                if row["escalation_tier"]
-                else DEFAULT_AGENT_TIER
-            )
+            tier_val = row["escalation_tier"] if row["escalation_tier"] else DEFAULT_AGENT_TIER
             results.append(
                 {
                     "session_id": sid,
@@ -1484,9 +1595,7 @@ def migrate_feedback():
                 "ALTER TABLE feedback ADD COLUMN resolution_satisfaction INTEGER DEFAULT NULL"
             )
         if "agent_helpfulness" not in columns:
-            conn.execute(
-                "ALTER TABLE feedback ADD COLUMN agent_helpfulness INTEGER DEFAULT NULL"
-            )
+            conn.execute("ALTER TABLE feedback ADD COLUMN agent_helpfulness INTEGER DEFAULT NULL")
         if "response_speed" not in columns:
             conn.execute("ALTER TABLE feedback ADD COLUMN response_speed INTEGER DEFAULT NULL")
         if "review_status" not in columns:
@@ -1802,20 +1911,14 @@ def get_agent_performance_analytics() -> list[dict[str, Any]]:
             pos = r["positive_count"]
             satisfaction_pct = round((pos / tot * 100), 1) if tot > 0 else 0.0
             avg_res = (
-                float(r["avg_resolution_score"])
-                if r["avg_resolution_score"] is not None
-                else None
+                float(r["avg_resolution_score"]) if r["avg_resolution_score"] is not None else None
             )
             avg_help = (
                 float(r["avg_helpfulness_score"])
                 if r["avg_helpfulness_score"] is not None
                 else None
             )
-            avg_speed = (
-                float(r["avg_speed_score"])
-                if r["avg_speed_score"] is not None
-                else None
-            )
+            avg_speed = float(r["avg_speed_score"]) if r["avg_speed_score"] is not None else None
             scorecards.append(
                 {
                     "agent_id": r["agent_id"],
@@ -2125,10 +2228,7 @@ def get_support_triage_analytics() -> dict:
         escalation_rate = round((escalated_count / total_sessions) * 100.0, 2)
         avg_turns = round(total_messages / total_sessions, 2)
 
-        top_tags = [
-            {"tag": tag, "count": count}
-            for tag, count in tag_counter.most_common(10)
-        ]
+        top_tags = [{"tag": tag, "count": count} for tag, count in tag_counter.most_common(10)]
 
         return {
             "total_sessions": total_sessions,
@@ -2252,9 +2352,7 @@ def update_webhook(  # noqa: PLR0913, PLR0917
         new_url = normalize_webhook_url(url) if url is not None else row["url"]
         new_events = normalize_webhook_events(events) if events is not None else row["events"]
         new_secret = normalize_webhook_secret(secret) if secret is not None else row["secret"]
-        new_is_active = (
-            (1 if is_active else 0) if is_active is not None else row["is_active"]
-        )
+        new_is_active = (1 if is_active else 0) if is_active is not None else row["is_active"]
         new_failure_count = 0 if reset_failures else row["failure_count"]
 
         conn.execute(
@@ -2485,9 +2583,7 @@ def seed_default_macros(force: bool = False) -> int:
                 return 0
         inserted = 0
         for item in DEFAULT_MACROS:
-            existing = conn.execute(
-                _SELECT_MACRO_BY_SHORTCUT, (item["shortcut"],)
-            ).fetchone()
+            existing = conn.execute(_SELECT_MACRO_BY_SHORTCUT, (item["shortcut"],)).fetchone()
             if not existing:
                 conn.execute(
                     _INSERT_SUPPORT_MACRO,
@@ -3154,9 +3250,7 @@ def normalize_knowledge_query(query: str | None) -> str:
     if not cleaned:
         raise ValueError("Knowledge gap query must not be blank.")
     if len(cleaned) > MAX_KNOWLEDGE_QUERY_LENGTH:
-        raise ValueError(
-            f"Knowledge gap query exceeds max length {MAX_KNOWLEDGE_QUERY_LENGTH}."
-        )
+        raise ValueError(f"Knowledge gap query exceeds max length {MAX_KNOWLEDGE_QUERY_LENGTH}.")
     tokens = re.findall(r"[a-z0-9]+", cleaned.lower())
     return " ".join(tokens) if tokens else cleaned.lower()
 
@@ -3190,9 +3284,7 @@ def normalize_knowledge_gap_source(source_type: str | None) -> str:
         clean_src = DEFAULT_KNOWLEDGE_GAP_SOURCE
     if clean_src not in VALID_KNOWLEDGE_GAP_SOURCES:
         allowed = ", ".join(sorted(VALID_KNOWLEDGE_GAP_SOURCES))
-        raise ValueError(
-            f"Invalid knowledge gap source_type '{clean_src}'. Allowed: {allowed}."
-        )
+        raise ValueError(f"Invalid knowledge gap source_type '{clean_src}'. Allowed: {allowed}.")
     return clean_src
 
 
@@ -3216,9 +3308,7 @@ def record_knowledge_gap(  # noqa: PLR0913, PLR0917
     clean_sid = (session_id or "").strip() or None
     clean_notes = (notes or "").strip()
     if len(clean_notes) > MAX_KNOWLEDGE_NOTES_LENGTH:
-        raise ValueError(
-            f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}."
-        )
+        raise ValueError(f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}.")
 
     with closing(get_db_connection()) as conn:
         existing = conn.execute(
@@ -3286,9 +3376,7 @@ def record_knowledge_gap(  # noqa: PLR0913, PLR0917
 def get_knowledge_gap(gap_id: int) -> dict[str, Any] | None:
     """Fetch a knowledge gap by ID, or None if not found."""
     with closing(get_db_connection()) as conn:
-        row = conn.execute(
-            "SELECT * FROM knowledge_gaps WHERE id = ?", (gap_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM knowledge_gaps WHERE id = ?", (gap_id,)).fetchone()
         return dict(row) if row else None
 
 
@@ -3331,9 +3419,7 @@ def list_knowledge_gaps(  # noqa: PLR0913, PLR0917
 
     with closing(get_db_connection()) as conn:
         total = int(conn.execute(count_sql, params).fetchone()[0])
-        rows = conn.execute(
-            select_sql, [*params, max(1, limit), max(0, offset)]
-        ).fetchall()
+        rows = conn.execute(select_sql, [*params, max(1, limit), max(0, offset)]).fetchall()
         return [dict(r) for r in rows], total
 
 
@@ -3350,33 +3436,19 @@ def update_knowledge_gap(  # noqa: PLR0913, PLR0917
     if current is None:
         return None
 
-    new_status = (
-        normalize_knowledge_gap_status(status)
-        if status is not None
-        else current["status"]
-    )
-    new_prio = (
-        normalize_session_priority(priority)
-        if priority is not None
-        else current["priority"]
-    )
+    new_status = normalize_knowledge_gap_status(status) if status is not None else current["status"]
+    new_prio = normalize_session_priority(priority) if priority is not None else current["priority"]
     new_cat = (
-        normalize_knowledge_category(category)
-        if category is not None
-        else current["category"]
+        normalize_knowledge_category(category) if category is not None else current["category"]
     )
     new_linked = (
-        linked_article_id
-        if linked_article_id is not None
-        else current["linked_article_id"]
+        linked_article_id if linked_article_id is not None else current["linked_article_id"]
     )
     new_notes = current["notes"]
     if notes is not None:
         clean_notes = notes.strip()
         if len(clean_notes) > MAX_KNOWLEDGE_NOTES_LENGTH:
-            raise ValueError(
-                f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}."
-            )
+            raise ValueError(f"Knowledge gap notes exceed max length {MAX_KNOWLEDGE_NOTES_LENGTH}.")
         new_notes = clean_notes
 
     with closing(get_db_connection()) as conn:
@@ -3414,9 +3486,7 @@ def normalize_knowledge_article_status(status: str | None) -> str:
         clean_status = DEFAULT_KNOWLEDGE_ARTICLE_STATUS
     if clean_status not in VALID_KNOWLEDGE_ARTICLE_STATUSES:
         allowed = ", ".join(sorted(VALID_KNOWLEDGE_ARTICLE_STATUSES))
-        raise ValueError(
-            f"Invalid knowledge article status '{clean_status}'. Allowed: {allowed}."
-        )
+        raise ValueError(f"Invalid knowledge article status '{clean_status}'. Allowed: {allowed}.")
     return clean_status
 
 
@@ -3430,9 +3500,7 @@ def _normalize_article_tags(tags: str | list[str] | None) -> str:
     deduped = list(dict.fromkeys(items))
     joined = ",".join(deduped)
     if len(joined) > MAX_KNOWLEDGE_TAGS_LENGTH:
-        raise ValueError(
-            f"Knowledge article tags exceed max length {MAX_KNOWLEDGE_TAGS_LENGTH}."
-        )
+        raise ValueError(f"Knowledge article tags exceed max length {MAX_KNOWLEDGE_TAGS_LENGTH}.")
     return joined
 
 
@@ -3471,8 +3539,7 @@ def create_knowledge_article(  # noqa: PLR0913, PLR0917
         raise ValueError("Knowledge article content_markdown must not be blank.")
     if len(clean_content) > MAX_KNOWLEDGE_CONTENT_LENGTH:
         raise ValueError(
-            "Knowledge article content_markdown exceeds max length "
-            f"{MAX_KNOWLEDGE_CONTENT_LENGTH}."
+            f"Knowledge article content_markdown exceeds max length {MAX_KNOWLEDGE_CONTENT_LENGTH}."
         )
 
     clean_cat = normalize_knowledge_category(category)
@@ -3549,16 +3616,11 @@ def list_knowledge_articles(
 
     where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     count_sql = f"SELECT COUNT(*) FROM knowledge_articles{where_sql}"
-    select_sql = (
-        f"SELECT * FROM knowledge_articles{where_sql} "
-        "ORDER BY id DESC LIMIT ? OFFSET ?"
-    )
+    select_sql = f"SELECT * FROM knowledge_articles{where_sql} ORDER BY id DESC LIMIT ? OFFSET ?"
 
     with closing(get_db_connection()) as conn:
         total = int(conn.execute(count_sql, params).fetchone()[0])
-        rows = conn.execute(
-            select_sql, [*params, max(1, limit), max(0, offset)]
-        ).fetchall()
+        rows = conn.execute(select_sql, [*params, max(1, limit), max(0, offset)]).fetchall()
         return [_format_article_row(r) for r in rows], total
 
 
@@ -3590,9 +3652,7 @@ def update_knowledge_article(  # noqa: PLR0912, PLR0913, PLR0917
         new_title = clean_title
 
     new_cat = (
-        normalize_knowledge_category(category)
-        if category is not None
-        else current["category"]
+        normalize_knowledge_category(category) if category is not None else current["category"]
     )
     new_q_pat = (
         question_pattern.strip()[:MAX_KNOWLEDGE_QUERY_LENGTH]
@@ -3618,14 +3678,10 @@ def update_knowledge_article(  # noqa: PLR0912, PLR0913, PLR0917
         else _normalize_article_tags(current["tags"])
     )
     new_status = (
-        normalize_knowledge_article_status(status)
-        if status is not None
-        else current["status"]
+        normalize_knowledge_article_status(status) if status is not None else current["status"]
     )
     new_pub_fid = (
-        published_file_id
-        if published_file_id is not None
-        else current["published_file_id"]
+        published_file_id if published_file_id is not None else current["published_file_id"]
     )
     new_pub_col = (
         published_collection
@@ -3937,45 +3993,21 @@ def update_unit(  # noqa: PLR0912, PLR0913, PLR0917
         else current["property_name"]
     )
     new_num = (
-        normalize_unit_number(unit_number)
-        if unit_number is not None
-        else current["unit_number"]
+        normalize_unit_number(unit_number) if unit_number is not None else current["unit_number"]
     )
-    new_bldg = (
-        building_name.strip()
-        if building_name is not None
-        else current["building_name"]
-    )
+    new_bldg = building_name.strip() if building_name is not None else current["building_name"]
     new_floor = int(floor) if floor is not None else current["floor"]
     new_addr = address.strip() if address is not None else current["address"]
     new_city = city.strip() if city is not None else current["city"]
     new_state = state.strip() if state is not None else current["state"]
     new_zip = zip_code.strip() if zip_code is not None else current["zip_code"]
     new_rent = (
-        max(0.0, float(monthly_rent))
-        if monthly_rent is not None
-        else current["monthly_rent"]
+        max(0.0, float(monthly_rent)) if monthly_rent is not None else current["monthly_rent"]
     )
-    new_parking = (
-        parking_spot.strip()
-        if parking_spot is not None
-        else current["parking_spot"]
-    )
-    new_gate = (
-        gate_code.strip()
-        if gate_code is not None
-        else current["gate_code"]
-    )
-    new_wifi = (
-        wifi_ssid.strip()
-        if wifi_ssid is not None
-        else current["wifi_ssid"]
-    )
-    new_trash = (
-        trash_day.strip()
-        if trash_day is not None
-        else current["trash_day"]
-    )
+    new_parking = parking_spot.strip() if parking_spot is not None else current["parking_spot"]
+    new_gate = gate_code.strip() if gate_code is not None else current["gate_code"]
+    new_wifi = wifi_ssid.strip() if wifi_ssid is not None else current["wifi_ssid"]
+    new_trash = trash_day.strip() if trash_day is not None else current["trash_day"]
     new_notes = notes.strip() if notes is not None else current["notes"]
 
     with closing(get_db_connection()) as conn:
@@ -4324,11 +4356,7 @@ def update_tenant(  # noqa: PLR0912, PLR0913, PLR0917
         if last_name is not None
         else current["last_name"]
     )
-    new_email = (
-        normalize_tenant_email(email)
-        if email is not None
-        else current["email"]
-    )
+    new_email = normalize_tenant_email(email) if email is not None else current["email"]
     new_phone = phone.strip() if phone is not None else current["phone"]
     new_unit = unit_id.strip() if unit_id is not None else current["unit_id"]
     new_start = (
@@ -4342,20 +4370,10 @@ def update_tenant(  # noqa: PLR0912, PLR0913, PLR0917
         else current["lease_end"]
     )
     new_rent = (
-        max(0.0, float(monthly_rent))
-        if monthly_rent is not None
-        else current["monthly_rent"]
+        max(0.0, float(monthly_rent)) if monthly_rent is not None else current["monthly_rent"]
     )
-    new_balance = (
-        float(balance_due)
-        if balance_due is not None
-        else current["balance_due"]
-    )
-    new_status = (
-        normalize_tenant_status(status)
-        if status is not None
-        else current["status"]
-    )
+    new_balance = float(balance_due) if balance_due is not None else current["balance_due"]
+    new_status = normalize_tenant_status(status) if status is not None else current["status"]
     new_em_name = (
         emergency_contact_name.strip()
         if emergency_contact_name is not None
@@ -4527,27 +4545,29 @@ def get_tenant_support_history(tenant_id: str) -> dict[str, Any]:
             fb_score = fb_row["score"] if fb_row else None
             fb_comment = fb_row["comment"] if fb_row else None
 
-            sessions.append({
-                "session_id": sid,
-                "label": r["label"] if r["label"] else None,
-                "status": r["status"] if r["status"] else "active",
-                "priority": r["priority"] if r["priority"] else DEFAULT_SESSION_PRIORITY,
-                "assigned_agent": r["assigned_agent"] if r["assigned_agent"] else None,
-                "escalation_tier": (
-                    r["escalation_tier"] if r["escalation_tier"] else DEFAULT_AGENT_TIER
-                ),
-                "tags": r["tags"] if r["tags"] else "",
-                "summary": r["summary"] if r["summary"] else "",
-                "resolution_notes": r["resolution_notes"] if r["resolution_notes"] else "",
-                "unit_id": r["unit_id"] if r["unit_id"] else tenant.get("unit_id"),
-                "message_count": r["message_count"] or 0,
-                "preview": _truncate_preview(r["preview"]),
-                "created_at": r["created_at"],
-                "last_active": r["last_active"],
-                "rating": rating,
-                "feedback_score": fb_score,
-                "feedback_comment": fb_comment,
-            })
+            sessions.append(
+                {
+                    "session_id": sid,
+                    "label": r["label"] if r["label"] else None,
+                    "status": r["status"] if r["status"] else "active",
+                    "priority": r["priority"] if r["priority"] else DEFAULT_SESSION_PRIORITY,
+                    "assigned_agent": r["assigned_agent"] if r["assigned_agent"] else None,
+                    "escalation_tier": (
+                        r["escalation_tier"] if r["escalation_tier"] else DEFAULT_AGENT_TIER
+                    ),
+                    "tags": r["tags"] if r["tags"] else "",
+                    "summary": r["summary"] if r["summary"] else "",
+                    "resolution_notes": r["resolution_notes"] if r["resolution_notes"] else "",
+                    "unit_id": r["unit_id"] if r["unit_id"] else tenant.get("unit_id"),
+                    "message_count": r["message_count"] or 0,
+                    "preview": _truncate_preview(r["preview"]),
+                    "created_at": r["created_at"],
+                    "last_active": r["last_active"],
+                    "rating": rating,
+                    "feedback_score": fb_score,
+                    "feedback_comment": fb_comment,
+                }
+            )
 
         return {
             "tenant": tenant,
@@ -4645,9 +4665,7 @@ def normalize_work_order_category(value: str | None) -> str:
         return DEFAULT_WORK_ORDER_CATEGORY
     if cleaned not in VALID_WORK_ORDER_CATEGORIES:
         valid_cats = ", ".join(sorted(VALID_WORK_ORDER_CATEGORIES))
-        raise ValueError(
-            f"Invalid work order category '{cleaned}'. Expected one of: {valid_cats}."
-        )
+        raise ValueError(f"Invalid work order category '{cleaned}'. Expected one of: {valid_cats}.")
     return cleaned
 
 
@@ -4657,9 +4675,7 @@ def normalize_work_order_priority(value: str | None) -> str:
         return DEFAULT_WORK_ORDER_PRIORITY
     if cleaned not in VALID_WORK_ORDER_PRIORITIES:
         valid_pris = ", ".join(sorted(VALID_WORK_ORDER_PRIORITIES))
-        raise ValueError(
-            f"Invalid work order priority '{cleaned}'. Expected one of: {valid_pris}."
-        )
+        raise ValueError(f"Invalid work order priority '{cleaned}'. Expected one of: {valid_pris}.")
     return cleaned
 
 
@@ -4669,9 +4685,7 @@ def normalize_work_order_status(value: str | None) -> str:
         return DEFAULT_WORK_ORDER_STATUS
     if cleaned not in VALID_WORK_ORDER_STATUSES:
         valid_stats = ", ".join(sorted(VALID_WORK_ORDER_STATUSES))
-        raise ValueError(
-            f"Invalid work order status '{cleaned}'. Expected one of: {valid_stats}."
-        )
+        raise ValueError(f"Invalid work order status '{cleaned}'. Expected one of: {valid_stats}.")
     return cleaned
 
 
@@ -4681,9 +4695,7 @@ def normalize_entry_permission(value: str | None) -> str:
         return DEFAULT_ENTRY_PERMISSION
     if cleaned not in VALID_ENTRY_PERMISSIONS:
         valid_perms = ", ".join(sorted(VALID_ENTRY_PERMISSIONS))
-        raise ValueError(
-            f"Invalid entry permission '{cleaned}'. Expected one of: {valid_perms}."
-        )
+        raise ValueError(f"Invalid entry permission '{cleaned}'. Expected one of: {valid_perms}.")
     return cleaned
 
 
@@ -4794,9 +4806,7 @@ def create_work_order(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             if not tenant_row:
                 raise ValueError(f"Tenant with ID '{clean_tenant}' does not exist.")
 
-        existing = conn.execute(
-            "SELECT id FROM work_orders WHERE id = ?", (norm_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM work_orders WHERE id = ?", (norm_id,)).fetchone()
         if existing:
             raise ValueError(f"Work order with ID '{norm_id}' already exists.")
 
@@ -4929,9 +4939,7 @@ def update_work_order(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     if not current:
         return None
 
-    new_title = (
-        normalize_work_order_title(title) if title is not None else current["title"]
-    )
+    new_title = normalize_work_order_title(title) if title is not None else current["title"]
     new_desc = description.strip() if description is not None else current["description"]
     if not new_desc:
         raise ValueError("Work order description must not be blank.")
@@ -4946,24 +4954,18 @@ def update_work_order(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     new_priority = (
         normalize_work_order_priority(priority) if priority is not None else current["priority"]
     )
-    new_status = (
-        normalize_work_order_status(status) if status is not None else current["status"]
-    )
+    new_status = normalize_work_order_status(status) if status is not None else current["status"]
     new_entry = (
         normalize_entry_permission(entry_permission)
         if entry_permission is not None
         else current["entry_permission"]
     )
-    new_assignee = (
-        assigned_to.strip() if assigned_to is not None else current["assigned_to"]
-    )
+    new_assignee = assigned_to.strip() if assigned_to is not None else current["assigned_to"]
     if len(new_assignee) > MAX_WORK_ORDER_ASSIGNEE_LENGTH:
         raise ValueError(
             f"Assigned to must be at most {MAX_WORK_ORDER_ASSIGNEE_LENGTH} characters."
         )
-    new_date = (
-        scheduled_date.strip() if scheduled_date is not None else current["scheduled_date"]
-    )
+    new_date = scheduled_date.strip() if scheduled_date is not None else current["scheduled_date"]
     new_notes = (
         resolution_notes.strip() if resolution_notes is not None else current["resolution_notes"]
     )
@@ -4978,20 +4980,14 @@ def update_work_order(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     elif new_status == "completed" and current["status"] != "completed" and not new_completed:
         new_completed = datetime.now(UTC).isoformat()
 
-    new_est = (
-        float(estimated_cost) if estimated_cost is not None else current["estimated_cost"]
-    )
-    new_act = (
-        float(actual_cost) if actual_cost is not None else current["actual_cost"]
-    )
+    new_est = float(estimated_cost) if estimated_cost is not None else current["estimated_cost"]
+    new_act = float(actual_cost) if actual_cost is not None else current["actual_cost"]
     new_unit = unit_id.strip() if unit_id is not None else current["unit_id"]
     new_tenant = tenant_id.strip() if tenant_id is not None else current["tenant_id"]
 
     with closing(get_db_connection()) as conn:
         if unit_id is not None:
-            unit_exists = conn.execute(
-                "SELECT id FROM units WHERE id = ?", (new_unit,)
-            ).fetchone()
+            unit_exists = conn.execute("SELECT id FROM units WHERE id = ?", (new_unit,)).fetchone()
             if not unit_exists:
                 raise ValueError(f"Unit with ID '{new_unit}' does not exist.")
 
@@ -5044,9 +5040,7 @@ def get_unit_work_orders(unit_id: str, open_only: bool = False) -> list[dict[str
     cleaned_unit = (unit_id or "").strip()
     if not cleaned_unit:
         return []
-    query = (
-        "SELECT * FROM work_orders WHERE unit_id = ?"
-    )
+    query = "SELECT * FROM work_orders WHERE unit_id = ?"
     if open_only:
         query += " AND status NOT IN ('completed', 'cancelled')"
     query += " ORDER BY created_at DESC"
@@ -5059,9 +5053,7 @@ def get_tenant_work_orders(tenant_id: str, open_only: bool = False) -> list[dict
     cleaned_tenant = (tenant_id or "").strip()
     if not cleaned_tenant:
         return []
-    query = (
-        "SELECT * FROM work_orders WHERE tenant_id = ?"
-    )
+    query = "SELECT * FROM work_orders WHERE tenant_id = ?"
     if open_only:
         query += " AND status NOT IN ('completed', 'cancelled')"
     query += " ORDER BY created_at DESC"
@@ -5201,9 +5193,7 @@ def normalize_transaction_id(tx_id: str) -> str:
     if not cleaned:
         raise ValueError("Transaction ID must not be blank.")
     if len(cleaned) > MAX_TRANSACTION_ID_LENGTH:
-        raise ValueError(
-            f"Transaction ID must be at most {MAX_TRANSACTION_ID_LENGTH} characters."
-        )
+        raise ValueError(f"Transaction ID must be at most {MAX_TRANSACTION_ID_LENGTH} characters.")
     return cleaned
 
 
@@ -5213,9 +5203,7 @@ def normalize_transaction_type(val: str) -> str:
         return DEFAULT_TRANSACTION_TYPE
     if cleaned not in VALID_TRANSACTION_TYPES:
         valid_types = ", ".join(sorted(VALID_TRANSACTION_TYPES))
-        raise ValueError(
-            f"Invalid transaction type '{cleaned}'. Expected one of: {valid_types}."
-        )
+        raise ValueError(f"Invalid transaction type '{cleaned}'. Expected one of: {valid_types}.")
     return cleaned
 
 
@@ -5235,9 +5223,7 @@ def normalize_payment_method(val: str) -> str:
     cleaned = (val or "").strip().lower()
     if cleaned not in VALID_PAYMENT_METHODS:
         valid_methods = ", ".join(sorted(m for m in VALID_PAYMENT_METHODS if m))
-        raise ValueError(
-            f"Invalid payment method '{cleaned}'. Expected one of: {valid_methods}."
-        )
+        raise ValueError(f"Invalid payment method '{cleaned}'. Expected one of: {valid_methods}.")
     return cleaned
 
 
@@ -5337,9 +5323,7 @@ def create_billing_transaction(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if not tenant_row:
             raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
 
-        unit_row = conn.execute(
-            "SELECT id FROM units WHERE id = ?", (norm_unit,)
-        ).fetchone()
+        unit_row = conn.execute("SELECT id FROM units WHERE id = ?", (norm_unit,)).fetchone()
         if not unit_row:
             raise ValueError(f"Unit with ID '{norm_unit}' does not exist.")
 
@@ -5347,9 +5331,7 @@ def create_billing_transaction(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             "SELECT id FROM billing_transactions WHERE id = ?", (norm_id,)
         ).fetchone()
         if existing:
-            raise ValueError(
-                f"Billing transaction with ID '{norm_id}' already exists."
-            )
+            raise ValueError(f"Billing transaction with ID '{norm_id}' already exists.")
 
         conn.execute(
             "INSERT INTO billing_transactions "
@@ -5478,12 +5460,8 @@ def update_billing_transaction(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     if not current:
         return None
 
-    new_status = (
-        normalize_transaction_status(status) if status is not None else current["status"]
-    )
-    new_desc = (
-        description.strip() if description is not None else current["description"]
-    )
+    new_status = normalize_transaction_status(status) if status is not None else current["status"]
+    new_desc = description.strip() if description is not None else current["description"]
     if not new_desc:
         raise ValueError("Transaction description must not be blank.")
     if len(new_desc) > MAX_TRANSACTION_DESC_LENGTH:
@@ -5561,9 +5539,7 @@ def delete_billing_transaction(transaction_id: str) -> bool:
     if not cleaned:
         return False
     with closing(get_db_connection()) as conn:
-        cursor = conn.execute(
-            "DELETE FROM billing_transactions WHERE id = ?", (cleaned,)
-        )
+        cursor = conn.execute("DELETE FROM billing_transactions WHERE id = ?", (cleaned,))
         conn.commit()
         return bool(cursor.rowcount > 0)
 
@@ -5797,11 +5773,7 @@ def get_billing_summary_metrics() -> dict[str, Any]:
         ).fetchone()
         overdue_tenants_count = int(overdue_tenants_row[0]) if overdue_tenants_row else 0
 
-        rate = (
-            round((total_collected / total_billed) * 100.0, 2)
-            if total_billed > 0
-            else 100.0
-        )
+        rate = round((total_collected / total_billed) * 100.0, 2) if total_billed > 0 else 100.0
 
         by_type_rows = conn.execute(
             "SELECT transaction_type, COUNT(*) FROM billing_transactions GROUP BY transaction_type"
@@ -5833,6 +5805,1382 @@ def get_billing_summary_metrics() -> dict[str, Any]:
         }
 
 
+DEFAULT_SEEDED_LEASE_RENEWALS = [
+    {
+        "id": "lr_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "session_id": None,
+        "current_rent": 1450.0,
+        "proposed_rent": 1500.0,
+        "term_months": 12,
+        "start_date": "2026-11-01",
+        "end_date": "2027-10-31",
+        "concession_amount": 100.0,
+        "concession_notes": "First month renewal credit of $100 applied upon signing.",
+        "security_deposit_change": 0.0,
+        "status": "offered",
+        "expires_at": "2026-10-31",
+        "signature_name": "",
+        "signature_ip": "",
+        "signed_at": None,
+        "notes": "12-month standard renewal offer with early sign incentive.",
+        "document_file_id": None,
+    },
+    {
+        "id": "lr_102",
+        "tenant_id": "tenant_2",
+        "unit_id": "unit_204",
+        "session_id": None,
+        "current_rent": 1850.0,
+        "proposed_rent": 1925.0,
+        "term_months": 12,
+        "start_date": "2027-01-01",
+        "end_date": "2027-12-31",
+        "concession_amount": 0.0,
+        "concession_notes": "",
+        "security_deposit_change": 0.0,
+        "status": "draft",
+        "expires_at": "2026-11-30",
+        "signature_name": "",
+        "signature_ip": "",
+        "signed_at": None,
+        "notes": "Draft renewal under review pending payment of overdue balance.",
+        "document_file_id": None,
+    },
+    {
+        "id": "lr_103",
+        "tenant_id": "tenant_3",
+        "unit_id": "unit_PH1",
+        "session_id": None,
+        "current_rent": 3200.0,
+        "proposed_rent": 3350.0,
+        "term_months": 24,
+        "start_date": "2026-10-01",
+        "end_date": "2028-09-30",
+        "concession_amount": 250.0,
+        "concession_notes": "Penthouse multi-year renewal concession.",
+        "security_deposit_change": 150.0,
+        "status": "signed",
+        "expires_at": "2026-09-25",
+        "signature_name": "Eleanor Vance",
+        "signature_ip": "192.168.1.105",
+        "signed_at": "2026-09-24T14:30:00Z",
+        "notes": "24-month executive renewal executed successfully.",
+        "document_file_id": None,
+    },
+]
+
+
+def normalize_lease_renewal_id(lr_id: str) -> str:
+    cleaned = (lr_id or "").strip()
+    if not cleaned:
+        raise ValueError("Lease renewal ID must not be blank.")
+    if len(cleaned) > MAX_LEASE_RENEWAL_ID_LENGTH:
+        raise ValueError(
+            f"Lease renewal ID must be at most {MAX_LEASE_RENEWAL_ID_LENGTH} characters."
+        )
+    return cleaned
+
+
+def normalize_lease_renewal_status(val: str) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_LEASE_RENEWAL_STATUS
+    if cleaned not in VALID_LEASE_RENEWAL_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_LEASE_RENEWAL_STATUSES))
+        raise ValueError(
+            f"Invalid lease renewal status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_renewal_term_months(val: int | None) -> int:
+    if val is None:
+        return DEFAULT_RENEWAL_TERM_MONTHS
+    try:
+        ival = int(val)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Renewal term months must be an integer.") from exc
+    if ival not in VALID_RENEWAL_TERM_MONTHS:
+        valid_terms = ", ".join(str(m) for m in sorted(VALID_RENEWAL_TERM_MONTHS))
+        raise ValueError(f"Invalid renewal term months '{ival}'. Expected one of: {valid_terms}.")
+    return ival
+
+
+def create_lease_renewals() -> None:
+    """Create lease_renewals table, indexes, and pre-seed initial records if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_LEASE_RENEWALS_TABLE)
+        conn.execute(_CREATE_LEASE_RENEWALS_TENANT_INDEX)
+        conn.execute(_CREATE_LEASE_RENEWALS_UNIT_INDEX)
+        conn.execute(_CREATE_LEASE_RENEWALS_STATUS_INDEX)
+        conn.execute(_CREATE_LEASE_RENEWALS_EXPIRES_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM lease_renewals").fetchone()
+        if row and row[0] == 0:
+            for lr in DEFAULT_SEEDED_LEASE_RENEWALS:
+                conn.execute(
+                    "INSERT INTO lease_renewals "
+                    "(id, tenant_id, unit_id, session_id, current_rent, "
+                    "proposed_rent, term_months, start_date, end_date, "
+                    "concession_amount, concession_notes, security_deposit_change, "
+                    "status, expires_at, signature_name, signature_ip, "
+                    "signed_at, notes, document_file_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        lr["id"],
+                        lr["tenant_id"],
+                        lr["unit_id"],
+                        lr["session_id"],
+                        lr["current_rent"],
+                        lr["proposed_rent"],
+                        lr["term_months"],
+                        lr["start_date"],
+                        lr["end_date"],
+                        lr["concession_amount"],
+                        lr["concession_notes"],
+                        lr["security_deposit_change"],
+                        lr["status"],
+                        lr["expires_at"],
+                        lr["signature_name"],
+                        lr["signature_ip"],
+                        lr["signed_at"],
+                        lr["notes"],
+                        lr["document_file_id"],
+                    ),
+                )
+        conn.commit()
+
+
+def create_lease_renewal(  # noqa: PLR0913, PLR0915, PLR0917
+    tenant_id: str,
+    unit_id: str | None = None,
+    proposed_rent: float | None = None,
+    current_rent: float | None = None,
+    term_months: int = 12,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    concession_amount: float = 0.0,
+    concession_notes: str = "",
+    security_deposit_change: float = 0.0,
+    status: str = "offered",
+    expires_at: str | None = None,
+    session_id: str | None = None,
+    notes: str = "",
+    lr_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a new lease renewal offer with validation and auto-resolved tenant/unit details."""
+    norm_tenant = (tenant_id or "").strip()
+    if not norm_tenant:
+        raise ValueError("Tenant ID must not be blank.")
+
+    tenant_record = get_tenant(norm_tenant)
+    if not tenant_record:
+        raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
+
+    resolved_unit = (unit_id or tenant_record.get("unit_id") or "").strip()
+    if not resolved_unit:
+        raise ValueError("Unit ID is required or must be linked to the tenant.")
+    unit_record = get_unit(resolved_unit)
+    if not unit_record:
+        raise ValueError(f"Unit with ID '{resolved_unit}' does not exist.")
+
+    resolved_current_rent = (
+        float(current_rent)
+        if current_rent is not None
+        else float(tenant_record.get("monthly_rent", 0.0))
+    )
+    if resolved_current_rent < 0.0:
+        raise ValueError("Current rent cannot be negative.")
+
+    resolved_proposed_rent = (
+        float(proposed_rent) if proposed_rent is not None else resolved_current_rent
+    )
+    if resolved_proposed_rent <= 0.0:
+        raise ValueError("Proposed rent must be greater than zero.")
+
+    norm_term = normalize_renewal_term_months(term_months)
+    norm_status = normalize_lease_renewal_status(status)
+
+    resolved_start = (start_date or tenant_record.get("lease_end") or "").strip()
+    if not resolved_start:
+        resolved_start = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    resolved_end = (end_date or "").strip()
+    if not resolved_end:
+        try:
+            start_dt = datetime.strptime(resolved_start, "%Y-%m-%d")
+            total_months = start_dt.month + norm_term
+            new_year = start_dt.year + (total_months - 1) // 12
+            new_month = ((total_months - 1) % 12) + 1
+            new_day = min(start_dt.day, 28)
+            resolved_end = f"{new_year:04d}-{new_month:02d}-{new_day:02d}"
+        except Exception:
+            resolved_end = resolved_start
+
+    resolved_expires = (expires_at or "").strip()
+    if not resolved_expires:
+        resolved_expires = resolved_start
+
+    clean_concession_amount = max(0.0, float(concession_amount or 0.0))
+    clean_concession_notes = (concession_notes or "").strip()[:MAX_CONCESSION_NOTES_LENGTH]
+    clean_deposit_change = float(security_deposit_change or 0.0)
+    clean_notes = (notes or "").strip()[:MAX_LEASE_RENEWAL_NOTES_LENGTH]
+    clean_session = (session_id or "").strip() or None
+
+    renewal_id = normalize_lease_renewal_id(lr_id or f"lr_{uuid.uuid4().hex[:8]}")
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(
+            "SELECT id FROM lease_renewals WHERE id = ?", (renewal_id,)
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Lease renewal with ID '{renewal_id}' already exists.")
+
+        conn.execute(
+            "INSERT INTO lease_renewals "
+            "(id, tenant_id, unit_id, session_id, current_rent, "
+            "proposed_rent, term_months, start_date, end_date, "
+            "concession_amount, concession_notes, security_deposit_change, "
+            "status, expires_at, signature_name, signature_ip, "
+            "signed_at, notes, document_file_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', NULL, ?, NULL)",
+            (
+                renewal_id,
+                norm_tenant,
+                resolved_unit,
+                clean_session,
+                resolved_current_rent,
+                resolved_proposed_rent,
+                norm_term,
+                resolved_start,
+                resolved_end,
+                clean_concession_amount,
+                clean_concession_notes,
+                clean_deposit_change,
+                norm_status,
+                resolved_expires,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+
+    res = get_lease_renewal(renewal_id)
+    if res is None:
+        raise RuntimeError("Failed to retrieve created lease renewal.")
+    return res
+
+
+def get_lease_renewal(renewal_id: str) -> dict[str, Any] | None:
+    cleaned_id = (renewal_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM lease_renewals WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_lease_renewals(  # noqa: PLR0912, PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM lease_renewals"]
+    count_parts = ["SELECT COUNT(*) FROM lease_renewals"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if tenant_id and tenant_id.strip():
+        where_clauses.append("tenant_id = ?")
+        params.append(tenant_id.strip())
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if search and search.strip():
+        s = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(id) LIKE ? OR LOWER(notes) LIKE ? OR LOWER(signature_name) LIKE ?)"
+        )
+        params.extend([s, s, s])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+    params_for_query = list(params) + [max(1, limit), max(0, offset)]
+
+    full_query = "".join(query_parts)
+    full_count_query = "".join(count_parts)
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(full_count_query, params).fetchone()[0]
+        rows = conn.execute(full_query, params_for_query).fetchall()
+        return [dict(r) for r in rows], int(total)
+
+
+def get_tenant_lease_renewals(tenant_id: str) -> list[dict[str, Any]]:
+    """Retrieve all lease renewal records for a tenant ordered by created_at DESC."""
+    cleaned_id = (tenant_id or "").strip()
+    if not cleaned_id:
+        return []
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM lease_renewals WHERE tenant_id = ? ORDER BY created_at DESC",
+            (cleaned_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_lease_renewal(  # noqa: PLR0912, PLR0913, PLR0917
+    renewal_id: str,
+    proposed_rent: float | None = None,
+    term_months: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    concession_amount: float | None = None,
+    concession_notes: str | None = None,
+    security_deposit_change: float | None = None,
+    status: str | None = None,
+    expires_at: str | None = None,
+    notes: str | None = None,
+    document_file_id: int | None = None,
+) -> dict[str, Any] | None:
+    current = get_lease_renewal(renewal_id)
+    if not current:
+        return None
+
+    updates: list[str] = []
+    params: list[Any] = []
+
+    if proposed_rent is not None:
+        p_val = float(proposed_rent)
+        if p_val <= 0.0:
+            raise ValueError("Proposed rent must be greater than zero.")
+        updates.append("proposed_rent = ?")
+        params.append(p_val)
+
+    if term_months is not None:
+        t_val = normalize_renewal_term_months(term_months)
+        updates.append("term_months = ?")
+        params.append(t_val)
+
+    if start_date is not None:
+        updates.append("start_date = ?")
+        params.append(start_date.strip())
+
+    if end_date is not None:
+        updates.append("end_date = ?")
+        params.append(end_date.strip())
+
+    if concession_amount is not None:
+        updates.append("concession_amount = ?")
+        params.append(max(0.0, float(concession_amount)))
+
+    if concession_notes is not None:
+        updates.append("concession_notes = ?")
+        params.append(concession_notes.strip()[:MAX_CONCESSION_NOTES_LENGTH])
+
+    if security_deposit_change is not None:
+        updates.append("security_deposit_change = ?")
+        params.append(float(security_deposit_change))
+
+    if status is not None:
+        s_val = normalize_lease_renewal_status(status)
+        updates.append("status = ?")
+        params.append(s_val)
+
+    if expires_at is not None:
+        updates.append("expires_at = ?")
+        params.append(expires_at.strip())
+
+    if notes is not None:
+        updates.append("notes = ?")
+        params.append(notes.strip()[:MAX_LEASE_RENEWAL_NOTES_LENGTH])
+
+    if document_file_id is not None:
+        updates.append("document_file_id = ?")
+        params.append(int(document_file_id))
+
+    if not updates:
+        return current
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    sql = f"UPDATE lease_renewals SET {', '.join(updates)} WHERE id = ?"
+    params.append(renewal_id)
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(sql, params)
+        conn.commit()
+
+    return get_lease_renewal(renewal_id)
+
+
+def delete_lease_renewal(renewal_id: str) -> bool:
+    cleaned_id = (renewal_id or "").strip()
+    if not cleaned_id:
+        return False
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute("DELETE FROM lease_renewals WHERE id = ?", (cleaned_id,))
+        conn.commit()
+        return bool(cursor.rowcount > 0)
+
+
+def sign_lease_renewal(  # noqa: PLR0913, PLR0917
+    renewal_id: str,
+    signature_name: str,
+    signature_ip: str = "127.0.0.1",
+    signed_at: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Digitally sign a renewal offer and atomically update tenant lease dates and rent."""
+    current = get_lease_renewal(renewal_id)
+    if not current:
+        raise ValueError(f"Lease renewal with ID '{renewal_id}' does not exist.")
+
+    if current["status"] == "signed":
+        raise ValueError("Lease renewal has already been signed.")
+
+    sig_name = (signature_name or "").strip()
+    if not sig_name:
+        raise ValueError("Signature name must not be blank.")
+    if len(sig_name) > MAX_SIGNATURE_NAME_LENGTH:
+        raise ValueError(f"Signature name must be at most {MAX_SIGNATURE_NAME_LENGTH} characters.")
+
+    sig_ip = (signature_ip or "127.0.0.1").strip()[:MAX_SIGNATURE_IP_LENGTH]
+    timestamp = signed_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    combined_notes = current["notes"] or ""
+    if notes and notes.strip():
+        combined_notes = f"{combined_notes} | {notes.strip()}".strip(" |")
+
+    tenant_id = current["tenant_id"]
+    new_start = current["start_date"]
+    new_end = current["end_date"]
+    new_rent = current["proposed_rent"]
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE lease_renewals SET "
+            "status = 'signed', "
+            "signature_name = ?, "
+            "signature_ip = ?, "
+            "signed_at = ?, "
+            "notes = ?, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            (sig_name, sig_ip, timestamp, combined_notes, renewal_id),
+        )
+
+        # Atomically update tenant lease parameters
+        if new_start and new_end and new_rent > 0:
+            conn.execute(
+                "UPDATE tenants SET "
+                "lease_start = ?, "
+                "lease_end = ?, "
+                "monthly_rent = ?, "
+                "status = 'active', "
+                "updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ?",
+                (new_start, new_end, new_rent, tenant_id),
+            )
+
+        conn.commit()
+
+    updated = get_lease_renewal(renewal_id)
+    if not updated:
+        raise RuntimeError("Failed to retrieve signed lease renewal.")
+    return updated
+
+
+def get_lease_renewal_summary_metrics() -> dict[str, Any]:
+    """Compute aggregated portfolio lease renewal statistics."""
+    with closing(get_db_connection()) as conn:
+        total_row = conn.execute("SELECT COUNT(*) FROM lease_renewals").fetchone()
+        total_count = int(total_row[0]) if total_row else 0
+
+        signed_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals WHERE status = 'signed'"
+        ).fetchone()
+        signed_count = int(signed_row[0]) if signed_row else 0
+
+        offered_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals "
+            "WHERE status IN ('offered', 'negotiating', 'accepted')"
+        ).fetchone()
+        offered_count = int(offered_row[0]) if offered_row else 0
+
+        draft_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals WHERE status = 'draft'"
+        ).fetchone()
+        draft_count = int(draft_row[0]) if draft_row else 0
+
+        declined_row = conn.execute(
+            "SELECT COUNT(*) FROM lease_renewals WHERE status IN ('declined', 'expired')"
+        ).fetchone()
+        declined_count = int(declined_row[0]) if declined_row else 0
+
+        renewal_rate = round((signed_count / total_count) * 100.0, 2) if total_count > 0 else 0.0
+
+        diff_row = conn.execute(
+            "SELECT AVG(((proposed_rent - current_rent) / current_rent) * 100.0) "
+            "FROM lease_renewals WHERE current_rent > 0"
+        ).fetchone()
+        avg_rent_increase_pct = (
+            round(float(diff_row[0]), 2) if diff_row and diff_row[0] is not None else 0.0
+        )
+
+        by_status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM lease_renewals GROUP BY status"
+        ).fetchall()
+        by_status = {r[0]: int(r[1]) for r in by_status_rows}
+
+        by_term_rows = conn.execute(
+            "SELECT term_months, COUNT(*) FROM lease_renewals GROUP BY term_months"
+        ).fetchall()
+        by_term = {str(r[0]): int(r[1]) for r in by_term_rows}
+
+        return {
+            "total_renewals": total_count,
+            "signed_renewals": signed_count,
+            "pending_renewals": offered_count,
+            "draft_renewals": draft_count,
+            "declined_renewals": declined_count,
+            "renewal_rate": renewal_rate,
+            "avg_rent_increase_pct": avg_rent_increase_pct,
+            "by_status": by_status,
+            "by_term": by_term,
+        }
+
+
+def normalize_inspection_id(insp_id: str) -> str:
+    cleaned = (insp_id or "").strip()
+    if not cleaned:
+        raise ValueError("Inspection ID must not be blank.")
+    if len(cleaned) > MAX_INSPECTION_ID_LENGTH:
+        raise ValueError(f"Inspection ID must be at most {MAX_INSPECTION_ID_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_inspection_type(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_INSPECTION_TYPE
+    if cleaned not in VALID_INSPECTION_TYPES:
+        valid_types = ", ".join(sorted(VALID_INSPECTION_TYPES))
+        raise ValueError(f"Invalid inspection type '{cleaned}'. Expected one of: {valid_types}.")
+    return cleaned
+
+
+def normalize_inspection_status(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_INSPECTION_STATUS
+    if cleaned not in VALID_INSPECTION_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_INSPECTION_STATUSES))
+        raise ValueError(
+            f"Invalid inspection status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_inspection_condition(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_INSPECTION_CONDITION
+    if cleaned not in VALID_INSPECTION_CONDITIONS:
+        valid_conditions = ", ".join(sorted(VALID_INSPECTION_CONDITIONS))
+        raise ValueError(
+            f"Invalid inspection condition '{cleaned}'. Expected one of: {valid_conditions}."
+        )
+    return cleaned
+
+
+def normalize_key_return_status(val: str | None) -> str:
+    cleaned = (val or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_KEY_RETURN_STATUS
+    if cleaned not in VALID_KEY_RETURN_STATUSES:
+        valid_statuses = ", ".join(sorted(VALID_KEY_RETURN_STATUSES))
+        raise ValueError(
+            f"Invalid key return status '{cleaned}'. Expected one of: {valid_statuses}."
+        )
+    return cleaned
+
+
+def normalize_inspection_items(items_val: Any) -> list[dict[str, Any]]:
+    if items_val is None:
+        return []
+    if isinstance(items_val, str):
+        if not items_val.strip():
+            return []
+        try:
+            parsed = json.loads(items_val)
+        except Exception as exc:
+            raise ValueError(f"Invalid JSON for inspection items: {exc}") from exc
+    elif isinstance(items_val, list):
+        parsed = items_val
+    else:
+        raise ValueError("Inspection items must be a list of items or JSON string.")
+
+    cleaned_items: list[dict[str, Any]] = []
+    for idx, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            raise ValueError(f"Item #{idx + 1} must be a dictionary.")
+        item_id = str(item.get("id") or f"item_{idx + 1}").strip()
+        room = str(item.get("room") or "General").strip()
+        item_name = str(item.get("item_name") or item.get("name") or "Area").strip()
+        cond = str(item.get("condition") or "good").strip().lower()
+        if cond not in VALID_INSPECTION_CONDITIONS:
+            cond = "good"
+        notes = str(item.get("notes") or "").strip()
+        action = str(item.get("action_needed") or "none").strip().lower()
+        if action not in VALID_INSPECTION_ITEM_ACTIONS:
+            action = "none"
+        try:
+            cost = max(0.0, float(item.get("estimated_cost") or 0.0))
+        except (ValueError, TypeError):
+            cost = 0.0
+        cleaned_items.append(
+            {
+                "id": item_id,
+                "room": room,
+                "item_name": item_name,
+                "condition": cond,
+                "notes": notes,
+                "action_needed": action,
+                "estimated_cost": round(cost, 2),
+            }
+        )
+    return cleaned_items
+
+
+DEFAULT_SEEDED_INSPECTIONS = [
+    {
+        "id": "insp_101",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+        "session_id": None,
+        "inspection_type": "move_in",
+        "scheduled_date": "2025-11-01",
+        "completed_date": "2025-11-01",
+        "inspector_name": "Alex Rivera",
+        "status": "completed",
+        "overall_condition": "good",
+        "items_json": json.dumps(
+            [
+                {
+                    "id": "item_1",
+                    "room": "Living Room",
+                    "item_name": "Hardwood Flooring",
+                    "condition": "good",
+                    "notes": "Minor scuff near balcony door",
+                    "action_needed": "none",
+                    "estimated_cost": 0.0,
+                },
+                {
+                    "id": "item_2",
+                    "room": "Kitchen",
+                    "item_name": "Refrigerator & Freezer",
+                    "condition": "excellent",
+                    "notes": "Spotless and working properly",
+                    "action_needed": "none",
+                    "estimated_cost": 0.0,
+                },
+                {
+                    "id": "item_3",
+                    "room": "Master Bedroom",
+                    "item_name": "Window Blinds",
+                    "condition": "fair",
+                    "notes": "One slat slightly bent",
+                    "action_needed": "none",
+                    "estimated_cost": 0.0,
+                },
+            ]
+        ),
+        "deposit_deduction_total": 0.0,
+        "deposit_refund_amount": 0.0,
+        "key_return_status": "not_applicable",
+        "notes": "Move-in baseline walkthrough signed by resident.",
+        "document_file_id": None,
+    },
+    {
+        "id": "insp_102",
+        "tenant_id": "tenant_2",
+        "unit_id": "unit_204",
+        "session_id": None,
+        "inspection_type": "pre_move_out",
+        "scheduled_date": "2026-10-25",
+        "completed_date": None,
+        "inspector_name": "Alex Rivera",
+        "status": "scheduled",
+        "overall_condition": "good",
+        "items_json": json.dumps(
+            [
+                {
+                    "id": "item_1",
+                    "room": "Entryway",
+                    "item_name": "Front Door Lock",
+                    "condition": "good",
+                    "notes": "Deadbolt operational",
+                    "action_needed": "none",
+                    "estimated_cost": 0.0,
+                },
+                {
+                    "id": "item_2",
+                    "room": "Kitchen",
+                    "item_name": "Oven & Stove",
+                    "condition": "good",
+                    "notes": "Deep clean required prior to final checkout",
+                    "action_needed": "clean",
+                    "estimated_cost": 75.0,
+                },
+            ]
+        ),
+        "deposit_deduction_total": 0.0,
+        "deposit_refund_amount": 0.0,
+        "key_return_status": "pending",
+        "notes": "Courtesy pre-inspection before upcoming lease termination.",
+        "document_file_id": None,
+    },
+    {
+        "id": "insp_103",
+        "tenant_id": "tenant_3",
+        "unit_id": "unit_305",
+        "session_id": None,
+        "inspection_type": "move_out",
+        "scheduled_date": "2026-09-30",
+        "completed_date": "2026-09-30",
+        "inspector_name": "Carlos Gomez",
+        "status": "completed",
+        "overall_condition": "fair",
+        "items_json": json.dumps(
+            [
+                {
+                    "id": "item_1",
+                    "room": "Living Room",
+                    "item_name": "Drywall",
+                    "condition": "damaged",
+                    "notes": "Wall anchor holes unpatched",
+                    "action_needed": "repair",
+                    "estimated_cost": 150.0,
+                },
+                {
+                    "id": "item_2",
+                    "room": "Hallway",
+                    "item_name": "Smoke Detector",
+                    "condition": "good",
+                    "notes": "Tested and functioning",
+                    "action_needed": "none",
+                    "estimated_cost": 0.0,
+                },
+            ]
+        ),
+        "deposit_deduction_total": 150.0,
+        "deposit_refund_amount": 1850.0,
+        "key_return_status": "returned",
+        "notes": "Checkout finalized. Key and fob returned. $150 deducted for drywall repair.",
+        "document_file_id": None,
+    },
+]
+
+
+def create_inspections() -> None:
+    """Create inspections table, indexes, and pre-seed initial records if empty."""
+    with closing(get_db_connection()) as conn:
+        conn.execute(_CREATE_INSPECTIONS_TABLE)
+        conn.execute(_CREATE_INSPECTIONS_TENANT_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_UNIT_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_STATUS_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_TYPE_INDEX)
+        conn.execute(_CREATE_INSPECTIONS_SCHEDULED_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM inspections").fetchone()
+        if row and row[0] == 0:
+            for insp in DEFAULT_SEEDED_INSPECTIONS:
+                conn.execute(
+                    "INSERT INTO inspections "
+                    "(id, tenant_id, unit_id, session_id, inspection_type, "
+                    "scheduled_date, completed_date, inspector_name, status, "
+                    "overall_condition, items_json, deposit_deduction_total, "
+                    "deposit_refund_amount, key_return_status, notes, document_file_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        insp["id"],
+                        insp["tenant_id"],
+                        insp["unit_id"],
+                        insp["session_id"],
+                        insp["inspection_type"],
+                        insp["scheduled_date"],
+                        insp["completed_date"],
+                        insp["inspector_name"],
+                        insp["status"],
+                        insp["overall_condition"],
+                        insp["items_json"],
+                        insp["deposit_deduction_total"],
+                        insp["deposit_refund_amount"],
+                        insp["key_return_status"],
+                        insp["notes"],
+                        insp["document_file_id"],
+                    ),
+                )
+        conn.commit()
+
+
+def get_inspection(insp_id: str) -> dict[str, Any] | None:
+    """Retrieve an inspection by ID, parsing items_json into a list of dicts."""
+    norm_id = (insp_id or "").strip()
+    if not norm_id:
+        return None
+    with closing(get_db_connection()) as conn:
+        row = conn.execute(
+            "SELECT id, tenant_id, unit_id, session_id, inspection_type, "
+            "scheduled_date, completed_date, inspector_name, status, "
+            "overall_condition, items_json, deposit_deduction_total, "
+            "deposit_refund_amount, key_return_status, notes, document_file_id, "
+            "created_at, updated_at "
+            "FROM inspections WHERE id = ?",
+            (norm_id,),
+        ).fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        try:
+            res["items"] = json.loads(res.get("items_json") or "[]")
+        except Exception:
+            res["items"] = []
+        return res
+
+
+def create_inspection(  # noqa: PLR0913, PLR0915, PLR0917
+    tenant_id: str,
+    unit_id: str | None = None,
+    inspection_type: str = "move_out",
+    scheduled_date: str | None = None,
+    inspector_name: str = "Property Inspector",
+    status: str = "scheduled",
+    overall_condition: str = "good",
+    items: list[dict[str, Any]] | str | None = None,
+    deposit_deduction_total: float = 0.0,
+    deposit_refund_amount: float = 0.0,
+    key_return_status: str = "pending",
+    notes: str = "",
+    session_id: str | None = None,
+    insp_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a new unit move-in/out or turnover inspection with validation."""
+    norm_tenant = (tenant_id or "").strip()
+    if not norm_tenant:
+        raise ValueError("Tenant ID must not be blank.")
+
+    tenant_record = get_tenant(norm_tenant)
+    if not tenant_record:
+        raise ValueError(f"Tenant with ID '{norm_tenant}' does not exist.")
+
+    resolved_unit = (unit_id or tenant_record.get("unit_id") or "").strip()
+    if not resolved_unit:
+        raise ValueError("Unit ID is required or must be linked to the tenant.")
+    unit_record = get_unit(resolved_unit)
+    if not unit_record:
+        raise ValueError(f"Unit with ID '{resolved_unit}' does not exist.")
+
+    norm_type = normalize_inspection_type(inspection_type)
+    norm_status = normalize_inspection_status(status)
+    norm_condition = normalize_inspection_condition(overall_condition)
+    norm_key_return = normalize_key_return_status(key_return_status)
+    cleaned_items = normalize_inspection_items(items)
+    items_json_str = json.dumps(cleaned_items)
+
+    resolved_scheduled = (scheduled_date or "").strip()
+    if not resolved_scheduled:
+        resolved_scheduled = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    clean_inspector = (inspector_name or "Property Inspector").strip()[:MAX_INSPECTOR_NAME_LENGTH]
+    clean_notes = (notes or "").strip()[:MAX_INSPECTION_NOTES_LENGTH]
+    clean_session = (session_id or "").strip() or None
+    deduction_val = max(0.0, float(deposit_deduction_total or 0.0))
+    refund_val = max(0.0, float(deposit_refund_amount or 0.0))
+
+    inspection_id = normalize_inspection_id(insp_id or f"insp_{uuid.uuid4().hex[:8]}")
+
+    with closing(get_db_connection()) as conn:
+        existing = conn.execute(
+            "SELECT id FROM inspections WHERE id = ?", (inspection_id,)
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Inspection with ID '{inspection_id}' already exists.")
+
+        conn.execute(
+            "INSERT INTO inspections "
+            "(id, tenant_id, unit_id, session_id, inspection_type, "
+            "scheduled_date, completed_date, inspector_name, status, "
+            "overall_condition, items_json, deposit_deduction_total, "
+            "deposit_refund_amount, key_return_status, notes, document_file_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            (
+                inspection_id,
+                norm_tenant,
+                resolved_unit,
+                clean_session,
+                norm_type,
+                resolved_scheduled,
+                clean_inspector,
+                norm_status,
+                norm_condition,
+                items_json_str,
+                deduction_val,
+                refund_val,
+                norm_key_return,
+                clean_notes,
+            ),
+        )
+        conn.commit()
+
+    created = get_inspection(inspection_id)
+    if not created:
+        raise RuntimeError("Failed to retrieve newly created inspection.")
+    return created
+
+
+def list_inspections(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    inspection_type: str | None = None,
+    status: str | None = None,
+    overall_condition: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    query_parts = ["SELECT * FROM inspections"]
+    count_parts = ["SELECT COUNT(*) FROM inspections"]
+    where_clauses: list[str] = []
+    params: list[Any] = []
+
+    if tenant_id and tenant_id.strip():
+        where_clauses.append("tenant_id = ?")
+        params.append(tenant_id.strip())
+
+    if unit_id and unit_id.strip():
+        where_clauses.append("unit_id = ?")
+        params.append(unit_id.strip())
+
+    if inspection_type and inspection_type.strip():
+        where_clauses.append("inspection_type = ?")
+        params.append(inspection_type.strip().lower())
+
+    if status and status.strip():
+        where_clauses.append("status = ?")
+        params.append(status.strip().lower())
+
+    if overall_condition and overall_condition.strip():
+        where_clauses.append("overall_condition = ?")
+        params.append(overall_condition.strip().lower())
+
+    if search and search.strip():
+        s = f"%{search.strip().lower()}%"
+        where_clauses.append(
+            "(LOWER(id) LIKE ? OR LOWER(notes) LIKE ? OR LOWER(inspector_name) LIKE ?)"
+        )
+        params.extend([s, s, s])
+
+    if where_clauses:
+        clause_str = " WHERE " + " AND ".join(where_clauses)
+        query_parts.append(clause_str)
+        count_parts.append(clause_str)
+
+    query_parts.append(" ORDER BY scheduled_date DESC, id DESC LIMIT ? OFFSET ?")
+    params_for_query = list(params) + [max(1, limit), max(0, offset)]
+
+    full_query = "".join(query_parts)
+    full_count_query = "".join(count_parts)
+
+    with closing(get_db_connection()) as conn:
+        total = conn.execute(full_count_query, params).fetchone()[0]
+        rows = conn.execute(full_query, params_for_query).fetchall()
+        result_list = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.get("items_json") or "[]")
+            except Exception:
+                d["items"] = []
+            result_list.append(d)
+        return result_list, int(total)
+
+
+def get_tenant_inspections(tenant_id: str) -> list[dict[str, Any]]:
+    """Retrieve all inspection records for a tenant ordered by scheduled_date DESC."""
+    cleaned_id = (tenant_id or "").strip()
+    if not cleaned_id:
+        return []
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM inspections WHERE tenant_id = ? ORDER BY scheduled_date DESC",
+            (cleaned_id,),
+        ).fetchall()
+        result_list = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.get("items_json") or "[]")
+            except Exception:
+                d["items"] = []
+            result_list.append(d)
+        return result_list
+
+
+def get_unit_inspections(unit_id: str) -> list[dict[str, Any]]:
+    """Retrieve all inspection records for a unit ordered by scheduled_date DESC."""
+    cleaned_id = (unit_id or "").strip()
+    if not cleaned_id:
+        return []
+    with closing(get_db_connection()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM inspections WHERE unit_id = ? ORDER BY scheduled_date DESC",
+            (cleaned_id,),
+        ).fetchall()
+        result_list = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["items"] = json.loads(d.get("items_json") or "[]")
+            except Exception:
+                d["items"] = []
+            result_list.append(d)
+        return result_list
+
+
+def update_inspection(  # noqa: PLR0912, PLR0913, PLR0917
+    insp_id: str,
+    inspection_type: str | None = None,
+    scheduled_date: str | None = None,
+    completed_date: str | None = None,
+    inspector_name: str | None = None,
+    status: str | None = None,
+    overall_condition: str | None = None,
+    items: list[dict[str, Any]] | str | None = None,
+    deposit_deduction_total: float | None = None,
+    deposit_refund_amount: float | None = None,
+    key_return_status: str | None = None,
+    notes: str | None = None,
+    document_file_id: int | None = None,
+) -> dict[str, Any] | None:
+    current = get_inspection(insp_id)
+    if not current:
+        return None
+
+    updates: list[str] = []
+    params: list[Any] = []
+
+    if inspection_type is not None:
+        updates.append("inspection_type = ?")
+        params.append(normalize_inspection_type(inspection_type))
+
+    if scheduled_date is not None:
+        updates.append("scheduled_date = ?")
+        params.append(scheduled_date.strip())
+
+    if completed_date is not None:
+        updates.append("completed_date = ?")
+        params.append(completed_date.strip() or None)
+
+    if inspector_name is not None:
+        updates.append("inspector_name = ?")
+        params.append(inspector_name.strip()[:MAX_INSPECTOR_NAME_LENGTH])
+
+    if status is not None:
+        updates.append("status = ?")
+        params.append(normalize_inspection_status(status))
+
+    if overall_condition is not None:
+        updates.append("overall_condition = ?")
+        params.append(normalize_inspection_condition(overall_condition))
+
+    if items is not None:
+        cleaned_items = normalize_inspection_items(items)
+        updates.append("items_json = ?")
+        params.append(json.dumps(cleaned_items))
+
+    if deposit_deduction_total is not None:
+        updates.append("deposit_deduction_total = ?")
+        params.append(max(0.0, float(deposit_deduction_total)))
+
+    if deposit_refund_amount is not None:
+        updates.append("deposit_refund_amount = ?")
+        params.append(max(0.0, float(deposit_refund_amount)))
+
+    if key_return_status is not None:
+        updates.append("key_return_status = ?")
+        params.append(normalize_key_return_status(key_return_status))
+
+    if notes is not None:
+        updates.append("notes = ?")
+        params.append(notes.strip()[:MAX_INSPECTION_NOTES_LENGTH])
+
+    if document_file_id is not None:
+        updates.append("document_file_id = ?")
+        params.append(document_file_id)
+
+    if not updates:
+        return current
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    sql = f"UPDATE inspections SET {', '.join(updates)} WHERE id = ?"
+    params.append(insp_id)
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(sql, params)
+        conn.commit()
+
+    return get_inspection(insp_id)
+
+
+def delete_inspection(insp_id: str) -> bool:
+    """Delete an inspection by ID, returning True if deleted."""
+    cleaned = (insp_id or "").strip()
+    if not cleaned:
+        return False
+    with closing(get_db_connection()) as conn:
+        cursor = conn.execute("DELETE FROM inspections WHERE id = ?", (cleaned,))
+        deleted = bool(cursor.rowcount and cursor.rowcount > 0)
+        conn.commit()
+        return deleted
+
+
+def get_inspection_summary_metrics() -> dict[str, Any]:
+    """Compute aggregated portfolio inspection and turnover metrics."""
+    with closing(get_db_connection()) as conn:
+        total_row = conn.execute("SELECT COUNT(*) FROM inspections").fetchone()
+        total_count = int(total_row[0]) if total_row else 0
+
+        completed_row = conn.execute(
+            "SELECT COUNT(*) FROM inspections WHERE status = 'completed'"
+        ).fetchone()
+        completed_count = int(completed_row[0]) if completed_row else 0
+
+        scheduled_row = conn.execute(
+            "SELECT COUNT(*) FROM inspections WHERE status = 'scheduled'"
+        ).fetchone()
+        scheduled_count = int(scheduled_row[0]) if scheduled_row else 0
+
+        in_progress_row = conn.execute(
+            "SELECT COUNT(*) FROM inspections WHERE status = 'in_progress'"
+        ).fetchone()
+        in_progress_count = int(in_progress_row[0]) if in_progress_row else 0
+
+        deductions_row = conn.execute(
+            "SELECT SUM(deposit_deduction_total) FROM inspections"
+        ).fetchone()
+        total_deductions = (
+            round(float(deductions_row[0]), 2)
+            if deductions_row and deductions_row[0] is not None
+            else 0.0
+        )
+
+        refunds_row = conn.execute("SELECT SUM(deposit_refund_amount) FROM inspections").fetchone()
+        total_refunds = (
+            round(float(refunds_row[0]), 2) if refunds_row and refunds_row[0] is not None else 0.0
+        )
+
+        by_type_rows = conn.execute(
+            "SELECT inspection_type, COUNT(*) FROM inspections GROUP BY inspection_type"
+        ).fetchall()
+        by_type = {r[0]: int(r[1]) for r in by_type_rows}
+
+        by_status_rows = conn.execute(
+            "SELECT status, COUNT(*) FROM inspections GROUP BY status"
+        ).fetchall()
+        by_status = {r[0]: int(r[1]) for r in by_status_rows}
+
+        by_cond_rows = conn.execute(
+            "SELECT overall_condition, COUNT(*) FROM inspections GROUP BY overall_condition"
+        ).fetchall()
+        by_condition = {r[0]: int(r[1]) for r in by_cond_rows}
+
+        by_key_rows = conn.execute(
+            "SELECT key_return_status, COUNT(*) FROM inspections GROUP BY key_return_status"
+        ).fetchall()
+        by_key_return = {r[0]: int(r[1]) for r in by_key_rows}
+
+        return {
+            "total_inspections": total_count,
+            "completed_inspections": completed_count,
+            "scheduled_inspections": scheduled_count,
+            "in_progress_inspections": in_progress_count,
+            "total_deposit_deductions": total_deductions,
+            "total_deposit_refunds": total_refunds,
+            "by_type": by_type,
+            "by_status": by_status,
+            "by_condition": by_condition,
+            "by_key_return": by_key_return,
+        }
+
+
+def complete_inspection(  # noqa: PLR0913, PLR0917
+    insp_id: str,
+    completed_date: str | None = None,
+    items: list[dict[str, Any]] | str | None = None,
+    deposit_deduction_total: float | None = None,
+    deposit_refund_amount: float | None = None,
+    key_return_status: str | None = None,
+    notes: str | None = None,
+    security_deposit_base: float | None = None,
+    overall_condition: str | None = None,
+) -> dict[str, Any]:
+    """Finalize an inspection, computing itemized deposit deductions and refund."""
+    current = get_inspection(insp_id)
+    if not current:
+        raise ValueError(f"Inspection with ID '{insp_id}' does not exist.")
+
+    resolved_items = (
+        normalize_inspection_items(items) if items is not None else current.get("items", [])
+    )
+    items_json_str = json.dumps(resolved_items)
+
+    if deposit_deduction_total is not None:
+        deductions = max(0.0, float(deposit_deduction_total))
+    else:
+        # Sum itemized deficiency costs where action is needed
+        deductions = sum(
+            float(item.get("estimated_cost", 0.0))
+            for item in resolved_items
+            if item.get("action_needed", "none") != "none"
+        )
+    deductions = round(deductions, 2)
+
+    tenant = get_tenant(current["tenant_id"])
+    if security_deposit_base is not None:
+        base_deposit = max(0.0, float(security_deposit_base))
+    elif tenant and tenant.get("monthly_rent"):
+        base_deposit = float(tenant["monthly_rent"])
+    else:
+        base_deposit = 1000.0
+
+    if deposit_refund_amount is not None:
+        refund = max(0.0, float(deposit_refund_amount))
+    else:
+        refund = max(0.0, round(base_deposit - deductions, 2))
+
+    resolved_completed = (completed_date or "").strip()
+    if not resolved_completed:
+        resolved_completed = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    norm_key = (
+        normalize_key_return_status(key_return_status)
+        if key_return_status
+        else current.get("key_return_status", "pending")
+    )
+    norm_condition = (
+        normalize_inspection_condition(overall_condition)
+        if overall_condition
+        else current.get("overall_condition", "good")
+    )
+    combined_notes = current.get("notes", "")
+    if notes and notes.strip():
+        combined_notes = f"{combined_notes} | {notes.strip()}".strip(" |")
+
+    with closing(get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE inspections SET "
+            "status = 'completed', "
+            "completed_date = ?, "
+            "overall_condition = ?, "
+            "items_json = ?, "
+            "deposit_deduction_total = ?, "
+            "deposit_refund_amount = ?, "
+            "key_return_status = ?, "
+            "notes = ?, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            (
+                resolved_completed,
+                norm_condition,
+                items_json_str,
+                deductions,
+                refund,
+                norm_key,
+                combined_notes,
+                insp_id,
+            ),
+        )
+        conn.commit()
+
+    updated = get_inspection(insp_id)
+    if not updated:
+        raise RuntimeError("Failed to retrieve completed inspection.")
+    return updated
+
+
+def convert_inspection_item_to_work_order(  # noqa: PLR0913, PLR0917
+    insp_id: str,
+    item_id: str,
+    priority: str = "medium",
+    assigned_to: str = "",
+    scheduled_date: str = "",
+    category: str = "general",
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Convert a deficiency item from an inspection into a maintenance work order."""
+    inspection = get_inspection(insp_id)
+    if not inspection:
+        raise ValueError(f"Inspection with ID '{insp_id}' does not exist.")
+
+    items = inspection.get("items", [])
+    target_item = None
+    for it in items:
+        if it.get("id") == item_id:
+            target_item = it
+            break
+
+    if not target_item:
+        raise ValueError(f"Item with ID '{item_id}' not found in inspection '{insp_id}'.")
+
+    room = target_item.get("room") or "General"
+    item_name = target_item.get("item_name") or "Deficiency"
+    notes = target_item.get("notes") or ""
+    action = target_item.get("action_needed") or "repair"
+    cost = float(target_item.get("estimated_cost", 0.0))
+
+    wo_id = f"wo_insp_{uuid.uuid4().hex[:8]}"
+    resolved_title = ((title or "").strip() or f"Punchlist: {room} - {item_name}")[
+        :MAX_WORK_ORDER_TITLE_LENGTH
+    ]
+    desc = (
+        f"Turnover punchlist item from inspection {insp_id} ({inspection['inspection_type']}): "
+        f"{room} {item_name} condition is {target_item.get('condition', 'damaged')}. "
+        f"Action required: {action}. Notes: {notes}."
+    )
+
+    norm_category = category if category in VALID_WORK_ORDER_CATEGORIES else "general"
+    norm_priority = priority if priority in VALID_WORK_ORDER_PRIORITIES else "medium"
+
+    return create_work_order(
+        work_order_id=wo_id,
+        unit_id=inspection["unit_id"],
+        title=resolved_title,
+        description=desc,
+        category=norm_category,
+        priority=norm_priority,
+        status="submitted",
+        tenant_id=inspection.get("tenant_id"),
+        session_id=inspection.get("session_id"),
+        entry_permission="permission_granted",
+        assigned_to=assigned_to.strip(),
+        scheduled_date=scheduled_date.strip() or inspection.get("scheduled_date", ""),
+        estimated_cost=cost if cost > 0 else None,
+    )
+
+
 # Initialize the database tables
 create_application_logs()
 create_document_store()
@@ -5841,6 +7189,8 @@ create_units()
 create_tenants()
 create_work_orders()
 create_billing_transactions()
+create_lease_renewals()
+create_inspections()
 create_session_labels()
 migrate_session_labels()
 create_feedback()
@@ -5852,5 +7202,3 @@ create_support_agents()
 create_session_assignment_history()
 create_knowledge_gaps()
 create_knowledge_articles()
-
-

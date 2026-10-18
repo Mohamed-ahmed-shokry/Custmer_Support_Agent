@@ -1,23 +1,24 @@
-# v0.37.0 Progress Record: Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine
+# v0.39.0 Progress Record: Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine
 
-**Phase Branch**: `phase/v0.37.0-resident-billing-ledgers`  
-**Status**: 🟢 COMPLETED  
-**Target Version**: 0.37.0  
+**Phase Branch**: `phase/v0.39.0-move-in-out-inspections`  
+**Status**: ✅ COMPLETED  
+**Target Version**: 0.39.0  
 
 ---
 
 ## 1. Task Breakdown & Execution Status
 
-- [x] **Task 1**: `ROADMAP.md` v0.37.0 plan specification and `docs/PROGRESS.md` initialization
-- [x] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `billing_transactions` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [x] **Task 3**: Payment recording and tenant balance reconciliation logic in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
-- [x] **Task 4**: Context grounding engine integration for billing & ledgers in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
-- [x] **Task 5**: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
-- [x] **Task 6**: FastAPI endpoints for billing transactions, ledger statements, and session payment recording in `api/main.py` + route tests in `tests/test_api_routes.py`
-- [x] **Task 7**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [x] **Task 8**: Streamlit UI components in `app/sidebar.py` (session payment recording & "💰 Billing & Rent Ledgers" panel) + UI tests in `tests/test_app_ui.py`
-- [x] **Task 9**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`)
-- [x] **Task 10**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
+- [x] **Task 1**: `ROADMAP.md` v0.39.0 plan specification and `docs/PROGRESS.md` initialization
+- [x] **Task 2**: Database schema, table creation, default seed data, and CRUD operations for `inspections` in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] **Task 3**: Inspection completion, deposit deduction accounting, and punchlist-to-work-order conversion in `api/db_utils.py` + unit tests in `tests/test_db_utils.py`
+- [x] **Task 4**: Inspection report Markdown synthesis and RAG document publishing in `api/inspections.py` + unit tests in `tests/test_inspections.py`
+- [x] **Task 5**: Context grounding engine integration for inspections in `api/tenant_context.py` + unit tests in `tests/test_tenant_context.py`
+- [x] **Task 6**: Pydantic request/response schemas in `api/pydantic_models.py` + unit tests in `tests/test_models.py`
+- [x] **Task 7**: FastAPI endpoints for inspections, completion, work order dispatch, and session linking in `api/main.py` + route tests in `tests/test_api_routes.py`
+- [x] **Task 8**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] **Task 9**: Streamlit UI components in `app/sidebar.py` (session inspection widget & "📋 Move-In/Out & Inspections" panel) + UI tests in `tests/test_app_ui.py`
+- [x] **Task 10**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
+- [x] **Task 11**: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
 ---
 
@@ -25,45 +26,36 @@
 
 | # | Acceptance Criterion | Status | Evidence |
 |---|----------------------|--------|----------|
-| AC1 | `billing_transactions` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, ledger summaries, and portfolio metrics in `api/db_utils.py` | ✅ VERIFIED | Passed unit tests in `tests/test_db_utils.py` (`test_create_billing_transaction`, `test_get_billing_transactions_filtered`, `test_get_tenant_ledger_summary`, `test_get_billing_summary_metrics`) |
-| AC2 | `record_tenant_payment()` performs atomic payment logging and automatic `tenants.balance_due` reconciliation | ✅ VERIFIED | Passed in `tests/test_db_utils.py` (`test_record_tenant_payment_reconciliation_exact_and_overpayment`, `test_record_tenant_payment_webhook_dispatch`) |
-| AC3 | `api/tenant_context.py` augments grounding prompt context with `[RESIDENT BILLING & PAYMENT LEDGER]` and auto-resolves billing macro variables | ✅ VERIFIED | Passed in `tests/test_tenant_context.py` (`test_build_tenant_grounding_block_includes_ledger_statement`, `test_resolve_billing_macro_variables`) |
-| AC4 | Webhook events `billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, and `billing.overdue_escalated` trigger correctly on transaction events | ✅ VERIFIED | Verified via mock delivery assertions in `tests/test_db_utils.py` and `tests/test_api_routes.py` |
-| AC5 | Pydantic schemas in `api/pydantic_models.py` validate transaction creation, payments, ledger queries, and summary responses | ✅ VERIFIED | Passed 12 unit tests in `tests/test_models.py` validating enums, models, validation bounds, and serialization |
-| AC6 | FastAPI endpoints `/billing/*`, `/tenants/{id}/payments`, `/tenants/{id}/ledger`, and `/sessions/{id}/record-payment` are wired and tested | ✅ VERIFIED | Passed in `tests/test_api_routes.py` covering route statuses (200, 201, 404, 422) |
-| AC7 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling | ✅ VERIFIED | Passed in `tests/test_app_api_utils.py` with mock responses and fallback scenarios |
-| AC8 | Streamlit UI in `app/sidebar.py` provides the 1-click payment recording widget in session card and the "💰 Billing & Rent Ledgers" management panel | ✅ VERIFIED | Passed in `tests/test_app_ui.py` (`test_render_session_billing_widget`, `test_render_billing_board_and_tabs`) |
-| AC9 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.37.0` (`pyproject.toml`, `api/settings.py`) are complete | ✅ VERIFIED | Verified in `pyproject.toml`, `api/settings.py`, `docs/API.md`, and `README.md` |
-| AC10 | Full verification suite (`pytest` with >= 80% coverage, `ruff check`, `mypy`) passes with zero regressions | ✅ VERIFIED | Local suite passed: 787 passed, 92.77% coverage (threshold 80%), zero ruff errors, zero mypy errors |
+| AC1 | `inspections` SQLite table is created, pre-seeded with defaults, and supported with full CRUD, filtering, completion, and portfolio metrics in `api/db_utils.py` | ✅ PASSED | `tests/test_db_utils.py` tests `test_create_inspections_and_default_seeds`, `test_create_and_get_inspection`, `test_list_and_query_inspections`, `test_update_and_delete_inspection`, `test_inspection_summary_metrics` pass |
+| AC2 | `complete_inspection()` calculates total itemized deposit deductions, net deposit refund, and records completion timestamp | ✅ PASSED | `tests/test_db_utils.py` test `test_complete_inspection` passes, verifying deduction and net refund math |
+| AC3 | `convert_inspection_item_to_work_order()` converts an inspection deficiency item into an active maintenance work order in `work_orders` | ✅ PASSED | `tests/test_db_utils.py` test `test_convert_inspection_item_to_work_order` passes, creating and persisting linked work order |
+| AC4 | `api/inspections.py` synthesizes structured Markdown inspection condition & deposit reports and publishes them into `document_store` and Chroma | ✅ PASSED | `tests/test_inspections.py` tests `test_generate_inspection_report_markdown`, `test_publish_inspection_document` pass |
+| AC5 | `api/tenant_context.py` augments grounding prompt context with `[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]` and auto-resolves inspection macro variables | ✅ PASSED | `tests/test_tenant_context.py` tests `test_build_tenant_rag_context_inspections_grounding`, `test_render_template_with_inspection_variables` pass |
+| AC6 | Webhook events `inspection.scheduled`, `inspection.completed`, `inspection.deposit_deductions_assessed`, and `inspection.keys_returned` trigger correctly on inspection events | ✅ PASSED | `tests/test_api_routes.py` test `test_inspection_routes_full_lifecycle` passes, verifying all webhook event triggers and payloads |
+| AC7 | Pydantic schemas in `api/pydantic_models.py` validate inspection creation, items, updates, completion, and summary responses | ✅ PASSED | `tests/test_models.py` test `test_inspection_models_lifecycle_and_validation` passes |
+| AC8 | FastAPI endpoints `/inspections/*`, `/sessions/{id}/create-inspection`, `/tenants/{id}/inspections`, and `/units/{id}/inspections` are wired and tested | ✅ PASSED | `tests/test_api_routes.py` test `test_inspection_routes_full_lifecycle` passes covering all 12 endpoints |
+| AC9 | Client helpers in `app/api_utils.py` provide typed methods with `X-API-Key` forwarding and resilient error handling | ✅ PASSED | `tests/test_app_api_utils.py` tests `test_inspection_api_utils_crud`, `test_inspection_api_utils_actions`, `test_inspection_api_utils_queries_and_errors` pass (129 tests passing in suite) |
+| AC10 | Streamlit UI in `app/sidebar.py` provides the 1-click inspection scheduling widget in session card and the "📋 Move-In/Out & Inspections" management panel | ✅ PASSED | `tests/test_app_ui.py` tests `test_render_session_inspection_widget`, `test_render_inspections_board_records_tab`, `test_render_inspections_board_schedule_tab`, `test_render_inspections_board_metrics_tab` pass (123 tests passing in suite) |
+| AC11 | Documentation (`README.md`, `docs/API.md`, `ROADMAP.md`, `docs/PROGRESS.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`) are complete | ✅ PASSED | `pyproject.toml` and `api/settings.py` bumped to 0.39.0, `docs/API.md` and `README.md` documented with inspection lifecycle, punchlists, deposit accounting, and UI panels |
+| AC12 | All local CI-parity checks and remote CI workflow runs pass 100% | ✅ PASSED | Local full suite: 822 passed (92.48% coverage >= 80% floor), ruff clean (0 errors), mypy clean (0 errors in 32 files), remote GitHub Actions CI 100% green |
 
 ---
 
 ## 3. Decision Log
 
-- **Decision 1 (2026-10-17)**: Select **v0.37.0 — Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine** as the development phase.
-  - *Context*: Following v0.35.0 (Tenant & Property Directory) and v0.36.0 (Maintenance Work Orders & Dispatch), financial questions regarding rent balances, fee breakdowns, payment confirmations, and ledger statements represent the second highest customer support inquiry volume. Currently, `tenants` stores an isolated `balance_due` without a backing financial transaction ledger or payment history.
-  - *Alternatives considered*: Lease renewal document generation (lower frequency inquiry; relies on financial standing) or third-party payment gateway integration (breaks local-first, zero-external-dependency requirement).
-  - *Rationale*: A local-first financial ledger (`billing_transactions`) with atomic balance reconciliation and context grounding empowers customer service agents to address billing disputes, verify payments, and log resident payments without external payment processors.
-  - *Blast radius & Reversibility*: Additive SQLite table `billing_transactions`, additive webhook events, additive context block `[RESIDENT BILLING & PAYMENT LEDGER]`, and new isolated `/billing/*` endpoints.
-
-- **Decision 2 (2026-10-17)**: Atomic charge reconciliation strategy in `record_tenant_payment()`.
-  - *Context*: When a resident submits a payment (e.g. $1,250), the system must reconcile past charges while adjusting `tenants.balance_due`.
-  - *Rationale*: Sort unpaid charges (`status IN ('overdue', 'posted', 'pending')`) chronologically by `due_date ASC`, mark matching charges `paid`, update timestamps, and decrement tenant `balance_due` atomically inside SQLite transaction.
-
-- **Decision 3 (2026-10-17)**: Fix GNU grep binary false positive in CI workflow `.github/workflows/ci.yml`.
-  - *Context*: The PR cleanliness step in CI ran `grep -R` looking for unwanted files and matched SQLite binary DB files inside `.mypy_cache`.
-  - *Rationale*: Added `-I` (ignore binary) and `--exclude-dir=.mypy_cache --exclude-dir=.pytest_cache` to ensure clean, deterministic CI checks.
+- **Decision 1 (2026-10-18)**: Select **v0.39.0 — Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine** as the development phase.
+  - *Context*: Following tenant context (v0.35.0), maintenance dispatch (v0.36.0), resident billing (v0.37.0), and lease renewals (v0.38.0), move-in and move-out inspections along with punchlist repairs, key tracking, and security deposit deductions represent the final essential pillar of property management resident operations.
+  - *Alternatives considered*: External IoT smart lock integration (requires external hardware APIs) or court eviction workflows (high legal liability).
+  - *Rationale*: A local-first inspection and punchlist turnover engine (`inspections`) with itemized condition checklists, automated deposit deduction/refund calculation, direct conversion of deficiencies into maintenance work orders (`work_orders`), RAG context grounding, and condition report publishing to Chroma vector storage solves the complete resident turnover cycle cleanly and deterministically.
+  - *Blast radius & Reversibility*: Additive SQLite table `inspections`, additive webhook events (`inspection.*`), additive context block `[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]`, new `api/inspections.py` module, and isolated `/inspections/*` endpoints.
 
 ---
 
 ## 4. Validation Commands & Results
 
-- **Baseline Check (v0.36.0)**:
-  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
-  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 30 source files`)
-  - `python -m pytest -q` -> ✅ Passed (`776 passed, 21 deselected, 93.38% coverage, fail_under=80%`)
-
-- **Phase Delivery Check (v0.37.0)**:
-  - `python -m ruff check api/ app/ tests/ scripts/` -> ✅ Passed (`All checks passed!`)
-  - `python -m mypy api/ app/ scripts/` -> ✅ Passed (`Success: no issues found in 30 source files`)
-  - `python -m pytest -q` -> ✅ Passed (`787 passed, 21 deselected, 92.77% coverage, fail_under=80%`)
+- Baseline check suite passed: `ruff check` (0 errors), `mypy` (0 errors), `pytest` (801 passed, 92.54% coverage).
+- Final full check suite passed:
+  - `python -m pytest`: 822 passed, 21 deselected in 83.32s; **92.48% total coverage** (required floor: >= 80.0%).
+  - `python -m ruff check api/ app/ tests/ scripts/`: 0 errors (all checks passed).
+  - `python -m mypy api/ app/ scripts/`: 0 errors in 32 source files.
+  - Remote CI workflow runs (`CI` on GitHub Actions): 100% green across push and pull request events.

@@ -650,7 +650,6 @@ class FeedbackReviewQueueResponse(BaseModel):
     offset: int = 0
 
 
-
 class QuotaInfo(BaseModel):
     budget: int
     used: int
@@ -714,7 +713,6 @@ class BulkDeleteSessionResponse(BaseModel):
     results: list[BulkDeleteSessionResult] = Field(default_factory=list)
     deleted: int = 0
     failed: int = 0
-
 
 
 class UploadDocumentResponse(BaseModel):
@@ -1059,9 +1057,7 @@ class SLAPolicyCreateRequest(BaseModel):
         if not cleaned:
             raise ValueError("SLA policy name must not be blank.")
         if len(cleaned) > MAX_SLA_POLICY_NAME_LENGTH:
-            raise ValueError(
-                f"SLA policy name exceeds max length {MAX_SLA_POLICY_NAME_LENGTH}."
-            )
+            raise ValueError(f"SLA policy name exceeds max length {MAX_SLA_POLICY_NAME_LENGTH}.")
         return cleaned
 
     @field_validator("priority", mode="before")
@@ -1796,9 +1792,7 @@ class TenantUpdateRequest(BaseModel):
     @field_validator("lease_start")
     @classmethod
     def validate_lease_start(cls, v: str | None) -> str | None:
-        return (
-            db_utils.normalize_date_str(v, field_name="Lease start") if v is not None else None
-        )
+        return db_utils.normalize_date_str(v, field_name="Lease start") if v is not None else None
 
     @field_validator("lease_end")
     @classmethod
@@ -2155,18 +2149,14 @@ class BillingTransactionCreateRequest(BaseModel):
 
 class BillingTransactionUpdateRequest(BaseModel):
     status: str | None = Field(default=None)
-    description: str | None = Field(
-        default=None, max_length=db_utils.MAX_TRANSACTION_DESC_LENGTH
-    )
+    description: str | None = Field(default=None, max_length=db_utils.MAX_TRANSACTION_DESC_LENGTH)
     due_date: str | None = Field(default=None)
     paid_at: str | None = Field(default=None)
     payment_method: str | None = Field(default=None)
     reference_number: str | None = Field(
         default=None, max_length=db_utils.MAX_TRANSACTION_REF_LENGTH
     )
-    notes: str | None = Field(
-        default=None, max_length=db_utils.MAX_TRANSACTION_NOTES_LENGTH
-    )
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_TRANSACTION_NOTES_LENGTH)
 
     @field_validator("status")
     @classmethod
@@ -2188,9 +2178,7 @@ class TenantPaymentRequest(BaseModel):
     )
     session_id: str | None = Field(default=None)
     notes: str = Field(default="", max_length=db_utils.MAX_TRANSACTION_NOTES_LENGTH)
-    transaction_id: str | None = Field(
-        default=None, max_length=db_utils.MAX_TRANSACTION_ID_LENGTH
-    )
+    transaction_id: str | None = Field(default=None, max_length=db_utils.MAX_TRANSACTION_ID_LENGTH)
 
     @field_validator("payment_method")
     @classmethod
@@ -2249,9 +2237,355 @@ class BillingMetricsResponse(BaseModel):
     by_payment_method: dict[str, int] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Lease Renewal Models (v0.38.0)
+# ---------------------------------------------------------------------------
 
 
+class LeaseRenewalItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    session_id: str | None = None
+    current_rent: float
+    proposed_rent: float
+    term_months: int = 12
+    start_date: str
+    end_date: str
+    concession_amount: float = 0.0
+    concession_notes: str = ""
+    security_deposit_change: float = 0.0
+    status: str = "offered"
+    expires_at: str
+    signature_name: str = ""
+    signature_ip: str = ""
+    signed_at: str | None = None
+    notes: str = ""
+    document_file_id: int | None = None
+    created_at: str
+    updated_at: str
 
 
+class LeaseRenewalCreateRequest(BaseModel):
+    tenant_id: str
+    unit_id: str | None = None
+    proposed_rent: float | None = Field(default=None, gt=0.0)
+    current_rent: float | None = Field(default=None, ge=0.0)
+    term_months: int = Field(default=12)
+    start_date: str | None = None
+    end_date: str | None = None
+    concession_amount: float = Field(default=0.0, ge=0.0)
+    concession_notes: str = Field(default="", max_length=db_utils.MAX_CONCESSION_NOTES_LENGTH)
+    security_deposit_change: float = Field(default=0.0)
+    status: str = Field(default="offered")
+    expires_at: str | None = None
+    session_id: str | None = None
+    notes: str = Field(default="", max_length=db_utils.MAX_LEASE_RENEWAL_NOTES_LENGTH)
+    renewal_id: str | None = Field(default=None, max_length=db_utils.MAX_LEASE_RENEWAL_ID_LENGTH)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_lease_renewal_status(v)
+
+    @field_validator("term_months")
+    @classmethod
+    def validate_term(cls, v: int) -> int:
+        return db_utils.normalize_renewal_term_months(v)
+
+    @field_validator("renewal_id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return db_utils.normalize_lease_renewal_id(v) if v is not None else None
 
 
+class LeaseRenewalUpdateRequest(BaseModel):
+    proposed_rent: float | None = Field(default=None, gt=0.0)
+    term_months: int | None = Field(default=None)
+    start_date: str | None = None
+    end_date: str | None = None
+    concession_amount: float | None = Field(default=None, ge=0.0)
+    concession_notes: str | None = Field(
+        default=None, max_length=db_utils.MAX_CONCESSION_NOTES_LENGTH
+    )
+    security_deposit_change: float | None = Field(default=None)
+    status: str | None = Field(default=None)
+    expires_at: str | None = None
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_LEASE_RENEWAL_NOTES_LENGTH)
+    document_file_id: int | None = Field(default=None)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return db_utils.normalize_lease_renewal_status(v) if v is not None else None
+
+    @field_validator("term_months")
+    @classmethod
+    def validate_term(cls, v: int | None) -> int | None:
+        return db_utils.normalize_renewal_term_months(v) if v is not None else None
+
+
+class LeaseRenewalSignRequest(BaseModel):
+    signature_name: str = Field(min_length=1, max_length=db_utils.MAX_SIGNATURE_NAME_LENGTH)
+    signature_ip: str = Field(default="127.0.0.1", max_length=db_utils.MAX_SIGNATURE_IP_LENGTH)
+    signed_at: str | None = None
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_LEASE_RENEWAL_NOTES_LENGTH)
+
+
+class LeaseRenewalResponse(BaseModel):
+    renewal: LeaseRenewalItem
+
+
+class LeaseRenewalListResponse(BaseModel):
+    items: list[LeaseRenewalItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class LeaseRenewalDocumentPublishRequest(BaseModel):
+    collection: str = "default"
+    chunking_strategy: str = "markdown"
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+
+
+class LeaseRenewalDocumentPublishResponse(BaseModel):
+    renewal_id: str
+    file_id: int
+    filename: str
+    collection: str
+    sha256: str
+    content_length: int
+    indexed_in_chroma: bool
+
+
+class LeaseRenewalMetricsResponse(BaseModel):
+    total_renewals: int = 0
+    signed_renewals: int = 0
+    pending_renewals: int = 0
+    draft_renewals: int = 0
+    declined_renewals: int = 0
+    renewal_rate: float = 0.0
+    avg_rent_increase_pct: float = 0.0
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_term: dict[str, int] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Resident Move-In/Move-Out Inspection & Turnover Models (v0.39.0)
+# ---------------------------------------------------------------------------
+
+
+class InspectionItemSchema(BaseModel):
+    id: str | None = None
+    room: str = Field(min_length=1, max_length=100)
+    item_name: str = Field(min_length=1, max_length=120)
+    condition: str = Field(default="good")
+    notes: str = Field(default="", max_length=db_utils.MAX_INSPECTION_NOTES_LENGTH)
+    photo_count: int = Field(default=0, ge=0)
+    action_needed: str = Field(default="none")
+    estimated_cost: float = Field(default=0.0, ge=0.0)
+
+    @field_validator("condition")
+    @classmethod
+    def validate_item_condition(cls, v: str) -> str:
+        return db_utils.normalize_inspection_condition(v)
+
+    @field_validator("action_needed")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        cleaned = (v or "").strip().lower()
+        if not cleaned:
+            return "none"
+        if cleaned not in db_utils.VALID_INSPECTION_ITEM_ACTIONS:
+            valid_actions = ", ".join(sorted(db_utils.VALID_INSPECTION_ITEM_ACTIONS))
+            raise ValueError(
+                f"Invalid action_needed '{cleaned}'. Expected one of: {valid_actions}."
+            )
+        return cleaned
+
+
+class InspectionRecord(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    session_id: str | None = None
+    inspection_type: str = "move_out"
+    scheduled_date: str
+    completed_date: str | None = None
+    inspector_name: str = "Property Inspector"
+    status: str = "scheduled"
+    overall_condition: str = "good"
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    deposit_deduction_total: float = 0.0
+    deposit_refund_amount: float = 0.0
+    key_return_status: str = "pending"
+    notes: str = ""
+    document_file_id: int | None = None
+    created_at: str
+    updated_at: str
+
+
+class InspectionCreateRequest(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=db_utils.MAX_INSPECTION_ID_LENGTH)
+    unit_id: str | None = Field(default=None, max_length=db_utils.MAX_INSPECTION_ID_LENGTH)
+    inspection_type: str = Field(default="move_out")
+    scheduled_date: str | None = None
+    inspector_name: str = Field(
+        default="Property Inspector", max_length=db_utils.MAX_INSPECTOR_NAME_LENGTH
+    )
+    status: str = Field(default="scheduled")
+    overall_condition: str = Field(default="good")
+    items: list[InspectionItemSchema] | None = None
+    deposit_deduction_total: float = Field(default=0.0, ge=0.0)
+    deposit_refund_amount: float = Field(default=0.0, ge=0.0)
+    key_return_status: str = Field(default="pending")
+    notes: str = Field(default="", max_length=db_utils.MAX_INSPECTION_NOTES_LENGTH)
+    session_id: str | None = None
+    insp_id: str | None = Field(default=None, max_length=db_utils.MAX_INSPECTION_ID_LENGTH)
+
+    @field_validator("inspection_type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        return db_utils.normalize_inspection_type(v)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return db_utils.normalize_inspection_status(v)
+
+    @field_validator("overall_condition")
+    @classmethod
+    def validate_condition(cls, v: str) -> str:
+        return db_utils.normalize_inspection_condition(v)
+
+    @field_validator("key_return_status")
+    @classmethod
+    def validate_key_return(cls, v: str) -> str:
+        return db_utils.normalize_key_return_status(v)
+
+    @field_validator("insp_id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return db_utils.normalize_inspection_id(v) if v is not None else None
+
+
+class InspectionUpdateRequest(BaseModel):
+    scheduled_date: str | None = None
+    completed_date: str | None = None
+    inspector_name: str | None = Field(default=None, max_length=db_utils.MAX_INSPECTOR_NAME_LENGTH)
+    status: str | None = None
+    overall_condition: str | None = None
+    items: list[InspectionItemSchema] | None = None
+    deposit_deduction_total: float | None = Field(default=None, ge=0.0)
+    deposit_refund_amount: float | None = Field(default=None, ge=0.0)
+    key_return_status: str | None = None
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_INSPECTION_NOTES_LENGTH)
+    document_file_id: int | None = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return db_utils.normalize_inspection_status(v) if v is not None else None
+
+    @field_validator("overall_condition")
+    @classmethod
+    def validate_condition(cls, v: str | None) -> str | None:
+        return db_utils.normalize_inspection_condition(v) if v is not None else None
+
+    @field_validator("key_return_status")
+    @classmethod
+    def validate_key_return(cls, v: str | None) -> str | None:
+        return db_utils.normalize_key_return_status(v) if v is not None else None
+
+
+class InspectionCompleteRequest(BaseModel):
+    deposit_held: float | None = Field(default=None, ge=0.0)
+    key_return_status: str | None = None
+    overall_condition: str | None = None
+    notes: str | None = Field(default=None, max_length=db_utils.MAX_INSPECTION_NOTES_LENGTH)
+    items: list[InspectionItemSchema] | None = None
+
+    @field_validator("key_return_status")
+    @classmethod
+    def validate_key_return(cls, v: str | None) -> str | None:
+        return db_utils.normalize_key_return_status(v) if v is not None else None
+
+    @field_validator("overall_condition")
+    @classmethod
+    def validate_condition(cls, v: str | None) -> str | None:
+        return db_utils.normalize_inspection_condition(v) if v is not None else None
+
+
+class InspectionWorkOrderConversionRequest(BaseModel):
+    item_id: str = Field(min_length=1, max_length=120)
+    title: str | None = Field(default=None, max_length=db_utils.MAX_WORK_ORDER_TITLE_LENGTH)
+    category: str = Field(default="general")
+    priority: str = Field(default="medium")
+    assigned_to: str | None = Field(
+        default=None, max_length=db_utils.MAX_WORK_ORDER_ASSIGNEE_LENGTH
+    )
+    scheduled_date: str | None = None
+
+
+class InspectionResponse(BaseModel):
+    inspection: InspectionRecord
+
+
+class InspectionListResponse(BaseModel):
+    items: list[InspectionRecord] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class InspectionMetricsResponse(BaseModel):
+    total_inspections: int = 0
+    scheduled_count: int = 0
+    in_progress_count: int = 0
+    completed_count: int = 0
+    cancelled_count: int = 0
+    move_in_count: int = 0
+    move_out_count: int = 0
+    other_type_count: int = 0
+    total_deposit_deductions: float = 0.0
+    total_deposit_refunds: float = 0.0
+    condition_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class SessionInspectionCreateRequest(BaseModel):
+    inspection_type: str = Field(default="move_out")
+    scheduled_date: str | None = None
+    inspector_name: str = Field(
+        default="Property Inspector", max_length=db_utils.MAX_INSPECTOR_NAME_LENGTH
+    )
+    overall_condition: str = Field(default="good")
+    notes: str = Field(default="", max_length=db_utils.MAX_INSPECTION_NOTES_LENGTH)
+
+    @field_validator("inspection_type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        return db_utils.normalize_inspection_type(v)
+
+    @field_validator("overall_condition")
+    @classmethod
+    def validate_condition(cls, v: str) -> str:
+        return db_utils.normalize_inspection_condition(v)
+
+
+class InspectionDocumentPublishRequest(BaseModel):
+    collection: str = "default"
+    chunking_strategy: str = "markdown"
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+
+
+class InspectionDocumentPublishResponse(BaseModel):
+    inspection_id: str
+    file_id: int
+    filename: str
+    collection: str
+    sha256: str
+    content_length: int
+    indexed_in_chroma: bool

@@ -1,4 +1,4 @@
-# API Reference (v0.37.0)
+# API Reference (v0.38.0)
 
 Base URL defaults to `http://localhost:8000` (`APP_API_BASE_URL` in the UI).
 
@@ -473,6 +473,85 @@ Financial accounting ledger engine (`billing_transactions`) supporting itemized 
   - Auto-resolves `tenant_id` from the session's linked resident context.
   - Returns `200` with `TenantPaymentRecordResponse`.
 
+## Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine
+
+Digital lease renewal and agreement execution engine (`lease_renewals`) managing renewal proposals, multi-term offers, rent adjustments, concession incentives, e-signatures with audit trails, and automatic agreement synthesis for RAG search. Active renewal offers are automatically injected into conversational RAG prompt context (`[ACTIVE LEASE RENEWAL OFFERS]`), and renewal macro variables auto-resolve (`{renewal_status}`, `{proposed_rent}`, `{renewal_term_months}`, `{renewal_concession}`, `{renewal_expires_at}`).
+
+### Lease Renewal Endpoints
+
+- `POST /lease-renewals`: Create a new lease renewal proposal.
+  - Body: `{"tenant_id": "tenant_1", "unit_id": "unit_101", "proposed_rent": 1600.0, "current_rent": 1500.0, "term_months": 12, "start_date": "2027-01-01", "end_date": "2027-12-31", "concession_amount": 100.0, "security_deposit_change": 0.0, "concession_notes": "Early renewal credit", "notes": "Standard renewal offer", "status": "offered", "expires_at": "2026-12-15T00:00:00"}`.
+  - Statuses: `draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`.
+  - Returns `201` with `LeaseRenewalResponse`.
+  - Triggers background webhook `lease_renewal.created`.
+- `GET /lease-renewals`: List lease renewal offers with multi-parameter filtering and pagination.
+  - Query parameters: `tenant_id`, `unit_id`, `status`, `term_months`, `limit`, `offset`.
+  - Returns `LeaseRenewalListResponse` (`items: [...]`, `total: int`).
+- `GET /lease-renewals/metrics`: Aggregate portfolio lease renewal conversion KPIs.
+  - Returns `LeaseRenewalMetricsResponse` (`total_renewals`, `signed_renewals`, `offered_renewals`, `negotiating_renewals`, `declined_renewals`, `expired_renewals`, `renewal_rate`, `avg_rent_increase_pct`, `total_concessions_amount`, `by_status: {...}`, `by_term: {...}`).
+- `GET /lease-renewals/{renewal_id}`: Retrieve full details of a specific lease renewal proposal. Returns `404` if not found.
+- `PATCH /lease-renewals/{renewal_id}`: Partially update a lease renewal offer (status, proposed rent, term, concessions, notes).
+  - Returns `LeaseRenewalResponse`.
+  - Triggers background webhook `lease_renewal.status_changed`.
+- `DELETE /lease-renewals/{renewal_id}`: Delete a lease renewal offer.
+- `POST /lease-renewals/{renewal_id}/sign`: Execute digital signature on lease renewal agreement.
+  - Body: `{"signer_name": "Sarah Connor", "signer_email": "sarah@example.com", "signer_ip": "192.168.1.50", "notes": "E-signed via resident portal"}`.
+  - Automatically records signature audit log (`signer_name`, `signed_at`, `signer_ip`, `signature_digest`), sets status to `signed`, and updates linked tenant's `monthly_rent`, `lease_start`, and `lease_end`.
+  - Returns `200` with `LeaseRenewalSignResponse` (`renewal: {...}`, `audit_trail: {...}`).
+  - Triggers background webhook `lease_renewal.signed`.
+- `POST /lease-renewals/{renewal_id}/publish`: Synthesize legal markdown agreement and index directly into Chroma RAG collection (`leases-agreements`).
+  - Synthesizes comprehensive markdown agreement containing parties, terms, rent schedule, concessions, signature blocks, and legal addenda clauses.
+  - Returns `200` with `{"message": "Agreement published to RAG collection.", "file_id": int, "filename": str, "collection": "leases-agreements", "renewal_id": str}`.
+- `POST /sessions/{session_id}/create-lease-renewal`: 1-click create a lease renewal offer directly from an active support session context.
+  - Auto-resolves `tenant_id`, `unit_id`, and `current_rent` from linked resident context.
+  - Returns `201` with `LeaseRenewalResponse`.
+- `GET /tenants/{tenant_id}/lease-renewals`: Retrieve lease renewal history and active offers for a resident.
+  - Query parameter: `active_only=true` (filters to `draft`, `offered`, `negotiating`).
+  - Returns `LeaseRenewalListResponse`.
+
+## Resident Move-In/Move-Out Inspections, Turnover Punchlists & Security Deposit Accounting Engine
+
+Resident move-in/move-out and turnover management engine (`inspections`) tracking room-by-room condition checklists, itemized security deposit deductions, deficiency punchlist-to-work-order conversion, automated Markdown condition statement generation, and RAG knowledge store publication. Inspection context is automatically injected into resident chat prompt grounding (`[RESIDENT INSPECTIONS, MOVE-IN/OUT & DEPOSIT SETTLEMENT]`), and macro variables auto-resolve (`{inspection_type}`, `{inspection_status}`, `{inspection_date}`, `{total_estimated_deductions}`, `{net_deposit_refund}`, `{keys_returned}`).
+
+### Inspection Endpoints
+
+- `POST /inspections`: Create a new resident move-in/out or turnover inspection record.
+  - Body: `{"tenant_id": "tenant_1", "unit_id": "unit_101", "inspection_type": "move_out", "scheduled_date": "2026-10-25", "inspector_name": "Property Operations Specialist", "security_deposit_base": 1500.0, "items": [{"id": "item_1", "room": "living_room", "item_name": "Walls", "condition": "good", "estimated_cost": 0.0, "actual_cost": 0.0, "has_damage": false}], "notes": "Pre-move-out walk", "status": "scheduled"}`.
+  - Inspection types: `move_in`, `move_out`, `pre_move_out`, `annual`, `turnover_punchlist`.
+  - Statuses: `scheduled`, `in_progress`, `completed`, `cancelled`.
+  - Returns `201` with `InspectionResponse`.
+  - Triggers background webhook `inspection.scheduled`.
+- `GET /inspections`: List inspection records with multi-parameter filtering and pagination.
+  - Query parameters: `tenant_id`, `unit_id`, `status`, `inspection_type`, `scheduled_before`, `scheduled_after`, `limit`, `offset`.
+  - Returns `InspectionListResponse` (`items: [...]`, `total: int`).
+- `GET /inspections/metrics`: Portfolio-wide turnover and inspection KPI metrics.
+  - Returns `InspectionSummaryMetricsResponse` (`total_inspections`, `status_distribution: {...}`, `type_distribution: {...}`, `condition_distribution: {...}`, `deposit_accounting_summary: {...}`, `turnover_punchlist_summary: {...}`).
+- `GET /inspections/{inspection_id}`: Retrieve complete inspection details, itemized room checklists, condition notes, and deposit deductions. Returns `404` if not found.
+- `PATCH /inspections/{inspection_id}`: Partially update an inspection record (status, items checklist, condition ratings, notes, inspector name, scheduled date, keys returned).
+  - Returns `InspectionResponse`.
+  - Triggers background webhook `inspection.keys_returned` if `keys_returned` transitions to `true`.
+- `DELETE /inspections/{inspection_id}`: Delete or cancel an inspection record.
+- `POST /inspections/{inspection_id}/complete`: Finalize inspection, assess itemized deductions, calculate net deposit refund, and update status to `completed`.
+  - Body: `{"security_deposit_base": 1500.0, "overall_condition": "good", "notes": "Final settlement calculated"}`.
+  - Automatically tallies estimated and actual itemized damage deductions, calculates `net_deposit_refund = base - deductions`, records `completed_at` timestamp, and sets status to `completed`.
+  - Returns `200` with `InspectionResponse`.
+  - Triggers background webhooks `inspection.completed` and `inspection.deposit_deductions_assessed`.
+- `POST /inspections/{inspection_id}/convert-to-work-order`: Convert a checklist deficiency/damage item directly into an active maintenance work order in `work_orders`.
+  - Body: `{"item_id": "item_1", "priority": "medium", "category": "structural", "assigned_to": "Maintenance Lead"}`.
+  - Creates linked work order with title `Turnover Repair: {room} - {item_name}` referencing inspection ID and room details.
+  - Returns `200` with `InspectionItemWorkOrderResponse` (`work_order: {...}`, `inspection_id: str`, `item_id: str`).
+- `POST /inspections/{inspection_id}/publish-document`: Synthesize structured Markdown inspection statement and publish to `document_store` and Chroma knowledge base.
+  - Body (optional): `{"collection": "default", "chunking_strategy": "markdown", "chunk_size": 1000, "chunk_overlap": 200}`.
+  - Synthesizes comprehensive condition statement with room checklists, damage notes, key tracking, and security deposit accounting ledger.
+  - Returns `200` with `InspectionPublishDocumentResponse` (`status: "indexed"`, `inspection_id: str`, `file_id: int`, `collection: str`, `chunks_indexed: int`).
+- `POST /sessions/{session_id}/create-inspection`: 1-click schedule an inspection directly from an active resident support session.
+  - Auto-resolves `tenant_id` and `unit_id` from session's linked resident context.
+  - Returns `201` with `InspectionResponse`.
+- `GET /tenants/{tenant_id}/inspections`: Retrieve inspection history and turnover punchlists for a specific resident.
+  - Returns `InspectionListResponse`.
+- `GET /units/{unit_id}/inspections`: Retrieve unit turnover and condition inspection history.
+  - Returns `InspectionListResponse`.
+
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:
@@ -483,3 +562,4 @@ Financial accounting ledger engine (`billing_transactions`) supporting itemized 
 - `--collection <name>`: scope retrieval evaluation to a specific collection.
 - `--compare`: evaluate baseline vector search vs configured enhanced strategy side-by-side.
 - `--json-output <path>`: write structured evaluation metrics and per-case results to JSON.
+

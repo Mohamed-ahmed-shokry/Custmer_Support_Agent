@@ -26,6 +26,17 @@ from api.pydantic_models import (
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
+    InspectionCompleteRequest,
+    InspectionCreateRequest,
+    InspectionDocumentPublishRequest,
+    InspectionDocumentPublishResponse,
+    InspectionItemSchema,
+    InspectionListResponse,
+    InspectionMetricsResponse,
+    InspectionRecord,
+    InspectionResponse,
+    InspectionUpdateRequest,
+    InspectionWorkOrderConversionRequest,
     KnowledgeArticleCreateRequest,
     KnowledgeArticleItem,
     KnowledgeArticleListResponse,
@@ -38,6 +49,15 @@ from api.pydantic_models import (
     KnowledgeGapListResponse,
     KnowledgeGapScanResponse,
     KnowledgeGapUpdateRequest,
+    LeaseRenewalCreateRequest,
+    LeaseRenewalDocumentPublishRequest,
+    LeaseRenewalDocumentPublishResponse,
+    LeaseRenewalItem,
+    LeaseRenewalListResponse,
+    LeaseRenewalMetricsResponse,
+    LeaseRenewalResponse,
+    LeaseRenewalSignRequest,
+    LeaseRenewalUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -58,6 +78,7 @@ from api.pydantic_models import (
     SessionAssignmentRequest,
     SessionDraftArticleRequest,
     SessionInfo,
+    SessionInspectionCreateRequest,
     SessionMacroSuggestionsResponse,
     SessionSLAStatusResponse,
     SessionSummaryRequest,
@@ -1784,9 +1805,268 @@ def test_tenant_payment_and_ledger_models():
     assert metrics_resp.collection_rate == expected_col_rate
 
 
+def test_lease_renewal_models():
+    # 1. Valid create request
+    req = LeaseRenewalCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        proposed_rent=1500.0,
+        current_rent=1450.0,
+        term_months=12,
+        start_date="2026-11-01",
+        end_date="2027-10-31",
+        concession_amount=100.0,
+        concession_notes="Credit upon signing",
+        status="offered",
+        notes="Standard offer",
+    )
+    assert req.tenant_id == "tenant_1"
+    assert req.proposed_rent == 1500.0  # noqa: PLR2004
+    assert req.term_months == 12  # noqa: PLR2004
+    assert req.status == "offered"
+
+    # Validation errors
+    with pytest.raises(ValidationError):
+        LeaseRenewalCreateRequest(tenant_id="tenant_1", proposed_rent=0.0)
+
+    with pytest.raises(ValidationError):
+        LeaseRenewalCreateRequest(tenant_id="tenant_1", term_months=5)
+
+    with pytest.raises(ValidationError):
+        LeaseRenewalCreateRequest(tenant_id="tenant_1", status="bad_status")
+
+    # 2. Update request
+    up_req = LeaseRenewalUpdateRequest(
+        proposed_rent=1550.0,
+        term_months=24,
+        status="negotiating",
+        concession_amount=150.0,
+    )
+    assert up_req.proposed_rent == 1550.0  # noqa: PLR2004
+    assert up_req.term_months == 24  # noqa: PLR2004
+    assert up_req.status == "negotiating"
+
+    # 3. Sign request
+    sign_req = LeaseRenewalSignRequest(
+        signature_name="Sarah Connor",
+        signature_ip="192.168.1.10",
+        notes="Executed via resident portal",
+    )
+    assert sign_req.signature_name == "Sarah Connor"
+    assert sign_req.signature_ip == "192.168.1.10"
+
+    with pytest.raises(ValidationError):
+        LeaseRenewalSignRequest(signature_name="")
+
+    # 4. Item and Response models
+    item = LeaseRenewalItem(
+        id="lr_101",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        current_rent=1450.0,
+        proposed_rent=1500.0,
+        term_months=12,
+        start_date="2026-11-01",
+        end_date="2027-10-31",
+        concession_amount=100.0,
+        concession_notes="Discount",
+        security_deposit_change=0.0,
+        status="signed",
+        expires_at="2026-10-31",
+        signature_name="Sarah Connor",
+        signature_ip="192.168.1.10",
+        signed_at="2026-10-15T10:00:00Z",
+        notes="Executed",
+        document_file_id=42,
+        created_at="2026-10-01T09:00:00Z",
+        updated_at="2026-10-15T10:00:00Z",
+    )
+    resp = LeaseRenewalResponse(renewal=item)
+    assert resp.renewal.id == "lr_101"
+    assert resp.renewal.status == "signed"
+
+    list_resp = LeaseRenewalListResponse(items=[item], total=1, limit=50, offset=0)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+    # 5. Publish models
+    pub_req = LeaseRenewalDocumentPublishRequest(
+        collection="default", chunking_strategy="markdown", chunk_size=1000, chunk_overlap=200
+    )
+    assert pub_req.chunking_strategy == "markdown"
+
+    pub_resp = LeaseRenewalDocumentPublishResponse(
+        renewal_id="lr_101",
+        file_id=42,
+        filename="lease_renewal_lr_101.md",
+        collection="default",
+        sha256="abc123hash",
+        content_length=1500,
+        indexed_in_chroma=True,
+    )
+    assert pub_resp.file_id == 42  # noqa: PLR2004
+    assert pub_resp.indexed_in_chroma is True
+
+    # 6. Metrics model
+    expected_total_lr = 5
+    expected_rate = 60.0
+    metrics_resp = LeaseRenewalMetricsResponse(
+        total_renewals=expected_total_lr,
+        signed_renewals=3,
+        pending_renewals=1,
+        draft_renewals=1,
+        declined_renewals=0,
+        renewal_rate=expected_rate,
+        avg_rent_increase_pct=4.5,
+        by_status={"signed": 3, "offered": 1, "draft": 1},
+        by_term={"12": 4, "24": 1},
+    )
+    assert metrics_resp.total_renewals == expected_total_lr
+    assert metrics_resp.renewal_rate == expected_rate
 
 
+def test_inspection_models_lifecycle_and_validation():
+    # 1. InspectionItemSchema
+    item = InspectionItemSchema(
+        id="item_1",
+        room="Living Room",
+        item_name="Hardwood Flooring",
+        condition="damaged",
+        notes="Deep scratch near window",
+        photo_count=2,
+        action_needed="repair",
+        estimated_cost=150.0,
+    )
+    assert item.condition == "damaged"
+    assert item.action_needed == "repair"
+    assert item.estimated_cost == 150.0  # noqa: PLR2004
 
+    # Invalid action raises error
+    with pytest.raises(ValidationError):
+        InspectionItemSchema(
+            room="Bedroom",
+            item_name="Carpet",
+            action_needed="invalid_action",
+        )
 
+    # 2. InspectionCreateRequest
+    req = InspectionCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        inspection_type="PRE_MOVE_OUT",
+        status="SCHEDULED",
+        overall_condition="GOOD",
+        key_return_status="PENDING",
+        items=[item],
+        notes="Move-out checklist initiated",
+    )
+    assert req.inspection_type == "pre_move_out"
+    assert req.status == "scheduled"
+    assert req.overall_condition == "good"
+    assert req.key_return_status == "pending"
+    assert len(req.items or []) == 1
 
+    # Invalid inspection type raises error
+    with pytest.raises(ValidationError):
+        InspectionCreateRequest(tenant_id="tenant_1", inspection_type="invalid_type")
 
+    # 3. InspectionUpdateRequest
+    upd = InspectionUpdateRequest(
+        status="IN_PROGRESS",
+        overall_condition="FAIR",
+        key_return_status="RETURNED",
+        deposit_deduction_total=150.0,
+    )
+    assert upd.status == "in_progress"
+    assert upd.overall_condition == "fair"
+    assert upd.key_return_status == "returned"
+    assert upd.deposit_deduction_total == 150.0  # noqa: PLR2004
+
+    # 4. InspectionCompleteRequest
+    comp = InspectionCompleteRequest(
+        deposit_held=2000.0,
+        key_return_status="RETURNED",
+        overall_condition="GOOD",
+        notes="All cleared",
+    )
+    assert comp.deposit_held == 2000.0  # noqa: PLR2004
+    assert comp.key_return_status == "returned"
+
+    # 5. InspectionWorkOrderConversionRequest
+    wo_conv = InspectionWorkOrderConversionRequest(
+        item_id="item_1",
+        title="Repair scratched hardwood",
+        category="general",
+        priority="high",
+    )
+    assert wo_conv.item_id == "item_1"
+    assert wo_conv.priority == "high"
+
+    # 6. SessionInspectionCreateRequest
+    sess_req = SessionInspectionCreateRequest(
+        inspection_type="MOVE_OUT",
+        scheduled_date="2026-11-01",
+        notes="Initiated via support chat",
+    )
+    assert sess_req.inspection_type == "move_out"
+
+    # 7. Record, Response, and List Response
+    rec = InspectionRecord(
+        id="insp_101",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        scheduled_date="2026-11-01",
+        completed_date="2026-11-01",
+        inspector_name="Alex Rivera",
+        status="completed",
+        overall_condition="good",
+        items=[item.model_dump()],
+        deposit_deduction_total=150.0,
+        deposit_refund_amount=1850.0,
+        key_return_status="returned",
+        notes="Finalized",
+        created_at="2026-11-01T09:00:00Z",
+        updated_at="2026-11-01T11:00:00Z",
+    )
+    resp = InspectionResponse(inspection=rec)
+    assert resp.inspection.id == "insp_101"
+    assert resp.inspection.deposit_refund_amount == 1850.0  # noqa: PLR2004
+
+    list_resp = InspectionListResponse(items=[rec], total=1, limit=50, offset=0)
+    assert list_resp.total == 1
+    assert len(list_resp.items) == 1
+
+    # 8. Metrics Response
+    metrics = InspectionMetricsResponse(
+        total_inspections=4,
+        scheduled_count=1,
+        in_progress_count=0,
+        completed_count=3,
+        cancelled_count=0,
+        move_in_count=1,
+        move_out_count=2,
+        other_type_count=1,
+        total_deposit_deductions=450.0,
+        total_deposit_refunds=4000.0,
+        condition_counts={"good": 3, "fair": 1},
+    )
+    assert metrics.total_inspections == 4  # noqa: PLR2004
+    assert metrics.total_deposit_deductions == 450.0  # noqa: PLR2004
+
+    # 9. Document Publish Request & Response
+    pub_req = InspectionDocumentPublishRequest(
+        collection="default", chunking_strategy="markdown", chunk_size=1000, chunk_overlap=200
+    )
+    assert pub_req.chunking_strategy == "markdown"
+
+    pub_resp = InspectionDocumentPublishResponse(
+        inspection_id="insp_101",
+        file_id=12,
+        filename="inspection_insp_101.md",
+        collection="default",
+        sha256="hash123",
+        content_length=1200,
+        indexed_in_chroma=True,
+    )
+    assert pub_resp.inspection_id == "insp_101"
+    assert pub_resp.indexed_in_chroma is True

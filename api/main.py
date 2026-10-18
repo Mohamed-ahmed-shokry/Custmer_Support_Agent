@@ -17,7 +17,9 @@ from api import (
     business_hours,
     csat,
     db_utils,
+    inspections,
     knowledge_base,
+    lease_renewals,
     macro_suggestions,
     macros,
     sla,
@@ -164,6 +166,16 @@ from api.pydantic_models import (
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
     HealthResponse,
+    InspectionCompleteRequest,
+    InspectionCreateRequest,
+    InspectionDocumentPublishRequest,
+    InspectionDocumentPublishResponse,
+    InspectionListResponse,
+    InspectionMetricsResponse,
+    InspectionRecord,
+    InspectionResponse,
+    InspectionUpdateRequest,
+    InspectionWorkOrderConversionRequest,
     KnowledgeArticleCreateRequest,
     KnowledgeArticleItem,
     KnowledgeArticleListResponse,
@@ -176,6 +188,15 @@ from api.pydantic_models import (
     KnowledgeGapListResponse,
     KnowledgeGapScanResponse,
     KnowledgeGapUpdateRequest,
+    LeaseRenewalCreateRequest,
+    LeaseRenewalDocumentPublishRequest,
+    LeaseRenewalDocumentPublishResponse,
+    LeaseRenewalItem,
+    LeaseRenewalListResponse,
+    LeaseRenewalMetricsResponse,
+    LeaseRenewalResponse,
+    LeaseRenewalSignRequest,
+    LeaseRenewalUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -201,6 +222,7 @@ from api.pydantic_models import (
     SessionAssignmentRequest,
     SessionDraftArticleRequest,
     SessionInfo,
+    SessionInspectionCreateRequest,
     SessionMacroSuggestionsResponse,
     SessionSearchResponse,
     SessionSearchResult,
@@ -486,9 +508,7 @@ def quota(request: Request):
     if budget <= 0:
         return QuotaInfo(budget=0, used=0, remaining=None, unlimited=True)
     used = get_token_usage(_client_ip(request))
-    return QuotaInfo(
-        budget=budget, used=used, remaining=max(0, budget - used), unlimited=False
-    )
+    return QuotaInfo(budget=budget, used=used, remaining=max(0, budget - used), unlimited=False)
 
 
 def _client_ip(request: Request) -> str:
@@ -830,15 +850,11 @@ def upload_many_documents(
                 file, chunking_strategy, chunk_size, chunk_overlap, collection
             )
             results.append(
-                BulkUploadItem(
-                    filename=filename, status="indexed", file_id=response.file_id
-                )
+                BulkUploadItem(filename=filename, status="indexed", file_id=response.file_id)
             )
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-            results.append(
-                BulkUploadItem(filename=filename, status="error", detail=detail)
-            )
+            results.append(BulkUploadItem(filename=filename, status="error", detail=detail))
         except Exception:
             logger.exception("Unexpected error while bulk-uploading %s", filename)
             results.append(
@@ -995,9 +1011,7 @@ def rename_collection_route(collection: str, request: RenameCollectionRequest):
 
     documents = rename_collection(source, target)
     if chunks == 0 and documents == 0:
-        raise HTTPException(
-            status_code=404, detail=f"Collection {source} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Collection {source} was not found.")
 
     increment("renames")
     return RenameCollectionResponse(
@@ -1026,9 +1040,7 @@ def delete_collection_route(collection: str):
 
     db_documents = delete_documents_by_collection(collection_name)
     if chroma_chunks == 0 and db_documents == 0:
-        raise HTTPException(
-            status_code=404, detail=f"Collection {collection_name} was not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Collection {collection_name} was not found.")
 
     delete_document_sources_by_collection(collection_name)
     increment("deletes")
@@ -1613,9 +1625,7 @@ def update_session_route(
 
 
 @app.post("/sessions/{session_id}/summarize", response_model=SessionSummaryResponse)
-def summarize_session_route(
-    session_id: str, request: SessionSummaryRequest | None = None
-):
+def summarize_session_route(session_id: str, request: SessionSummaryRequest | None = None):
     _require_session_id(session_id)
     history = get_chat_history(session_id)
     if not history:
@@ -1627,9 +1637,7 @@ def summarize_session_route(
     saved = False
     if req.save_summary and summary_data.get("summary"):
         meta = get_session_metadata(session_id) or {}
-        existing_tags = [
-            t.strip() for t in (meta.get("tags") or "").split(",") if t.strip()
-        ]
+        existing_tags = [t.strip() for t in (meta.get("tags") or "").split(",") if t.strip()]
         new_tags = sorted(set(existing_tags + summary_data.get("suggested_tags", [])))
         update_session_metadata(
             session_id,
@@ -2142,9 +2150,7 @@ def get_sla_policy_route(policy_id: int):
 
 @app.patch("/sla/policies/{policy_id}", response_model=SLAPolicyResponse)
 def update_sla_policy_route(policy_id: int, request: SLAPolicyUpdateRequest):
-    is_active_int = (
-        1 if request.is_active is True else (0 if request.is_active is False else None)
-    )
+    is_active_int = 1 if request.is_active is True else (0 if request.is_active is False else None)
     try:
         updated = update_sla_policy(
             policy_id,
@@ -2982,9 +2988,7 @@ def get_work_order_route(work_order_id: str):
     """Retrieve details of a specific maintenance work order."""
     item = db_utils.get_work_order(work_order_id)
     if not item:
-        raise HTTPException(
-            status_code=404, detail=f"Work order '{work_order_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Work order '{work_order_id}' not found.")
     return WorkOrderResponse(work_order=WorkOrderItem(**item))
 
 
@@ -2997,9 +3001,7 @@ def update_work_order_route(
     """Update fields on an existing work order."""
     prior = db_utils.get_work_order(work_order_id)
     if not prior:
-        raise HTTPException(
-            status_code=404, detail=f"Work order '{work_order_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Work order '{work_order_id}' not found.")
 
     try:
         updated = db_utils.update_work_order(
@@ -3023,9 +3025,7 @@ def update_work_order_route(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if not updated:
-        raise HTTPException(
-            status_code=404, detail=f"Work order '{work_order_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Work order '{work_order_id}' not found.")
 
     if updated["status"] != prior["status"]:
         background_tasks.add_task(
@@ -3066,9 +3066,7 @@ def delete_work_order_route(work_order_id: str):
     """Delete a maintenance work order."""
     deleted = db_utils.delete_work_order(work_order_id)
     if not deleted:
-        raise HTTPException(
-            status_code=404, detail=f"Work order '{work_order_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Work order '{work_order_id}' not found.")
     return {"status": "deleted", "work_order_id": work_order_id}
 
 
@@ -3426,9 +3424,7 @@ def get_tenant_ledger_route(tenant_id: str):
             detail=f"Tenant '{tenant_id}' not found or has no billing record.",
         )
     last_payment = (
-        BillingTransactionItem(**ledger["last_payment"])
-        if ledger.get("last_payment")
-        else None
+        BillingTransactionItem(**ledger["last_payment"]) if ledger.get("last_payment") else None
     )
     recent_transactions = [
         BillingTransactionItem(**item) for item in ledger.get("recent_transactions", [])
@@ -3509,7 +3505,651 @@ def record_session_payment_route(
     )
 
 
+# ============================================================================
+# Lease Renewals & Digital Agreements Endpoints
+# ============================================================================
 
 
+@app.post("/lease-renewals", response_model=LeaseRenewalResponse, status_code=201)
+def create_lease_renewal_route(
+    request: LeaseRenewalCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Create a new lease renewal offer, generating default dates/rent if omitted."""
+    try:
+        item = db_utils.create_lease_renewal(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            proposed_rent=request.proposed_rent,
+            current_rent=request.current_rent,
+            term_months=request.term_months,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            concession_amount=request.concession_amount,
+            concession_notes=request.concession_notes,
+            security_deposit_change=request.security_deposit_change,
+            status=request.status,
+            expires_at=request.expires_at,
+            session_id=request.session_id,
+            notes=request.notes,
+            lr_id=request.renewal_id,
+        )
+    except ValueError as exc:
+        if "does not exist" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "lease_renewal.offered",
+        {
+            "renewal_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "proposed_rent": item["proposed_rent"],
+            "term_months": item["term_months"],
+            "status": item["status"],
+            "expires_at": item["expires_at"],
+        },
+    )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
 
 
+@app.get("/lease-renewals", response_model=LeaseRenewalListResponse)
+def list_lease_renewals_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List lease renewals with filtering by tenant, unit, status, and search."""
+    items, total = db_utils.list_lease_renewals(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return LeaseRenewalListResponse(
+        items=[LeaseRenewalItem(**r) for r in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/lease-renewals/metrics", response_model=LeaseRenewalMetricsResponse)
+def get_lease_renewal_metrics_route():
+    """Retrieve portfolio lease renewal metrics (totals, renewal rate, terms)."""
+    metrics = db_utils.get_lease_renewal_summary_metrics()
+    return LeaseRenewalMetricsResponse(**metrics)
+
+
+@app.get("/lease-renewals/{renewal_id}", response_model=LeaseRenewalResponse)
+def get_lease_renewal_route(renewal_id: str):
+    """Retrieve a single lease renewal record by its ID."""
+    item = db_utils.get_lease_renewal(renewal_id)
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lease renewal '{renewal_id}' not found.",
+        )
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.patch("/lease-renewals/{renewal_id}", response_model=LeaseRenewalResponse)
+def update_lease_renewal_route(
+    renewal_id: str,
+    request: LeaseRenewalUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update lease renewal terms, financial fields, or status."""
+    try:
+        item = db_utils.update_lease_renewal(
+            renewal_id=renewal_id,
+            proposed_rent=request.proposed_rent,
+            term_months=request.term_months,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            concession_amount=request.concession_amount,
+            concession_notes=request.concession_notes,
+            security_deposit_change=request.security_deposit_change,
+            status=request.status,
+            expires_at=request.expires_at,
+            notes=request.notes,
+            document_file_id=request.document_file_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lease renewal '{renewal_id}' not found.",
+        )
+
+    if request.status == "accepted":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "lease_renewal.accepted",
+            {"renewal_id": item["id"], "tenant_id": item["tenant_id"]},
+        )
+    elif request.status == "declined":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "lease_renewal.declined",
+            {"renewal_id": item["id"], "tenant_id": item["tenant_id"]},
+        )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.delete("/lease-renewals/{renewal_id}")
+def delete_lease_renewal_route(renewal_id: str):
+    """Delete a lease renewal record."""
+    deleted = db_utils.delete_lease_renewal(renewal_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lease renewal '{renewal_id}' not found.",
+        )
+    return {"message": f"Lease renewal '{renewal_id}' deleted successfully."}
+
+
+@app.post("/lease-renewals/{renewal_id}/sign", response_model=LeaseRenewalResponse)
+def sign_lease_renewal_route(
+    renewal_id: str,
+    request: LeaseRenewalSignRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Execute digital e-signature on renewal, updating tenant lease dates and rent."""
+    try:
+        item = db_utils.sign_lease_renewal(
+            renewal_id=renewal_id,
+            signature_name=request.signature_name,
+            signature_ip=request.signature_ip,
+            signed_at=request.signed_at,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "lease_renewal.signed",
+        {
+            "renewal_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "proposed_rent": item["proposed_rent"],
+            "term_months": item["term_months"],
+            "signed_at": item["signed_at"],
+            "signature_name": item["signature_name"],
+        },
+    )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.post(
+    "/lease-renewals/{renewal_id}/publish-document",
+    response_model=LeaseRenewalDocumentPublishResponse,
+)
+def publish_lease_renewal_document_route(
+    renewal_id: str,
+    request: LeaseRenewalDocumentPublishRequest,
+):
+    """Synthesize legal renewal agreement in Markdown and index into RAG vector store."""
+    try:
+        result = lease_renewals.publish_lease_renewal_document(
+            renewal_id=renewal_id,
+            collection=request.collection,
+            chunking_strategy=request.chunking_strategy,
+            chunk_size=request.chunk_size,
+            chunk_overlap=request.chunk_overlap,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return LeaseRenewalDocumentPublishResponse(**result)
+
+
+@app.post(
+    "/sessions/{session_id}/create-lease-renewal",
+    response_model=LeaseRenewalResponse,
+    status_code=201,
+)
+def create_session_lease_renewal_route(
+    session_id: str,
+    request: LeaseRenewalCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Generate a 1-click renewal offer from active support session for linked resident."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' has no linked tenant to create lease renewal for.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = request.unit_id or tenant.get("unit_id")
+
+    try:
+        item = db_utils.create_lease_renewal(
+            tenant_id=resolved_tenant_id,
+            unit_id=resolved_unit_id,
+            proposed_rent=request.proposed_rent,
+            current_rent=request.current_rent,
+            term_months=request.term_months,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            concession_amount=request.concession_amount,
+            concession_notes=request.concession_notes,
+            security_deposit_change=request.security_deposit_change,
+            status=request.status,
+            expires_at=request.expires_at,
+            session_id=session_id,
+            notes=request.notes,
+            lr_id=request.renewal_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "lease_renewal.offered",
+        {
+            "renewal_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "session_id": session_id,
+            "proposed_rent": item["proposed_rent"],
+            "term_months": item["term_months"],
+            "status": item["status"],
+            "expires_at": item["expires_at"],
+        },
+    )
+
+    return LeaseRenewalResponse(renewal=LeaseRenewalItem(**item))
+
+
+@app.get("/tenants/{tenant_id}/lease-renewals", response_model=LeaseRenewalListResponse)
+def get_tenant_lease_renewals_route(tenant_id: str):
+    """Retrieve all lease renewals associated with a specific resident."""
+    tenant = db_utils.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tenant '{tenant_id}' not found.",
+        )
+    items, total = db_utils.list_lease_renewals(tenant_id=tenant_id, limit=100)
+    return LeaseRenewalListResponse(
+        items=[LeaseRenewalItem(**r) for r in items],
+        total=total,
+        limit=100,
+        offset=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Move-In/Move-Out Inspections & Turnover Endpoints (v0.39.0)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/inspections", response_model=InspectionResponse, status_code=201)
+def create_inspection_route(
+    request: InspectionCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Schedule and create a new resident move-in/out or turnover inspection."""
+    try:
+        item = db_utils.create_inspection(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            inspection_type=request.inspection_type,
+            scheduled_date=request.scheduled_date,
+            inspector_name=request.inspector_name,
+            status=request.status,
+            overall_condition=request.overall_condition,
+            items=[i.model_dump() for i in request.items] if request.items else None,
+            deposit_deduction_total=request.deposit_deduction_total,
+            deposit_refund_amount=request.deposit_refund_amount,
+            key_return_status=request.key_return_status,
+            notes=request.notes,
+            session_id=request.session_id,
+            insp_id=request.insp_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "inspection.scheduled",
+        {
+            "inspection_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "inspection_type": item["inspection_type"],
+            "scheduled_date": item["scheduled_date"],
+            "status": item["status"],
+            "inspector_name": item["inspector_name"],
+        },
+    )
+
+    return InspectionResponse(inspection=InspectionRecord(**item))
+
+
+@app.get("/inspections", response_model=InspectionListResponse)
+def list_inspections_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    inspection_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List inspections with filtering by tenant, unit, type, and status."""
+    items, total = db_utils.list_inspections(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        inspection_type=inspection_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return InspectionListResponse(
+        items=[InspectionRecord(**r) for r in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/inspections/metrics", response_model=InspectionMetricsResponse)
+def get_inspection_metrics_route():
+    """Retrieve aggregated portfolio move-in/out and turnover inspection KPIs."""
+    metrics = db_utils.get_inspection_summary_metrics()
+    return InspectionMetricsResponse(**metrics)
+
+
+@app.get("/inspections/{inspection_id}", response_model=InspectionResponse)
+def get_inspection_route(inspection_id: str):
+    """Retrieve detailed move-in/out inspection record by ID."""
+    item = db_utils.get_inspection(inspection_id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+    return InspectionResponse(inspection=InspectionRecord(**item))
+
+
+@app.patch("/inspections/{inspection_id}", response_model=InspectionResponse)
+def update_inspection_route(
+    inspection_id: str,
+    request: InspectionUpdateRequest,
+):
+    """Update inspection details, checklist items, key return, or notes."""
+    try:
+        item = db_utils.update_inspection(
+            insp_id=inspection_id,
+            scheduled_date=request.scheduled_date,
+            completed_date=request.completed_date,
+            inspector_name=request.inspector_name,
+            status=request.status,
+            overall_condition=request.overall_condition,
+            items=[i.model_dump() for i in request.items] if request.items is not None else None,
+            deposit_deduction_total=request.deposit_deduction_total,
+            deposit_refund_amount=request.deposit_refund_amount,
+            key_return_status=request.key_return_status,
+            notes=request.notes,
+            document_file_id=request.document_file_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+    return InspectionResponse(inspection=InspectionRecord(**item))
+
+
+@app.delete("/inspections/{inspection_id}")
+def delete_inspection_route(inspection_id: str):
+    """Cancel and delete an inspection record."""
+    deleted = db_utils.delete_inspection(inspection_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+    return {"status": "deleted", "id": inspection_id}
+
+
+@app.post("/inspections/{inspection_id}/complete", response_model=InspectionResponse)
+def complete_inspection_route(
+    inspection_id: str,
+    request: InspectionCompleteRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Finalize an inspection, calculate itemized deductions, and assess deposit refund."""
+    try:
+        item = db_utils.complete_inspection(
+            insp_id=inspection_id,
+            security_deposit_base=request.deposit_held,
+            key_return_status=request.key_return_status,
+            overall_condition=request.overall_condition,
+            notes=request.notes,
+            items=[i.model_dump() for i in request.items] if request.items is not None else None,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower() or "does not exist" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "inspection.completed",
+        {
+            "inspection_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "inspection_type": item["inspection_type"],
+            "completed_date": item["completed_date"],
+            "overall_condition": item["overall_condition"],
+            "deposit_deduction_total": item["deposit_deduction_total"],
+            "deposit_refund_amount": item["deposit_refund_amount"],
+            "key_return_status": item["key_return_status"],
+        },
+    )
+
+    if item.get("deposit_deduction_total", 0.0) > 0:
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "inspection.deposit_deductions_assessed",
+            {
+                "inspection_id": item["id"],
+                "tenant_id": item["tenant_id"],
+                "unit_id": item["unit_id"],
+                "deposit_deduction_total": item["deposit_deduction_total"],
+                "deposit_refund_amount": item["deposit_refund_amount"],
+            },
+        )
+
+    if item.get("key_return_status") == "returned":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "inspection.keys_returned",
+            {
+                "inspection_id": item["id"],
+                "tenant_id": item["tenant_id"],
+                "unit_id": item["unit_id"],
+                "key_return_status": "returned",
+            },
+        )
+
+    return InspectionResponse(inspection=InspectionRecord(**item))
+
+
+@app.post("/inspections/{inspection_id}/convert-to-work-order")
+def convert_inspection_item_to_work_order_route(
+    inspection_id: str,
+    request: InspectionWorkOrderConversionRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Convert an inspection deficiency item directly into a maintenance work order."""
+    try:
+        wo = db_utils.convert_inspection_item_to_work_order(
+            insp_id=inspection_id,
+            item_id=request.item_id,
+            title=request.title,
+            category=request.category,
+            priority=request.priority,
+            assigned_to=request.assigned_to or "",
+            scheduled_date=request.scheduled_date or "",
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "work_order.created",
+        {
+            "work_order_id": wo["id"],
+            "unit_id": wo["unit_id"],
+            "tenant_id": wo["tenant_id"],
+            "title": wo["title"],
+            "category": wo["category"],
+            "priority": wo["priority"],
+            "status": wo["status"],
+            "inspection_id": inspection_id,
+        },
+    )
+
+    return {
+        "status": "converted",
+        "work_order": wo,
+        "inspection_id": inspection_id,
+        "item_id": request.item_id,
+    }
+
+
+@app.post(
+    "/inspections/{inspection_id}/publish-document",
+    response_model=InspectionDocumentPublishResponse,
+)
+def publish_inspection_document_route(
+    inspection_id: str,
+    request: InspectionDocumentPublishRequest,
+):
+    """Synthesize Markdown condition report and deposit settlement into RAG vector store."""
+    try:
+        result = inspections.publish_inspection_document(
+            inspection_id=inspection_id,
+            collection=request.collection,
+            chunking_strategy=request.chunking_strategy,
+            chunk_size=request.chunk_size,
+            chunk_overlap=request.chunk_overlap,
+        )
+    except ValueError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return InspectionDocumentPublishResponse(**result)
+
+
+@app.post(
+    "/sessions/{session_id}/create-inspection",
+    response_model=InspectionResponse,
+    status_code=201,
+)
+def create_session_inspection_route(
+    session_id: str,
+    request: SessionInspectionCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Schedule a 1-click inspection from active support session for linked resident."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' has no linked tenant to schedule inspection for.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = tenant.get("unit_id")
+
+    try:
+        item = db_utils.create_inspection(
+            tenant_id=resolved_tenant_id,
+            unit_id=resolved_unit_id,
+            inspection_type=request.inspection_type,
+            scheduled_date=request.scheduled_date,
+            inspector_name=request.inspector_name,
+            overall_condition=request.overall_condition,
+            notes=request.notes,
+            session_id=session_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "inspection.scheduled",
+        {
+            "inspection_id": item["id"],
+            "tenant_id": item["tenant_id"],
+            "unit_id": item["unit_id"],
+            "session_id": session_id,
+            "inspection_type": item["inspection_type"],
+            "scheduled_date": item["scheduled_date"],
+            "status": item["status"],
+            "inspector_name": item["inspector_name"],
+        },
+    )
+
+    return InspectionResponse(inspection=InspectionRecord(**item))
+
+
+@app.get("/tenants/{tenant_id}/inspections", response_model=InspectionListResponse)
+def get_tenant_inspections_route(tenant_id: str):
+    """Retrieve all inspections associated with a specific resident."""
+    tenant = db_utils.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tenant '{tenant_id}' not found.",
+        )
+    items, total = db_utils.list_inspections(tenant_id=tenant_id, limit=100)
+    return InspectionListResponse(
+        items=[InspectionRecord(**r) for r in items],
+        total=total,
+        limit=100,
+        offset=0,
+    )
+
+
+@app.get("/units/{unit_id}/inspections", response_model=InspectionListResponse)
+def get_unit_inspections_route(unit_id: str):
+    """Retrieve all inspections associated with a specific property unit."""
+    unit = db_utils.get_unit(unit_id)
+    if not unit:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unit '{unit_id}' not found.",
+        )
+    items, total = db_utils.list_inspections(unit_id=unit_id, limit=100)
+    return InspectionListResponse(
+        items=[InspectionRecord(**r) for r in items],
+        total=total,
+        limit=100,
+        offset=0,
+    )

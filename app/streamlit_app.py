@@ -13,8 +13,9 @@ if "messages" not in st.session_state:
 if "session_id" not in st.session_state:
     st.session_state.session_id = None
 
+# Display the chat interface
+display_chat_interface()
+
 # Display the sidebar
 display_sidebar()
 
-# Display the chat interface
-display_chat_interface()
