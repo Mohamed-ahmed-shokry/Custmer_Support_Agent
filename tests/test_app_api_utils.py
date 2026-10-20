@@ -2596,3 +2596,39 @@ def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
 
 
 
+
+
+def test_vendor_read_helpers(fake_requests, fake_st):
+    listing = {"items": [{"id": "vnd_1"}], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=listing)
+    assert api_utils.list_vendors(trade=" hvac ", status="active", search="cool") == listing
+    method, url, kwargs = fake_requests.calls[0]
+    assert method == "get"
+    assert url.endswith("/vendors")
+    assert kwargs["params"] == {
+        "limit": 50,
+        "offset": 0,
+        "trade": "hvac",
+        "status": "active",
+        "search": "cool",
+    }
+    assert "headers" in kwargs
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"vendor": {}})
+    assert api_utils.get_vendor("vnd_1") == {"vendor": {}}
+    assert fake_requests.calls[-1][1].endswith("/vendors/vnd_1")
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"total": 2})
+    assert api_utils.get_vendor_metrics() == {"total": 2}
+    assert fake_requests.calls[-1][1].endswith("/vendors/metrics")
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_vendor("vnd_1") is None
+    assert fake_st.errors
+
+
+def test_vendor_helpers_handle_network_errors(monkeypatch, fake_st):
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_vendors() is None
+    assert api_utils.get_vendor_metrics() is None
+    assert any("network down" in str(e) for e in fake_st.errors)
