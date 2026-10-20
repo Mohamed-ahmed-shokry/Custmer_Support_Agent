@@ -134,3 +134,58 @@ def test_delete_vendor(vendor_db):
 def test_get_dispatch_returns_none_for_unknown_or_blank(vendor_db):
     assert vendors.get_dispatch("vdp_missing") is None
     assert vendors.get_dispatch(" ") is None
+
+
+def _make_work_order(work_order_id: str = "wo_test_1", status: str = "submitted") -> dict:
+    return db_utils.create_work_order(
+        work_order_id=work_order_id,
+        unit_id="unit_101",
+        title="Leaking faucet",
+        description="Kitchen faucet drips constantly.",
+        category="plumbing",
+        status=status,
+    )
+
+
+def test_dispatch_vendor_assigns_and_schedules_work_order(vendor_db):
+    _make_work_order()
+    dispatch = vendors.dispatch_vendor(
+        "wo_test_1", "vnd_plumb_01", agreed_cost=150, scheduled_date="2026-11-03"
+    )
+    assert dispatch["id"].startswith("vdp_")
+    assert dispatch["status"] == "dispatched"
+    assert dispatch["agreed_cost"] == 150.0  # noqa: PLR2004
+    work_order = db_utils.get_work_order("wo_test_1")
+    assert work_order is not None
+    assert work_order["assigned_to"] == "BlueLine Plumbing"
+    assert work_order["status"] == "scheduled"
+    assert work_order["scheduled_date"] == "2026-11-03"
+    assert work_order["estimated_cost"] == 150.0  # noqa: PLR2004
+
+
+def test_dispatch_vendor_keeps_in_progress_status(vendor_db):
+    dispatch = vendors.dispatch_vendor("wo_102", "vnd_hvac_01")
+    assert dispatch["agreed_cost"] is None
+    work_order = db_utils.get_work_order("wo_102")
+    assert work_order is not None
+    assert work_order["status"] == "in_progress"
+    assert work_order["assigned_to"] == "CoolBreeze HVAC"
+
+
+def test_dispatch_vendor_rejections(vendor_db):
+    _make_work_order()
+    with pytest.raises(ValueError, match="Vendor 'nope' not found"):
+        vendors.dispatch_vendor("wo_test_1", "nope")
+    with pytest.raises(ValueError, match="Work order 'nope' not found"):
+        vendors.dispatch_vendor("nope", "vnd_plumb_01")
+    with pytest.raises(ValueError, match="is completed and cannot"):
+        vendors.dispatch_vendor("wo_103", "vnd_plumb_01")
+    vendors.update_vendor("vnd_elec_01", status="blacklisted")
+    with pytest.raises(ValueError, match="is blacklisted and cannot"):
+        vendors.dispatch_vendor("wo_test_1", "vnd_elec_01")
+    with pytest.raises(ValueError, match="must not be negative"):
+        vendors.dispatch_vendor("wo_test_1", "vnd_plumb_01", agreed_cost=-5)
+
+    vendors.dispatch_vendor("wo_test_1", "vnd_plumb_01")
+    with pytest.raises(ValueError, match="already has an active dispatch"):
+        vendors.dispatch_vendor("wo_test_1", "vnd_hvac_01")
