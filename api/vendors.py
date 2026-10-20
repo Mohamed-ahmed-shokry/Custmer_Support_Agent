@@ -319,3 +319,13 @@ def update_vendor(  # noqa: PLR0913
         )
         conn.commit()
     return get_vendor(current["id"])
+
+
+def delete_vendor(vendor_id: str) -> bool:
+    """Delete a vendor (and its dispatch history); returns True when a row was removed."""
+    cleaned_id = (vendor_id or "").strip()
+    with closing(db_utils.get_db_connection()) as conn:
+        conn.execute("DELETE FROM vendor_dispatches WHERE vendor_id = ?", (cleaned_id,))
+        cursor = conn.execute("DELETE FROM vendors WHERE id = ?", (cleaned_id,))
+        conn.commit()
+        return bool(cursor.rowcount and cursor.rowcount > 0)
