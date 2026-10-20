@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import uuid
 from contextlib import closing
+from datetime import UTC, datetime
 from typing import Any
 
 from api import db_utils
@@ -339,3 +340,59 @@ def get_dispatch(dispatch_id: str) -> dict[str, Any] | None:
     with closing(db_utils.get_db_connection()) as conn:
         row = conn.execute("SELECT * FROM vendor_dispatches WHERE id = ?", (cleaned_id,)).fetchone()
         return dict(row) if row else None
+
+
+def dispatch_vendor(
+    work_order_id: str,
+    vendor_id: str,
+    *,
+    agreed_cost: float | None = None,
+    scheduled_date: str | None = None,
+) -> dict[str, Any]:
+    """Dispatch an open work order to an active vendor.
+
+    Sets the work order's `assigned_to` to the vendor name, moves a `submitted` work order
+    to `scheduled`, and records an active dispatch. Raises ValueError (with "not found" in the
+    message for unknown records) when the dispatch is not allowed.
+    """
+    vendor = get_vendor(vendor_id)
+    if not vendor:
+        raise ValueError(f"Vendor '{vendor_id}' not found.")
+    if vendor["status"] != "active":
+        raise ValueError(f"Vendor '{vendor['id']}' is {vendor['status']} and cannot be dispatched.")
+    work_order = db_utils.get_work_order(work_order_id)
+    if not work_order:
+        raise ValueError(f"Work order '{work_order_id}' not found.")
+    if work_order["status"] in {"completed", "cancelled"}:
+        raise ValueError(
+            f"Work order '{work_order['id']}' is {work_order['status']} and cannot be dispatched."
+        )
+    cost = _clean_rate(agreed_cost)
+    dispatch_id = f"vdp_{uuid.uuid4().hex[:8]}"
+    with closing(db_utils.get_db_connection()) as conn:
+        active = conn.execute(
+            "SELECT id FROM vendor_dispatches WHERE work_order_id = ? AND status = 'dispatched'",
+            (work_order["id"],),
+        ).fetchone()
+        if active:
+            raise ValueError(
+                f"Work order '{work_order['id']}' already has an active dispatch '{active['id']}'."
+            )
+        conn.execute(
+            "INSERT INTO vendor_dispatches "
+            "(id, vendor_id, work_order_id, status, agreed_cost, dispatched_at) "
+            "VALUES (?, ?, ?, 'dispatched', ?, ?)",
+            (dispatch_id, vendor["id"], work_order["id"], cost, datetime.now(UTC).isoformat()),
+        )
+        conn.commit()
+    db_utils.update_work_order(
+        work_order["id"],
+        assigned_to=vendor["name"],
+        status="scheduled" if work_order["status"] == "submitted" else None,
+        scheduled_date=scheduled_date,
+        estimated_cost=cost,
+    )
+    created = get_dispatch(dispatch_id)
+    if created is None:
+        raise RuntimeError("Failed to retrieve created dispatch.")
+    return created
