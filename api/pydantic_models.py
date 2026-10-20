@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
-from api import db_utils
+from api import db_utils, vendors
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.macros import extract_template_variables
 from api.settings import settings
@@ -2589,3 +2589,49 @@ class InspectionDocumentPublishResponse(BaseModel):
     sha256: str
     content_length: int
     indexed_in_chroma: bool
+
+
+class VendorItem(BaseModel):
+    id: str
+    name: str
+    trade: str = "general"
+    contact_name: str = ""
+    email: str = ""
+    phone: str = ""
+    hourly_rate: float | None = None
+    status: str = "active"
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class VendorCreateRequest(BaseModel):
+    id: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_ID_LENGTH)
+    name: str = Field(min_length=1, max_length=vendors.MAX_VENDOR_NAME_LENGTH)
+    trade: str = Field(default=db_utils.DEFAULT_WORK_ORDER_CATEGORY)
+    contact_name: str = Field(default="", max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    email: str = Field(default="", max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    phone: str = Field(default="", max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    hourly_rate: float | None = Field(default=None, ge=0.0)
+    status: str = Field(default=vendors.DEFAULT_VENDOR_STATUS)
+    notes: str = Field(default="", max_length=vendors.MAX_VENDOR_NOTES_LENGTH)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_id(v) if v is not None else None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return vendors.normalize_vendor_name(v)
+
+    @field_validator("trade")
+    @classmethod
+    def validate_trade(cls, v: str) -> str:
+        return vendors.normalize_vendor_trade(v)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return vendors.normalize_vendor_status(v)
