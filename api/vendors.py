@@ -6,6 +6,10 @@ to vendors, job completion with final cost and rating, and vendor metrics.
 
 from __future__ import annotations
 
+from contextlib import closing
+
+from api import db_utils
+
 VALID_VENDOR_STATUSES = {"active", "inactive", "blacklisted"}
 DEFAULT_VENDOR_STATUS = "active"
 
@@ -90,3 +94,33 @@ DEFAULT_SEEDED_VENDORS = [
         "notes": "Licensed for panel upgrades.",
     },
 ]
+
+
+def create_vendors() -> None:
+    """Create vendor tables and indexes, and pre-seed sample vendors if the table is empty."""
+    with closing(db_utils.get_db_connection()) as conn:
+        conn.execute(_CREATE_VENDORS_TABLE)
+        conn.execute(_CREATE_VENDORS_TRADE_INDEX)
+        conn.execute(_CREATE_VENDOR_DISPATCHES_TABLE)
+        conn.execute(_CREATE_VENDOR_DISPATCHES_VENDOR_INDEX)
+        conn.execute(_CREATE_VENDOR_DISPATCHES_WO_INDEX)
+        row = conn.execute("SELECT COUNT(*) FROM vendors").fetchone()
+        if row and row[0] == 0:
+            for v in DEFAULT_SEEDED_VENDORS:
+                conn.execute(
+                    "INSERT INTO vendors "
+                    "(id, name, trade, contact_name, email, phone, hourly_rate, status, notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        v["id"],
+                        v["name"],
+                        v["trade"],
+                        v["contact_name"],
+                        v["email"],
+                        v["phone"],
+                        v["hourly_rate"],
+                        v["status"],
+                        v["notes"],
+                    ),
+                )
+        conn.commit()
