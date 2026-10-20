@@ -128,3 +128,68 @@ def test_dispatch_vendor_route_error_statuses(vendor_api):
     )
     assert invalid.status_code == HTTP_UNPROCESSABLE_ENTITY
     assert not vendor_api
+
+
+def test_complete_dispatch_route_and_history(vendor_api):
+    assert (
+        client.post(
+            "/work-orders",
+            json={
+                "id": "wo_route_2",
+                "unit_id": "unit_101",
+                "title": "Sink",
+                "description": "Clogged sink.",
+                "category": "plumbing",
+            },
+        ).status_code
+        == HTTP_CREATED
+    )
+    dispatch = client.post(
+        "/work-orders/wo_route_2/dispatch-vendor", json={"vendor_id": "vnd_plumb_01"}
+    ).json()["dispatch"]
+    vendor_api.clear()
+
+    res = client.post(
+        f"/vendor-dispatches/{dispatch['id']}/complete",
+        json={"final_cost": 120.5, "rating": 5, "feedback": "Great", "resolution_notes": "Fixed"},
+    )
+    assert res.status_code == HTTP_OK
+    done = res.json()["dispatch"]
+    assert done["status"] == "completed"
+    assert done["final_cost"] == 120.5  # noqa: PLR2004
+    assert done["rating"] == 5  # noqa: PLR2004
+    work_order = client.get("/work-orders/wo_route_2").json()["work_order"]
+    assert work_order["status"] == "completed"
+    assert work_order["actual_cost"] == 120.5  # noqa: PLR2004
+    events = [e for e, _ in vendor_api]
+    assert "vendor.job_completed" in events
+    payload = next(d for e, d in vendor_api if e == "vendor.job_completed")
+    assert payload["rating"] == 5  # noqa: PLR2004
+
+    history = client.get("/vendors/vnd_plumb_01/dispatches").json()
+    assert history["total"] == 1
+    assert history["items"][0]["id"] == dispatch["id"]
+    assert (
+        client.get("/vendors/vnd_plumb_01/dispatches", params={"status": "dispatched"}).json()[
+            "total"
+        ]
+        == 0
+    )
+    assert client.get("/vendors/missing/dispatches").status_code == HTTP_NOT_FOUND
+
+    metrics = client.get("/vendors/metrics").json()
+    assert metrics["completed_dispatches"] == 1
+    assert metrics["total_spend"] == 120.5  # noqa: PLR2004
+
+
+def test_complete_dispatch_route_errors(vendor_api):
+    assert client.post("/vendor-dispatches/nope/complete", json={}).status_code == HTTP_NOT_FOUND
+    dispatch = client.post(
+        "/work-orders/wo_101/dispatch-vendor", json={"vendor_id": "vnd_plumb_01"}
+    ).json()["dispatch"]
+    bad_rating = client.post(f"/vendor-dispatches/{dispatch['id']}/complete", json={"rating": 9})
+    assert bad_rating.status_code == HTTP_UNPROCESSABLE_ENTITY
+    ok = client.post(f"/vendor-dispatches/{dispatch['id']}/complete", json={})
+    assert ok.status_code == HTTP_OK
+    again = client.post(f"/vendor-dispatches/{dispatch['id']}/complete", json={})
+    assert again.status_code == HTTP_CONFLICT
