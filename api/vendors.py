@@ -396,3 +396,42 @@ def dispatch_vendor(
     if created is None:
         raise RuntimeError("Failed to retrieve created dispatch.")
     return created
+
+
+def complete_dispatch(
+    dispatch_id: str,
+    *,
+    final_cost: float | None = None,
+    rating: int | None = None,
+    feedback: str = "",
+    resolution_notes: str = "",
+) -> dict[str, Any]:
+    """Complete an active dispatch, recording final cost and rating, and close the work order."""
+    dispatch = get_dispatch(dispatch_id)
+    if not dispatch:
+        raise ValueError(f"Dispatch '{dispatch_id}' not found.")
+    if dispatch["status"] != "dispatched":
+        raise ValueError(
+            f"Dispatch '{dispatch['id']}' is {dispatch['status']} and cannot be completed."
+        )
+    if rating is not None and not MIN_RATING <= rating <= MAX_RATING:
+        raise ValueError(f"Rating must be between {MIN_RATING} and {MAX_RATING}.")
+    cost = _clean_rate(final_cost)
+    clean_feedback = _clean_text(feedback, "Feedback", MAX_VENDOR_NOTES_LENGTH)
+    with closing(db_utils.get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE vendor_dispatches SET status = 'completed', final_cost = ?, rating = ?, "
+            "feedback = ?, completed_at = ? WHERE id = ?",
+            (cost, rating, clean_feedback, datetime.now(UTC).isoformat(), dispatch["id"]),
+        )
+        conn.commit()
+    db_utils.update_work_order(
+        dispatch["work_order_id"],
+        status="completed",
+        actual_cost=cost,
+        resolution_notes=resolution_notes or None,
+    )
+    completed = get_dispatch(dispatch["id"])
+    if completed is None:
+        raise RuntimeError("Failed to retrieve completed dispatch.")
+    return completed
