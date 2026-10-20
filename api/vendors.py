@@ -240,3 +240,34 @@ def create_vendor(  # noqa: PLR0913
     if created is None:
         raise RuntimeError("Failed to retrieve created vendor.")
     return created
+
+
+def list_vendors(  # noqa: PLR0913
+    *,
+    trade: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """List vendors with optional trade/status/search filters; returns (items, total)."""
+    where: list[str] = []
+    params: list[Any] = []
+    if trade and trade.strip():
+        where.append("trade = ?")
+        params.append(trade.strip().lower())
+    if status and status.strip():
+        where.append("status = ?")
+        params.append(status.strip().lower())
+    if search and search.strip():
+        pattern = f"%{search.strip().lower()}%"
+        where.append("(LOWER(name) LIKE ? OR LOWER(contact_name) LIKE ? OR LOWER(notes) LIKE ?)")
+        params.extend([pattern, pattern, pattern])
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    with closing(db_utils.get_db_connection()) as conn:
+        total = int(conn.execute(f"SELECT COUNT(*) FROM vendors{clause}", params).fetchone()[0])
+        rows = conn.execute(
+            f"SELECT * FROM vendors{clause} ORDER BY name ASC LIMIT ? OFFSET ?",  # noqa: S608
+            [*params, max(1, limit), max(0, offset)],
+        ).fetchall()
+    return [dict(r) for r in rows], total
