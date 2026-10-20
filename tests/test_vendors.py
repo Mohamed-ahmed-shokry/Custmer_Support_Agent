@@ -103,3 +103,23 @@ def test_list_vendors_filters_and_pagination(vendor_db):
     items, total = vendors.list_vendors(limit=1, offset=1)
     assert total == 3  # noqa: PLR2004
     assert [v["id"] for v in items] == ["vnd_elec_01"]
+
+
+def test_update_vendor(vendor_db):
+    updated = vendors.update_vendor(
+        "vnd_plumb_01",
+        name="BlueLine Plumbing & Drain",
+        status="inactive",
+        hourly_rate=100,
+        phone="555-0000",
+    )
+    assert updated is not None
+    assert updated["name"] == "BlueLine Plumbing & Drain"
+    assert updated["status"] == "inactive"
+    assert updated["hourly_rate"] == 100.0  # noqa: PLR2004
+    assert updated["phone"] == "555-0000"
+    assert updated["trade"] == "plumbing"  # untouched fields are preserved
+
+    assert vendors.update_vendor("missing", name="X") is None
+    with pytest.raises(ValueError, match="Invalid vendor status"):
+        vendors.update_vendor("vnd_plumb_01", status="gone")
