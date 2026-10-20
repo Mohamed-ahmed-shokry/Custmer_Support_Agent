@@ -271,3 +271,51 @@ def list_vendors(  # noqa: PLR0913
             [*params, max(1, limit), max(0, offset)],
         ).fetchall()
     return [dict(r) for r in rows], total
+
+
+def update_vendor(  # noqa: PLR0913
+    vendor_id: str,
+    *,
+    name: str | None = None,
+    trade: str | None = None,
+    contact_name: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    hourly_rate: float | None = None,
+    status: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Update the supplied fields of a vendor; returns None when it does not exist."""
+    current = get_vendor(vendor_id)
+    if not current:
+        return None
+    values = (
+        normalize_vendor_name(name) if name is not None else current["name"],
+        normalize_vendor_trade(trade) if trade is not None else current["trade"],
+        (
+            _clean_text(contact_name, "Contact name", MAX_VENDOR_CONTACT_LENGTH)
+            if contact_name is not None
+            else current["contact_name"]
+        ),
+        _clean_text(email, "Email", MAX_VENDOR_CONTACT_LENGTH)
+        if email is not None
+        else current["email"],
+        _clean_text(phone, "Phone", MAX_VENDOR_CONTACT_LENGTH)
+        if phone is not None
+        else current["phone"],
+        _clean_rate(hourly_rate) if hourly_rate is not None else current["hourly_rate"],
+        normalize_vendor_status(status) if status is not None else current["status"],
+        _clean_text(notes, "Notes", MAX_VENDOR_NOTES_LENGTH)
+        if notes is not None
+        else current["notes"],
+        current["id"],
+    )
+    with closing(db_utils.get_db_connection()) as conn:
+        conn.execute(
+            "UPDATE vendors SET name = ?, trade = ?, contact_name = ?, email = ?, phone = ?, "
+            "hourly_rate = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ?",
+            values,
+        )
+        conn.commit()
+    return get_vendor(current["id"])
