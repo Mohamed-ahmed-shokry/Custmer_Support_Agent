@@ -287,3 +287,9 @@ def test_vendor_summary_metrics_with_dispatches(vendor_db):
     assert plumber["completed_jobs"] == 2  # noqa: PLR2004
     assert plumber["average_rating"] == 4.5  # noqa: PLR2004
     assert plumber["total_spend"] == 150.5  # noqa: PLR2004
+
+
+def test_vendor_webhook_events_are_registrable():
+    assert db_utils.normalize_webhook_events(["vendor.dispatched", "vendor.job_completed"]) == (
+        "vendor.dispatched,vendor.job_completed"
+    )
