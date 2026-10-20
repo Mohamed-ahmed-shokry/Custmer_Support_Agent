@@ -231,3 +231,24 @@ def test_complete_dispatch_validation(vendor_db):
     still_active = vendors.get_dispatch(dispatch["id"])
     assert still_active is not None
     assert still_active["status"] == "dispatched"
+
+
+def test_list_dispatches_filters(vendor_db):
+    _make_work_order()
+    first = vendors.dispatch_vendor("wo_test_1", "vnd_plumb_01")
+    second = vendors.dispatch_vendor("wo_102", "vnd_hvac_01")
+    vendors.complete_dispatch(second["id"], final_cost=99, rating=4)
+
+    items, total = vendors.list_dispatches()
+    assert total == 2  # noqa: PLR2004
+    assert {d["id"] for d in items} == {first["id"], second["id"]}
+
+    items, total = vendors.list_dispatches(vendor_id="vnd_plumb_01")
+    assert [d["id"] for d in items] == [first["id"]]
+    items, total = vendors.list_dispatches(work_order_id="wo_102")
+    assert [d["id"] for d in items] == [second["id"]]
+    items, total = vendors.list_dispatches(status="Completed")
+    assert [d["id"] for d in items] == [second["id"]]
+    items, total = vendors.list_dispatches(limit=1, offset=1)
+    assert total == 2  # noqa: PLR2004
+    assert len(items) == 1
