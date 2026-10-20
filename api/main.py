@@ -24,6 +24,7 @@ from api import (
     macros,
     sla,
     tenant_context,
+    vendors,
     webhooks,
 )
 from api.chroma_utils import (
@@ -328,6 +329,8 @@ app = FastAPI(
     description="Document-grounded customer support assistant API.",
     version=settings.app_version,
 )
+
+vendors.create_vendors()
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html", ".md", ".txt", ".csv"}
 
