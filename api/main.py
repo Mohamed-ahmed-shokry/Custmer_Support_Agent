@@ -265,7 +265,9 @@ from api.pydantic_models import (
     UpdateSessionRequest,
     UploadDocumentResponse,
     VendorCreateRequest,
+    VendorDispatchCompleteRequest,
     VendorDispatchItem,
+    VendorDispatchListResponse,
     VendorDispatchRequest,
     VendorDispatchResponse,
     VendorItem,
@@ -4284,3 +4286,35 @@ def dispatch_vendor_route(
         },
     )
     return VendorDispatchResponse(dispatch=VendorDispatchItem(**created))
+
+
+@app.post("/vendor-dispatches/{dispatch_id}/complete", response_model=VendorDispatchResponse)
+def complete_vendor_dispatch_route(
+    dispatch_id: str,
+    request: VendorDispatchCompleteRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Complete a vendor dispatch, recording final cost and rating and closing the work order."""
+    try:
+        completed = vendors.complete_dispatch(
+            dispatch_id,
+            final_cost=request.final_cost,
+            rating=request.rating,
+            feedback=request.feedback,
+            resolution_notes=request.resolution_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_dispatch_error_status(exc), detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "vendor.job_completed",
+        {
+            "dispatch_id": completed["id"],
+            "vendor_id": completed["vendor_id"],
+            "work_order_id": completed["work_order_id"],
+            "final_cost": completed["final_cost"],
+            "rating": completed["rating"],
+        },
+    )
+    return VendorDispatchResponse(dispatch=VendorDispatchItem(**completed))
