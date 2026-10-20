@@ -79,3 +79,27 @@ def test_create_vendor_rejects_invalid_input(vendor_db):
         vendors.create_vendor(name="Long", notes="x" * 2001)
     with pytest.raises(ValueError, match="blank"):
         vendors.create_vendor(name=" ")
+
+
+def test_list_vendors_filters_and_pagination(vendor_db):
+    items, total = vendors.list_vendors()
+    assert total == 3  # noqa: PLR2004
+    assert [v["name"] for v in items] == [
+        "BlueLine Plumbing",
+        "BrightSpark Electric",
+        "CoolBreeze HVAC",
+    ]
+
+    items, total = vendors.list_vendors(trade="HVAC")
+    assert total == 1
+    assert items[0]["id"] == "vnd_hvac_01"
+
+    items, total = vendors.list_vendors(search="priya")
+    assert [v["id"] for v in items] == ["vnd_elec_01"]
+
+    items, total = vendors.list_vendors(status="inactive")
+    assert (items, total) == ([], 0)
+
+    items, total = vendors.list_vendors(limit=1, offset=1)
+    assert total == 3  # noqa: PLR2004
+    assert [v["id"] for v in items] == ["vnd_elec_01"]
