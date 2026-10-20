@@ -435,3 +435,36 @@ def complete_dispatch(
     if completed is None:
         raise RuntimeError("Failed to retrieve completed dispatch.")
     return completed
+
+
+def list_dispatches(
+    *,
+    vendor_id: str | None = None,
+    work_order_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """List vendor dispatches (newest first) with optional filters; returns (items, total)."""
+    where: list[str] = []
+    params: list[Any] = []
+    if vendor_id and vendor_id.strip():
+        where.append("vendor_id = ?")
+        params.append(vendor_id.strip())
+    if work_order_id and work_order_id.strip():
+        where.append("work_order_id = ?")
+        params.append(work_order_id.strip())
+    if status and status.strip():
+        where.append("status = ?")
+        params.append(status.strip().lower())
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    with closing(db_utils.get_db_connection()) as conn:
+        total = int(
+            conn.execute(f"SELECT COUNT(*) FROM vendor_dispatches{clause}", params).fetchone()[0]  # noqa: S608
+        )
+        rows = conn.execute(
+            f"SELECT * FROM vendor_dispatches{clause} "  # noqa: S608
+            "ORDER BY dispatched_at DESC, id DESC LIMIT ? OFFSET ?",
+            [*params, max(1, limit), max(0, offset)],
+        ).fetchall()
+    return [dict(r) for r in rows], total
