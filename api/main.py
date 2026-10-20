@@ -264,6 +264,11 @@ from api.pydantic_models import (
     UnitUpdateRequest,
     UpdateSessionRequest,
     UploadDocumentResponse,
+    VendorCreateRequest,
+    VendorItem,
+    VendorListResponse,
+    VendorMetricsResponse,
+    VendorResponse,
     WebhookCreateRequest,
     WebhookDeliveryLogItem,
     WebhookDeliveryLogsResponse,
@@ -4156,3 +4161,59 @@ def get_unit_inspections_route(unit_id: str):
         limit=100,
         offset=0,
     )
+
+
+# --- Maintenance Vendor Directory & Dispatch Endpoints ---
+
+
+@app.post("/vendors", response_model=VendorResponse, status_code=201)
+def create_vendor_route(request: VendorCreateRequest):
+    """Register a maintenance vendor in the directory."""
+    try:
+        created = vendors.create_vendor(
+            name=request.name,
+            trade=request.trade,
+            contact_name=request.contact_name,
+            email=request.email,
+            phone=request.phone,
+            hourly_rate=request.hourly_rate,
+            status=request.status,
+            notes=request.notes,
+            vendor_id=request.id,
+        )
+    except ValueError as exc:
+        status_code = 409 if "already exists" in str(exc).lower() else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return VendorResponse(vendor=VendorItem(**created))
+
+
+@app.get("/vendors/metrics", response_model=VendorMetricsResponse)
+def get_vendor_metrics_route():
+    """Retrieve vendor directory, dispatch, rating and spend metrics."""
+    return VendorMetricsResponse(**vendors.get_vendor_summary_metrics())
+
+
+@app.get("/vendors", response_model=VendorListResponse)
+def list_vendors_route(
+    trade: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List vendors with optional trade, status and search filters."""
+    items, total = vendors.list_vendors(
+        trade=trade, status=status, search=search, limit=limit, offset=offset
+    )
+    return VendorListResponse(
+        items=[VendorItem(**item) for item in items], total=total, limit=limit, offset=offset
+    )
+
+
+@app.get("/vendors/{vendor_id}", response_model=VendorResponse)
+def get_vendor_route(vendor_id: str):
+    """Retrieve a specific vendor."""
+    item = vendors.get_vendor(vendor_id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    return VendorResponse(vendor=VendorItem(**item))
