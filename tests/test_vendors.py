@@ -252,3 +252,38 @@ def test_list_dispatches_filters(vendor_db):
     items, total = vendors.list_dispatches(limit=1, offset=1)
     assert total == 2  # noqa: PLR2004
     assert len(items) == 1
+
+
+def test_vendor_summary_metrics_empty(vendor_db):
+    metrics = vendors.get_vendor_summary_metrics()
+    assert metrics["total_vendors"] == 3  # noqa: PLR2004
+    assert metrics["active_vendors"] == 3  # noqa: PLR2004
+    assert metrics["vendors_by_trade"] == {"electrical": 1, "hvac": 1, "plumbing": 1}
+    assert metrics["total_dispatches"] == 0
+    assert metrics["completion_rate"] == 0.0
+    assert metrics["average_rating"] is None
+    assert metrics["total_spend"] == 0.0
+    assert all(v["completed_jobs"] == 0 and v["average_rating"] is None for v in metrics["vendors"])
+
+
+def test_vendor_summary_metrics_with_dispatches(vendor_db):
+    _make_work_order("wo_a")
+    _make_work_order("wo_b")
+    _make_work_order("wo_c")
+    done_a = vendors.dispatch_vendor("wo_a", "vnd_plumb_01")
+    done_b = vendors.dispatch_vendor("wo_b", "vnd_plumb_01")
+    vendors.dispatch_vendor("wo_c", "vnd_hvac_01")
+    vendors.complete_dispatch(done_a["id"], final_cost=100, rating=5)
+    vendors.complete_dispatch(done_b["id"], final_cost=50.5, rating=4)
+
+    metrics = vendors.get_vendor_summary_metrics()
+    assert metrics["total_dispatches"] == 3  # noqa: PLR2004
+    assert metrics["active_dispatches"] == 1
+    assert metrics["completed_dispatches"] == 2  # noqa: PLR2004
+    assert metrics["completion_rate"] == round(2 / 3, 4)
+    assert metrics["average_rating"] == 4.5  # noqa: PLR2004
+    assert metrics["total_spend"] == 150.5  # noqa: PLR2004
+    plumber = next(v for v in metrics["vendors"] if v["vendor_id"] == "vnd_plumb_01")
+    assert plumber["completed_jobs"] == 2  # noqa: PLR2004
+    assert plumber["average_rating"] == 4.5  # noqa: PLR2004
+    assert plumber["total_spend"] == 150.5  # noqa: PLR2004
