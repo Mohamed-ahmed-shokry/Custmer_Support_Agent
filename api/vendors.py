@@ -329,3 +329,13 @@ def delete_vendor(vendor_id: str) -> bool:
         cursor = conn.execute("DELETE FROM vendors WHERE id = ?", (cleaned_id,))
         conn.commit()
         return bool(cursor.rowcount and cursor.rowcount > 0)
+
+
+def get_dispatch(dispatch_id: str) -> dict[str, Any] | None:
+    """Fetch a vendor dispatch by ID, or None when it does not exist."""
+    cleaned_id = (dispatch_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(db_utils.get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM vendor_dispatches WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
