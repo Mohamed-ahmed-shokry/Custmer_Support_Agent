@@ -4318,3 +4318,24 @@ def complete_vendor_dispatch_route(
         },
     )
     return VendorDispatchResponse(dispatch=VendorDispatchItem(**completed))
+
+
+@app.get("/vendors/{vendor_id}/dispatches", response_model=VendorDispatchListResponse)
+def list_vendor_dispatches_route(
+    vendor_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List the dispatch history of a vendor."""
+    if not vendors.get_vendor(vendor_id):
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    items, total = vendors.list_dispatches(
+        vendor_id=vendor_id, status=status, limit=limit, offset=offset
+    )
+    return VendorDispatchListResponse(
+        items=[VendorDispatchItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
