@@ -6,6 +6,7 @@ to vendors, job completion with final cost and rating, and vendor metrics.
 
 from __future__ import annotations
 
+import re
 from contextlib import closing
 
 from api import db_utils
@@ -124,3 +125,49 @@ def create_vendors() -> None:
                     ),
                 )
         conn.commit()
+
+
+def normalize_vendor_id(value: str | None) -> str:
+    """Validate and clean a vendor ID."""
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Vendor ID must not be blank.")
+    if len(cleaned) > MAX_VENDOR_ID_LENGTH:
+        raise ValueError(f"Vendor ID must be at most {MAX_VENDOR_ID_LENGTH} characters.")
+    if not re.match(r"^[A-Za-z0-9_\-\.]+$", cleaned):
+        raise ValueError(
+            "Vendor ID may only contain alphanumeric characters, underscores, hyphens, and periods."
+        )
+    return cleaned
+
+
+def normalize_vendor_name(value: str | None) -> str:
+    """Validate and clean a vendor display name."""
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise ValueError("Vendor name must not be blank.")
+    if len(cleaned) > MAX_VENDOR_NAME_LENGTH:
+        raise ValueError(f"Vendor name must be at most {MAX_VENDOR_NAME_LENGTH} characters.")
+    return cleaned
+
+
+def normalize_vendor_trade(value: str | None) -> str:
+    """Validate a vendor trade against the work order categories."""
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return db_utils.DEFAULT_WORK_ORDER_CATEGORY
+    if cleaned not in db_utils.VALID_WORK_ORDER_CATEGORIES:
+        valid = ", ".join(sorted(db_utils.VALID_WORK_ORDER_CATEGORIES))
+        raise ValueError(f"Invalid vendor trade '{cleaned}'. Expected one of: {valid}.")
+    return cleaned
+
+
+def normalize_vendor_status(value: str | None) -> str:
+    """Validate a vendor status."""
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return DEFAULT_VENDOR_STATUS
+    if cleaned not in VALID_VENDOR_STATUSES:
+        valid = ", ".join(sorted(VALID_VENDOR_STATUSES))
+        raise ValueError(f"Invalid vendor status '{cleaned}'. Expected one of: {valid}.")
+    return cleaned
