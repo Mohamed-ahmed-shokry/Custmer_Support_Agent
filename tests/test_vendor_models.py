@@ -5,6 +5,11 @@ from __future__ import annotations
 import pytest
 from api.pydantic_models import (
     VendorCreateRequest,
+    VendorDispatchCompleteRequest,
+    VendorDispatchItem,
+    VendorDispatchListResponse,
+    VendorDispatchRequest,
+    VendorDispatchResponse,
     VendorItem,
     VendorListResponse,
     VendorResponse,
@@ -65,3 +70,33 @@ def test_vendor_response_wrappers():
     listing = VendorListResponse(items=[resp.vendor], total=1)
     assert listing.limit == 50  # noqa: PLR2004
     assert listing.offset == 0
+
+
+def test_vendor_dispatch_request_validation():
+    req = VendorDispatchRequest(vendor_id="vnd_1", agreed_cost=120, scheduled_date="2026-11-03")
+    assert req.agreed_cost == 120.0  # noqa: PLR2004
+    with pytest.raises(ValidationError):
+        VendorDispatchRequest(vendor_id="")
+    with pytest.raises(ValidationError):
+        VendorDispatchRequest(vendor_id="vnd_1", agreed_cost=-1)
+
+
+def test_vendor_dispatch_complete_request_rating_bounds():
+    assert VendorDispatchCompleteRequest(rating=1).rating == 1
+    assert VendorDispatchCompleteRequest(rating=5).rating == 5  # noqa: PLR2004
+    assert VendorDispatchCompleteRequest().rating is None
+    with pytest.raises(ValidationError):
+        VendorDispatchCompleteRequest(rating=0)
+    with pytest.raises(ValidationError):
+        VendorDispatchCompleteRequest(rating=6)
+    with pytest.raises(ValidationError):
+        VendorDispatchCompleteRequest(final_cost=-0.01)
+
+
+def test_vendor_dispatch_response_wrappers():
+    item = VendorDispatchItem(
+        id="vdp_1", vendor_id="vnd_1", work_order_id="wo_1", dispatched_at="2026-10-21T00:00:00"
+    )
+    assert item.status == "dispatched"
+    assert VendorDispatchResponse(dispatch=item).dispatch.id == "vdp_1"
+    assert VendorDispatchListResponse(items=[item], total=1).total == 1
