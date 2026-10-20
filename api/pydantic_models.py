@@ -2672,3 +2672,40 @@ class VendorListResponse(BaseModel):
     total: int = 0
     limit: int = 50
     offset: int = 0
+
+
+class VendorDispatchItem(BaseModel):
+    id: str
+    vendor_id: str
+    work_order_id: str
+    status: str = "dispatched"
+    agreed_cost: float | None = None
+    final_cost: float | None = None
+    rating: int | None = None
+    feedback: str = ""
+    dispatched_at: str
+    completed_at: str | None = None
+
+
+class VendorDispatchRequest(BaseModel):
+    vendor_id: str = Field(min_length=1, max_length=vendors.MAX_VENDOR_ID_LENGTH)
+    agreed_cost: float | None = Field(default=None, ge=0.0)
+    scheduled_date: str | None = Field(default=None)
+
+
+class VendorDispatchCompleteRequest(BaseModel):
+    final_cost: float | None = Field(default=None, ge=0.0)
+    rating: int | None = Field(default=None, ge=vendors.MIN_RATING, le=vendors.MAX_RATING)
+    feedback: str = Field(default="", max_length=vendors.MAX_VENDOR_NOTES_LENGTH)
+    resolution_notes: str = Field(default="", max_length=db_utils.MAX_WORK_ORDER_NOTES_LENGTH)
+
+
+class VendorDispatchResponse(BaseModel):
+    dispatch: VendorDispatchItem
+
+
+class VendorDispatchListResponse(BaseModel):
+    items: list[VendorDispatchItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
