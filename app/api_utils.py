@@ -3160,3 +3160,67 @@ def get_inspection_metrics() -> dict[str, Any] | None:
 
 
 
+
+
+# --- Maintenance Vendor Directory & Dispatch Client Helpers ---
+
+
+def _vendor_call(  # noqa: PLR0913
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Issue an authenticated vendor API request; show an error and return None on failure."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def list_vendors(  # noqa: PLR0913
+    trade: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, value in (("trade", trade), ("status", status), ("search", search)):
+        if value and value.strip():
+            params[key] = value.strip()
+    return _vendor_call(
+        "get", "/vendors", HTTP_OK, "Failed to list vendors", "listing vendors", params=params
+    )
+
+
+def get_vendor(vendor_id: str) -> dict[str, Any] | None:
+    return _vendor_call(
+        "get",
+        f"/vendors/{vendor_id}",
+        HTTP_OK,
+        f"Failed to fetch vendor '{vendor_id}'",
+        "fetching vendor",
+    )
+
+
+def get_vendor_metrics() -> dict[str, Any] | None:
+    return _vendor_call(
+        "get",
+        "/vendors/metrics",
+        HTTP_OK,
+        "Failed to fetch vendor metrics",
+        "fetching vendor metrics",
+    )
