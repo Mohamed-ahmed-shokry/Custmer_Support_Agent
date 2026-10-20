@@ -1495,7 +1495,7 @@ Via the API (and Streamlit client helpers) an operator can register a plumbing v
 - [x] Task 6: complete_dispatch, list_dispatches + tests
 - [x] Task 7: vendor summary metrics + tests
 - [x] Task 8: webhook events registration + test
-- [ ] Task 9: Pydantic models + tests
+- [x] Task 9: Pydantic models + tests
 - [ ] Task 10: FastAPI routes + route lifecycle test
 - [ ] Task 11: client helpers + tests
 - [ ] Task 12: docs, version bump
