@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from api.pydantic_models import VendorCreateRequest, VendorItem
+from api.pydantic_models import (
+    VendorCreateRequest,
+    VendorItem,
+    VendorListResponse,
+    VendorResponse,
+    VendorUpdateRequest,
+)
 from pydantic import ValidationError
 
 
@@ -37,3 +43,25 @@ def test_vendor_item_defaults():
     item = VendorItem(id="vnd_1", name="Acme")
     assert item.trade == "general"
     assert item.hourly_rate is None
+
+
+def test_vendor_update_request_partial_and_validation():
+    req = VendorUpdateRequest(trade=" Plumbing ", status="Inactive")
+    assert req.trade == "plumbing"
+    assert req.status == "inactive"
+    assert req.name is None
+    assert VendorUpdateRequest().model_dump(exclude_none=True) == {}
+    with pytest.raises(ValidationError):
+        VendorUpdateRequest(name=" ")
+    with pytest.raises(ValidationError):
+        VendorUpdateRequest(trade="astrology")
+    with pytest.raises(ValidationError):
+        VendorUpdateRequest(status="retired")
+
+
+def test_vendor_response_wrappers():
+    resp = VendorResponse(vendor=VendorItem(id="vnd_1", name="Acme"))
+    assert resp.vendor.id == "vnd_1"
+    listing = VendorListResponse(items=[resp.vendor], total=1)
+    assert listing.limit == 50  # noqa: PLR2004
+    assert listing.offset == 0
