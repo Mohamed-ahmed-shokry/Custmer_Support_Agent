@@ -265,6 +265,9 @@ from api.pydantic_models import (
     UpdateSessionRequest,
     UploadDocumentResponse,
     VendorCreateRequest,
+    VendorDispatchItem,
+    VendorDispatchRequest,
+    VendorDispatchResponse,
     VendorItem,
     VendorListResponse,
     VendorMetricsResponse,
@@ -4238,3 +4241,46 @@ def delete_vendor_route(vendor_id: str):
     if not vendors.delete_vendor(vendor_id):
         raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
     return {"status": "deleted", "vendor_id": vendor_id}
+
+
+def _dispatch_error_status(exc: ValueError) -> int:
+    message = str(exc).lower()
+    if "not found" in message:
+        return 404
+    if "already has an active dispatch" in message or "cannot be" in message:
+        return 409
+    return 422
+
+
+@app.post(
+    "/work-orders/{work_order_id}/dispatch-vendor",
+    response_model=VendorDispatchResponse,
+    status_code=201,
+)
+def dispatch_vendor_route(
+    work_order_id: str,
+    request: VendorDispatchRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Dispatch an open maintenance work order to an active vendor."""
+    try:
+        created = vendors.dispatch_vendor(
+            work_order_id,
+            request.vendor_id,
+            agreed_cost=request.agreed_cost,
+            scheduled_date=request.scheduled_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_dispatch_error_status(exc), detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "vendor.dispatched",
+        {
+            "dispatch_id": created["id"],
+            "vendor_id": created["vendor_id"],
+            "work_order_id": created["work_order_id"],
+            "agreed_cost": created["agreed_cost"],
+        },
+    )
+    return VendorDispatchResponse(dispatch=VendorDispatchItem(**created))
