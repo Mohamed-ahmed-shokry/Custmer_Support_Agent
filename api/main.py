@@ -269,6 +269,7 @@ from api.pydantic_models import (
     VendorListResponse,
     VendorMetricsResponse,
     VendorResponse,
+    VendorUpdateRequest,
     WebhookCreateRequest,
     WebhookDeliveryLogItem,
     WebhookDeliveryLogsResponse,
@@ -4217,3 +4218,15 @@ def get_vendor_route(vendor_id: str):
     if not item:
         raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
     return VendorResponse(vendor=VendorItem(**item))
+
+
+@app.patch("/vendors/{vendor_id}", response_model=VendorResponse)
+def update_vendor_route(vendor_id: str, request: VendorUpdateRequest):
+    """Update fields on an existing vendor."""
+    try:
+        updated = vendors.update_vendor(vendor_id, **request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    return VendorResponse(vendor=VendorItem(**updated))
