@@ -2632,3 +2632,34 @@ def test_vendor_helpers_handle_network_errors(monkeypatch, fake_st):
     assert api_utils.list_vendors() is None
     assert api_utils.get_vendor_metrics() is None
     assert any("network down" in str(e) for e in fake_st.errors)
+
+
+def test_vendor_write_helpers(fake_requests, fake_st):
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"vendor": {"id": "vnd_new"}}
+    )
+    assert api_utils.create_vendor({"name": "New"}) == {"vendor": {"id": "vnd_new"}}
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("post", {"name": "New"})
+    assert url.endswith("/vendors")
+
+    # a 200 is not a successful create
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={})
+    assert api_utils.create_vendor({"name": "New"}) is None
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"vendor": {}})
+    assert api_utils.update_vendor("vnd_1", {"status": "inactive"}) == {"vendor": {}}
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("patch", {"status": "inactive"})
+    assert url.endswith("/vendors/vnd_1")
+
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_vendor("vnd_1") is True
+    assert fake_requests.calls[-1][0] == "delete"
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_vendor("vnd_1") is False
+    assert api_utils.update_vendor("vnd_1", {}) is None
+    assert fake_st.errors
