@@ -4230,3 +4230,11 @@ def update_vendor_route(vendor_id: str, request: VendorUpdateRequest):
     if not updated:
         raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
     return VendorResponse(vendor=VendorItem(**updated))
+
+
+@app.delete("/vendors/{vendor_id}")
+def delete_vendor_route(vendor_id: str):
+    """Delete a vendor and its dispatch history."""
+    if not vendors.delete_vendor(vendor_id):
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    return {"status": "deleted", "vendor_id": vendor_id}
