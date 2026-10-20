@@ -54,3 +54,39 @@ _CREATE_VENDOR_DISPATCHES_WO_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_vendor_dispatches_work_order_id "
     "ON vendor_dispatches(work_order_id)"
 )
+
+DEFAULT_SEEDED_VENDORS = [
+    {
+        "id": "vnd_plumb_01",
+        "name": "BlueLine Plumbing",
+        "trade": "plumbing",
+        "contact_name": "Dana Ortiz",
+        "email": "dispatch@blueline.example.com",
+        "phone": "555-0140",
+        "hourly_rate": 95.0,
+        "status": "active",
+        "notes": "24/7 emergency leak response.",
+    },
+    {
+        "id": "vnd_hvac_01",
+        "name": "CoolBreeze HVAC",
+        "trade": "hvac",
+        "contact_name": "Sam Whitfield",
+        "email": "service@coolbreeze.example.com",
+        "phone": "555-0141",
+        "hourly_rate": 110.0,
+        "status": "active",
+        "notes": "Seasonal maintenance contract.",
+    },
+    {
+        "id": "vnd_elec_01",
+        "name": "BrightSpark Electric",
+        "trade": "electrical",
+        "contact_name": "Priya Nair",
+        "email": "jobs@brightspark.example.com",
+        "phone": "555-0142",
+        "hourly_rate": 105.0,
+        "status": "active",
+        "notes": "Licensed for panel upgrades.",
+    },
+]
