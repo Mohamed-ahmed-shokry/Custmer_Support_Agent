@@ -2709,3 +2709,26 @@ class VendorDispatchListResponse(BaseModel):
     total: int = 0
     limit: int = 50
     offset: int = 0
+
+
+class VendorPerformanceItem(BaseModel):
+    vendor_id: str
+    name: str
+    trade: str = "general"
+    completed_jobs: int = 0
+    average_rating: float | None = None
+    total_spend: float = 0.0
+
+
+class VendorMetricsResponse(BaseModel):
+    total_vendors: int = 0
+    active_vendors: int = 0
+    vendors_by_trade: dict[str, int] = Field(default_factory=dict)
+    total_dispatches: int = 0
+    active_dispatches: int = 0
+    completed_dispatches: int = 0
+    cancelled_dispatches: int = 0
+    completion_rate: float = 0.0
+    average_rating: float | None = None
+    total_spend: float = 0.0
+    vendors: list[VendorPerformanceItem] = Field(default_factory=list)
