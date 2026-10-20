@@ -7,7 +7,9 @@ to vendors, job completion with final cost and rating, and vendor metrics.
 from __future__ import annotations
 
 import re
+import uuid
 from contextlib import closing
+from typing import Any
 
 from api import db_utils
 
@@ -171,3 +173,70 @@ def normalize_vendor_status(value: str | None) -> str:
         valid = ", ".join(sorted(VALID_VENDOR_STATUSES))
         raise ValueError(f"Invalid vendor status '{cleaned}'. Expected one of: {valid}.")
     return cleaned
+
+
+def _clean_text(value: str | None, label: str, max_length: int) -> str:
+    cleaned = (value or "").strip()
+    if len(cleaned) > max_length:
+        raise ValueError(f"{label} must be at most {max_length} characters.")
+    return cleaned
+
+
+def _clean_rate(value: float | None) -> float | None:
+    if value is None:
+        return None
+    rate = float(value)
+    if rate < 0:
+        raise ValueError("Hourly rate must not be negative.")
+    return rate
+
+
+def get_vendor(vendor_id: str) -> dict[str, Any] | None:
+    """Fetch a vendor by ID, or None when it does not exist."""
+    cleaned_id = (vendor_id or "").strip()
+    if not cleaned_id:
+        return None
+    with closing(db_utils.get_db_connection()) as conn:
+        row = conn.execute("SELECT * FROM vendors WHERE id = ?", (cleaned_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def create_vendor(  # noqa: PLR0913
+    name: str,
+    *,
+    trade: str = "general",
+    contact_name: str = "",
+    email: str = "",
+    phone: str = "",
+    hourly_rate: float | None = None,
+    status: str = "active",
+    notes: str = "",
+    vendor_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a vendor, generating a `vnd_` ID when none is supplied."""
+    norm_id = normalize_vendor_id(vendor_id or f"vnd_{uuid.uuid4().hex[:8]}")
+    values = (
+        norm_id,
+        normalize_vendor_name(name),
+        normalize_vendor_trade(trade),
+        _clean_text(contact_name, "Contact name", MAX_VENDOR_CONTACT_LENGTH),
+        _clean_text(email, "Email", MAX_VENDOR_CONTACT_LENGTH),
+        _clean_text(phone, "Phone", MAX_VENDOR_CONTACT_LENGTH),
+        _clean_rate(hourly_rate),
+        normalize_vendor_status(status),
+        _clean_text(notes, "Notes", MAX_VENDOR_NOTES_LENGTH),
+    )
+    with closing(db_utils.get_db_connection()) as conn:
+        if conn.execute("SELECT id FROM vendors WHERE id = ?", (norm_id,)).fetchone():
+            raise ValueError(f"Vendor with ID '{norm_id}' already exists.")
+        conn.execute(
+            "INSERT INTO vendors "
+            "(id, name, trade, contact_name, email, phone, hourly_rate, status, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            values,
+        )
+        conn.commit()
+    created = get_vendor(norm_id)
+    if created is None:
+        raise RuntimeError("Failed to retrieve created vendor.")
+    return created
