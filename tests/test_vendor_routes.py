@@ -78,3 +78,53 @@ def test_update_and_delete_vendor(vendor_api):
     assert deleted.status_code == HTTP_OK
     assert deleted.json() == {"status": "deleted", "vendor_id": "vnd_plumb_01"}
     assert client.delete("/vendors/vnd_plumb_01").status_code == HTTP_NOT_FOUND
+
+
+def test_dispatch_vendor_route_lifecycle_start(vendor_api):
+    created = client.post(
+        "/work-orders",
+        json={
+            "id": "wo_route_1",
+            "unit_id": "unit_101",
+            "title": "Leaking faucet",
+            "description": "Kitchen faucet drips.",
+            "category": "plumbing",
+        },
+    )
+    assert created.status_code == HTTP_CREATED
+
+    res = client.post(
+        "/work-orders/wo_route_1/dispatch-vendor",
+        json={"vendor_id": "vnd_plumb_01", "agreed_cost": 150, "scheduled_date": "2026-11-03"},
+    )
+    assert res.status_code == HTTP_CREATED
+    dispatch = res.json()["dispatch"]
+    assert dispatch["status"] == "dispatched"
+    assert dispatch["agreed_cost"] == 150.0  # noqa: PLR2004
+    work_order = client.get("/work-orders/wo_route_1").json()["work_order"]
+    assert work_order["assigned_to"] == "BlueLine Plumbing"
+    assert work_order["status"] == "scheduled"
+    assert [e for e, _ in vendor_api if e == "vendor.dispatched"] == ["vendor.dispatched"]
+    payload = next(d for e, d in vendor_api if e == "vendor.dispatched")
+    assert payload["dispatch_id"] == dispatch["id"]
+    assert payload["work_order_id"] == "wo_route_1"
+
+    # second dispatch of the same work order conflicts
+    dup = client.post("/work-orders/wo_route_1/dispatch-vendor", json={"vendor_id": "vnd_hvac_01"})
+    assert dup.status_code == HTTP_CONFLICT
+
+
+def test_dispatch_vendor_route_error_statuses(vendor_api):
+    missing_wo = client.post(
+        "/work-orders/nope/dispatch-vendor", json={"vendor_id": "vnd_plumb_01"}
+    )
+    assert missing_wo.status_code == HTTP_NOT_FOUND
+    missing_vendor = client.post("/work-orders/wo_101/dispatch-vendor", json={"vendor_id": "nope"})
+    assert missing_vendor.status_code == HTTP_NOT_FOUND
+    closed = client.post("/work-orders/wo_103/dispatch-vendor", json={"vendor_id": "vnd_plumb_01"})
+    assert closed.status_code == HTTP_CONFLICT
+    invalid = client.post(
+        "/work-orders/wo_101/dispatch-vendor", json={"vendor_id": "vnd_plumb_01", "agreed_cost": -1}
+    )
+    assert invalid.status_code == HTTP_UNPROCESSABLE_ENTITY
+    assert not vendor_api
