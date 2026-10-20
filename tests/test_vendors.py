@@ -291,5 +291,5 @@ def test_vendor_summary_metrics_with_dispatches(vendor_db):
 
 def test_vendor_webhook_events_are_registrable():
     assert db_utils.normalize_webhook_events(["vendor.dispatched", "vendor.job_completed"]) == (
-        "vendor.dispatched,vendor.job_completed"
+        "vendor.dispatched, vendor.job_completed"
     )
