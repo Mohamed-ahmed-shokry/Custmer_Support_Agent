@@ -123,3 +123,9 @@ def test_update_vendor(vendor_db):
     assert vendors.update_vendor("missing", name="X") is None
     with pytest.raises(ValueError, match="Invalid vendor status"):
         vendors.update_vendor("vnd_plumb_01", status="gone")
+
+
+def test_delete_vendor(vendor_db):
+    assert vendors.delete_vendor("vnd_elec_01") is True
+    assert vendors.get_vendor("vnd_elec_01") is None
+    assert vendors.delete_vendor("vnd_elec_01") is False
