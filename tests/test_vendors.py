@@ -129,3 +129,8 @@ def test_delete_vendor(vendor_db):
     assert vendors.delete_vendor("vnd_elec_01") is True
     assert vendors.get_vendor("vnd_elec_01") is None
     assert vendors.delete_vendor("vnd_elec_01") is False
+
+
+def test_get_dispatch_returns_none_for_unknown_or_blank(vendor_db):
+    assert vendors.get_dispatch("vdp_missing") is None
+    assert vendors.get_dispatch(" ") is None
