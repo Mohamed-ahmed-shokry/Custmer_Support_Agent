@@ -189,3 +189,45 @@ def test_dispatch_vendor_rejections(vendor_db):
     vendors.dispatch_vendor("wo_test_1", "vnd_plumb_01")
     with pytest.raises(ValueError, match="already has an active dispatch"):
         vendors.dispatch_vendor("wo_test_1", "vnd_hvac_01")
+
+
+def test_complete_dispatch_records_cost_rating_and_closes_work_order(vendor_db):
+    _make_work_order()
+    dispatch = vendors.dispatch_vendor("wo_test_1", "vnd_plumb_01", agreed_cost=150)
+    completed = vendors.complete_dispatch(
+        dispatch["id"],
+        final_cost=140.5,
+        rating=5,
+        feedback="Fast and tidy.",
+        resolution_notes="Replaced cartridge.",
+    )
+    assert completed["status"] == "completed"
+    assert completed["final_cost"] == 140.5  # noqa: PLR2004
+    assert completed["rating"] == 5  # noqa: PLR2004
+    assert completed["feedback"] == "Fast and tidy."
+    assert completed["completed_at"]
+    work_order = db_utils.get_work_order("wo_test_1")
+    assert work_order is not None
+    assert work_order["status"] == "completed"
+    assert work_order["actual_cost"] == 140.5  # noqa: PLR2004
+    assert work_order["resolution_notes"] == "Replaced cartridge."
+
+    with pytest.raises(ValueError, match="is completed and cannot be completed"):
+        vendors.complete_dispatch(dispatch["id"])
+
+
+def test_complete_dispatch_validation(vendor_db):
+    _make_work_order()
+    dispatch = vendors.dispatch_vendor("wo_test_1", "vnd_plumb_01")
+    with pytest.raises(ValueError, match="Dispatch 'nope' not found"):
+        vendors.complete_dispatch("nope")
+    with pytest.raises(ValueError, match="Rating must be between 1 and 5"):
+        vendors.complete_dispatch(dispatch["id"], rating=6)
+    with pytest.raises(ValueError, match="Rating must be between 1 and 5"):
+        vendors.complete_dispatch(dispatch["id"], rating=0)
+    with pytest.raises(ValueError, match="must not be negative"):
+        vendors.complete_dispatch(dispatch["id"], final_cost=-1)
+    # failed attempts leave the dispatch active
+    still_active = vendors.get_dispatch(dispatch["id"])
+    assert still_active is not None
+    assert still_active["status"] == "dispatched"
