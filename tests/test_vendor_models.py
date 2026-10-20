@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from api import db_utils, vendors
 from api.pydantic_models import (
     VendorCreateRequest,
     VendorDispatchCompleteRequest,
@@ -12,6 +13,7 @@ from api.pydantic_models import (
     VendorDispatchResponse,
     VendorItem,
     VendorListResponse,
+    VendorMetricsResponse,
     VendorResponse,
     VendorUpdateRequest,
 )
@@ -100,3 +102,16 @@ def test_vendor_dispatch_response_wrappers():
     assert item.status == "dispatched"
     assert VendorDispatchResponse(dispatch=item).dispatch.id == "vdp_1"
     assert VendorDispatchListResponse(items=[item], total=1).total == 1
+
+
+def test_vendor_metrics_response_accepts_engine_output(monkeypatch, tmp_path):
+    monkeypatch.setattr(db_utils, "DB_NAME", str(tmp_path / "metrics.db"))
+    db_utils.create_units()
+    db_utils.create_tenants()
+    db_utils.create_work_orders()
+    vendors.create_vendors()
+    metrics = VendorMetricsResponse(**vendors.get_vendor_summary_metrics())
+    assert metrics.total_vendors == 3  # noqa: PLR2004
+    assert len(metrics.vendors) == 3  # noqa: PLR2004
+    assert metrics.average_rating is None
+    assert VendorMetricsResponse().vendors == []
