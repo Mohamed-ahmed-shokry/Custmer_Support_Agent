@@ -18,7 +18,7 @@
 - [x] **Task 7**: vendor summary metrics + tests
 - [x] **Task 8**: webhook events registration + test
 - [x] **Task 9**: Pydantic models + tests
-- [ ] **Task 10**: FastAPI routes + route lifecycle test
+- [x] **Task 10**: FastAPI routes + route lifecycle test
 - [ ] **Task 11**: client helpers + tests
 - [ ] **Task 12**: docs, version bump
 - [ ] **Task 13**: final verification, e2e run, remote CI green, draft PR
