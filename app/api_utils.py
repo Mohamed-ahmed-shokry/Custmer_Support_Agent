@@ -3224,3 +3224,36 @@ def get_vendor_metrics() -> dict[str, Any] | None:
         "Failed to fetch vendor metrics",
         "fetching vendor metrics",
     )
+
+
+def create_vendor(payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _vendor_call(
+        "post",
+        "/vendors",
+        HTTP_CREATED,
+        "Failed to create vendor",
+        "creating vendor",
+        json=payload,
+    )
+
+
+def update_vendor(vendor_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _vendor_call(
+        "patch",
+        f"/vendors/{vendor_id}",
+        HTTP_OK,
+        f"Failed to update vendor '{vendor_id}'",
+        "updating vendor",
+        json=payload,
+    )
+
+
+def delete_vendor(vendor_id: str) -> bool:
+    result = _vendor_call(
+        "delete",
+        f"/vendors/{vendor_id}",
+        HTTP_OK,
+        f"Failed to delete vendor '{vendor_id}'",
+        "deleting vendor",
+    )
+    return result is not None
