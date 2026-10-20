@@ -1487,14 +1487,14 @@ Via the API (and Streamlit client helpers) an operator can register a plumbing v
 - External vendor portals, email/SMS notification to vendors.
 
 ### Granular Task Breakdown
-- [ ] Task 1: ROADMAP v0.40.0 plan and `docs/PROGRESS.md` re-initialization
-- [ ] Task 2: `api/vendors.py` constants, table schema, bootstrap and seeds + tests
-- [ ] Task 3: Vendor validation helpers + create/get vendor + tests
-- [ ] Task 4: list/update/delete vendor + tests
-- [ ] Task 5: dispatch_vendor + tests
-- [ ] Task 6: complete_dispatch, list_dispatches + tests
-- [ ] Task 7: vendor summary metrics + tests
-- [ ] Task 8: webhook events registration + test
+- [x] Task 1: ROADMAP v0.40.0 plan and `docs/PROGRESS.md` re-initialization
+- [x] Task 2: `api/vendors.py` constants, table schema, bootstrap and seeds + tests
+- [x] Task 3: Vendor validation helpers + create/get vendor + tests
+- [x] Task 4: list/update/delete vendor + tests
+- [x] Task 5: dispatch_vendor + tests
+- [x] Task 6: complete_dispatch, list_dispatches + tests
+- [x] Task 7: vendor summary metrics + tests
+- [x] Task 8: webhook events registration + test
 - [ ] Task 9: Pydantic models + tests
 - [ ] Task 10: FastAPI routes + route lifecycle test
 - [ ] Task 11: client helpers + tests
