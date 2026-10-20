@@ -2635,3 +2635,40 @@ class VendorCreateRequest(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         return vendors.normalize_vendor_status(v)
+
+
+class VendorUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_NAME_LENGTH)
+    trade: str | None = Field(default=None)
+    contact_name: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    email: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    phone: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    hourly_rate: float | None = Field(default=None, ge=0.0)
+    status: str | None = Field(default=None)
+    notes: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_NOTES_LENGTH)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_name(v) if v is not None else None
+
+    @field_validator("trade")
+    @classmethod
+    def validate_trade(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_trade(v) if v is not None else None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_status(v) if v is not None else None
+
+
+class VendorResponse(BaseModel):
+    vendor: VendorItem
+
+
+class VendorListResponse(BaseModel):
+    items: list[VendorItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
