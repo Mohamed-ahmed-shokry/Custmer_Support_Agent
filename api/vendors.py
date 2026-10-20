@@ -468,3 +468,61 @@ def list_dispatches(
             [*params, max(1, limit), max(0, offset)],
         ).fetchall()
     return [dict(r) for r in rows], total
+
+
+def get_vendor_summary_metrics() -> dict[str, Any]:
+    """Aggregate vendor directory, dispatch and spend metrics, overall and per vendor."""
+    with closing(db_utils.get_db_connection()) as conn:
+        total_vendors = int(conn.execute("SELECT COUNT(*) FROM vendors").fetchone()[0])
+        active_vendors = int(
+            conn.execute("SELECT COUNT(*) FROM vendors WHERE status = 'active'").fetchone()[0]
+        )
+        by_trade = {
+            r[0]: int(r[1])
+            for r in conn.execute("SELECT trade, COUNT(*) FROM vendors GROUP BY trade").fetchall()
+        }
+        by_status = {
+            r[0]: int(r[1])
+            for r in conn.execute(
+                "SELECT status, COUNT(*) FROM vendor_dispatches GROUP BY status"
+            ).fetchall()
+        }
+        totals = conn.execute(
+            "SELECT AVG(rating), COALESCE(SUM(final_cost), 0.0) "
+            "FROM vendor_dispatches WHERE status = 'completed'"
+        ).fetchone()
+        per_vendor_rows = conn.execute(
+            "SELECT v.id, v.name, v.trade, "
+            "COUNT(d.id) AS completed_jobs, AVG(d.rating) AS avg_rating, "
+            "COALESCE(SUM(d.final_cost), 0.0) AS spend "
+            "FROM vendors v LEFT JOIN vendor_dispatches d "
+            "ON d.vendor_id = v.id AND d.status = 'completed' "
+            "GROUP BY v.id ORDER BY v.name ASC"
+        ).fetchall()
+    total_dispatches = sum(by_status.values())
+    completed = by_status.get("completed", 0)
+    return {
+        "total_vendors": total_vendors,
+        "active_vendors": active_vendors,
+        "vendors_by_trade": by_trade,
+        "total_dispatches": total_dispatches,
+        "active_dispatches": by_status.get("dispatched", 0),
+        "completed_dispatches": completed,
+        "cancelled_dispatches": by_status.get("cancelled", 0),
+        "completion_rate": round(completed / total_dispatches, 4) if total_dispatches else 0.0,
+        "average_rating": round(float(totals[0]), 2) if totals[0] is not None else None,
+        "total_spend": round(float(totals[1]), 2),
+        "vendors": [
+            {
+                "vendor_id": r["id"],
+                "name": r["name"],
+                "trade": r["trade"],
+                "completed_jobs": int(r["completed_jobs"]),
+                "average_rating": round(float(r["avg_rating"]), 2)
+                if r["avg_rating"] is not None
+                else None,
+                "total_spend": round(float(r["spend"]), 2),
+            }
+            for r in per_vendor_rows
+        ],
+    }
