@@ -3257,3 +3257,46 @@ def delete_vendor(vendor_id: str) -> bool:
         "deleting vendor",
     )
     return result is not None
+
+
+def dispatch_vendor_to_work_order(
+    work_order_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    return _vendor_call(
+        "post",
+        f"/work-orders/{work_order_id}/dispatch-vendor",
+        HTTP_CREATED,
+        f"Failed to dispatch a vendor to work order '{work_order_id}'",
+        "dispatching vendor",
+        json=payload,
+    )
+
+
+def complete_vendor_dispatch(dispatch_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _vendor_call(
+        "post",
+        f"/vendor-dispatches/{dispatch_id}/complete",
+        HTTP_OK,
+        f"Failed to complete vendor dispatch '{dispatch_id}'",
+        "completing vendor dispatch",
+        json=payload,
+    )
+
+
+def list_vendor_dispatches(
+    vendor_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if status and status.strip():
+        params["status"] = status.strip()
+    return _vendor_call(
+        "get",
+        f"/vendors/{vendor_id}/dispatches",
+        HTTP_OK,
+        f"Failed to list dispatches for vendor '{vendor_id}'",
+        "listing vendor dispatches",
+        params=params,
+    )
