@@ -2663,3 +2663,31 @@ def test_vendor_write_helpers(fake_requests, fake_st):
     assert api_utils.delete_vendor("vnd_1") is False
     assert api_utils.update_vendor("vnd_1", {}) is None
     assert fake_st.errors
+
+
+def test_vendor_dispatch_helpers(fake_requests, fake_st):
+    dispatch = {"dispatch": {"id": "vdp_1"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=dispatch)
+    assert api_utils.dispatch_vendor_to_work_order("wo_1", {"vendor_id": "vnd_1"}) == dispatch
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("post", {"vendor_id": "vnd_1"})
+    assert url.endswith("/work-orders/wo_1/dispatch-vendor")
+
+    fake_requests.response = FakeResponse(status_code=409, payload={"detail": "dup"})
+    assert api_utils.dispatch_vendor_to_work_order("wo_1", {"vendor_id": "vnd_1"}) is None
+    assert fake_st.errors
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=dispatch)
+    assert api_utils.complete_vendor_dispatch("vdp_1", {"rating": 5}) == dispatch
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("post", {"rating": 5})
+    assert url.endswith("/vendor-dispatches/vdp_1/complete")
+
+    listing = {"items": [], "total": 0, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=listing)
+    assert api_utils.list_vendor_dispatches("vnd_1", status=" completed ") == listing
+    _, url, kwargs = fake_requests.calls[-1]
+    assert url.endswith("/vendors/vnd_1/dispatches")
+    assert kwargs["params"] == {"limit": 50, "offset": 0, "status": "completed"}
+    assert api_utils.list_vendor_dispatches("vnd_1") == listing
+    assert "status" not in fake_requests.calls[-1][2]["params"]
