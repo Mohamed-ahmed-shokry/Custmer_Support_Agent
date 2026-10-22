@@ -19,9 +19,9 @@
 - [x] **Task 8**: webhook events registration + test
 - [x] **Task 9**: Pydantic models + tests
 - [x] **Task 10**: FastAPI routes + route lifecycle test
-- [ ] **Task 11**: client helpers + tests
-- [ ] **Task 12**: docs, version bump
-- [ ] **Task 13**: final verification, e2e run, remote CI green, draft PR
+- [x] **Task 11**: client helpers + tests (`app/api_utils.py` vendor helpers + `tests/test_app_api_utils.py` vendor helper tests)
+- [ ] **Task 12**: docs, version bump — IN PROGRESS
+- [ ] **Task 13**: final verification, e2e run, remote CI green, draft PR — PENDING
 
 ---
 
