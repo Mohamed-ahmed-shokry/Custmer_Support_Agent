@@ -20,7 +20,7 @@
 - [x] **Task 9**: Pydantic models + tests
 - [x] **Task 10**: FastAPI routes + route lifecycle test
 - [x] **Task 11**: client helpers + tests (`app/api_utils.py` vendor helpers + `tests/test_app_api_utils.py` vendor helper tests)
-- [ ] **Task 12**: docs, version bump — IN PROGRESS
+- [x] **Task 12**: docs (docs/API.md, README.md), version bump to 0.40.0
 - [ ] **Task 13**: final verification, e2e run, remote CI green, draft PR — PENDING
 
 ---
