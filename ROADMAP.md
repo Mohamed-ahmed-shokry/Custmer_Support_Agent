@@ -1449,7 +1449,7 @@ Equip the customer support platform to handle all move-in and move-out inquiries
 - [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
-## v0.40.0 plan — Maintenance Vendor Directory, Work Order Vendor Dispatch & Vendor Performance Metrics ✅ IN PROGRESS
+## v0.40.0 plan — Maintenance Vendor Directory, Work Order Vendor Dispatch & Vendor Performance Metrics 🚧 IN PROGRESS
 
 Give property operators a local vendor/contractor directory and let support agents dispatch maintenance work orders (v0.36.0) to a vendor, record the agreed and final cost, rate the completed job, and see per-vendor performance metrics.
 
@@ -1497,8 +1497,8 @@ Via the API (and Streamlit client helpers) an operator can register a plumbing v
 - [x] Task 8: webhook events registration + test
 - [x] Task 9: Pydantic models + tests
 - [x] Task 10: FastAPI routes + route lifecycle test
-- [ ] Task 11: client helpers + tests
-- [ ] Task 12: docs, version bump
+- [x] Task 11: client helpers + tests
+- [x] Task 12: docs, version bump
 - [ ] Task 13: final verification, e2e run, remote CI green, draft PR
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
