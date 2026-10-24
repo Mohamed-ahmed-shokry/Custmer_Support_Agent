@@ -1449,7 +1449,7 @@ Equip the customer support platform to handle all move-in and move-out inquiries
 - [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
-## v0.40.0 plan — Maintenance Vendor Directory, Work Order Vendor Dispatch & Vendor Performance Metrics 🚧 IN PROGRESS
+## v0.40.0 plan — Maintenance Vendor Directory, Work Order Vendor Dispatch & Vendor Performance Metrics ✅ COMPLETED
 
 Give property operators a local vendor/contractor directory and let support agents dispatch maintenance work orders (v0.36.0) to a vendor, record the agreed and final cost, rate the completed job, and see per-vendor performance metrics.
 
@@ -1499,7 +1499,68 @@ Via the API (and Streamlit client helpers) an operator can register a plumbing v
 - [x] Task 10: FastAPI routes + route lifecycle test
 - [x] Task 11: client helpers + tests
 - [x] Task 12: docs, version bump
-- [ ] Task 13: final verification, e2e run, remote CI green, draft PR
+- [x] Task 13: final verification, e2e run, remote CI green, draft PR
+
+## v0.41.0 plan — Maintenance Vendor Operations Board, Work Order Dispatch UI & Grounded Vendor Macro Variables 🚧 IN PROGRESS
+
+Deliver an end-to-end interactive Streamlit operations board for maintenance vendors, 1-click vendor dispatch and job completion directly on work orders, and conversational RAG prompt grounding & macro variable resolution for dispatched maintenance vendors.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the Streamlit UI, property operators can:
+1. Browse and search maintenance contractors in a dedicated "Vendors & Dispatches" board with trade/status filtering, hourly rates, contact info, and star rating badges.
+2. Register a new vendor with validation via a streamlined registration form.
+3. Dispatch an active vendor to any open work order directly from the work orders board or session widget with agreed cost and scheduled date.
+4. Complete a dispatched work order directly from the UI, recording final cost, 1-5 rating, and feedback.
+5. Review vendor performance metrics (completion rates, average ratings, spend) in an interactive dashboard.
+Additionally, when residents ask questions in chat (e.g., "Who is coming to fix my heater?"), the conversational grounding engine in pi/tenant_context.py automatically injects assigned vendor name, trade, contact phone, and dispatch status into the LLM prompt, and resolves {vendor_name}, {vendor_trade}, {vendor_phone}, and {vendor_dispatch_status} macro variables.
+
+### Scope
+- pi/tenant_context.py:
+  - Extend work order prompt grounding in _format_work_orders_lines to include assigned vendor name, trade, phone, and dispatch status when work orders have active vendor dispatches.
+  - Extend extract_tenant_macro_variables to extract vendor variables: {vendor_name}, {vendor_trade}, {vendor_phone}, {vendor_hourly_rate}, {vendor_dispatch_status}, {vendor_agreed_cost} from active work orders.
+- pp/sidebar.py:
+  - Add "Vendors & Dispatches" view options to _render_maintenance_board() (Directory, Register Vendor, Performance KPIs).
+  - Add inline vendor dispatch controls (_render_work_order_vendor_dispatch) on open work orders: vendor selector filtered by trade, agreed cost, scheduled date, and 1-click dispatch.
+  - Add inline dispatch completion controls on dispatched work orders: final cost, 1-5 star rating, feedback notes, and 1-click complete.
+  - Add _render_vendors_directory_tab() and _render_register_vendor_tab().
+  - Add _render_vendor_performance_tab() displaying KPI cards and per-contractor performance table.
+- Tests:
+  - Unit tests in 	ests/test_tenant_context.py for vendor grounding in prompt context and macro variable extraction.
+  - UI tests in 	ests/test_app_ui.py covering vendor tabs, registration, dispatch, and completion rendering.
+- Docs & Version:
+  - Update docs/API.md, README.md, docs/PROGRESS.md; bump version to  .41.0.
+
+### Acceptance Criteria
+1. When a resident has a work order with an assigned vendor, uild_tenant_rag_context formats the vendor name, trade, and dispatch status in [ACTIVE MAINTENANCE WORK ORDERS].
+2. extract_tenant_macro_variables resolves {vendor_name}, {vendor_trade}, {vendor_phone}, and {vendor_dispatch_status} from active work order dispatches.
+3. In pp/sidebar.py, _render_maintenance_board() provides tabs for "Work Orders", "Create Order", "Vendors", "Register Vendor", and "Metrics & Costs".
+4. The Vendors directory tab renders vendor cards with trade badges, status, hourly rates, contact info, and rating stars.
+5. The Register Vendor tab renders form inputs and calls create_vendor_api with feedback on success/failure.
+6. Open work orders in _render_work_orders_board_tab offer a 1-click dispatch action to select an active vendor and dispatch via dispatch_vendor_api.
+7. Dispatched work orders offer an inline completion action with final cost, rating (1-5), and feedback via complete_vendor_dispatch_api.
+8. The vendor metrics tab renders portfolio vendor KPIs (total vendors, dispatches, completion rate, average rating, total spend) and per-vendor summaries.
+9. All local CI-parity checks (pytest, uff, mypy, secret scan) and remote CI workflow runs pass 100%.
+
+### Validation & CI Plan
+python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ scripts/, python -m mypy api/ app/ scripts/; verified UI execution with fake streamlit harness; remote CI (	est and e2e jobs) green on phase/v0.41.0-vendor-operations-ui.
+
+### Exclusions
+- Third-party vendor marketplace integrations (Angi, Thumbtack, TaskRabbit).
+- SMS gateway dispatching (Twilio) — local simulation only.
+- Invoicing and payment payouts (Stripe Connect).
+
+### Granular Task Breakdown
+- [ ] Task 1: Update ROADMAP.md (mark v0.40.0 complete, add v0.41.0 plan) & initialize docs/PROGRESS.md
+- [ ] Task 2: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
+- [ ] Task 3: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
+- [ ] Task 4: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
+- [ ] Task 5: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
+- [ ] Task 6: Streamlit UI: work order inline vendor dispatch & completion + tests in tests/test_app_ui.py
+- [ ] Task 7: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
+- [ ] Task 8: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
+- [ ] Task 9: Documentation (docs/API.md, README.md) & version bump to 0.41.0
+- [ ] Task 10: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
