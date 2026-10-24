@@ -1551,7 +1551,7 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 
 ### Granular Task Breakdown
 - [ ] Task 1: Update ROADMAP.md (mark v0.40.0 complete, add v0.41.0 plan) & initialize docs/PROGRESS.md
-- [ ] Task 2: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
+- [x] Task 2: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
 - [ ] Task 3: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
 - [ ] Task 4: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
 - [ ] Task 5: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py

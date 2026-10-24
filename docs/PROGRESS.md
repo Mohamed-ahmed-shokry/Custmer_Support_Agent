@@ -10,7 +10,7 @@
 ## 1. Task Breakdown & Execution Status
 
 - [x] **Task 1**: Update ROADMAP.md (mark v0.40.0 complete, add v0.41.0 plan) & initialize docs/PROGRESS.md
-- [ ] **Task 2**: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
+- [x] **Task 2**: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
 - [ ] **Task 3**: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
 - [ ] **Task 4**: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
 - [ ] **Task 5**: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
@@ -28,7 +28,7 @@ See ROADMAP.md for numbered criteria; evidence is recorded here as tasks complet
 
 | # | Status | Evidence |
 |---|--------|----------|
-| AC1 | ⏳ PENDING | Prompt context grounding with assigned vendor details |
+| AC1 | ✅ PASSED | Prompt context includes assigned vendor name, trade, dispatch status, and phone |
 | AC2 | ⏳ PENDING | Macro variables ({vendor_name}, {vendor_trade}, etc.) resolution |
 | AC3 | ⏳ PENDING | Maintenance board vendor tabs navigation |
 | AC4 | ⏳ PENDING | Vendor directory cards with rating badges |
