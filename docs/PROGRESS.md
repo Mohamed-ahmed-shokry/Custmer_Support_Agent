@@ -16,7 +16,7 @@
 - [x] **Task 5**: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
 - [x] **Task 6**: Streamlit UI: work order inline vendor dispatch & completion + tests in tests/test_app_ui.py
 - [x] **Task 7**: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
-- [ ] **Task 8**: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
+- [x] **Task 8**: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
 - [ ] **Task 9**: Documentation (docs/API.md, README.md) & version bump to 0.41.0
 - [ ] **Task 10**: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
 
@@ -30,7 +30,7 @@ See ROADMAP.md for numbered criteria; evidence is recorded here as tasks complet
 |---|--------|----------|
 | AC1 | ✅ PASSED | Prompt context includes assigned vendor name, trade, dispatch status, and phone |
 | AC2 | ✅ PASSED | Macro variables ({vendor_name}, {vendor_trade}, {vendor_phone}, etc.) resolved in templates |
-| AC3 | ⏳ PENDING | Maintenance board vendor tabs navigation |
+| AC3 | ✅ PASSED | Maintenance board provides navigation tabs for Work Orders, Create Order, Vendors, Register Vendor, Vendor KPIs, Metrics |
 | AC4 | ✅ PASSED | Vendor directory tab renders cards, trade badges, rates, contact, and status toggles |
 | AC5 | ✅ PASSED | Vendor registration form validates input and registers vendor via API |
 | AC6 | ✅ PASSED | Open work orders provide 1-click active vendor dispatch via API |

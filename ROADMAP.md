@@ -1557,7 +1557,7 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 - [x] Task 5: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
 - [x] Task 6: Streamlit UI: work order inline vendor dispatch & completion + tests in tests/test_app_ui.py
 - [x] Task 7: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
-- [ ] Task 8: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
+- [x] Task 8: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
 - [ ] Task 9: Documentation (docs/API.md, README.md) & version bump to 0.41.0
 - [ ] Task 10: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
 
