@@ -2836,6 +2836,50 @@ def test_render_work_order_metrics_and_board(monkeypatch):
     assert any("Status Breakdown:" in m for m in markdowns)
 
 
+def test_render_vendors_directory_tab(monkeypatch):
+    """Test vendor directory tab listing and status toggle."""
+    st = FakeStreamlit(
+        values={
+            "vnd_filter_trade": "All",
+            "vnd_filter_status": "All",
+            "vnd_search_input": "",
+        },
+        buttons={"btn_deact_vnd_vnd_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_vendors = {
+        "items": [
+            {
+                "id": "vnd_1",
+                "name": "Reliable Pipes",
+                "trade": "plumbing",
+                "status": "active",
+                "hourly_rate": 85.0,
+                "contact_name": "Bob",
+                "phone": "555-1234",
+                "email": "bob@pipes.com",
+                "notes": "Fast service",
+            }
+        ],
+        "total": 1,
+    }
+    updated_calls = []
+
+    monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: mock_vendors)
+    monkeypatch.setattr(
+        sidebar,
+        "update_vendor",
+        lambda vid, payload: updated_calls.append((vid, payload)) or {"id": vid},
+    )
+
+    sidebar._render_vendors_directory_tab()
+
+    assert len(updated_calls) == 1
+    assert updated_calls[0] == ("vnd_1", {"status": "inactive"})
+    assert st.reruns == 1
+
+
 def test_render_session_billing_widget(monkeypatch):
     """Test resident financial ledger and 1-click payment widget in sidebar."""
     expected_pay_amount = 1450.0

@@ -37,6 +37,7 @@ from app.api_utils import (
     delete_sla_policy,
     delete_tenant,
     delete_unit,
+    delete_vendor,
     delete_webhook,
     delete_work_order,
     draft_article_from_session,
@@ -89,6 +90,7 @@ from app.api_utils import (
     list_support_agents,
     list_tenants,
     list_units,
+    list_vendors,
     list_webhook_deliveries,
     list_webhooks,
     list_work_orders,
@@ -114,6 +116,7 @@ from app.api_utils import (
     update_knowledge_gap,
     update_session,
     update_support_agent,
+    update_vendor,
     update_webhook,
     update_work_order,
     upload_document,
@@ -2643,6 +2646,96 @@ def _render_work_order_metrics_tab(metrics: dict):
     st.markdown("**Priority Breakdown:**")
     for pr_name, count in (metrics.get("by_priority") or {}).items():
         st.caption(f"- **{pr_name}**: {count}")
+
+
+def _render_vendors_directory_tab():
+    st.markdown("##### 🏢 Maintenance Vendor Directory")
+    c1, c2 = st.columns(2)
+    trade_filter = c1.selectbox(
+        "Trade",
+        [
+            "All",
+            "plumbing",
+            "electrical",
+            "hvac",
+            "appliance",
+            "pest_control",
+            "structural",
+            "general",
+            "cleaning",
+            "landscaping",
+        ],
+        key="vnd_filter_trade",
+    )
+    status_filter = c2.selectbox(
+        "Status",
+        ["All", "active", "inactive", "blacklisted"],
+        key="vnd_filter_status",
+    )
+    search_query = st.text_input("Search vendors...", key="vnd_search_input")
+
+    resp = list_vendors(
+        trade=None if trade_filter == "All" else trade_filter,
+        status=None if status_filter == "All" else status_filter,
+        search=search_query.strip() or None,
+        limit=50,
+    )
+    vendors_list = resp.get("items", []) if resp else []
+    total = resp.get("total", len(vendors_list)) if resp else 0
+    st.caption(f"Showing {len(vendors_list)} of {total} vendor(s)")
+
+    if not vendors_list:
+        st.info("No vendors found matching criteria.")
+
+    trade_icons = {
+        "plumbing": "🔧",
+        "electrical": "⚡",
+        "hvac": "❄️",
+        "appliance": "🔌",
+        "pest_control": "🐜",
+        "structural": "🧱",
+        "general": "🛠️",
+        "cleaning": "🧹",
+        "landscaping": "🌱",
+    }
+    status_icons = {"active": "🟢", "inactive": "🟡", "blacklisted": "⛔"}
+
+    for v in vendors_list:
+        vid = v["id"]
+        vname = v["name"]
+        trade = v.get("trade", "general")
+        status = v.get("status", "active")
+        icon = trade_icons.get(trade, "🛠️")
+        s_icon = status_icons.get(status, "⚪")
+        rate_str = (
+            f"${v['hourly_rate']:.2f}/hr"
+            if v.get("hourly_rate") is not None
+            else "Rate N/A"
+        )
+
+        st.markdown(f"**{icon} {vname}** (`{vid}`) {s_icon}")
+        st.caption(
+            f"Trade: **{trade}** | Status: **{status}** | Rate: **{rate_str}** | "
+            f"Contact: {v.get('contact_name') or 'N/A'} ({v.get('phone') or 'N/A'})"
+        )
+        if v.get("email"):
+            st.caption(f"Email: {v['email']}")
+        if v.get("notes"):
+            st.text(v["notes"][:120])
+
+        b1, b2 = st.columns(2)
+        if status == "active":
+            if b1.button("⏸️ Deactivate", key=f"btn_deact_vnd_{vid}"):
+                update_vendor(vid, {"status": "inactive"})
+                st.rerun()
+        elif b1.button("▶️ Activate", key=f"btn_act_vnd_{vid}"):
+            update_vendor(vid, {"status": "active"})
+            st.rerun()
+
+        if b2.button("🗑️ Delete", key=f"btn_del_vnd_{vid}") and delete_vendor(vid):
+            st.success(f"Deleted vendor {vname}")
+            st.rerun()
+        st.markdown("---")
 
 
 def _render_maintenance_board():
