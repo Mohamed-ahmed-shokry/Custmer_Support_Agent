@@ -2943,7 +2943,14 @@ def _render_maintenance_board():
 
         sub_tab = st.radio(
             "Board View",
-            ["Work Orders", "Create Order", "Metrics & Costs"],
+            [
+                "Work Orders",
+                "Create Order",
+                "Vendors",
+                "Register Vendor",
+                "Vendor KPIs",
+                "Metrics & Costs",
+            ],
             horizontal=True,
             key="wo_board_tab_radio",
         )
@@ -2952,6 +2959,12 @@ def _render_maintenance_board():
             _render_work_orders_board_tab()
         elif sub_tab == "Create Order":
             _render_create_work_order_tab()
+        elif sub_tab == "Vendors":
+            _render_vendors_directory_tab()
+        elif sub_tab == "Register Vendor":
+            _render_register_vendor_tab()
+        elif sub_tab == "Vendor KPIs":
+            _render_vendor_performance_tab()
         else:
             _render_work_order_metrics_tab(metrics)
 

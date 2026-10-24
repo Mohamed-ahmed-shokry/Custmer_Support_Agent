@@ -2970,6 +2970,53 @@ def test_render_work_order_metrics_and_board(monkeypatch):
     assert any("Status Breakdown:" in m for m in markdowns)
 
 
+def test_render_maintenance_board_vendor_navigation(monkeypatch):
+    """Test switching tabs to Vendors, Register Vendor, and Vendor KPIs in maintenance board."""
+    # Test Vendors tab
+    st_v = FakeStreamlit(
+        values={
+            "wo_board_tab_radio": "Vendors",
+            "vnd_filter_trade": "All",
+            "vnd_filter_status": "All",
+            "vnd_search_input": "",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", st_v)
+    monkeypatch.setattr(sidebar, "get_work_order_metrics", lambda: {})
+    monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: {"items": [], "total": 0})
+    sidebar._render_maintenance_board()
+    assert any(
+        "Maintenance Vendor Directory" in str(c.args[0])
+        for c in st_v.calls
+        if c.fn == "markdown"
+    )
+
+    # Test Register Vendor tab
+    st_reg = FakeStreamlit(values={"wo_board_tab_radio": "Register Vendor"})
+    monkeypatch.setattr(sidebar, "st", st_reg)
+    sidebar._render_maintenance_board()
+    assert any(
+        "Register New Contractor" in str(c.args[0])
+        for c in st_reg.calls
+        if c.fn == "markdown"
+    )
+
+    # Test Vendor KPIs tab
+    st_kpi = FakeStreamlit(values={"wo_board_tab_radio": "Vendor KPIs"})
+    monkeypatch.setattr(sidebar, "st", st_kpi)
+    monkeypatch.setattr(
+        sidebar,
+        "get_vendor_metrics",
+        lambda: {"total_vendors": 3, "total_dispatches": 5},
+    )
+    sidebar._render_maintenance_board()
+    assert any(
+        "Vendor Performance & Spend" in str(c.args[0])
+        for c in st_kpi.calls
+        if c.fn == "markdown"
+    )
+
+
 def test_render_vendors_directory_tab(monkeypatch):
     """Test vendor directory tab listing and status toggle."""
     st = FakeStreamlit(
