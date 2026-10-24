@@ -2769,6 +2769,140 @@ def test_render_work_orders_board_tab(monkeypatch):
     assert st.reruns == 1
 
 
+def test_render_work_orders_board_tab_inline_dispatch(monkeypatch):
+    """Test inline vendor dispatch button on open work orders."""
+    expected_agreed = 150.0
+    st = FakeStreamlit(
+        values={
+            "wo_filter_status": "All",
+            "wo_filter_prio": "All",
+            "wo_search_input": "",
+            "dsp_sel_vnd_wo_1": "QuickFix (plumbing) - $80/hr",
+            "dsp_agreed_wo_1": expected_agreed,
+            "dsp_date_wo_1": "2026-11-10",
+        },
+        buttons={"btn_dispatch_vnd_wo_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_wos = {
+        "items": [
+            {
+                "id": "wo_1",
+                "unit_id": "unit_101",
+                "title": "Kitchen faucet leaking",
+                "category": "plumbing",
+                "priority": "high",
+                "status": "submitted",
+            }
+        ],
+        "total": 1,
+    }
+    mock_vendors = {
+        "items": [
+            {
+                "id": "vnd_qf",
+                "name": "QuickFix",
+                "trade": "plumbing",
+                "hourly_rate": 80.0,
+            }
+        ]
+    }
+    dispatched_calls = []
+
+    monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
+    monkeypatch.setattr(
+        sidebar, "list_work_order_dispatches", lambda woid: {"items": []}
+    )
+    monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: mock_vendors)
+    monkeypatch.setattr(
+        sidebar,
+        "dispatch_vendor_to_work_order",
+        lambda woid, payload: dispatched_calls.append((woid, payload))
+        or {"dispatch": {"id": "vdp_1"}},
+    )
+
+    sidebar._render_work_orders_board_tab()
+
+    expected_calls = 1
+    assert len(dispatched_calls) == expected_calls
+    wo_id, payload = dispatched_calls[0]
+    assert wo_id == "wo_1"
+    assert payload["vendor_id"] == "vnd_qf"
+    assert payload["agreed_cost"] == expected_agreed
+    assert payload["scheduled_date"] == "2026-11-10"
+    assert st.reruns == 1
+
+
+def test_render_work_orders_board_tab_complete_dispatch(monkeypatch):
+    """Test inline completion and rating of dispatched work order."""
+    expected_rating = 5
+    expected_final_cost = 140.0
+    st = FakeStreamlit(
+        values={
+            "wo_filter_status": "All",
+            "wo_filter_prio": "All",
+            "wo_search_input": "",
+            "dsp_final_cost_wo_1": expected_final_cost,
+            "dsp_rating_wo_1": expected_rating,
+            "dsp_res_notes_wo_1": "Replaced washer",
+            "dsp_feedback_wo_1": "Excellent work",
+        },
+        buttons={"btn_comp_dsp_wo_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_wos = {
+        "items": [
+            {
+                "id": "wo_1",
+                "unit_id": "unit_101",
+                "title": "Kitchen faucet leaking",
+                "category": "plumbing",
+                "priority": "high",
+                "status": "scheduled",
+                "assigned_to": "QuickFix",
+            }
+        ],
+        "total": 1,
+    }
+    mock_dispatches = {
+        "items": [
+            {
+                "id": "vdp_1",
+                "work_order_id": "wo_1",
+                "vendor_id": "vnd_qf",
+                "status": "dispatched",
+                "agreed_cost": 150.0,
+            }
+        ]
+    }
+    completed_calls = []
+
+    monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
+    monkeypatch.setattr(
+        sidebar, "list_work_order_dispatches", lambda woid: mock_dispatches
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "complete_vendor_dispatch",
+        lambda did, payload: completed_calls.append((did, payload))
+        or {"dispatch": {"id": did}},
+    )
+
+    sidebar._render_work_orders_board_tab()
+
+    expected_completed = 1
+    assert len(completed_calls) == expected_completed
+    dsp_id, payload = completed_calls[0]
+    assert dsp_id == "vdp_1"
+    assert payload["final_cost"] == expected_final_cost
+    assert payload["rating"] == expected_rating
+    assert payload["resolution_notes"] == "Replaced washer"
+    assert payload["feedback"] == "Excellent work"
+    assert st.reruns == 1
+
+
 def test_render_create_work_order_tab(monkeypatch):
     """Test manual work order creation form."""
     expected_est = 120.0

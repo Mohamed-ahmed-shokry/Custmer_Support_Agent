@@ -11,6 +11,7 @@ from app.api_utils import (
     assign_session,
     auto_assign_session,
     complete_inspection,
+    complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
     create_billing_transaction,
     create_inspection,
@@ -41,6 +42,7 @@ from app.api_utils import (
     delete_vendor,
     delete_webhook,
     delete_work_order,
+    dispatch_vendor_to_work_order,
     draft_article_from_session,
     evaluate_sla_alerts,
     export_session,
@@ -94,6 +96,7 @@ from app.api_utils import (
     list_vendors,
     list_webhook_deliveries,
     list_webhooks,
+    list_work_order_dispatches,
     list_work_orders,
     ping_webhook,
     publish_inspection_document,
@@ -2499,6 +2502,92 @@ def _render_tenant_and_property_directory():
             _render_tenant_history_tab()
 
 
+def _render_work_order_dispatch_section(wo: dict, wo_id: str) -> None:
+    """Render inline vendor dispatch or completion controls for a work order."""
+    dispatches_resp = list_work_order_dispatches(wo_id)
+    dispatches = dispatches_resp.get("items", []) if dispatches_resp else []
+    active_dispatch = next(
+        (d for d in dispatches if d.get("status") == "dispatched"), None
+    )
+
+    if active_dispatch:
+        assigned_label = wo.get("assigned_to") or "Vendor"
+        agreed_cost_val = active_dispatch.get("agreed_cost") or 0.0
+        st.caption(
+            f"🚚 **Dispatched to {assigned_label}** "
+            f"| Agreed: ${agreed_cost_val:.2f} "
+            f"| Dispatch: `{active_dispatch['id']}`"
+        )
+        with st.expander(f"⭐ Complete Dispatch ({wo_id})"):
+            fc1, fc2 = st.columns(2)
+            f_cost = fc1.number_input(
+                "Final Cost ($)",
+                min_value=0.0,
+                step=10.0,
+                value=float(active_dispatch.get("agreed_cost") or 0.0),
+                key=f"dsp_final_cost_{wo_id}",
+            )
+            f_rating = fc2.selectbox(
+                "Rating (1-5)",
+                [5, 4, 3, 2, 1],
+                key=f"dsp_rating_{wo_id}",
+            )
+            f_notes = st.text_input("Resolution Notes", key=f"dsp_res_notes_{wo_id}")
+            f_feedback = st.text_input("Vendor Feedback", key=f"dsp_feedback_{wo_id}")
+            if st.button("Complete & Rate Job", key=f"btn_comp_dsp_{wo_id}"):
+                c_payload = {
+                    "final_cost": float(f_cost) if f_cost > 0 else None,
+                    "rating": int(f_rating),
+                    "resolution_notes": f_notes.strip(),
+                    "feedback": f_feedback.strip(),
+                }
+                if complete_vendor_dispatch(active_dispatch["id"], c_payload):
+                    st.success(
+                        f"Dispatch {active_dispatch['id']} completed with rating {f_rating}⭐!"
+                    )
+                    st.rerun()
+    elif wo["status"] not in ("completed", "cancelled"):
+        with st.expander(f"🚚 Dispatch Vendor ({wo_id})"):
+            v_resp = list_vendors(status="active", limit=50)
+            v_items = v_resp.get("items", []) if v_resp else []
+            if v_items:
+                v_options = {
+                    f"{v['name']} ({v.get('trade', 'general')}) - "
+                    f"${v.get('hourly_rate', 0) or 0:.0f}/hr": v["id"]
+                    for v in v_items
+                }
+                sel_label = st.selectbox(
+                    "Select Active Vendor",
+                    options=list(v_options.keys()),
+                    key=f"dsp_sel_vnd_{wo_id}",
+                )
+                chosen_vid = v_options[sel_label]
+                dc1, dc2 = st.columns(2)
+                agreed = dc1.number_input(
+                    "Agreed Cost ($)",
+                    min_value=0.0,
+                    step=25.0,
+                    value=0.0,
+                    key=f"dsp_agreed_{wo_id}",
+                )
+                s_date = dc2.text_input(
+                    "Scheduled Date",
+                    placeholder="YYYY-MM-DD",
+                    key=f"dsp_date_{wo_id}",
+                )
+                if st.button("Dispatch Vendor", key=f"btn_dispatch_vnd_{wo_id}"):
+                    d_payload = {
+                        "vendor_id": chosen_vid,
+                        "agreed_cost": float(agreed) if agreed > 0 else None,
+                        "scheduled_date": s_date.strip() or None,
+                    }
+                    if dispatch_vendor_to_work_order(wo_id, d_payload):
+                        st.success(f"Work order {wo_id} dispatched to vendor!")
+                        st.rerun()
+            else:
+                st.info("No active vendors available in directory.")
+
+
 def _render_work_orders_board_tab():
     f_col1, f_col2 = st.columns(2)
     s_filter = f_col1.selectbox(
@@ -2542,6 +2631,8 @@ def _render_work_orders_board_tab():
         )
         if wo.get("description"):
             st.text(wo["description"][:120])
+
+        _render_work_order_dispatch_section(wo, wo_id)
 
         b_col1, b_col2, b_col3 = st.columns(3)
         if wo["status"] not in ("in_progress", "completed") and b_col1.button(
