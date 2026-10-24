@@ -75,6 +75,7 @@ from app.api_utils import (
     get_tenant_ledger,
     get_tenant_support_history,
     get_unit_work_orders,
+    get_vendor_metrics,
     get_work_order_metrics,
     link_session_tenant,
     list_billing_transactions,
@@ -2895,6 +2896,40 @@ def _render_register_vendor_tab():
                 st.rerun()
             else:
                 st.error("Failed to register vendor.")
+
+
+def _render_vendor_performance_tab(metrics: dict | None = None):
+    st.markdown("##### 📊 Vendor Performance & Spend")
+    v_metrics = metrics if metrics is not None else (get_vendor_metrics() or {})
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Vendors", v_metrics.get("total_vendors", 0))
+    c2.metric("Dispatches", v_metrics.get("total_dispatches", 0))
+    comp_rate = v_metrics.get("completion_rate", 0.0) * 100
+    c3.metric("Completion", f"{comp_rate:.1f}%")
+    avg_r = v_metrics.get("average_rating")
+    r_str = f"{avg_r:.1f}⭐" if avg_r is not None else "N/A"
+    c4.metric("Avg Rating", r_str)
+
+    spend_val = v_metrics.get("total_spend", 0.0)
+    st.caption(f"**Total Portfolio Spend:** ${spend_val:,.2f}")
+
+    vendors_perf = v_metrics.get("vendors", [])
+    if vendors_perf:
+        st.markdown("**Contractor Scorecards:**")
+        for vp in vendors_perf:
+            v_rate = (
+                f"{vp['average_rating']:.1f}⭐"
+                if vp.get("average_rating") is not None
+                else "N/A"
+            )
+            v_spend = vp.get("total_spend", 0.0)
+            st.markdown(
+                f"- **{vp['name']}** ({vp.get('trade', 'general')}): "
+                f"{vp.get('completed_jobs', 0)} jobs | {v_rate} | "
+                f"${v_spend:,.2f} spent"
+            )
+    else:
+        st.info("No vendor performance data recorded yet.")
 
 
 def _render_maintenance_board():

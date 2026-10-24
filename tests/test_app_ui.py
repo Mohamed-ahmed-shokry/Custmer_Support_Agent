@@ -3056,6 +3056,42 @@ def test_render_register_vendor_tab(monkeypatch):
     assert st.reruns == 1
 
 
+def test_render_vendor_performance_tab(monkeypatch):
+    """Test vendor performance metrics and contractor scorecards rendering."""
+    expected_vendors = 4
+    expected_dispatches = 10
+    expected_spend = 2450.0
+    metrics = {
+        "total_vendors": expected_vendors,
+        "total_dispatches": expected_dispatches,
+        "completion_rate": 0.9,
+        "average_rating": 4.8,
+        "total_spend": expected_spend,
+        "vendors": [
+            {
+                "vendor_id": "vnd_1",
+                "name": "Ace HVAC",
+                "trade": "hvac",
+                "completed_jobs": 9,
+                "average_rating": 4.8,
+                "total_spend": expected_spend,
+            }
+        ],
+    }
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_vendor_metrics", lambda: metrics)
+
+    sidebar._render_vendor_performance_tab()
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Vendor Performance & Spend" in m for m in markdowns)
+    assert any("Contractor Scorecards:" in m for m in markdowns)
+    assert any("Ace HVAC" in m for m in markdowns)
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("$2,450.00" in cap for cap in captions)
+
+
 def test_render_session_billing_widget(monkeypatch):
     """Test resident financial ledger and 1-click payment widget in sidebar."""
     expected_pay_amount = 1450.0
