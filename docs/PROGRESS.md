@@ -13,7 +13,7 @@
 - [x] **Task 2**: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
 - [x] **Task 3**: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
 - [x] **Task 4**: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
-- [ ] **Task 5**: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
+- [x] **Task 5**: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
 - [ ] **Task 6**: Streamlit UI: work order inline vendor dispatch & completion + tests in tests/test_app_ui.py
 - [ ] **Task 7**: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
 - [ ] **Task 8**: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
@@ -32,7 +32,7 @@ See ROADMAP.md for numbered criteria; evidence is recorded here as tasks complet
 | AC2 | ✅ PASSED | Macro variables ({vendor_name}, {vendor_trade}, {vendor_phone}, etc.) resolved in templates |
 | AC3 | ⏳ PENDING | Maintenance board vendor tabs navigation |
 | AC4 | ✅ PASSED | Vendor directory tab renders cards, trade badges, rates, contact, and status toggles |
-| AC5 | ⏳ PENDING | Vendor registration form with validation |
+| AC5 | ✅ PASSED | Vendor registration form validates input and registers vendor via API |
 | AC6 | ⏳ PENDING | Inline work order vendor dispatch action |
 | AC7 | ⏳ PENDING | Dispatched work order completion action with 1-5 rating |
 | AC8 | ⏳ PENDING | Vendor performance metrics tab |

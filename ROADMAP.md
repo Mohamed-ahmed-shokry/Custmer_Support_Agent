@@ -1554,7 +1554,7 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 - [x] Task 2: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
 - [x] Task 3: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
 - [x] Task 4: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
-- [ ] Task 5: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
+- [x] Task 5: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
 - [ ] Task 6: Streamlit UI: work order inline vendor dispatch & completion + tests in tests/test_app_ui.py
 - [ ] Task 7: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
 - [ ] Task 8: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
