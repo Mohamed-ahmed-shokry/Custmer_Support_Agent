@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
-from api import db_utils
+from api import db_utils, vendors
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.macros import extract_template_variables
 from api.settings import settings
@@ -2589,3 +2589,146 @@ class InspectionDocumentPublishResponse(BaseModel):
     sha256: str
     content_length: int
     indexed_in_chroma: bool
+
+
+class VendorItem(BaseModel):
+    id: str
+    name: str
+    trade: str = "general"
+    contact_name: str = ""
+    email: str = ""
+    phone: str = ""
+    hourly_rate: float | None = None
+    status: str = "active"
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class VendorCreateRequest(BaseModel):
+    id: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_ID_LENGTH)
+    name: str = Field(min_length=1, max_length=vendors.MAX_VENDOR_NAME_LENGTH)
+    trade: str = Field(default=db_utils.DEFAULT_WORK_ORDER_CATEGORY)
+    contact_name: str = Field(default="", max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    email: str = Field(default="", max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    phone: str = Field(default="", max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    hourly_rate: float | None = Field(default=None, ge=0.0)
+    status: str = Field(default=vendors.DEFAULT_VENDOR_STATUS)
+    notes: str = Field(default="", max_length=vendors.MAX_VENDOR_NOTES_LENGTH)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_id(v) if v is not None else None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return vendors.normalize_vendor_name(v)
+
+    @field_validator("trade")
+    @classmethod
+    def validate_trade(cls, v: str) -> str:
+        return vendors.normalize_vendor_trade(v)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        return vendors.normalize_vendor_status(v)
+
+
+class VendorUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_NAME_LENGTH)
+    trade: str | None = Field(default=None)
+    contact_name: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    email: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    phone: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_CONTACT_LENGTH)
+    hourly_rate: float | None = Field(default=None, ge=0.0)
+    status: str | None = Field(default=None)
+    notes: str | None = Field(default=None, max_length=vendors.MAX_VENDOR_NOTES_LENGTH)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_name(v) if v is not None else None
+
+    @field_validator("trade")
+    @classmethod
+    def validate_trade(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_trade(v) if v is not None else None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        return vendors.normalize_vendor_status(v) if v is not None else None
+
+
+class VendorResponse(BaseModel):
+    vendor: VendorItem
+
+
+class VendorListResponse(BaseModel):
+    items: list[VendorItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class VendorDispatchItem(BaseModel):
+    id: str
+    vendor_id: str
+    work_order_id: str
+    status: str = "dispatched"
+    agreed_cost: float | None = None
+    final_cost: float | None = None
+    rating: int | None = None
+    feedback: str = ""
+    dispatched_at: str
+    completed_at: str | None = None
+
+
+class VendorDispatchRequest(BaseModel):
+    vendor_id: str = Field(min_length=1, max_length=vendors.MAX_VENDOR_ID_LENGTH)
+    agreed_cost: float | None = Field(default=None, ge=0.0)
+    scheduled_date: str | None = Field(default=None)
+
+
+class VendorDispatchCompleteRequest(BaseModel):
+    final_cost: float | None = Field(default=None, ge=0.0)
+    rating: int | None = Field(default=None, ge=vendors.MIN_RATING, le=vendors.MAX_RATING)
+    feedback: str = Field(default="", max_length=vendors.MAX_VENDOR_NOTES_LENGTH)
+    resolution_notes: str = Field(default="", max_length=db_utils.MAX_WORK_ORDER_NOTES_LENGTH)
+
+
+class VendorDispatchResponse(BaseModel):
+    dispatch: VendorDispatchItem
+
+
+class VendorDispatchListResponse(BaseModel):
+    items: list[VendorDispatchItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class VendorPerformanceItem(BaseModel):
+    vendor_id: str
+    name: str
+    trade: str = "general"
+    completed_jobs: int = 0
+    average_rating: float | None = None
+    total_spend: float = 0.0
+
+
+class VendorMetricsResponse(BaseModel):
+    total_vendors: int = 0
+    active_vendors: int = 0
+    vendors_by_trade: dict[str, int] = Field(default_factory=dict)
+    total_dispatches: int = 0
+    active_dispatches: int = 0
+    completed_dispatches: int = 0
+    cancelled_dispatches: int = 0
+    completion_rate: float = 0.0
+    average_rating: float | None = None
+    total_spend: float = 0.0
+    vendors: list[VendorPerformanceItem] = Field(default_factory=list)

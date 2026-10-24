@@ -24,6 +24,7 @@ from api import (
     macros,
     sla,
     tenant_context,
+    vendors,
     webhooks,
 )
 from api.chroma_utils import (
@@ -263,6 +264,17 @@ from api.pydantic_models import (
     UnitUpdateRequest,
     UpdateSessionRequest,
     UploadDocumentResponse,
+    VendorCreateRequest,
+    VendorDispatchCompleteRequest,
+    VendorDispatchItem,
+    VendorDispatchListResponse,
+    VendorDispatchRequest,
+    VendorDispatchResponse,
+    VendorItem,
+    VendorListResponse,
+    VendorMetricsResponse,
+    VendorResponse,
+    VendorUpdateRequest,
     WebhookCreateRequest,
     WebhookDeliveryLogItem,
     WebhookDeliveryLogsResponse,
@@ -328,6 +340,8 @@ app = FastAPI(
     description="Document-grounded customer support assistant API.",
     version=settings.app_version,
 )
+
+vendors.create_vendors()
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".html", ".md", ".txt", ".csv"}
 
@@ -4152,4 +4166,176 @@ def get_unit_inspections_route(unit_id: str):
         total=total,
         limit=100,
         offset=0,
+    )
+
+
+# --- Maintenance Vendor Directory & Dispatch Endpoints ---
+
+
+@app.post("/vendors", response_model=VendorResponse, status_code=201)
+def create_vendor_route(request: VendorCreateRequest):
+    """Register a maintenance vendor in the directory."""
+    try:
+        created = vendors.create_vendor(
+            name=request.name,
+            trade=request.trade,
+            contact_name=request.contact_name,
+            email=request.email,
+            phone=request.phone,
+            hourly_rate=request.hourly_rate,
+            status=request.status,
+            notes=request.notes,
+            vendor_id=request.id,
+        )
+    except ValueError as exc:
+        status_code = 409 if "already exists" in str(exc).lower() else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return VendorResponse(vendor=VendorItem(**created))
+
+
+@app.get("/vendors/metrics", response_model=VendorMetricsResponse)
+def get_vendor_metrics_route():
+    """Retrieve vendor directory, dispatch, rating and spend metrics."""
+    return VendorMetricsResponse(**vendors.get_vendor_summary_metrics())
+
+
+@app.get("/vendors", response_model=VendorListResponse)
+def list_vendors_route(
+    trade: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List vendors with optional trade, status and search filters."""
+    items, total = vendors.list_vendors(
+        trade=trade, status=status, search=search, limit=limit, offset=offset
+    )
+    return VendorListResponse(
+        items=[VendorItem(**item) for item in items], total=total, limit=limit, offset=offset
+    )
+
+
+@app.get("/vendors/{vendor_id}", response_model=VendorResponse)
+def get_vendor_route(vendor_id: str):
+    """Retrieve a specific vendor."""
+    item = vendors.get_vendor(vendor_id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    return VendorResponse(vendor=VendorItem(**item))
+
+
+@app.patch("/vendors/{vendor_id}", response_model=VendorResponse)
+def update_vendor_route(vendor_id: str, request: VendorUpdateRequest):
+    """Update fields on an existing vendor."""
+    try:
+        updated = vendors.update_vendor(vendor_id, **request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    return VendorResponse(vendor=VendorItem(**updated))
+
+
+@app.delete("/vendors/{vendor_id}")
+def delete_vendor_route(vendor_id: str):
+    """Delete a vendor and its dispatch history."""
+    if not vendors.delete_vendor(vendor_id):
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    return {"status": "deleted", "vendor_id": vendor_id}
+
+
+def _dispatch_error_status(exc: ValueError) -> int:
+    message = str(exc).lower()
+    if "not found" in message:
+        return 404
+    if "already has an active dispatch" in message or "cannot be" in message:
+        return 409
+    return 422
+
+
+@app.post(
+    "/work-orders/{work_order_id}/dispatch-vendor",
+    response_model=VendorDispatchResponse,
+    status_code=201,
+)
+def dispatch_vendor_route(
+    work_order_id: str,
+    request: VendorDispatchRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Dispatch an open maintenance work order to an active vendor."""
+    try:
+        created = vendors.dispatch_vendor(
+            work_order_id,
+            request.vendor_id,
+            agreed_cost=request.agreed_cost,
+            scheduled_date=request.scheduled_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_dispatch_error_status(exc), detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "vendor.dispatched",
+        {
+            "dispatch_id": created["id"],
+            "vendor_id": created["vendor_id"],
+            "work_order_id": created["work_order_id"],
+            "agreed_cost": created["agreed_cost"],
+        },
+    )
+    return VendorDispatchResponse(dispatch=VendorDispatchItem(**created))
+
+
+@app.post("/vendor-dispatches/{dispatch_id}/complete", response_model=VendorDispatchResponse)
+def complete_vendor_dispatch_route(
+    dispatch_id: str,
+    request: VendorDispatchCompleteRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Complete a vendor dispatch, recording final cost and rating and closing the work order."""
+    try:
+        completed = vendors.complete_dispatch(
+            dispatch_id,
+            final_cost=request.final_cost,
+            rating=request.rating,
+            feedback=request.feedback,
+            resolution_notes=request.resolution_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_dispatch_error_status(exc), detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "vendor.job_completed",
+        {
+            "dispatch_id": completed["id"],
+            "vendor_id": completed["vendor_id"],
+            "work_order_id": completed["work_order_id"],
+            "final_cost": completed["final_cost"],
+            "rating": completed["rating"],
+        },
+    )
+    return VendorDispatchResponse(dispatch=VendorDispatchItem(**completed))
+
+
+@app.get("/vendors/{vendor_id}/dispatches", response_model=VendorDispatchListResponse)
+def list_vendor_dispatches_route(
+    vendor_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List the dispatch history of a vendor."""
+    if not vendors.get_vendor(vendor_id):
+        raise HTTPException(status_code=404, detail=f"Vendor '{vendor_id}' not found.")
+    items, total = vendors.list_dispatches(
+        vendor_id=vendor_id, status=status, limit=limit, offset=offset
+    )
+    return VendorDispatchListResponse(
+        items=[VendorDispatchItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
     )

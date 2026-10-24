@@ -1449,6 +1449,57 @@ Equip the customer support platform to handle all move-in and move-out inquiries
 - [x] Task 10: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.39.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 11: Final verification gate (`pytest` >= 80% coverage, `ruff check`, `mypy`), progress record completion, and draft PR delivery
 
+## v0.40.0 plan — Maintenance Vendor Directory, Work Order Vendor Dispatch & Vendor Performance Metrics 🚧 IN PROGRESS
+
+Give property operators a local vendor/contractor directory and let support agents dispatch maintenance work orders (v0.36.0) to a vendor, record the agreed and final cost, rate the completed job, and see per-vendor performance metrics.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API (and Streamlit client helpers) an operator can register a plumbing vendor, dispatch an open work order to that vendor (work order moves to `scheduled`, `assigned_to` is set to the vendor name), complete the dispatch with a final cost and 1-5 rating (work order moves to `completed`, `actual_cost` recorded), and read vendor metrics (jobs, completion rate, average rating, total spend). Webhooks `vendor.dispatched` and `vendor.job_completed` fire on those events. Runs 100% locally on SQLite with no new dependencies.
+
+### Scope
+- `api/vendors.py` (new module; self-contained so existing `db_utils` and work-order models are not modified):
+  - SQLite tables `vendors` (`vnd_` ids; name, trade, contact, email, phone, hourly_rate, status `active|inactive|blacklisted`, notes) and `vendor_dispatches` (`vdp_` ids; vendor_id, work_order_id, status `dispatched|completed|cancelled`, agreed_cost, final_cost, rating, feedback, timestamps), plus pre-seeded sample vendors.
+  - Validation/normalization helpers, CRUD (`create_vendor`, `get_vendor`, `list_vendors`, `update_vendor`, `delete_vendor`).
+  - `dispatch_vendor()`, `complete_dispatch()`, `list_dispatches()`, `get_vendor_summary_metrics()`.
+- `api/db_utils.py`: register webhook events `vendor.dispatched`, `vendor.job_completed`.
+- `api/pydantic_models.py`: request/response schemas.
+- `api/main.py`: `/vendors` CRUD, `/vendors/metrics`, `/work-orders/{id}/dispatch-vendor`, `/vendor-dispatches/{id}/complete`, `/vendors/{id}/dispatches`.
+- `app/api_utils.py`: typed client helpers forwarding `X-API-Key`.
+- Docs: `docs/API.md`, `README.md`, `docs/PROGRESS.md`; version bump to `0.40.0`.
+
+### Acceptance Criteria
+1. `vendors` and `vendor_dispatches` tables are created idempotently, seeded with sample vendors, and vendor CRUD with filters/validation works.
+2. `dispatch_vendor()` rejects unknown/inactive vendors, unknown/closed work orders, and duplicate active dispatches; on success it sets `assigned_to` and moves a `submitted` work order to `scheduled`.
+3. `complete_dispatch()` records final cost and rating (1-5), completes the work order with `actual_cost`, and rejects double completion.
+4. `get_vendor_summary_metrics()` reports vendor counts, dispatch counts, completion rate, average rating and total spend, overall and per vendor.
+5. Webhook events `vendor.dispatched` and `vendor.job_completed` are accepted by webhook registration and fired by the routes.
+6. Pydantic schemas validate vendor/dispatch payloads (including rating bounds).
+7. FastAPI endpoints are wired and covered by a route lifecycle test.
+8. Client helpers in `app/api_utils.py` are typed, forward `X-API-Key` and handle errors resiliently.
+9. Documentation, roadmap, progress record and version bump (`0.40.0`) are complete.
+10. All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Validation & CI Plan
+`python -m pytest` (coverage >= 80%), `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`, secret scan grep from `.github/workflows/ci.yml`; real end-to-end run of the API (uvicorn + HTTP requests) for the dispatch lifecycle; remote CI (`test` and `e2e` jobs) green on the phase branch.
+
+### Exclusions
+- Streamlit sidebar vendor panel, vendor macro variables, RAG grounding of vendor data, vendor invoices/payments (deferred to a later phase: UI-heavy or require billing integration).
+- External vendor portals, email/SMS notification to vendors.
+
+### Granular Task Breakdown
+- [x] Task 1: ROADMAP v0.40.0 plan and `docs/PROGRESS.md` re-initialization
+- [x] Task 2: `api/vendors.py` constants, table schema, bootstrap and seeds + tests
+- [x] Task 3: Vendor validation helpers + create/get vendor + tests
+- [x] Task 4: list/update/delete vendor + tests
+- [x] Task 5: dispatch_vendor + tests
+- [x] Task 6: complete_dispatch, list_dispatches + tests
+- [x] Task 7: vendor summary metrics + tests
+- [x] Task 8: webhook events registration + test
+- [x] Task 9: Pydantic models + tests
+- [x] Task 10: FastAPI routes + route lifecycle test
+- [x] Task 11: client helpers + tests
+- [x] Task 12: docs, version bump
+- [ ] Task 13: final verification, e2e run, remote CI green, draft PR
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI

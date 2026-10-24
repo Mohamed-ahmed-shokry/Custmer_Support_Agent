@@ -3160,3 +3160,143 @@ def get_inspection_metrics() -> dict[str, Any] | None:
 
 
 
+
+
+# --- Maintenance Vendor Directory & Dispatch Client Helpers ---
+
+
+def _vendor_call(  # noqa: PLR0913
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Issue an authenticated vendor API request; show an error and return None on failure."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def list_vendors(  # noqa: PLR0913
+    trade: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, value in (("trade", trade), ("status", status), ("search", search)):
+        if value and value.strip():
+            params[key] = value.strip()
+    return _vendor_call(
+        "get", "/vendors", HTTP_OK, "Failed to list vendors", "listing vendors", params=params
+    )
+
+
+def get_vendor(vendor_id: str) -> dict[str, Any] | None:
+    return _vendor_call(
+        "get",
+        f"/vendors/{vendor_id}",
+        HTTP_OK,
+        f"Failed to fetch vendor '{vendor_id}'",
+        "fetching vendor",
+    )
+
+
+def get_vendor_metrics() -> dict[str, Any] | None:
+    return _vendor_call(
+        "get",
+        "/vendors/metrics",
+        HTTP_OK,
+        "Failed to fetch vendor metrics",
+        "fetching vendor metrics",
+    )
+
+
+def create_vendor(payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _vendor_call(
+        "post",
+        "/vendors",
+        HTTP_CREATED,
+        "Failed to create vendor",
+        "creating vendor",
+        json=payload,
+    )
+
+
+def update_vendor(vendor_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _vendor_call(
+        "patch",
+        f"/vendors/{vendor_id}",
+        HTTP_OK,
+        f"Failed to update vendor '{vendor_id}'",
+        "updating vendor",
+        json=payload,
+    )
+
+
+def delete_vendor(vendor_id: str) -> bool:
+    result = _vendor_call(
+        "delete",
+        f"/vendors/{vendor_id}",
+        HTTP_OK,
+        f"Failed to delete vendor '{vendor_id}'",
+        "deleting vendor",
+    )
+    return result is not None
+
+
+def dispatch_vendor_to_work_order(
+    work_order_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    return _vendor_call(
+        "post",
+        f"/work-orders/{work_order_id}/dispatch-vendor",
+        HTTP_CREATED,
+        f"Failed to dispatch a vendor to work order '{work_order_id}'",
+        "dispatching vendor",
+        json=payload,
+    )
+
+
+def complete_vendor_dispatch(dispatch_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    return _vendor_call(
+        "post",
+        f"/vendor-dispatches/{dispatch_id}/complete",
+        HTTP_OK,
+        f"Failed to complete vendor dispatch '{dispatch_id}'",
+        "completing vendor dispatch",
+        json=payload,
+    )
+
+
+def list_vendor_dispatches(
+    vendor_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if status and status.strip():
+        params["status"] = status.strip()
+    return _vendor_call(
+        "get",
+        f"/vendors/{vendor_id}/dispatches",
+        HTTP_OK,
+        f"Failed to list dispatches for vendor '{vendor_id}'",
+        "listing vendor dispatches",
+        params=params,
+    )

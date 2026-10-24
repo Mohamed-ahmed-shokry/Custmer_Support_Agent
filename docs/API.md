@@ -552,6 +552,32 @@ Resident move-in/move-out and turnover management engine (`inspections`) trackin
 - `GET /units/{unit_id}/inspections`: Retrieve unit turnover and condition inspection history.
   - Returns `InspectionListResponse`.
 
+## Maintenance Vendor Directory, Work Order Dispatch & Vendor Performance Metrics
+
+Self-contained vendor engine (`api/vendors.py`, tables `vendors` and `vendor_dispatches`) that dispatches maintenance work orders to vendors and tracks completion, ratings and spend. Vendor statuses: `active`, `inactive`, `blacklisted`. Dispatch statuses: `dispatched`, `completed`, `cancelled`. Sample vendors are seeded on first start.
+
+### Vendor Endpoints
+
+- `POST /vendors`: Register a vendor.
+  - Body: `{"name": "Acme Plumbing", "trade": "plumbing", "contact_name": "Sam", "email": "sam@acme.test", "phone": "555-0100", "hourly_rate": 85.0, "status": "active", "notes": ""}` (optional `id`).
+  - Returns `201` with `VendorResponse`; `422` on invalid input.
+- `GET /vendors`: List vendors. Query parameters: `trade`, `status`, `search`, `limit`, `offset`. Returns `VendorListResponse`.
+- `GET /vendors/metrics`: Vendor counts by trade, dispatch counts, `completion_rate`, `average_rating`, `total_spend`, plus per-vendor performance.
+- `GET /vendors/{vendor_id}`: Retrieve a vendor (`404` if unknown).
+- `PATCH /vendors/{vendor_id}`: Partially update a vendor (`404` if unknown, `422` on invalid input).
+- `DELETE /vendors/{vendor_id}`: Delete a vendor (`404` if unknown).
+- `GET /vendors/{vendor_id}/dispatches`: List a vendor's dispatches. Returns `VendorDispatchListResponse`.
+
+### Dispatch Endpoints
+
+- `POST /work-orders/{work_order_id}/dispatch-vendor`: Dispatch a vendor to a work order.
+  - Body: `{"vendor_id": "vnd_...", "agreed_cost": 250.0, "scheduled_date": "2026-11-01"}` (`agreed_cost`, `scheduled_date` optional).
+  - Rejects unknown/inactive vendors, unknown/closed work orders and duplicate active dispatches. Sets the work order `assigned_to` and moves a `submitted` work order to `scheduled`.
+  - Returns `201` with `VendorDispatchResponse`; triggers webhook `vendor.dispatched`.
+- `POST /vendor-dispatches/{dispatch_id}/complete`: Complete a dispatch.
+  - Body: `{"final_cost": 240.0, "rating": 5, "feedback": "On time", "resolution_notes": "Fixed leak"}` (`rating` 1-5).
+  - Completes the work order with `actual_cost`; double completion is rejected.
+  - Returns `VendorDispatchResponse`; triggers webhook `vendor.job_completed`.
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:

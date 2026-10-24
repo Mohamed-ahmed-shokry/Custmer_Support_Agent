@@ -2596,3 +2596,98 @@ def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
 
 
 
+
+
+def test_vendor_read_helpers(fake_requests, fake_st):
+    listing = {"items": [{"id": "vnd_1"}], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=listing)
+    assert api_utils.list_vendors(trade=" hvac ", status="active", search="cool") == listing
+    method, url, kwargs = fake_requests.calls[0]
+    assert method == "get"
+    assert url.endswith("/vendors")
+    assert kwargs["params"] == {
+        "limit": 50,
+        "offset": 0,
+        "trade": "hvac",
+        "status": "active",
+        "search": "cool",
+    }
+    assert "headers" in kwargs
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"vendor": {}})
+    assert api_utils.get_vendor("vnd_1") == {"vendor": {}}
+    assert fake_requests.calls[-1][1].endswith("/vendors/vnd_1")
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"total": 2})
+    assert api_utils.get_vendor_metrics() == {"total": 2}
+    assert fake_requests.calls[-1][1].endswith("/vendors/metrics")
+
+    fake_requests.response = FakeResponse(status_code=500)
+    assert api_utils.get_vendor("vnd_1") is None
+    assert fake_st.errors
+
+
+def test_vendor_helpers_handle_network_errors(monkeypatch, fake_st):
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+    assert api_utils.list_vendors() is None
+    assert api_utils.get_vendor_metrics() is None
+    assert any("network down" in str(e) for e in fake_st.errors)
+
+
+def test_vendor_write_helpers(fake_requests, fake_st):
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload={"vendor": {"id": "vnd_new"}}
+    )
+    assert api_utils.create_vendor({"name": "New"}) == {"vendor": {"id": "vnd_new"}}
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("post", {"name": "New"})
+    assert url.endswith("/vendors")
+
+    # a 200 is not a successful create
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={})
+    assert api_utils.create_vendor({"name": "New"}) is None
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"vendor": {}})
+    assert api_utils.update_vendor("vnd_1", {"status": "inactive"}) == {"vendor": {}}
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("patch", {"status": "inactive"})
+    assert url.endswith("/vendors/vnd_1")
+
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_vendor("vnd_1") is True
+    assert fake_requests.calls[-1][0] == "delete"
+
+    fake_requests.response = FakeResponse(status_code=404)
+    assert api_utils.delete_vendor("vnd_1") is False
+    assert api_utils.update_vendor("vnd_1", {}) is None
+    assert fake_st.errors
+
+
+def test_vendor_dispatch_helpers(fake_requests, fake_st):
+    dispatch = {"dispatch": {"id": "vdp_1"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=dispatch)
+    assert api_utils.dispatch_vendor_to_work_order("wo_1", {"vendor_id": "vnd_1"}) == dispatch
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("post", {"vendor_id": "vnd_1"})
+    assert url.endswith("/work-orders/wo_1/dispatch-vendor")
+
+    fake_requests.response = FakeResponse(status_code=409, payload={"detail": "dup"})
+    assert api_utils.dispatch_vendor_to_work_order("wo_1", {"vendor_id": "vnd_1"}) is None
+    assert fake_st.errors
+
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=dispatch)
+    assert api_utils.complete_vendor_dispatch("vdp_1", {"rating": 5}) == dispatch
+    method, url, kwargs = fake_requests.calls[-1]
+    assert (method, kwargs["json"]) == ("post", {"rating": 5})
+    assert url.endswith("/vendor-dispatches/vdp_1/complete")
+
+    listing = {"items": [], "total": 0, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=listing)
+    assert api_utils.list_vendor_dispatches("vnd_1", status=" completed ") == listing
+    _, url, kwargs = fake_requests.calls[-1]
+    assert url.endswith("/vendors/vnd_1/dispatches")
+    assert kwargs["params"] == {"limit": 50, "offset": 0, "status": "completed"}
+    assert api_utils.list_vendor_dispatches("vnd_1") == listing
+    assert "status" not in fake_requests.calls[-1][2]["params"]
