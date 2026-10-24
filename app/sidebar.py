@@ -22,6 +22,7 @@ from app.api_utils import (
     create_support_agent,
     create_tenant,
     create_unit,
+    create_vendor,
     create_webhook,
     create_work_order,
     create_work_order_from_session,
@@ -2736,6 +2737,73 @@ def _render_vendors_directory_tab():
             st.success(f"Deleted vendor {vname}")
             st.rerun()
         st.markdown("---")
+
+
+def _render_register_vendor_tab():
+    st.markdown("##### ➕ Register New Contractor / Vendor")
+    v_name = st.text_input(
+        "Company / Contractor Name",
+        key="new_vnd_name",
+        placeholder="e.g. Acme Plumbing Pros",
+    )
+    v_trade = st.selectbox(
+        "Trade Specialty",
+        [
+            "plumbing",
+            "electrical",
+            "hvac",
+            "appliance",
+            "pest_control",
+            "structural",
+            "general",
+            "cleaning",
+            "landscaping",
+        ],
+        key="new_vnd_trade",
+    )
+    col1, col2 = st.columns(2)
+    v_contact = col1.text_input(
+        "Contact Person", key="new_vnd_contact", placeholder="e.g. John Doe"
+    )
+    v_phone = col2.text_input(
+        "Phone Number", key="new_vnd_phone", placeholder="e.g. 555-0199"
+    )
+    col3, col4 = st.columns(2)
+    v_email = col3.text_input(
+        "Email", key="new_vnd_email", placeholder="e.g. service@acme.com"
+    )
+    v_rate = col4.number_input(
+        "Hourly Rate ($)", min_value=0.0, step=5.0, value=75.0, key="new_vnd_rate"
+    )
+    v_notes = st.text_area(
+        "Notes / Credentials",
+        key="new_vnd_notes",
+        placeholder="e.g. Licensed, insured, 24/7 emergency availability",
+    )
+
+    if st.button("Register Vendor", key="btn_register_vendor"):
+        if not v_name.strip():
+            st.warning("Vendor name is required.")
+        else:
+            payload = {
+                "name": v_name.strip(),
+                "trade": v_trade,
+                "contact_name": v_contact.strip(),
+                "phone": v_phone.strip(),
+                "email": v_email.strip(),
+                "hourly_rate": float(v_rate) if v_rate > 0 else None,
+                "notes": v_notes.strip(),
+                "status": "active",
+            }
+            res = create_vendor(payload)
+            if res:
+                v_res = res.get("vendor", {})
+                v_display = v_res.get("name", v_name)
+                v_id_display = v_res.get("id", "")
+                st.success(f"Vendor registered successfully: {v_display} ({v_id_display})")
+                st.rerun()
+            else:
+                st.error("Failed to register vendor.")
 
 
 def _render_maintenance_board():

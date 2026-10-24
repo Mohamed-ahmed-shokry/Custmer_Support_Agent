@@ -2880,6 +2880,48 @@ def test_render_vendors_directory_tab(monkeypatch):
     assert st.reruns == 1
 
 
+def test_render_register_vendor_tab(monkeypatch):
+    """Test registering a new vendor with form submission."""
+    expected_rate = 90.0
+    st = FakeStreamlit(
+        values={
+            "new_vnd_name": "Pro Electricians",
+            "new_vnd_trade": "electrical",
+            "new_vnd_contact": "Alice Watts",
+            "new_vnd_phone": "555-4321",
+            "new_vnd_email": "alice@watts.com",
+            "new_vnd_rate": expected_rate,
+            "new_vnd_notes": "Commercial & Residential",
+        },
+        buttons={"btn_register_vendor": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_payloads = []
+    fake_vendor_res = {
+        "vendor": {
+            "id": "vnd_new_1",
+            "name": "Pro Electricians",
+            "trade": "electrical",
+            "status": "active",
+        }
+    }
+    monkeypatch.setattr(
+        sidebar,
+        "create_vendor",
+        lambda payload: created_payloads.append(payload) or fake_vendor_res,
+    )
+
+    sidebar._render_register_vendor_tab()
+
+    expected_payload_count = 1
+    assert len(created_payloads) == expected_payload_count
+    assert created_payloads[0]["name"] == "Pro Electricians"
+    assert created_payloads[0]["trade"] == "electrical"
+    assert created_payloads[0]["hourly_rate"] == expected_rate
+    assert st.reruns == 1
+
+
 def test_render_session_billing_widget(monkeypatch):
     """Test resident financial ledger and 1-click payment widget in sidebar."""
     expected_pay_amount = 1450.0
