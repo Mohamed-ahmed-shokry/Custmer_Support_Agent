@@ -4339,3 +4339,29 @@ def list_vendor_dispatches_route(
         limit=limit,
         offset=offset,
     )
+
+
+@app.get(
+    "/work-orders/{work_order_id}/dispatches",
+    response_model=VendorDispatchListResponse,
+)
+def list_work_order_dispatches_route(
+    work_order_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List dispatches associated with a specific work order."""
+    if not db_utils.get_work_order(work_order_id):
+        raise HTTPException(
+            status_code=404, detail=f"Work order '{work_order_id}' not found."
+        )
+    items, total = vendors.list_dispatches(
+        work_order_id=work_order_id, status=status, limit=limit, offset=offset
+    )
+    return VendorDispatchListResponse(
+        items=[VendorDispatchItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
