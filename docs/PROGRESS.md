@@ -1,7 +1,7 @@
 # v0.41.0 Progress Record: Maintenance Vendor Operations Board, Work Order Dispatch UI & Grounded Vendor Macro Variables
 
 **Phase Branch**: phase/v0.41.0-vendor-operations-ui  
-**Status**: 🚧 IN PROGRESS  
+**Status**: ✅ COMPLETED  
 **Target Version**: 0.41.0  
 **Plan**: see ROADMAP.md ("v0.41.0 plan")
 
@@ -18,25 +18,23 @@
 - [x] **Task 7**: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
 - [x] **Task 8**: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
 - [x] **Task 9**: Documentation (docs/API.md, README.md) & version bump to 0.41.0
-- [ ] **Task 10**: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
+- [x] **Task 10**: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
 
 ---
 
 ## 2. Acceptance Criteria Status
 
-See ROADMAP.md for numbered criteria; evidence is recorded here as tasks complete.
-
 | # | Status | Evidence |
 |---|--------|----------|
-| AC1 | ✅ PASSED | Prompt context includes assigned vendor name, trade, dispatch status, and phone |
-| AC2 | ✅ PASSED | Macro variables ({vendor_name}, {vendor_trade}, {vendor_phone}, etc.) resolved in templates |
+| AC1 | ✅ PASSED | Prompt context includes assigned vendor name, trade, dispatch status, and phone in [ACTIVE MAINTENANCE WORK ORDERS] |
+| AC2 | ✅ PASSED | Macro variables ({vendor_name}, {vendor_trade}, {vendor_phone}, {vendor_hourly_rate}, {vendor_dispatch_status}, {vendor_agreed_cost}) resolved |
 | AC3 | ✅ PASSED | Maintenance board provides navigation tabs for Work Orders, Create Order, Vendors, Register Vendor, Vendor KPIs, Metrics |
-| AC4 | ✅ PASSED | Vendor directory tab renders cards, trade badges, rates, contact, and status toggles |
+| AC4 | ✅ PASSED | Vendor directory tab renders cards, trade badges, rates, contact info, and status toggle buttons |
 | AC5 | ✅ PASSED | Vendor registration form validates input and registers vendor via API |
 | AC6 | ✅ PASSED | Open work orders provide 1-click active vendor dispatch via API |
-| AC7 | ✅ PASSED | Dispatched work orders provide inline completion with final cost and 1-5 rating |
+| AC7 | ✅ PASSED | Dispatched work orders provide inline completion with final cost, 1-5 rating, and feedback |
 | AC8 | ✅ PASSED | Vendor performance KPIs tab renders portfolio KPIs and contractor scorecards |
-| AC9 | ⏳ PENDING | 100% CI parity (tests, ruff, mypy) and remote CI green |
+| AC9 | ✅ PASSED | 100% CI parity: 867 pytest tests passed (92.67% coverage), ruff clean, mypy 33 files clean, secret scan 0 secrets, remote CI green |
 
 ---
 
@@ -48,6 +46,7 @@ See ROADMAP.md for numbered criteria; evidence is recorded here as tasks complet
 | D2 | Embed Vendor operations directly inside the existing 🛠️ Maintenance & Work Orders sidebar expander | Create a new top-level sidebar expander | Follows single maintenance hub pattern; keeps sidebar uncluttered and co-locates work orders with contractor dispatching |
 | D3 | Extract vendor dispatch context for grounding from work orders rather than requiring tenant-vendor DB tables | Add new tenant_vendor associations | In v0.40.0, work orders link to vendors through endor_dispatches and ssigned_to; querying via work order ID is clean and zero-migration |
 | D4 | Maintain untouched pre-existing user files (uv.lock, write_pages.py) | Stage or delete them | Hard Rule #1: Protect user work and git history |
+| D5 | Add GET /work-orders/{id}/dispatches endpoint | Scan dispatches per vendor | Direct work order dispatch lookup allows fast inline dispatch completion directly from the work orders tab |
 
 ---
 
@@ -56,3 +55,8 @@ See ROADMAP.md for numbered criteria; evidence is recorded here as tasks complet
 | Check | Command | Result |
 |-------|---------|--------|
 | Baseline CI (remote, main) | gh run list --branch main | ✅ run 40046016269 success |
+| Local pytest | python -m pytest | ✅ 867 passed, 92.67% coverage |
+| Local lint | python -m ruff check api/ app/ tests/ scripts/ | ✅ exit 0 |
+| Local typecheck | python -m mypy api/ app/ scripts/ | ✅ exit 0 (33 source files) |
+| Local secret scan | git grep -E ... | ✅ exit 1 (0 matches) |
+| Real E2E API run | Uvicorn + HTTP dispatch lifecycle | ✅ exit 0 (vendor 201, wo 201, dispatch 201, complete 200, metrics 200) |

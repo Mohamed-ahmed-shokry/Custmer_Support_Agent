@@ -1501,7 +1501,7 @@ Via the API (and Streamlit client helpers) an operator can register a plumbing v
 - [x] Task 12: docs, version bump
 - [x] Task 13: final verification, e2e run, remote CI green, draft PR
 
-## v0.41.0 plan — Maintenance Vendor Operations Board, Work Order Dispatch UI & Grounded Vendor Macro Variables 🚧 IN PROGRESS
+## v0.41.0 plan — Maintenance Vendor Operations Board, Work Order Dispatch UI & Grounded Vendor Macro Variables ✅ COMPLETED
 
 Deliver an end-to-end interactive Streamlit operations board for maintenance vendors, 1-click vendor dispatch and job completion directly on work orders, and conversational RAG prompt grounding & macro variable resolution for dispatched maintenance vendors.
 
@@ -1559,7 +1559,7 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 - [x] Task 7: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
 - [x] Task 8: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
 - [x] Task 9: Documentation (docs/API.md, README.md) & version bump to 0.41.0
-- [ ] Task 10: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
+- [x] Task 10: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
