@@ -3300,3 +3300,22 @@ def list_vendor_dispatches(
         "listing vendor dispatches",
         params=params,
     )
+
+
+def list_work_order_dispatches(
+    work_order_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if status and status.strip():
+        params["status"] = status.strip()
+    return _vendor_call(
+        "get",
+        f"/work-orders/{work_order_id}/dispatches",
+        HTTP_OK,
+        f"Failed to list dispatches for work order '{work_order_id}'",
+        "listing work order dispatches",
+        params=params,
+    )
