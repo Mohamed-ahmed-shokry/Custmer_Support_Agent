@@ -492,11 +492,33 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     if work_orders:
         variables["open_work_orders_count"] = str(len(work_orders))
         latest = work_orders[0]
-        variables["latest_work_order_id"] = str(latest.get("id", ""))
+        wo_id = str(latest.get("id", ""))
+        variables["latest_work_order_id"] = wo_id
         variables["latest_work_order_title"] = str(latest.get("title", ""))
         variables["latest_work_order_status"] = str(latest.get("status", ""))
+        dispatch, vendor = _get_active_vendor_dispatch(wo_id)
+        if vendor and dispatch:
+            variables["vendor_name"] = str(vendor.get("name", ""))
+            variables["vendor_trade"] = str(vendor.get("trade", ""))
+            variables["vendor_phone"] = str(vendor.get("phone", ""))
+            variables["vendor_hourly_rate"] = format_currency(vendor.get("hourly_rate"))
+            variables["vendor_dispatch_status"] = str(dispatch.get("status", ""))
+            variables["vendor_agreed_cost"] = format_currency(dispatch.get("agreed_cost"))
+        else:
+            variables["vendor_name"] = str(latest.get("assigned_to") or "")
+            variables["vendor_trade"] = ""
+            variables["vendor_phone"] = ""
+            variables["vendor_hourly_rate"] = "$0.00"
+            variables["vendor_dispatch_status"] = "none"
+            variables["vendor_agreed_cost"] = "$0.00"
     else:
         variables["open_work_orders_count"] = "0"
+        variables["vendor_name"] = ""
+        variables["vendor_trade"] = ""
+        variables["vendor_phone"] = ""
+        variables["vendor_hourly_rate"] = "$0.00"
+        variables["vendor_dispatch_status"] = "none"
+        variables["vendor_agreed_cost"] = "$0.00"
 
     if resolved_tenant_id:
         ledger = get_tenant_ledger_summary(resolved_tenant_id)

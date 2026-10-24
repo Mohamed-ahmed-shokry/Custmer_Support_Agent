@@ -380,3 +380,40 @@ def test_build_tenant_rag_context_vendor_dispatch_grounding():
     assert "Vendor Phone: 555-0999" in t1_block
     assert "Scheduled: 2026-11-05" in t1_block
 
+
+def test_render_template_with_vendor_dispatch_variables():
+    """Verify macro template rendering with vendor dispatch variables."""
+    sid = "sess-macro-vendor"
+    db_utils.insert_application_logs(sid, "Plumbing help", "Vendor dispatched", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    # Create vendor and dispatch to tenant_1's work order wo_101
+    v = vendors.create_vendor(
+        name="QuickFix HVAC & Plumbing",
+        trade="plumbing",
+        phone="555-0888",
+        hourly_rate=95.0,
+        status="active",
+    )
+    vendors.dispatch_vendor(
+        "wo_101",
+        v["id"],
+        agreed_cost=190.0,
+        scheduled_date="2026-11-06",
+    )
+
+    template = (
+        "Hello {customer_name}, your request '{latest_work_order_title}' has been dispatched "
+        "to {vendor_name} ({vendor_trade}). Status: {vendor_dispatch_status}. "
+        "Contact: {vendor_phone}, Rate: {vendor_hourly_rate}, Agreed: {vendor_agreed_cost}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Hello Sarah Connor" in rendered
+    assert "Kitchen faucet leaking constantly" in rendered
+    assert "QuickFix HVAC & Plumbing (plumbing)" in rendered
+    assert "Status: dispatched" in rendered
+    assert "Contact: 555-0888" in rendered
+    assert "Rate: $95.00" in rendered
+    assert "Agreed: $190.00" in rendered
+
