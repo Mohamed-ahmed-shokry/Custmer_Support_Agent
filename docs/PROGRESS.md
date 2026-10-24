@@ -31,7 +31,8 @@ See `ROADMAP.md` for the numbered criteria; evidence is recorded here as tasks c
 
 | # | Status | Evidence |
 |---|--------|----------|
-| AC1-AC10 | ⏳ PENDING | — |
+| AC1-AC9 | ✅ PASSED | 858 pytest tests pass (92.65% coverage); real uvicorn run: vendor create 201, dispatch 201 (work order -> scheduled, assigned_to set), duplicate 409, complete 200 (final_cost 190, rating 5), double-complete 409, rating 9 -> 422, metrics completion_rate 1.0 |
+| AC10 | ⏳ PENDING | Remote CI verification below |
 
 ---
 
@@ -51,3 +52,6 @@ See `ROADMAP.md` for the numbered criteria; evidence is recorded here as tasks c
 | Check | Command | Result |
 |-------|---------|--------|
 | Baseline CI (remote, `main`) | `gh run list` | ✅ run 39156988777 success |
+| Local pytest | `python -m pytest` | ✅ 858 passed, 92.65% coverage |
+| Local lint | `python -m ruff check api/ app/ tests/ scripts/` | ✅ exit 0 |
+| Local typecheck | `python -m mypy api/ app/ scripts/` | ✅ exit 0 |
