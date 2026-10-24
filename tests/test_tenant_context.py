@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import db_utils
+from api import db_utils, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -31,6 +31,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_billing_transactions()
     db_utils.create_lease_renewals()
     db_utils.create_inspections()
+    vendors.create_vendors()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -354,3 +355,28 @@ def test_render_template_with_inspection_variables():
     assert "Total deductions: $150.00" in rendered
     assert "net refund: $1,850.00" in rendered
     assert "keys: returned" in rendered
+
+
+def test_build_tenant_rag_context_vendor_dispatch_grounding():
+    """Verify that assigned vendor details and dispatch status are grounded in prompt context."""
+    # Dispatch tenant_1's work order wo_101 to a vendor
+    v = vendors.create_vendor(
+        name="Apex Plumbers",
+        trade="plumbing",
+        phone="555-0999",
+        status="active",
+    )
+    vendors.dispatch_vendor(
+        "wo_101",
+        v["id"],
+        agreed_cost=185.0,
+        scheduled_date="2026-11-05",
+    )
+
+    t1_block = build_tenant_rag_context(tenant_id="tenant_1")
+    assert "[ACTIVE MAINTENANCE WORK ORDERS]" in t1_block
+    assert "[wo_101] Kitchen faucet leaking constantly" in t1_block
+    assert "Vendor: Apex Plumbers (plumbing) [Dispatch: dispatched]" in t1_block
+    assert "Vendor Phone: 555-0999" in t1_block
+    assert "Scheduled: 2026-11-05" in t1_block
+

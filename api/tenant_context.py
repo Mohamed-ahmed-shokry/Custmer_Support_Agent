@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from api import vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -124,6 +125,25 @@ def _format_tenant_lines(tenant: dict[str, Any], has_unit: bool) -> list[str]:
     return lines
 
 
+def _get_active_vendor_dispatch(
+    work_order_id: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Retrieve active vendor dispatch and vendor profile for a work order, if any."""
+    try:
+        dispatches, _ = vendors.list_dispatches(work_order_id=work_order_id, limit=5)
+        for d in dispatches:
+            if d.get("status") == "dispatched":
+                v = vendors.get_vendor(d.get("vendor_id", ""))
+                return d, v
+        if dispatches:
+            d = dispatches[0]
+            v = vendors.get_vendor(d.get("vendor_id", ""))
+            return d, v
+    except Exception as exc:
+        logger.debug("Failed to retrieve vendor dispatch for %s: %s", work_order_id, exc)
+    return None, None
+
+
 def _format_work_orders_lines(work_orders: list[dict[str, Any]]) -> list[str]:
     """Format active maintenance work order tickets."""
     lines: list[str] = ["[ACTIVE MAINTENANCE WORK ORDERS]"]
@@ -144,6 +164,14 @@ def _format_work_orders_lines(work_orders: list[dict[str, Any]]) -> list[str]:
             f"Status: {status}",
             f"Assigned To: {assignee}",
         ]
+        dispatch, vendor = _get_active_vendor_dispatch(wo_id)
+        if vendor and dispatch:
+            v_name = vendor.get("name", assignee)
+            v_trade = vendor.get("trade", "")
+            d_status = dispatch.get("status", "")
+            parts.append(f"Vendor: {v_name} ({v_trade}) [Dispatch: {d_status}]")
+            if vendor.get("phone"):
+                parts.append(f"Vendor Phone: {vendor['phone']}")
         if sched:
             parts.append(f"Scheduled: {sched}")
         parts.append(f"Entry: {entry}")
