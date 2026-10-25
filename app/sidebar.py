@@ -11,6 +11,7 @@ from app.api_utils import (
     assign_session,
     auto_assign_session,
     complete_inspection,
+    complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
     create_billing_transaction,
     create_inspection,
@@ -22,6 +23,7 @@ from app.api_utils import (
     create_support_agent,
     create_tenant,
     create_unit,
+    create_vendor,
     create_webhook,
     create_work_order,
     create_work_order_from_session,
@@ -37,8 +39,10 @@ from app.api_utils import (
     delete_sla_policy,
     delete_tenant,
     delete_unit,
+    delete_vendor,
     delete_webhook,
     delete_work_order,
+    dispatch_vendor_to_work_order,
     draft_article_from_session,
     evaluate_sla_alerts,
     export_session,
@@ -71,6 +75,7 @@ from app.api_utils import (
     get_tenant_ledger,
     get_tenant_support_history,
     get_unit_work_orders,
+    get_vendor_metrics,
     get_work_order_metrics,
     link_session_tenant,
     list_billing_transactions,
@@ -89,8 +94,10 @@ from app.api_utils import (
     list_support_agents,
     list_tenants,
     list_units,
+    list_vendors,
     list_webhook_deliveries,
     list_webhooks,
+    list_work_order_dispatches,
     list_work_orders,
     ping_webhook,
     publish_inspection_document,
@@ -114,6 +121,7 @@ from app.api_utils import (
     update_knowledge_gap,
     update_session,
     update_support_agent,
+    update_vendor,
     update_webhook,
     update_work_order,
     upload_document,
@@ -2495,6 +2503,92 @@ def _render_tenant_and_property_directory():
             _render_tenant_history_tab()
 
 
+def _render_work_order_dispatch_section(wo: dict, wo_id: str) -> None:
+    """Render inline vendor dispatch or completion controls for a work order."""
+    dispatches_resp = list_work_order_dispatches(wo_id)
+    dispatches = dispatches_resp.get("items", []) if dispatches_resp else []
+    active_dispatch = next(
+        (d for d in dispatches if d.get("status") == "dispatched"), None
+    )
+
+    if active_dispatch:
+        assigned_label = wo.get("assigned_to") or "Vendor"
+        agreed_cost_val = active_dispatch.get("agreed_cost") or 0.0
+        st.caption(
+            f"🚚 **Dispatched to {assigned_label}** "
+            f"| Agreed: ${agreed_cost_val:.2f} "
+            f"| Dispatch: `{active_dispatch['id']}`"
+        )
+        with st.expander(f"⭐ Complete Dispatch ({wo_id})"):
+            fc1, fc2 = st.columns(2)
+            f_cost = fc1.number_input(
+                "Final Cost ($)",
+                min_value=0.0,
+                step=10.0,
+                value=float(active_dispatch.get("agreed_cost") or 0.0),
+                key=f"dsp_final_cost_{wo_id}",
+            )
+            f_rating = fc2.selectbox(
+                "Rating (1-5)",
+                [5, 4, 3, 2, 1],
+                key=f"dsp_rating_{wo_id}",
+            )
+            f_notes = st.text_input("Resolution Notes", key=f"dsp_res_notes_{wo_id}")
+            f_feedback = st.text_input("Vendor Feedback", key=f"dsp_feedback_{wo_id}")
+            if st.button("Complete & Rate Job", key=f"btn_comp_dsp_{wo_id}"):
+                c_payload = {
+                    "final_cost": float(f_cost) if f_cost > 0 else None,
+                    "rating": int(f_rating),
+                    "resolution_notes": f_notes.strip(),
+                    "feedback": f_feedback.strip(),
+                }
+                if complete_vendor_dispatch(active_dispatch["id"], c_payload):
+                    st.success(
+                        f"Dispatch {active_dispatch['id']} completed with rating {f_rating}⭐!"
+                    )
+                    st.rerun()
+    elif wo["status"] not in ("completed", "cancelled"):
+        with st.expander(f"🚚 Dispatch Vendor ({wo_id})"):
+            v_resp = list_vendors(status="active", limit=50)
+            v_items = v_resp.get("items", []) if v_resp else []
+            if v_items:
+                v_options = {
+                    f"{v['name']} ({v.get('trade', 'general')}) - "
+                    f"${v.get('hourly_rate', 0) or 0:.0f}/hr": v["id"]
+                    for v in v_items
+                }
+                sel_label = st.selectbox(
+                    "Select Active Vendor",
+                    options=list(v_options.keys()),
+                    key=f"dsp_sel_vnd_{wo_id}",
+                )
+                chosen_vid = v_options[sel_label]
+                dc1, dc2 = st.columns(2)
+                agreed = dc1.number_input(
+                    "Agreed Cost ($)",
+                    min_value=0.0,
+                    step=25.0,
+                    value=0.0,
+                    key=f"dsp_agreed_{wo_id}",
+                )
+                s_date = dc2.text_input(
+                    "Scheduled Date",
+                    placeholder="YYYY-MM-DD",
+                    key=f"dsp_date_{wo_id}",
+                )
+                if st.button("Dispatch Vendor", key=f"btn_dispatch_vnd_{wo_id}"):
+                    d_payload = {
+                        "vendor_id": chosen_vid,
+                        "agreed_cost": float(agreed) if agreed > 0 else None,
+                        "scheduled_date": s_date.strip() or None,
+                    }
+                    if dispatch_vendor_to_work_order(wo_id, d_payload):
+                        st.success(f"Work order {wo_id} dispatched to vendor!")
+                        st.rerun()
+            else:
+                st.info("No active vendors available in directory.")
+
+
 def _render_work_orders_board_tab():
     f_col1, f_col2 = st.columns(2)
     s_filter = f_col1.selectbox(
@@ -2538,6 +2632,8 @@ def _render_work_orders_board_tab():
         )
         if wo.get("description"):
             st.text(wo["description"][:120])
+
+        _render_work_order_dispatch_section(wo, wo_id)
 
         b_col1, b_col2, b_col3 = st.columns(3)
         if wo["status"] not in ("in_progress", "completed") and b_col1.button(
@@ -2645,6 +2741,197 @@ def _render_work_order_metrics_tab(metrics: dict):
         st.caption(f"- **{pr_name}**: {count}")
 
 
+def _render_vendors_directory_tab():
+    st.markdown("##### 🏢 Maintenance Vendor Directory")
+    c1, c2 = st.columns(2)
+    trade_filter = c1.selectbox(
+        "Trade",
+        [
+            "All",
+            "plumbing",
+            "electrical",
+            "hvac",
+            "appliance",
+            "pest_control",
+            "structural",
+            "general",
+            "cleaning",
+            "landscaping",
+        ],
+        key="vnd_filter_trade",
+    )
+    status_filter = c2.selectbox(
+        "Status",
+        ["All", "active", "inactive", "blacklisted"],
+        key="vnd_filter_status",
+    )
+    search_query = st.text_input("Search vendors...", key="vnd_search_input")
+
+    resp = list_vendors(
+        trade=None if trade_filter == "All" else trade_filter,
+        status=None if status_filter == "All" else status_filter,
+        search=search_query.strip() or None,
+        limit=50,
+    )
+    vendors_list = resp.get("items", []) if resp else []
+    total = resp.get("total", len(vendors_list)) if resp else 0
+    st.caption(f"Showing {len(vendors_list)} of {total} vendor(s)")
+
+    if not vendors_list:
+        st.info("No vendors found matching criteria.")
+
+    trade_icons = {
+        "plumbing": "🔧",
+        "electrical": "⚡",
+        "hvac": "❄️",
+        "appliance": "🔌",
+        "pest_control": "🐜",
+        "structural": "🧱",
+        "general": "🛠️",
+        "cleaning": "🧹",
+        "landscaping": "🌱",
+    }
+    status_icons = {"active": "🟢", "inactive": "🟡", "blacklisted": "⛔"}
+
+    for v in vendors_list:
+        vid = v["id"]
+        vname = v["name"]
+        trade = v.get("trade", "general")
+        status = v.get("status", "active")
+        icon = trade_icons.get(trade, "🛠️")
+        s_icon = status_icons.get(status, "⚪")
+        rate_str = (
+            f"${v['hourly_rate']:.2f}/hr"
+            if v.get("hourly_rate") is not None
+            else "Rate N/A"
+        )
+
+        st.markdown(f"**{icon} {vname}** (`{vid}`) {s_icon}")
+        st.caption(
+            f"Trade: **{trade}** | Status: **{status}** | Rate: **{rate_str}** | "
+            f"Contact: {v.get('contact_name') or 'N/A'} ({v.get('phone') or 'N/A'})"
+        )
+        if v.get("email"):
+            st.caption(f"Email: {v['email']}")
+        if v.get("notes"):
+            st.text(v["notes"][:120])
+
+        b1, b2 = st.columns(2)
+        if status == "active":
+            if b1.button("⏸️ Deactivate", key=f"btn_deact_vnd_{vid}"):
+                update_vendor(vid, {"status": "inactive"})
+                st.rerun()
+        elif b1.button("▶️ Activate", key=f"btn_act_vnd_{vid}"):
+            update_vendor(vid, {"status": "active"})
+            st.rerun()
+
+        if b2.button("🗑️ Delete", key=f"btn_del_vnd_{vid}") and delete_vendor(vid):
+            st.success(f"Deleted vendor {vname}")
+            st.rerun()
+        st.markdown("---")
+
+
+def _render_register_vendor_tab():
+    st.markdown("##### ➕ Register New Contractor / Vendor")
+    v_name = st.text_input(
+        "Company / Contractor Name",
+        key="new_vnd_name",
+        placeholder="e.g. Acme Plumbing Pros",
+    )
+    v_trade = st.selectbox(
+        "Trade Specialty",
+        [
+            "plumbing",
+            "electrical",
+            "hvac",
+            "appliance",
+            "pest_control",
+            "structural",
+            "general",
+            "cleaning",
+            "landscaping",
+        ],
+        key="new_vnd_trade",
+    )
+    col1, col2 = st.columns(2)
+    v_contact = col1.text_input(
+        "Contact Person", key="new_vnd_contact", placeholder="e.g. John Doe"
+    )
+    v_phone = col2.text_input(
+        "Phone Number", key="new_vnd_phone", placeholder="e.g. 555-0199"
+    )
+    col3, col4 = st.columns(2)
+    v_email = col3.text_input(
+        "Email", key="new_vnd_email", placeholder="e.g. service@acme.com"
+    )
+    v_rate = col4.number_input(
+        "Hourly Rate ($)", min_value=0.0, step=5.0, value=75.0, key="new_vnd_rate"
+    )
+    v_notes = st.text_area(
+        "Notes / Credentials",
+        key="new_vnd_notes",
+        placeholder="e.g. Licensed, insured, 24/7 emergency availability",
+    )
+
+    if st.button("Register Vendor", key="btn_register_vendor"):
+        if not v_name.strip():
+            st.warning("Vendor name is required.")
+        else:
+            payload = {
+                "name": v_name.strip(),
+                "trade": v_trade,
+                "contact_name": v_contact.strip(),
+                "phone": v_phone.strip(),
+                "email": v_email.strip(),
+                "hourly_rate": float(v_rate) if v_rate > 0 else None,
+                "notes": v_notes.strip(),
+                "status": "active",
+            }
+            res = create_vendor(payload)
+            if res:
+                v_res = res.get("vendor", {})
+                v_display = v_res.get("name", v_name)
+                v_id_display = v_res.get("id", "")
+                st.success(f"Vendor registered successfully: {v_display} ({v_id_display})")
+                st.rerun()
+            else:
+                st.error("Failed to register vendor.")
+
+
+def _render_vendor_performance_tab(metrics: dict | None = None):
+    st.markdown("##### 📊 Vendor Performance & Spend")
+    v_metrics = metrics if metrics is not None else (get_vendor_metrics() or {})
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Vendors", v_metrics.get("total_vendors", 0))
+    c2.metric("Dispatches", v_metrics.get("total_dispatches", 0))
+    comp_rate = v_metrics.get("completion_rate", 0.0) * 100
+    c3.metric("Completion", f"{comp_rate:.1f}%")
+    avg_r = v_metrics.get("average_rating")
+    r_str = f"{avg_r:.1f}⭐" if avg_r is not None else "N/A"
+    c4.metric("Avg Rating", r_str)
+
+    spend_val = v_metrics.get("total_spend", 0.0)
+    st.caption(f"**Total Portfolio Spend:** ${spend_val:,.2f}")
+
+    vendors_perf = v_metrics.get("vendors", [])
+    if vendors_perf:
+        st.markdown("**Contractor Scorecards:**")
+        for vp in vendors_perf:
+            v_rate = (
+                f"{vp['average_rating']:.1f}⭐"
+                if vp.get("average_rating") is not None
+                else "N/A"
+            )
+            v_spend = vp.get("total_spend", 0.0)
+            st.markdown(
+                f"- **{vp['name']}** ({vp.get('trade', 'general')}): "
+                f"{vp.get('completed_jobs', 0)} jobs | {v_rate} | "
+                f"${v_spend:,.2f} spent"
+            )
+    else:
+        st.info("No vendor performance data recorded yet.")
+
+
 def _render_maintenance_board():
     with st.sidebar.expander("🛠️ Maintenance & Work Orders"):
         metrics = get_work_order_metrics() or {}
@@ -2656,7 +2943,14 @@ def _render_maintenance_board():
 
         sub_tab = st.radio(
             "Board View",
-            ["Work Orders", "Create Order", "Metrics & Costs"],
+            [
+                "Work Orders",
+                "Create Order",
+                "Vendors",
+                "Register Vendor",
+                "Vendor KPIs",
+                "Metrics & Costs",
+            ],
             horizontal=True,
             key="wo_board_tab_radio",
         )
@@ -2665,6 +2959,12 @@ def _render_maintenance_board():
             _render_work_orders_board_tab()
         elif sub_tab == "Create Order":
             _render_create_work_order_tab()
+        elif sub_tab == "Vendors":
+            _render_vendors_directory_tab()
+        elif sub_tab == "Register Vendor":
+            _render_register_vendor_tab()
+        elif sub_tab == "Vendor KPIs":
+            _render_vendor_performance_tab()
         else:
             _render_work_order_metrics_tab(metrics)
 

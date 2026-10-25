@@ -2769,6 +2769,140 @@ def test_render_work_orders_board_tab(monkeypatch):
     assert st.reruns == 1
 
 
+def test_render_work_orders_board_tab_inline_dispatch(monkeypatch):
+    """Test inline vendor dispatch button on open work orders."""
+    expected_agreed = 150.0
+    st = FakeStreamlit(
+        values={
+            "wo_filter_status": "All",
+            "wo_filter_prio": "All",
+            "wo_search_input": "",
+            "dsp_sel_vnd_wo_1": "QuickFix (plumbing) - $80/hr",
+            "dsp_agreed_wo_1": expected_agreed,
+            "dsp_date_wo_1": "2026-11-10",
+        },
+        buttons={"btn_dispatch_vnd_wo_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_wos = {
+        "items": [
+            {
+                "id": "wo_1",
+                "unit_id": "unit_101",
+                "title": "Kitchen faucet leaking",
+                "category": "plumbing",
+                "priority": "high",
+                "status": "submitted",
+            }
+        ],
+        "total": 1,
+    }
+    mock_vendors = {
+        "items": [
+            {
+                "id": "vnd_qf",
+                "name": "QuickFix",
+                "trade": "plumbing",
+                "hourly_rate": 80.0,
+            }
+        ]
+    }
+    dispatched_calls = []
+
+    monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
+    monkeypatch.setattr(
+        sidebar, "list_work_order_dispatches", lambda woid: {"items": []}
+    )
+    monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: mock_vendors)
+    monkeypatch.setattr(
+        sidebar,
+        "dispatch_vendor_to_work_order",
+        lambda woid, payload: dispatched_calls.append((woid, payload))
+        or {"dispatch": {"id": "vdp_1"}},
+    )
+
+    sidebar._render_work_orders_board_tab()
+
+    expected_calls = 1
+    assert len(dispatched_calls) == expected_calls
+    wo_id, payload = dispatched_calls[0]
+    assert wo_id == "wo_1"
+    assert payload["vendor_id"] == "vnd_qf"
+    assert payload["agreed_cost"] == expected_agreed
+    assert payload["scheduled_date"] == "2026-11-10"
+    assert st.reruns == 1
+
+
+def test_render_work_orders_board_tab_complete_dispatch(monkeypatch):
+    """Test inline completion and rating of dispatched work order."""
+    expected_rating = 5
+    expected_final_cost = 140.0
+    st = FakeStreamlit(
+        values={
+            "wo_filter_status": "All",
+            "wo_filter_prio": "All",
+            "wo_search_input": "",
+            "dsp_final_cost_wo_1": expected_final_cost,
+            "dsp_rating_wo_1": expected_rating,
+            "dsp_res_notes_wo_1": "Replaced washer",
+            "dsp_feedback_wo_1": "Excellent work",
+        },
+        buttons={"btn_comp_dsp_wo_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_wos = {
+        "items": [
+            {
+                "id": "wo_1",
+                "unit_id": "unit_101",
+                "title": "Kitchen faucet leaking",
+                "category": "plumbing",
+                "priority": "high",
+                "status": "scheduled",
+                "assigned_to": "QuickFix",
+            }
+        ],
+        "total": 1,
+    }
+    mock_dispatches = {
+        "items": [
+            {
+                "id": "vdp_1",
+                "work_order_id": "wo_1",
+                "vendor_id": "vnd_qf",
+                "status": "dispatched",
+                "agreed_cost": 150.0,
+            }
+        ]
+    }
+    completed_calls = []
+
+    monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
+    monkeypatch.setattr(
+        sidebar, "list_work_order_dispatches", lambda woid: mock_dispatches
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "complete_vendor_dispatch",
+        lambda did, payload: completed_calls.append((did, payload))
+        or {"dispatch": {"id": did}},
+    )
+
+    sidebar._render_work_orders_board_tab()
+
+    expected_completed = 1
+    assert len(completed_calls) == expected_completed
+    dsp_id, payload = completed_calls[0]
+    assert dsp_id == "vdp_1"
+    assert payload["final_cost"] == expected_final_cost
+    assert payload["rating"] == expected_rating
+    assert payload["resolution_notes"] == "Replaced washer"
+    assert payload["feedback"] == "Excellent work"
+    assert st.reruns == 1
+
+
 def test_render_create_work_order_tab(monkeypatch):
     """Test manual work order creation form."""
     expected_est = 120.0
@@ -2834,6 +2968,175 @@ def test_render_work_order_metrics_and_board(monkeypatch):
     markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
     assert any("Maintenance Costs & Metrics" in m for m in markdowns)
     assert any("Status Breakdown:" in m for m in markdowns)
+
+
+def test_render_maintenance_board_vendor_navigation(monkeypatch):
+    """Test switching tabs to Vendors, Register Vendor, and Vendor KPIs in maintenance board."""
+    # Test Vendors tab
+    st_v = FakeStreamlit(
+        values={
+            "wo_board_tab_radio": "Vendors",
+            "vnd_filter_trade": "All",
+            "vnd_filter_status": "All",
+            "vnd_search_input": "",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", st_v)
+    monkeypatch.setattr(sidebar, "get_work_order_metrics", lambda: {})
+    monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: {"items": [], "total": 0})
+    sidebar._render_maintenance_board()
+    assert any(
+        "Maintenance Vendor Directory" in str(c.args[0])
+        for c in st_v.calls
+        if c.fn == "markdown"
+    )
+
+    # Test Register Vendor tab
+    st_reg = FakeStreamlit(values={"wo_board_tab_radio": "Register Vendor"})
+    monkeypatch.setattr(sidebar, "st", st_reg)
+    sidebar._render_maintenance_board()
+    assert any(
+        "Register New Contractor" in str(c.args[0])
+        for c in st_reg.calls
+        if c.fn == "markdown"
+    )
+
+    # Test Vendor KPIs tab
+    st_kpi = FakeStreamlit(values={"wo_board_tab_radio": "Vendor KPIs"})
+    monkeypatch.setattr(sidebar, "st", st_kpi)
+    monkeypatch.setattr(
+        sidebar,
+        "get_vendor_metrics",
+        lambda: {"total_vendors": 3, "total_dispatches": 5},
+    )
+    sidebar._render_maintenance_board()
+    assert any(
+        "Vendor Performance & Spend" in str(c.args[0])
+        for c in st_kpi.calls
+        if c.fn == "markdown"
+    )
+
+
+def test_render_vendors_directory_tab(monkeypatch):
+    """Test vendor directory tab listing and status toggle."""
+    st = FakeStreamlit(
+        values={
+            "vnd_filter_trade": "All",
+            "vnd_filter_status": "All",
+            "vnd_search_input": "",
+        },
+        buttons={"btn_deact_vnd_vnd_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    mock_vendors = {
+        "items": [
+            {
+                "id": "vnd_1",
+                "name": "Reliable Pipes",
+                "trade": "plumbing",
+                "status": "active",
+                "hourly_rate": 85.0,
+                "contact_name": "Bob",
+                "phone": "555-1234",
+                "email": "bob@pipes.com",
+                "notes": "Fast service",
+            }
+        ],
+        "total": 1,
+    }
+    updated_calls = []
+
+    monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: mock_vendors)
+    monkeypatch.setattr(
+        sidebar,
+        "update_vendor",
+        lambda vid, payload: updated_calls.append((vid, payload)) or {"id": vid},
+    )
+
+    sidebar._render_vendors_directory_tab()
+
+    assert len(updated_calls) == 1
+    assert updated_calls[0] == ("vnd_1", {"status": "inactive"})
+    assert st.reruns == 1
+
+
+def test_render_register_vendor_tab(monkeypatch):
+    """Test registering a new vendor with form submission."""
+    expected_rate = 90.0
+    st = FakeStreamlit(
+        values={
+            "new_vnd_name": "Pro Electricians",
+            "new_vnd_trade": "electrical",
+            "new_vnd_contact": "Alice Watts",
+            "new_vnd_phone": "555-4321",
+            "new_vnd_email": "alice@watts.com",
+            "new_vnd_rate": expected_rate,
+            "new_vnd_notes": "Commercial & Residential",
+        },
+        buttons={"btn_register_vendor": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_payloads = []
+    fake_vendor_res = {
+        "vendor": {
+            "id": "vnd_new_1",
+            "name": "Pro Electricians",
+            "trade": "electrical",
+            "status": "active",
+        }
+    }
+    monkeypatch.setattr(
+        sidebar,
+        "create_vendor",
+        lambda payload: created_payloads.append(payload) or fake_vendor_res,
+    )
+
+    sidebar._render_register_vendor_tab()
+
+    expected_payload_count = 1
+    assert len(created_payloads) == expected_payload_count
+    assert created_payloads[0]["name"] == "Pro Electricians"
+    assert created_payloads[0]["trade"] == "electrical"
+    assert created_payloads[0]["hourly_rate"] == expected_rate
+    assert st.reruns == 1
+
+
+def test_render_vendor_performance_tab(monkeypatch):
+    """Test vendor performance metrics and contractor scorecards rendering."""
+    expected_vendors = 4
+    expected_dispatches = 10
+    expected_spend = 2450.0
+    metrics = {
+        "total_vendors": expected_vendors,
+        "total_dispatches": expected_dispatches,
+        "completion_rate": 0.9,
+        "average_rating": 4.8,
+        "total_spend": expected_spend,
+        "vendors": [
+            {
+                "vendor_id": "vnd_1",
+                "name": "Ace HVAC",
+                "trade": "hvac",
+                "completed_jobs": 9,
+                "average_rating": 4.8,
+                "total_spend": expected_spend,
+            }
+        ],
+    }
+    st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(sidebar, "get_vendor_metrics", lambda: metrics)
+
+    sidebar._render_vendor_performance_tab()
+
+    markdowns = [c.args[0] for c in st.calls if c.fn == "markdown"]
+    assert any("Vendor Performance & Spend" in m for m in markdowns)
+    assert any("Contractor Scorecards:" in m for m in markdowns)
+    assert any("Ace HVAC" in m for m in markdowns)
+    captions = [c.args[0] for c in st.calls if c.fn == "caption"]
+    assert any("$2,450.00" in cap for cap in captions)
 
 
 def test_render_session_billing_widget(monkeypatch):

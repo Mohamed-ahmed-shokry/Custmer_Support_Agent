@@ -193,3 +193,18 @@ def test_complete_dispatch_route_errors(vendor_api):
     assert ok.status_code == HTTP_OK
     again = client.post(f"/vendor-dispatches/{dispatch['id']}/complete", json={})
     assert again.status_code == HTTP_CONFLICT
+
+
+def test_list_work_order_dispatches_route(vendor_api):
+    """Test listing dispatches associated with a specific work order."""
+    assert client.get("/work-orders/missing_wo/dispatches").status_code == HTTP_NOT_FOUND
+    created = client.post(
+        "/work-orders/wo_102/dispatch-vendor",
+        json={"vendor_id": "vnd_plumb_01", "agreed_cost": 175.0},
+    ).json()["dispatch"]
+    resp = client.get("/work-orders/wo_102/dispatches")
+    assert resp.status_code == HTTP_OK
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["id"] == created["id"]
+    assert data["items"][0]["agreed_cost"] == 175.0  # noqa: PLR2004

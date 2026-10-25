@@ -578,6 +578,20 @@ Self-contained vendor engine (`api/vendors.py`, tables `vendors` and `vendor_dis
   - Body: `{"final_cost": 240.0, "rating": 5, "feedback": "On time", "resolution_notes": "Fixed leak"}` (`rating` 1-5).
   - Completes the work order with `actual_cost`; double completion is rejected.
   - Returns `VendorDispatchResponse`; triggers webhook `vendor.job_completed`.
+- `GET /work-orders/{work_order_id}/dispatches`: List dispatch history for a specific work order.
+  - Returns `VendorDispatchListResponse`.
+
+### Grounded Prompt Context & Macro Variables
+
+- **RAG Context Grounding**: Active work orders assigned to contractors automatically inject vendor information into `[ACTIVE MAINTENANCE WORK ORDERS]`:
+  `Vendor: {name} ({trade}) [Dispatch: {status}] | Vendor Phone: {phone}`
+- **Macro Template Variables**:
+  - `{vendor_name}`: Name of assigned contractor
+  - `{vendor_trade}`: Trade specialty (e.g. plumbing, electrical)
+  - `{vendor_phone}`: Contractor contact phone
+  - `{vendor_hourly_rate}`: Standard hourly rate formatted as `$X.XX`
+  - `{vendor_dispatch_status}`: Active dispatch status (`dispatched`, `completed`, or `none`)
+  - `{vendor_agreed_cost}`: Agreed dispatch estimate formatted as `$X.XX`
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:

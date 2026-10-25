@@ -2691,3 +2691,8 @@ def test_vendor_dispatch_helpers(fake_requests, fake_st):
     assert kwargs["params"] == {"limit": 50, "offset": 0, "status": "completed"}
     assert api_utils.list_vendor_dispatches("vnd_1") == listing
     assert "status" not in fake_requests.calls[-1][2]["params"]
+
+    assert api_utils.list_work_order_dispatches("wo_1", status="dispatched") == listing
+    _, url, kwargs = fake_requests.calls[-1]
+    assert url.endswith("/work-orders/wo_1/dispatches")
+    assert kwargs["params"] == {"limit": 50, "offset": 0, "status": "dispatched"}
