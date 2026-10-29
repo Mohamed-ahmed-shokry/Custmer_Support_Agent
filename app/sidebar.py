@@ -17,6 +17,7 @@ from app.api_utils import (
     create_inspection,
     create_lease_renewal,
     create_macro,
+    create_package_api,
     create_session_inspection,
     create_session_lease_renewal,
     create_sla_policy,
@@ -61,6 +62,7 @@ from app.api_utils import (
     get_knowledge_analytics,
     get_lease_renewal_metrics,
     get_metrics,
+    get_package_metrics_api,
     get_quota,
     get_session_assignment_history,
     get_session_history,
@@ -89,9 +91,11 @@ from app.api_utils import (
     list_lease_renewals,
     list_macro_categories,
     list_macros,
+    list_packages_api,
     list_sessions,
     list_sla_policies,
     list_support_agents,
+    list_tenant_packages_api,
     list_tenants,
     list_units,
     list_vendors,
@@ -99,6 +103,7 @@ from app.api_utils import (
     list_webhooks,
     list_work_order_dispatches,
     list_work_orders,
+    pickup_package_api,
     ping_webhook,
     publish_inspection_document,
     publish_knowledge_article,
@@ -112,6 +117,7 @@ from app.api_utils import (
     render_macro,
     scan_knowledge_gaps,
     search_sessions,
+    session_intake_package_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
@@ -962,6 +968,73 @@ def _render_session_inspection_widget(selected: str, tenant: dict):
         st.sidebar.caption(f"Inspection scheduling unavailable: {e}")
 
 
+def _render_session_package_intake_widget(selected: str, tenant: dict):
+    """Render 1-click package intake widget for the resident linked to current session."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        pkgs_resp = list_tenant_packages_api(tenant_id, pending_only=True)
+        pending_pkgs = pkgs_resp.get("items", []) if pkgs_resp else []
+        if pending_pkgs:
+            st.sidebar.markdown("**📦 Pending Deliveries:**")
+            for pkg in pending_pkgs[:3]:
+                st.sidebar.info(
+                    f"**{pkg.get('carrier')}** ({pkg.get('location')}):\n\n"
+                    f"- **Tracking:** `{pkg.get('tracking_number')}`\n"
+                    f"- **🔑 Pickup PIN:** `{pkg.get('pickup_pin')}`"
+                )
+
+        with st.sidebar.expander("📦 Quick Package Intake"):
+            carrier_sel = st.selectbox(
+                "Carrier",
+                ["Amazon", "UPS", "FedEx", "USPS", "DHL", "OnTrac", "Other"],
+                key=f"sess_pkg_carrier_{selected}",
+            )
+            tracking_in = st.text_input(
+                "Tracking Number",
+                placeholder="e.g. TBA123456789",
+                key=f"sess_pkg_track_{selected}",
+            )
+            location_in = st.text_input(
+                "Storage / Locker Location",
+                value="Locker Bay 1",
+                key=f"sess_pkg_loc_{selected}",
+            )
+            pin_in = st.text_input(
+                "Custom PIN (optional)",
+                placeholder="Leave blank to auto-generate",
+                key=f"sess_pkg_pin_{selected}",
+            )
+            notes_in = st.text_area(
+                "Intake Notes",
+                placeholder="Optional delivery details...",
+                key=f"sess_pkg_notes_{selected}",
+            )
+
+            if st.button("📥 Log Package Intake", key=f"btn_sess_intake_pkg_{selected}"):
+                if not tracking_in.strip():
+                    st.error("Tracking number is required.")
+                else:
+                    payload = {
+                        "carrier": carrier_sel,
+                        "tracking_number": tracking_in.strip(),
+                        "location": location_in.strip() if location_in.strip() else "Locker Bay 1",
+                        "notes": notes_in.strip(),
+                    }
+                    if pin_in.strip():
+                        payload["pickup_pin"] = pin_in.strip()
+                    res = session_intake_package_api(selected, payload)
+                    if res:
+                        st.success("Package logged! Resident notified.")
+                        st.rerun()
+                    else:
+                        st.error("Failed to intake package.")
+    except Exception as e:
+        st.sidebar.caption(f"Package intake unavailable: {e}")
+
+
 def _render_linked_tenant_details(selected, tenant, unit):
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
     st.sidebar.markdown(f"**Resident:** {t_name}")
@@ -996,6 +1069,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_billing_widget(selected, tenant)
     _render_session_lease_renewal_widget(selected, tenant)
     _render_session_inspection_widget(selected, tenant)
+    _render_session_package_intake_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -3683,6 +3757,197 @@ def _render_inspections_board():
             st.caption(f"Inspection panel temporarily unavailable: {e}")
 
 
+def _render_single_delivery_card(pkg: dict[str, Any]):
+    """Render a single parcel delivery card with PIN verification action."""
+    pid = pkg.get("id", "")
+    carrier = pkg.get("carrier", "Carrier")
+    tracking = pkg.get("tracking_number", "N/A")
+    status = pkg.get("status", "delivered")
+    location = pkg.get("location", "Locker Room")
+    pin = pkg.get("pickup_pin", "N/A")
+    del_at = pkg.get("delivered_at", "N/A")
+    tenant_id = pkg.get("tenant_id", "N/A")
+    unit_id = pkg.get("unit_id", "N/A")
+
+    status_badge = "🟢 READY FOR PICKUP" if status == "delivered" else f"⚪ {status.upper()}"
+    with st.expander(f"{carrier}: {tracking} ({status_badge})"):
+        st.markdown(f"**Resident:** `{tenant_id}` | **Unit:** `{unit_id}`")
+        st.markdown(f"**Locker Location:** `{location}`")
+        st.markdown(f"**Delivered At:** `{del_at}`")
+        if pkg.get("notes"):
+            st.caption(f"📝 Notes: {pkg['notes']}")
+
+        if status == "delivered":
+            st.markdown(f"🔑 **Secure Pickup PIN:** `{pin}`")
+            pin_input = st.text_input(
+                "Verify PIN to Release Parcel",
+                key=f"pin_verify_input_{pid}",
+            )
+            if st.button("🔓 Verify PIN & Release", key=f"btn_verify_release_{pid}"):
+                if not pin_input.strip():
+                    st.error("Please enter the pickup PIN.")
+                else:
+                    res = pickup_package_api(pid, pin_input.strip())
+                    if res:
+                        st.success("PIN verified! Parcel released.")
+                        st.rerun()
+                    else:
+                        st.error("Invalid PIN or pickup failed.")
+        elif status == "picked_up":
+            st.caption(f"✅ Picked Up: {pkg.get('picked_up_at', 'N/A')}")
+
+
+def _render_deliveries_board_tab():
+    """Deliveries Board: Search, filter, inspect and release parcels."""
+    st.markdown("#### 📦 Delivery Locker Board")
+    search_q = st.text_input("Search Tracking / Location / Notes", key="pkg_search_q")
+    col1, col2 = st.columns(2)
+    with col1:
+        st_filter = st.selectbox(
+            "Status",
+            ["All", "Delivered (Pending)", "Picked Up", "Returned", "Expired"],
+            key="pkg_filter_status",
+        )
+    with col2:
+        carrier_filter = st.selectbox(
+            "Carrier",
+            ["All", "Amazon", "UPS", "FedEx", "USPS", "DHL", "OnTrac", "Other"],
+            key="pkg_filter_carrier",
+        )
+
+    status_param = None
+    if st_filter == "Delivered (Pending)":
+        status_param = "delivered"
+    elif st_filter == "Picked Up":
+        status_param = "picked_up"
+    elif st_filter == "Returned":
+        status_param = "returned"
+    elif st_filter == "Expired":
+        status_param = "expired"
+
+    carrier_param = None if carrier_filter == "All" else carrier_filter
+
+    pkgs_resp = list_packages_api(
+        status=status_param,
+        carrier=carrier_param,
+        search=search_q if search_q.strip() else None,
+        limit=50,
+    )
+    items = pkgs_resp.get("items", []) if pkgs_resp else []
+    total = pkgs_resp.get("total", 0) if pkgs_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** packages.")
+
+    if not items:
+        st.info("No package deliveries match the selected filters.")
+        return
+
+    for pkg in items:
+        _render_single_delivery_card(pkg)
+
+
+def _render_package_intake_tab():
+    """Package Intake: Log new incoming deliveries."""
+    st.markdown("#### 📥 Log Package Intake")
+    tenants_resp = list_tenants(limit=100)
+    tenants_list = tenants_resp.get("items", []) if tenants_resp else []
+    if not tenants_list:
+        st.warning("No resident profiles found. Please register a tenant first.")
+        return
+
+    t_map = {
+        f"{t.get('first_name', '')} {t.get('last_name', '')} (Unit {t.get('unit_id', 'N/A')})": t
+        for t in tenants_list
+    }
+    chosen_label = st.selectbox(
+        "Select Resident", options=list(t_map.keys()), key="pkg_intake_tenant"
+    )
+    chosen_t = t_map[chosen_label]
+
+    carrier = st.selectbox(
+        "Carrier",
+        ["Amazon", "UPS", "FedEx", "USPS", "DHL", "OnTrac", "Other"],
+        key="pkg_intake_carrier_select",
+    )
+    tracking = st.text_input("Tracking Number", key="pkg_intake_tracking_text")
+    location = st.text_input(
+        "Locker Location", value="Locker Bay 1 - Slot 01", key="pkg_intake_loc_text"
+    )
+    pin = st.text_input(
+        "Custom Pickup PIN (optional, 4-8 digits)",
+        key="pkg_intake_pin_text",
+        help="Leave empty to auto-generate a secure 6-digit PIN",
+    )
+    notes = st.text_area("Delivery Notes", key="pkg_intake_notes_text")
+
+    if st.button("📦 Log Delivery & Notify Resident", key="btn_submit_intake"):
+        if not tracking.strip():
+            st.error("Tracking number is required.")
+        elif not chosen_t.get("unit_id"):
+            st.error("Selected resident has no assigned unit.")
+        else:
+            payload = {
+                "tenant_id": chosen_t["id"],
+                "unit_id": chosen_t["unit_id"],
+                "carrier": carrier,
+                "tracking_number": tracking.strip(),
+                "location": location.strip(),
+                "notes": notes.strip(),
+            }
+            if pin.strip():
+                payload["pickup_pin"] = pin.strip()
+            res = create_package_api(payload)
+            if res:
+                st.success(f"Package logged! Tracking: {tracking}")
+                st.rerun()
+            else:
+                st.error("Failed to log package.")
+
+
+def _render_locker_metrics_tab():
+    """Locker Metrics: Turnaround time, occupancy, and carrier distribution."""
+    st.markdown("#### 📊 Parcel Locker Metrics")
+    metrics = get_package_metrics_api()
+    if not metrics:
+        st.info("Metrics temporarily unavailable.")
+        return
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Deliveries", metrics.get("total_packages", 0))
+    with col2:
+        st.metric("Pending Pickup", metrics.get("delivered_packages", 0))
+    with col3:
+        st.metric("Turnaround", f"{metrics.get('average_pickup_hours', 0.0):.1f} hrs")
+
+    st.markdown("**Carrier Breakdown:**")
+    breakdown = metrics.get("carrier_breakdown", {})
+    if breakdown:
+        for c, count in breakdown.items():
+            st.caption(f"- **{c}**: {count} package(s)")
+    else:
+        st.caption("No carrier delivery data recorded.")
+
+
+def _render_packages_board():
+    with st.sidebar.expander("📦 Packages & Parcel Lockers"):
+        try:
+            pkg_tab = st.radio(
+                "Packages View",
+                ["Deliveries Board", "Log Delivery", "Locker Metrics"],
+                horizontal=True,
+                key="packages_board_tab_radio",
+            )
+            if pkg_tab == "Deliveries Board":
+                _render_deliveries_board_tab()
+            elif pkg_tab == "Log Delivery":
+                _render_package_intake_tab()
+            else:
+                _render_locker_metrics_tab()
+        except Exception as e:
+            st.caption(f"Package panel temporarily unavailable: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -3711,6 +3976,7 @@ def display_sidebar():
     _render_billing_board()
     _render_lease_renewals_board()
     _render_inspections_board()
+    _render_packages_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 

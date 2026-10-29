@@ -31,7 +31,7 @@
 | AC4 | ✅ PASSED | Summary metrics report total packages, pending count, picked up count, return count, carrier breakdown, and average pickup turnaround hours |
 | AC5 | 🟡 PENDING | Resident prompt context automatically includes `[RESIDENT PACKAGES & PARCEL DELIVERIES]` when deliveries exist |
 | AC6 | 🟡 PENDING | Macro variables `{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}` resolve accurately |
-| AC7 | 🟡 PENDING | Streamlit UI renders Deliveries Board, Package Intake Form, Locker Metrics, and Session Quick Intake widget with full interactive controls |
+| AC7 | ✅ PASSED | Streamlit UI renders Deliveries Board, Package Intake Form, Locker Metrics, and Session Quick Intake widget with full interactive controls |
 | AC8 | 🟡 PENDING | 100% CI parity: local pytest (>=80% coverage), ruff clean, mypy clean, secret scan clean, real E2E API run, and remote GitHub Actions CI green |
 
 ---

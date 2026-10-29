@@ -3650,6 +3650,200 @@ def test_render_inspections_board_metrics_tab(monkeypatch):
 
 
 
+def test_render_packages_board_deliveries_tab(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "packages_board_tab_radio": "Deliveries Board",
+            "pkg_search_q": "",
+            "pkg_filter_status": "All",
+            "pkg_filter_carrier": "All",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    sample_pkgs = {
+        "items": [
+            {
+                "id": "pkg_1",
+                "carrier": "Amazon",
+                "tracking_number": "TBA12345",
+                "status": "delivered",
+                "location": "Locker Bay 1 - Slot 04",
+                "pickup_pin": "482019",
+                "delivered_at": "2026-10-28T14:30:00Z",
+                "tenant_id": "tenant_1",
+                "unit_id": "unit_101",
+                "notes": "Small parcel",
+            },
+            {
+                "id": "pkg_2",
+                "carrier": "FedEx",
+                "tracking_number": "FX-998877",
+                "status": "picked_up",
+                "location": "Locker Bay 2",
+                "pickup_pin": "719302",
+                "delivered_at": "2026-10-27T10:00:00Z",
+                "picked_up_at": "2026-10-27T18:00:00Z",
+                "tenant_id": "tenant_2",
+                "unit_id": "unit_204",
+            },
+        ],
+        "total": 2,
+    }
+    monkeypatch.setattr(sidebar, "list_packages_api", lambda **kwargs: sample_pkgs)
+
+    sidebar._render_packages_board()
+
+    expanders = [c for c in st.calls if c.fn == "expander"]
+    expected_expander_min = 2
+    assert len(expanders) >= expected_expander_min
 
 
+def test_render_single_delivery_card_pickup_pin_verify(monkeypatch):
+    st = FakeStreamlit(
+        values={"pin_verify_input_pkg_1": "482019"},
+        buttons={"btn_verify_release_pkg_1": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
 
+    picked_calls = []
+    monkeypatch.setattr(
+        sidebar,
+        "pickup_package_api",
+        lambda pid, pin: picked_calls.append((pid, pin)) or {"package": {"status": "picked_up"}},
+    )
+
+    pkg = {
+        "id": "pkg_1",
+        "carrier": "Amazon",
+        "tracking_number": "TBA12345",
+        "status": "delivered",
+        "location": "Locker A-04",
+        "pickup_pin": "482019",
+        "delivered_at": "2026-10-28T14:30:00Z",
+        "tenant_id": "tenant_1",
+        "unit_id": "unit_101",
+    }
+    sidebar._render_single_delivery_card(pkg)
+
+    expected_call_count = 1
+    assert len(picked_calls) == expected_call_count
+    assert picked_calls[0] == ("pkg_1", "482019")
+    assert st.reruns == 1
+
+
+def test_render_packages_board_intake_tab(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "packages_board_tab_radio": "Log Delivery",
+            "pkg_intake_tenant": "Sarah Connor (Unit unit_101)",
+            "pkg_intake_carrier_select": "UPS",
+            "pkg_intake_tracking_text": "1Z99999999",
+            "pkg_intake_loc_text": "Locker Bay 1 - Slot 08",
+            "pkg_intake_pin_text": "123456",
+            "pkg_intake_notes_text": "Overnight parcel",
+        },
+        buttons={"btn_submit_intake": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_pkgs = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenants",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "tenant_1",
+                    "first_name": "Sarah",
+                    "last_name": "Connor",
+                    "unit_id": "unit_101",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "create_package_api",
+        lambda payload: created_pkgs.append(payload) or {"package": {"id": "pkg_new"}},
+    )
+
+    sidebar._render_packages_board()
+
+    expected_created = 1
+    assert len(created_pkgs) == expected_created
+    assert created_pkgs[0]["tenant_id"] == "tenant_1"
+    assert created_pkgs[0]["carrier"] == "UPS"
+    assert created_pkgs[0]["tracking_number"] == "1Z99999999"
+    assert st.reruns == 1
+
+
+def test_render_packages_board_metrics_tab(monkeypatch):
+    st = FakeStreamlit(
+        values={"packages_board_tab_radio": "Locker Metrics"},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+    monkeypatch.setattr(
+        sidebar,
+        "get_package_metrics_api",
+        lambda: {
+            "total_packages": 15,
+            "delivered_packages": 6,
+            "picked_up_packages": 9,
+            "average_pickup_hours": 8.4,
+            "carrier_breakdown": {"Amazon": 8, "UPS": 4, "FedEx": 3},
+        },
+    )
+
+    sidebar._render_packages_board()
+
+    metrics_calls = [c for c in st.calls if c.fn == "metric"]
+    expected_metric_cards = 3
+    assert len(metrics_calls) >= expected_metric_cards
+
+
+def test_render_session_package_intake_widget(monkeypatch):
+    st = FakeStreamlit(
+        values={
+            "sess_pkg_carrier_sess_42": "DHL",
+            "sess_pkg_track_sess_42": "DHL-123456",
+            "sess_pkg_loc_sess_42": "Front Desk Shelf A",
+            "sess_pkg_pin_sess_42": "654321",
+            "sess_pkg_notes_sess_42": "Express international",
+        },
+        buttons={"btn_sess_intake_pkg_sess_42": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    created_session_pkgs = []
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_packages_api",
+        lambda tid, **kwargs: {
+            "items": [
+                {
+                    "id": "pkg_seed_01",
+                    "carrier": "Amazon",
+                    "tracking_number": "TBA001",
+                    "location": "Locker 1",
+                    "pickup_pin": "112233",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_intake_package_api",
+        lambda sid, payload: created_session_pkgs.append((sid, payload))
+        or {"package": {"id": "pkg_sess"}},
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_package_intake_widget("sess_42", tenant)
+
+    expected_call_count = 1
+    assert len(created_session_pkgs) == expected_call_count
+    assert created_session_pkgs[0][0] == "sess_42"
+    assert created_session_pkgs[0][1]["carrier"] == "DHL"
+    assert created_session_pkgs[0][1]["tracking_number"] == "DHL-123456"
+    assert st.reruns == 1
