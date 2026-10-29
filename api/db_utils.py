@@ -299,6 +299,8 @@ VALID_WEBHOOK_EVENTS = {
     "inspection.keys_returned",
     "vendor.dispatched",
     "vendor.job_completed",
+    "package.delivered",
+    "package.picked_up",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

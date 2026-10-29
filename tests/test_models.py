@@ -70,6 +70,15 @@ from api.pydantic_models import (
     MacroSuggestResponse,
     MacroUpdateRequest,
     ModelName,
+    PackageCarrier,
+    PackageCreateRequest,
+    PackageItem,
+    PackageListResponse,
+    PackageMetricsResponse,
+    PackagePickupRequest,
+    PackageResponse,
+    PackageStatus,
+    PackageUpdateRequest,
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
@@ -79,6 +88,7 @@ from api.pydantic_models import (
     SessionDraftArticleRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
+    SessionIntakePackageRequest,
     SessionMacroSuggestionsResponse,
     SessionSLAStatusResponse,
     SessionSummaryRequest,
@@ -2070,3 +2080,77 @@ def test_inspection_models_lifecycle_and_validation():
     )
     assert pub_resp.inspection_id == "insp_101"
     assert pub_resp.indexed_in_chroma is True
+
+
+
+def test_package_models_validation() -> None:
+    expected_total = 10
+    expected_avg_hours = 12.5
+
+    # Carrier & Status enum checks
+    assert PackageCarrier.AMAZON == "Amazon"
+    assert PackageCarrier.FEDEX == "FedEx"
+    assert PackageStatus.DELIVERED == "delivered"
+    assert PackageStatus.PICKED_UP == "picked_up"
+
+    # PackageCreateRequest
+    create_req = PackageCreateRequest(
+        tenant_id="tnt_001",
+        unit_id="unit_101",
+        carrier="UPS",
+        tracking_number="1Z999999",
+        pickup_pin="123456",
+        location="Locker Bay 1",
+        notes="Urgent medication",
+    )
+    assert create_req.tenant_id == "tnt_001"
+    assert create_req.tracking_number == "1Z999999"
+
+    # PackageUpdateRequest
+    up_req = PackageUpdateRequest(
+        location="Front Desk", notes="Held for pickup", status="delivered"
+    )
+    assert up_req.location == "Front Desk"
+
+    # PackagePickupRequest
+    pu_req = PackagePickupRequest(pickup_pin="654321")
+    assert pu_req.pickup_pin == "654321"
+
+    # PackageItem & Response
+    item = PackageItem(
+        id="pkg_test123",
+        tenant_id="tnt_001",
+        unit_id="unit_101",
+        carrier="Amazon",
+        tracking_number="TBA12345",
+        pickup_pin="123456",
+        location="Locker A-1",
+        status="delivered",
+        delivered_at="2026-10-29T10:00:00Z",
+    )
+    resp = PackageResponse(package=item)
+    assert resp.package.id == "pkg_test123"
+
+    # PackageListResponse
+    list_resp = PackageListResponse(items=[item], total=1, limit=50, offset=0)
+    assert len(list_resp.items) == 1
+    assert list_resp.total == 1
+
+    # PackageMetricsResponse
+    metrics = PackageMetricsResponse(
+        total_packages=expected_total,
+        delivered_packages=4,
+        picked_up_packages=6,
+        carrier_breakdown={"Amazon": 5, "UPS": 5},
+        average_pickup_hours=expected_avg_hours,
+    )
+    assert metrics.total_packages == expected_total
+    assert metrics.average_pickup_hours == expected_avg_hours
+
+    # SessionIntakePackageRequest
+    session_intake = SessionIntakePackageRequest(
+        carrier="FedEx",
+        tracking_number="FX-889900",
+        location="Locker 4",
+    )
+    assert session_intake.carrier == "FedEx"
