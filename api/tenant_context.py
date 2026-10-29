@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import vendors
+from api import packages, vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -287,7 +287,67 @@ def _format_inspection_lines(inspections: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
-def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
+def _format_package_lines(packages_list: list[dict[str, Any]]) -> list[str]:
+    """Format package and parcel deliveries into context lines."""
+    if not packages_list:
+        return []
+    lines = [
+        "[RESIDENT PACKAGES & PARCEL DELIVERIES]",
+        f"- Total Deliveries on Record: {len(packages_list)}",
+    ]
+    delivered_count = sum(1 for p in packages_list if p.get("status") == "delivered")
+    lines.append(f"- Pending Locker Pickups: {delivered_count}")
+
+    for pkg in packages_list[:5]:
+        pid = pkg.get("id", "Unknown")
+        carrier = pkg.get("carrier", "Carrier")
+        tracking = pkg.get("tracking_number", "N/A")
+        status = pkg.get("status", "delivered")
+        location = pkg.get("location", "Locker Room")
+        pin = pkg.get("pickup_pin", "N/A")
+        del_at = pkg.get("delivered_at", "N/A")
+        pu_at = pkg.get("picked_up_at")
+
+        detail = (
+            f"  - [{status.upper()}] {carrier} (ID: {pid}) | Tracking: {tracking} | "
+            f"Location: {location} | Pickup PIN: {pin} | Delivered: {del_at}"
+        )
+        if pu_at and status == "picked_up":
+            detail += f" | Picked Up: {pu_at}"
+        lines.append(detail)
+    lines.append("[END RESIDENT PACKAGES & PARCEL DELIVERIES]")
+    return lines
+
+
+def _extract_package_vars(packages_list: list[dict[str, Any]]) -> dict[str, str]:
+    """Extract macro variables from resident package deliveries."""
+    if not packages_list:
+        return {
+            "pending_packages_count": "0",
+            "package_id": "",
+            "package_carrier": "",
+            "package_tracking_number": "",
+            "package_status": "none",
+            "package_pickup_pin": "",
+            "package_location": "",
+            "package_delivered_at": "",
+        }
+
+    pending_pkgs = [p for p in packages_list if p.get("status") == "delivered"]
+    primary = pending_pkgs[0] if pending_pkgs else packages_list[0]
+
+    return {
+        "pending_packages_count": str(len(pending_pkgs)),
+        "package_id": str(primary.get("id", "")),
+        "package_carrier": str(primary.get("carrier", "")),
+        "package_tracking_number": str(primary.get("tracking_number", "")),
+        "package_status": str(primary.get("status", "none")),
+        "package_pickup_pin": str(primary.get("pickup_pin", "")),
+        "package_location": str(primary.get("location", "")),
+        "package_delivered_at": str(primary.get("delivered_at", "")),
+    }
+
+def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
     session_id: str | None = None,
@@ -295,6 +355,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
     include_billing: bool = True,
     include_renewals: bool = True,
     include_inspections: bool = True,
+    include_packages: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -323,6 +384,10 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
         elif resolved_unit_id:
             inspections = get_unit_inspections(resolved_unit_id)
 
+    packages_list: list[dict[str, Any]] = []
+    if include_packages and resolved_tenant_id:
+        packages_list = packages.list_tenant_packages(resolved_tenant_id)
+
     if (
         not tenant
         and not unit
@@ -330,6 +395,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
         and not ledger_summary
         and not renewals
         and not inspections
+        and not packages_list
     ):
         return ""
 
@@ -361,6 +427,11 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0917
         if lines:
             lines.append("")
         lines.extend(_format_inspection_lines(inspections))
+
+    if packages_list:
+        if lines:
+            lines.append("")
+        lines.extend(_format_package_lines(packages_list))
 
     return "\n".join(lines)
 
@@ -574,5 +645,10 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         inspections = get_unit_inspections(resolved_unit_id)
 
     variables.update(_extract_inspection_vars(inspections[0] if inspections else None))
+
+    packages_list: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        packages_list = packages.list_tenant_packages(resolved_tenant_id)
+    variables.update(_extract_package_vars(packages_list))
 
     return variables
