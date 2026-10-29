@@ -22,6 +22,7 @@ from api import (
     lease_renewals,
     macro_suggestions,
     macros,
+    packages,
     sla,
     tenant_context,
     vendors,
@@ -209,6 +210,13 @@ from api.pydantic_models import (
     MacroSuggestRequest,
     MacroSuggestResponse,
     MacroUpdateRequest,
+    PackageCreateRequest,
+    PackageItem,
+    PackageListResponse,
+    PackageMetricsResponse,
+    PackagePickupRequest,
+    PackageResponse,
+    PackageUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -224,6 +232,7 @@ from api.pydantic_models import (
     SessionDraftArticleRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
+    SessionIntakePackageRequest,
     SessionMacroSuggestionsResponse,
     SessionSearchResponse,
     SessionSearchResult,
@@ -4365,3 +4374,223 @@ def list_work_order_dispatches_route(
         limit=limit,
         offset=offset,
     )
+
+
+# ---------------------------------------------------------------------------
+# Resident Packages & Parcel Delivery Lockers (v0.42.0)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/packages", response_model=PackageResponse, status_code=201)
+def create_package_route(
+    request: PackageCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Log an incoming package delivery into parcel locker management."""
+    if not db_utils.get_tenant(request.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{request.tenant_id}' not found.")
+    if not db_utils.get_unit(request.unit_id):
+        raise HTTPException(status_code=404, detail=f"Unit '{request.unit_id}' not found.")
+
+    try:
+        created = packages.create_package(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            carrier=request.carrier,
+            tracking_number=request.tracking_number,
+            pickup_pin=request.pickup_pin,
+            location=request.location,
+            notes=request.notes,
+            delivered_at=request.delivered_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "package.delivered",
+        {
+            "package_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "carrier": created["carrier"],
+            "tracking_number": created["tracking_number"],
+            "location": created["location"],
+            "delivered_at": created["delivered_at"],
+        },
+    )
+    return PackageResponse(package=PackageItem(**created))
+
+
+@app.get("/packages/metrics", response_model=PackageMetricsResponse)
+def get_package_metrics_route():
+    """Retrieve parcel locker occupancy, carrier breakdown, and turnaround metrics."""
+    return PackageMetricsResponse(**packages.get_package_summary_metrics())
+
+
+@app.get("/packages", response_model=PackageListResponse)
+def list_packages_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    carrier: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List and filter resident packages."""
+    items = packages.list_packages(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        carrier=carrier,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    total = packages.count_packages(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        carrier=carrier,
+        status=status,
+        search=search,
+    )
+    return PackageListResponse(
+        items=[PackageItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/packages/{package_id}", response_model=PackageResponse)
+def get_package_route(package_id: str):
+    """Retrieve details for a specific package."""
+    pkg = packages.get_package(package_id)
+    if not pkg:
+        raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found.")
+    return PackageResponse(package=PackageItem(**pkg))
+
+
+@app.patch("/packages/{package_id}", response_model=PackageResponse)
+def update_package_route(package_id: str, request: PackageUpdateRequest):
+    """Update location, notes, or status for an existing package."""
+    updated = packages.update_package(
+        package_id,
+        location=request.location,
+        notes=request.notes,
+        status=request.status,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found.")
+    return PackageResponse(package=PackageItem(**updated))
+
+
+@app.delete("/packages/{package_id}")
+def delete_package_route(package_id: str):
+    """Delete a package record from parcel locker storage."""
+    if not packages.delete_package(package_id):
+        raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found.")
+    return {"status": "deleted", "package_id": package_id}
+
+
+@app.post("/packages/{package_id}/pickup", response_model=PackageResponse)
+def pickup_package_route(
+    package_id: str,
+    request: PackagePickupRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Verify resident pickup PIN and release package from parcel locker."""
+    try:
+        updated = packages.pickup_package(
+            package_id,
+            request.pickup_pin,
+            picked_up_at=request.picked_up_at,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=404, detail=msg) from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "package.picked_up",
+        {
+            "package_id": updated["id"],
+            "tenant_id": updated["tenant_id"],
+            "unit_id": updated["unit_id"],
+            "carrier": updated["carrier"],
+            "tracking_number": updated["tracking_number"],
+            "picked_up_at": updated["picked_up_at"],
+        },
+    )
+    return PackageResponse(package=PackageItem(**updated))
+
+
+@app.get("/tenants/{tenant_id}/packages", response_model=PackageListResponse)
+def list_tenant_packages_route(
+    tenant_id: str,
+    pending_only: bool = False,
+):
+    """List packages for a specific resident."""
+    if not db_utils.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    items = packages.list_tenant_packages(tenant_id, pending_only=pending_only)
+    return PackageListResponse(
+        items=[PackageItem(**item) for item in items],
+        total=len(items),
+        limit=len(items),
+        offset=0,
+    )
+
+
+@app.post("/sessions/{session_id}/intake-package", response_model=PackageResponse, status_code=201)
+def session_intake_package_route(
+    session_id: str,
+    request: SessionIntakePackageRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Log package intake directly for the resident linked to an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' has no linked tenant to intake package for.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = tenant.get("unit_id")
+    if not resolved_unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tenant '{resolved_tenant_id}' has no assigned unit.",
+        )
+
+    try:
+        created = packages.create_package(
+            tenant_id=resolved_tenant_id,
+            unit_id=resolved_unit_id,
+            carrier=request.carrier,
+            tracking_number=request.tracking_number,
+            pickup_pin=request.pickup_pin,
+            location=request.location,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "package.delivered",
+        {
+            "package_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "carrier": created["carrier"],
+            "tracking_number": created["tracking_number"],
+            "location": created["location"],
+            "delivered_at": created["delivered_at"],
+        },
+    )
+    return PackageResponse(package=PackageItem(**created))

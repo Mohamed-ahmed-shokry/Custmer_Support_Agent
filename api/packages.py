@@ -56,7 +56,7 @@ _CREATE_PACKAGES_TRACKING_INDEX = (
 DEFAULT_SEEDED_PACKAGES: list[dict[str, Any]] = [
     {
         "id": "pkg_seed_01",
-        "tenant_id": "tnt_sarah_01",
+        "tenant_id": "tenant_1",
         "unit_id": "unit_101",
         "carrier": "Amazon",
         "tracking_number": "TBA309481029104",
@@ -69,7 +69,7 @@ DEFAULT_SEEDED_PACKAGES: list[dict[str, Any]] = [
     },
     {
         "id": "pkg_seed_02",
-        "tenant_id": "tnt_marcus_02",
+        "tenant_id": "tenant_2",
         "unit_id": "unit_204",
         "carrier": "FedEx",
         "tracking_number": "9274890284710293",
@@ -82,7 +82,7 @@ DEFAULT_SEEDED_PACKAGES: list[dict[str, Any]] = [
     },
     {
         "id": "pkg_seed_03",
-        "tenant_id": "tnt_sarah_01",
+        "tenant_id": "tenant_1",
         "unit_id": "unit_101",
         "carrier": "UPS",
         "tracking_number": "1Z9999999999999999",

@@ -116,9 +116,9 @@ def test_list_and_count_packages_filters(package_db: Path) -> None:
     assert packages.count_packages() == expected_seed_count
 
     # Filter by tenant
-    sarah_pkgs = packages.list_packages(tenant_id="tnt_sarah_01")
+    sarah_pkgs = packages.list_packages(tenant_id="tenant_1")
     assert len(sarah_pkgs) == expected_sarah_count
-    assert packages.count_packages(tenant_id="tnt_sarah_01") == expected_sarah_count
+    assert packages.count_packages(tenant_id="tenant_1") == expected_sarah_count
 
     # Filter by unit
     u101_pkgs = packages.list_packages(unit_id="unit_101")
@@ -204,10 +204,10 @@ def test_delete_package(package_db: Path) -> None:
 def test_list_tenant_packages(package_db: Path) -> None:
     expected_all_count = 2
     expected_pending_count = 1
-    all_sarah = packages.list_tenant_packages("tnt_sarah_01", pending_only=False)
+    all_sarah = packages.list_tenant_packages("tenant_1", pending_only=False)
     assert len(all_sarah) == expected_all_count
 
-    pending_sarah = packages.list_tenant_packages("tnt_sarah_01", pending_only=True)
+    pending_sarah = packages.list_tenant_packages("tenant_1", pending_only=True)
     assert len(pending_sarah) == expected_pending_count
     assert pending_sarah[0]["id"] == "pkg_seed_01"
 
