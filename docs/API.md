@@ -592,6 +592,69 @@ Self-contained vendor engine (`api/vendors.py`, tables `vendors` and `vendor_dis
   - `{vendor_hourly_rate}`: Standard hourly rate formatted as `$X.XX`
   - `{vendor_dispatch_status}`: Active dispatch status (`dispatched`, `completed`, or `none`)
   - `{vendor_agreed_cost}`: Agreed dispatch estimate formatted as `$X.XX`
+
+---
+
+## Resident Packages & Parcel Delivery Locker Management (v0.42.0)
+
+End-to-end parcel intake, carrier tracking, secure pickup PIN verification, and turnaround analytics for resident package management.
+
+### Endpoints
+
+- `POST /packages`: Log an incoming package delivery into parcel locker management.
+  - Body:
+    ```json
+    {
+      "tenant_id": "tenant_1",
+      "unit_id": "unit_101",
+      "carrier": "Amazon",
+      "tracking_number": "TBA309481029104",
+      "pickup_pin": "482019",
+      "location": "Locker Bay 1 - Slot 04",
+      "notes": "Small parcel",
+      "delivered_at": "2026-10-30T10:00:00Z"
+    }
+    ```
+  - Validates tenant and unit existence. Generates cryptographically secure 6-digit numeric PIN if unspecified.
+  - Returns `201` with `PackageResponse`; triggers webhook `package.delivered`.
+- `GET /packages`: List and filter packages.
+  - Query parameters: `tenant_id`, `unit_id`, `carrier`, `status` (`delivered`, `picked_up`, `returned`, `expired`), `search`, `limit`, `offset`.
+  - Returns `PackageListResponse`.
+- `GET /packages/metrics`: Retrieve portfolio package delivery, locker occupancy, and turnaround turnaround metrics.
+  - Returns: `total_packages`, `delivered_packages` (pending pickup), `picked_up_packages`, `returned_packages`, `expired_packages`, `carrier_breakdown`, `average_pickup_hours`, `oldest_pending_hours`.
+- `GET /packages/{package_id}`: Retrieve details for a specific parcel (`404` if unknown).
+- `PATCH /packages/{package_id}`: Update location, notes, or status (`404` if unknown).
+- `DELETE /packages/{package_id}`: Delete a parcel record (`404` if unknown).
+- `POST /packages/{package_id}/pickup`: Verify resident pickup PIN and release parcel.
+  - Body: `{"pickup_pin": "482019", "picked_up_at": "2026-10-30T12:00:00Z"}` (`picked_up_at` optional).
+  - Validates PIN matches package record and status is `delivered`. Moves status to `picked_up` and records timestamp.
+  - Returns `PackageResponse`; triggers webhook `package.picked_up`. Rejects invalid PIN (`400`) or double pickup (`400`).
+- `GET /tenants/{tenant_id}/packages`: Retrieve packages for a resident.
+  - Query parameter: `pending_only` (`true` filters to pending deliveries).
+- `POST /sessions/{session_id}/intake-package`: Log package intake directly for the resident linked to an active support session.
+  - Resolves linked resident and unit ID automatically from session context.
+  - Returns `201` with `PackageResponse`; triggers webhook `package.delivered`.
+
+### Grounded Prompt Context & Macro Variables
+
+- **RAG Context Grounding**: Active conversational turns automatically ground resident deliveries under:
+  ```text
+  [RESIDENT PACKAGES & PARCEL DELIVERIES]
+  - Total Deliveries on Record: 2
+  - Pending Locker Pickups: 1
+    - [DELIVERED] Amazon (ID: pkg_1) | Tracking: TBA12345 | Location: Locker Bay 1 - Slot 04 | Pickup PIN: 482019 | Delivered: 2026-10-28T14:30:00Z
+  [END RESIDENT PACKAGES & PARCEL DELIVERIES]
+  ```
+- **Macro Template Variables**:
+  - `{pending_packages_count}`: Number of pending deliveries ready for pickup
+  - `{package_id}`: ID of primary/latest pending package
+  - `{package_carrier}`: Carrier name (e.g. Amazon, UPS, FedEx)
+  - `{package_tracking_number}`: Tracking number
+  - `{package_status}`: Delivery status (`delivered`, `picked_up`, or `none`)
+  - `{package_pickup_pin}`: Secure numeric pickup verification PIN
+  - `{package_location}`: Locker bay or storage location
+  - `{package_delivered_at}`: ISO delivery timestamp
+
 ## Evaluation Harness
 
 `scripts/eval_retrieval.py` evaluates retrieval accuracy against golden test sets:

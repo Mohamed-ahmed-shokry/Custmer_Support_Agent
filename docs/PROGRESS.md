@@ -16,7 +16,7 @@
 - [ ] **Task 5**: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
 - [ ] **Task 6**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
 - [ ] **Task 7**: Streamlit UI components in `app/sidebar.py` (Package intake, deliveries board, metrics, session card widget) + tests in `tests/test_app_ui.py`
-- [ ] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
+- [x] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] **Task 9**: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
 ---
