@@ -28,7 +28,7 @@
 | AC1 | 🟡 PENDING | `packages` SQLite table created idempotently with proper indices on `tenant_id`, `unit_id`, `status` |
 | AC2 | 🟡 PENDING | Package intake validates carrier, generates secure 6-digit PIN, sets status to `delivered`, fires `package.delivered` webhook |
 | AC3 | 🟡 PENDING | Package pickup verifies secure PIN; sets status `picked_up`, records `picked_up_at`, fires `package.picked_up` webhook; invalid PIN rejected |
-| AC4 | 🟡 PENDING | Summary metrics report total packages, pending count, picked up count, return count, carrier breakdown, and average pickup turnaround hours |
+| AC4 | ✅ PASSED | Summary metrics report total packages, pending count, picked up count, return count, carrier breakdown, and average pickup turnaround hours |
 | AC5 | 🟡 PENDING | Resident prompt context automatically includes `[RESIDENT PACKAGES & PARCEL DELIVERIES]` when deliveries exist |
 | AC6 | 🟡 PENDING | Macro variables `{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}` resolve accurately |
 | AC7 | 🟡 PENDING | Streamlit UI renders Deliveries Board, Package Intake Form, Locker Metrics, and Session Quick Intake widget with full interactive controls |
