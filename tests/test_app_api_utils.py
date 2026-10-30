@@ -2696,3 +2696,95 @@ def test_vendor_dispatch_helpers(fake_requests, fake_st):
     _, url, kwargs = fake_requests.calls[-1]
     assert url.endswith("/work-orders/wo_1/dispatches")
     assert kwargs["params"] == {"limit": 50, "offset": 0, "status": "dispatched"}
+
+
+def test_package_crud_helpers(fake_requests, fake_st):
+    pkg_payload = {"package": {"id": "pkg_1", "carrier": "Amazon", "status": "delivered"}}
+
+    # create_package_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pkg_payload)
+    assert api_utils.create_package_api({"tracking_number": "TBA1"}) == pkg_payload
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/packages")
+    assert kwargs["json"] == {"tracking_number": "TBA1"}
+
+    # create_package_api failure
+    fake_requests.response = FakeResponse(status_code=422, payload={"detail": "invalid"})
+    assert api_utils.create_package_api({"tracking_number": ""}) is None
+    assert fake_st.errors
+
+    # list_packages_api
+    list_payload = {"items": [pkg_payload["package"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_payload)
+    res_list = api_utils.list_packages_api(
+        carrier=" Amazon ", status=" delivered ", search=" query "
+    )
+    assert res_list == list_payload
+    _, url, kwargs = fake_requests.calls[-1]
+    assert url.endswith("/packages")
+    assert kwargs["params"]["carrier"] == "Amazon"
+    assert kwargs["params"]["status"] == "delivered"
+    assert kwargs["params"]["search"] == "query"
+
+    # get_package_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pkg_payload)
+    assert api_utils.get_package_api("pkg_1") == pkg_payload
+    assert fake_requests.calls[-1][1].endswith("/packages/pkg_1")
+
+    # update_package_api
+    updated_payload = {"package": {"id": "pkg_1", "location": "Desk"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=updated_payload)
+    assert api_utils.update_package_api("pkg_1", {"location": "Desk"}) == updated_payload
+    assert fake_requests.calls[-1][0] == "patch"
+
+    # delete_package_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"deleted": True})
+    assert api_utils.delete_package_api("pkg_1") is True
+    assert fake_requests.calls[-1][0] == "delete"
+
+    fake_requests.response = FakeResponse(status_code=404, payload={"detail": "not found"})
+    assert api_utils.delete_package_api("pkg_1") is False
+
+
+def test_package_pickup_and_session_helpers(fake_requests, fake_st):
+    pkg_payload = {"package": {"id": "pkg_1", "carrier": "Amazon", "status": "delivered"}}
+
+    # pickup_package_api
+    picked_payload = {"package": {"id": "pkg_1", "status": "picked_up"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=picked_payload)
+    assert api_utils.pickup_package_api("pkg_1", "123456", "2026-10-30T10:00:00Z") == picked_payload
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/packages/pkg_1/pickup")
+    assert kwargs["json"] == {"pickup_pin": "123456", "picked_up_at": "2026-10-30T10:00:00Z"}
+
+    # get_package_metrics_api
+    metrics_payload = {"total_packages": 10, "delivered_packages": 4}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=metrics_payload)
+    assert api_utils.get_package_metrics_api() == metrics_payload
+    assert fake_requests.calls[-1][1].endswith("/packages/metrics")
+
+    # list_tenant_packages_api
+    list_payload = {"items": [pkg_payload["package"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_payload)
+    assert api_utils.list_tenant_packages_api("tenant_1", pending_only=True) == list_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/tenant_1/packages")
+    assert fake_requests.calls[-1][2]["params"]["pending_only"] is True
+
+    # session_intake_package_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pkg_payload)
+    assert api_utils.session_intake_package_api("sess_1", {"carrier": "FedEx"}) == pkg_payload
+    assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/intake-package")
+
+    # Network exception handling in _package_call
+    def raise_err(*args, **kwargs):
+        raise api_utils.requests.RequestException("connection failed")
+
+    orig_post = fake_requests.post
+    fake_requests.post = raise_err
+    try:
+        assert api_utils.create_package_api({"carrier": "UPS"}) is None
+        assert fake_st.errors
+    finally:
+        fake_requests.post = orig_post

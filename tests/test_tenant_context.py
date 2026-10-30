@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import db_utils, vendors
+from api import db_utils, packages, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -32,6 +32,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_lease_renewals()
     db_utils.create_inspections()
     vendors.create_vendors()
+    packages.init_packages()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -417,3 +418,57 @@ def test_render_template_with_vendor_dispatch_variables():
     assert "Rate: $95.00" in rendered
     assert "Agreed: $190.00" in rendered
 
+
+
+def test_build_tenant_rag_context_with_packages():
+    """Verify package deliveries are formatted into RAG prompt context."""
+    # tenant_1 has pkg_seed_01 (delivered) and pkg_seed_03 (picked_up)
+    ctx = build_tenant_rag_context(tenant_id="tenant_1")
+    assert "[RESIDENT PACKAGES & PARCEL DELIVERIES]" in ctx
+    assert "Pending Locker Pickups: 1" in ctx
+    assert "Amazon" in ctx
+    assert "TBA309481029104" in ctx
+    assert "Locker Bay 1 - Slot 04" in ctx
+    assert "Pickup PIN: 482019" in ctx
+    assert "[END RESIDENT PACKAGES & PARCEL DELIVERIES]" in ctx
+
+    # Test include_packages=False omits the block
+    ctx_without = build_tenant_rag_context(tenant_id="tenant_1", include_packages=False)
+    assert "[RESIDENT PACKAGES & PARCEL DELIVERIES]" not in ctx_without
+
+
+def test_extract_tenant_macro_variables_with_packages():
+    """Verify package macro variables extraction from resident packages."""
+    sid = "sess-pkg-test"
+    db_utils.insert_application_logs(sid, "Where is my package?", "Checking locker", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["pending_packages_count"] == "1"
+    assert variables["package_carrier"] == "Amazon"
+    assert variables["package_tracking_number"] == "TBA309481029104"
+    assert variables["package_status"] == "delivered"
+    assert variables["package_pickup_pin"] == "482019"
+    assert variables["package_location"] == "Locker Bay 1 - Slot 04"
+    assert variables["package_delivered_at"] != ""
+
+
+def test_render_template_with_package_variables():
+    """Verify macro template rendering with package variables."""
+    sid = "sess-pkg-render"
+    db_utils.insert_application_logs(sid, "Locker PIN?", "Here is your PIN", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Hi {customer_name}, you have {pending_packages_count} package(s) ready for pickup! "
+        "Carrier: {package_carrier}, Tracking: {package_tracking_number}, "
+        "Locker: {package_location}, Secure PIN: {package_pickup_pin}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Hi Sarah Connor" in rendered
+    assert "you have 1 package(s) ready for pickup!" in rendered
+    assert "Carrier: Amazon" in rendered
+    assert "Tracking: TBA309481029104" in rendered
+    assert "Locker: Locker Bay 1 - Slot 04" in rendered
+    assert "Secure PIN: 482019" in rendered

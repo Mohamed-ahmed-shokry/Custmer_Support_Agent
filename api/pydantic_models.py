@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
-from api import db_utils, vendors
+from api import db_utils, packages, vendors
 from api.collections import DEFAULT_COLLECTION, normalize_collection
 from api.macros import extract_template_variables
 from api.settings import settings
@@ -2732,3 +2732,93 @@ class VendorMetricsResponse(BaseModel):
     average_rating: float | None = None
     total_spend: float = 0.0
     vendors: list[VendorPerformanceItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Package & Parcel Delivery Models (v0.42.0)
+# ---------------------------------------------------------------------------
+
+
+class PackageCarrier(StrEnum):
+    AMAZON = "Amazon"
+    UPS = "UPS"
+    FEDEX = "FedEx"
+    USPS = "USPS"
+    DHL = "DHL"
+    ONTRAC = "OnTrac"
+    OTHER = "Other"
+
+
+class PackageStatus(StrEnum):
+    DELIVERED = "delivered"
+    PICKED_UP = "picked_up"
+    RETURNED = "returned"
+    EXPIRED = "expired"
+
+
+class PackageItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    carrier: str = "Amazon"
+    tracking_number: str
+    pickup_pin: str
+    location: str = "Locker Room"
+    status: str = "delivered"
+    delivered_at: str
+    picked_up_at: str | None = None
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class PackageCreateRequest(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=db_utils.MAX_TENANT_ID_LENGTH)
+    unit_id: str = Field(min_length=1, max_length=db_utils.MAX_UNIT_ID_LENGTH)
+    carrier: str = Field(default="Amazon", max_length=packages.MAX_CARRIER_LENGTH)
+    tracking_number: str = Field(min_length=1, max_length=packages.MAX_TRACKING_LENGTH)
+    pickup_pin: str | None = Field(default=None, max_length=packages.PIN_MAX_LENGTH)
+    location: str = Field(default="Locker Bay 1", max_length=packages.MAX_LOCATION_LENGTH)
+    notes: str = Field(default="", max_length=packages.MAX_NOTES_LENGTH)
+    delivered_at: str | None = Field(default=None)
+
+
+class PackageUpdateRequest(BaseModel):
+    location: str | None = Field(default=None, max_length=packages.MAX_LOCATION_LENGTH)
+    notes: str | None = Field(default=None, max_length=packages.MAX_NOTES_LENGTH)
+    status: str | None = Field(default=None)
+
+
+class PackagePickupRequest(BaseModel):
+    pickup_pin: str = Field(min_length=packages.PIN_MIN_LENGTH, max_length=packages.PIN_MAX_LENGTH)
+    picked_up_at: str | None = Field(default=None)
+
+
+class PackageResponse(BaseModel):
+    package: PackageItem
+
+
+class PackageListResponse(BaseModel):
+    items: list[PackageItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class PackageMetricsResponse(BaseModel):
+    total_packages: int = 0
+    delivered_packages: int = 0
+    picked_up_packages: int = 0
+    returned_packages: int = 0
+    expired_packages: int = 0
+    carrier_breakdown: dict[str, int] = Field(default_factory=dict)
+    average_pickup_hours: float = 0.0
+    oldest_pending_hours: float = 0.0
+
+
+class SessionIntakePackageRequest(BaseModel):
+    carrier: str = Field(default="Amazon", max_length=packages.MAX_CARRIER_LENGTH)
+    tracking_number: str = Field(min_length=1, max_length=packages.MAX_TRACKING_LENGTH)
+    pickup_pin: str | None = Field(default=None, max_length=packages.PIN_MAX_LENGTH)
+    location: str = Field(default="Locker Bay 1", max_length=packages.MAX_LOCATION_LENGTH)
+    notes: str = Field(default="", max_length=packages.MAX_NOTES_LENGTH)

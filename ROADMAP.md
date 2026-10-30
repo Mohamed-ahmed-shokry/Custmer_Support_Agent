@@ -1,6 +1,7 @@
 # Customer Support RAG Agent - Roadmap
 
-## Current State (v0.38.0, 2026-10-17)
+## Current State (v0.41.0, 2026-10-29)
+- Maintenance Vendor Operations Board, Work Order Dispatch UI & Grounded Vendor Macro Variables (`GET /work-orders/{id}/dispatches`, `POST /work-orders/{id}/dispatch-vendor`, `POST /vendor-dispatches/{id}/complete`, `GET /vendors`, `POST /vendors`, `GET /vendors/metrics`): comprehensive contractor operations management directly within Streamlit maintenance hub and conversational context grounding (`[ACTIVE MAINTENANCE WORK ORDERS]` with assigned vendor name, trade, phone, and dispatch status), plus auto-resolving `{vendor_name}`, `{vendor_trade}`, `{vendor_phone}`, `{vendor_hourly_rate}`, `{vendor_dispatch_status}`, and `{vendor_agreed_cost}` macros.
 - Lease Renewal Offers, Addenda, Digital Agreements & E-Sign Engine (`POST /lease-renewals`, `GET /lease-renewals`, `GET /lease-renewals/metrics`, `GET /lease-renewals/{id}`, `PATCH /lease-renewals/{id}`, `DELETE /lease-renewals/{id}`, `POST /lease-renewals/{id}/sign`, `POST /sessions/{id}/create-lease-renewal`, `GET /tenants/{id}/lease-renewals`): full digital lease agreement lifecycle connecting residents (`tenants`) and units (`units`) with customizable terms (6-month, 12-month, 18-month, 24-month, month-to-month), proposed rent, concessions, security deposit updates, renewal status state machine (`draft`, `offered`, `negotiating`, `accepted`, `signed`, `declined`, `expired`), simulated digital e-signatures (`signature_name`, `signature_ip`, `signed_at`), and Markdown lease agreement document generation with auto-publishing to RAG knowledge base. Webhook notifications (`lease_renewal.offered`, `lease_renewal.accepted`, `lease_renewal.signed`, `lease_renewal.declined`) trigger automated leasing team alerts. Active support conversations ground renewal terms into prompt context (`[LEASE RENEWAL OFFERS & AGREEMENTS]`), and macro variables auto-resolve (`{renewal_proposed_rent}`, `{renewal_term_months}`, `{renewal_status}`, `{renewal_expires_at}`).
 - Streamlit Lease Renewals Board & 1-Click Resident Offer Widget: live "📄 Generate Renewal Offer" widget directly inside the active session resident card for 1-click renewal contract creation, plus a dedicated "📝 Lease Renewals & Documents" sidebar panel with portfolio renewal KPIs (Total, Offered, Signed, Renewal Rate %), searchable agreement board with status filters and 1-click actions (`Offer`, `Sign / Execute`, `Decline`), digital signing form, and renewal document generator.
 - Resident Billing, Rent Ledgers, Invoices & Payment Operations Engine (`POST /billing/transactions`, `GET /billing/transactions`, `GET /billing/metrics`, `GET /billing/transactions/{id}`, `PATCH /billing/transactions/{id}`, `DELETE /billing/transactions/{id}`, `POST /tenants/{id}/payments`, `GET /tenants/{id}/ledger`, `POST /sessions/{id}/record-payment`): complete financial ledger and accounting lifecycle linking resident profiles (`tenants`) and units (`units`) with transaction tracking across charges (`rent`, `security_deposit`, `late_fee`, `utility`, `parking_fee`, `pet_rent`, `maintenance_charge`) and payments (`ach`, `credit_card`, `debit_card`, `check`, `money_order`, `cashier_check`, `online_portal`). Supports atomic payment recording, tenant balance reconciliation, automatic overdue charge resolution, portfolio financial metrics, and real-time webhook alerting (`billing.payment_received`, `billing.charge_posted`, `billing.late_fee_assessed`, `billing.overdue_escalated`). Active sessions automatically ground financial statements into conversational RAG context (`[RESIDENT FINANCIAL LEDGER & RENT BALANCE]`), and macro variables auto-resolve (`{overdue_balance}`, `{last_payment_amount}`, `{last_payment_date}`, `{last_payment_method}`).
@@ -1539,7 +1540,8 @@ Additionally, when residents ask questions in chat (e.g., "Who is coming to fix 
 6. Open work orders in _render_work_orders_board_tab offer a 1-click dispatch action to select an active vendor and dispatch via dispatch_vendor_api.
 7. Dispatched work orders offer an inline completion action with final cost, rating (1-5), and feedback via complete_vendor_dispatch_api.
 8. The vendor metrics tab renders portfolio vendor KPIs (total vendors, dispatches, completion rate, average rating, total spend) and per-vendor summaries.
-9. All local CI-parity checks (pytest, uff, mypy, secret scan) and remote CI workflow runs pass 100%.
+9. All local CI-parity checks (pytest, 
+uff, mypy, secret scan) and remote CI workflow runs pass 100%.
 
 ### Validation & CI Plan
 python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ scripts/, python -m mypy api/ app/ scripts/; verified UI execution with fake streamlit harness; remote CI (	est and e2e jobs) green on phase/v0.41.0-vendor-operations-ui.
@@ -1550,7 +1552,7 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 - Invoicing and payment payouts (Stripe Connect).
 
 ### Granular Task Breakdown
-- [ ] Task 1: Update ROADMAP.md (mark v0.40.0 complete, add v0.41.0 plan) & initialize docs/PROGRESS.md
+- [x] Task 1: Update ROADMAP.md (mark v0.40.0 complete, add v0.41.0 plan) & initialize docs/PROGRESS.md
 - [x] Task 2: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
 - [x] Task 3: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
 - [x] Task 4: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
@@ -1560,6 +1562,62 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 - [x] Task 8: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
 - [x] Task 9: Documentation (docs/API.md, README.md) & version bump to 0.41.0
 - [x] Task 10: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
+
+## v0.42.0 plan — Resident Package & Parcel Delivery Locker Management Engine ✅ COMPLETED
+
+Give property management staff and residents an automated package intake and secure parcel locker delivery management engine. Operators log incoming carrier deliveries with tracking numbers, locker/storage bay locations, and auto-generated secure pickup PINs. Residents receive webhook alerts (`package.delivered`), retrieve deliveries securely with PIN verification (`package.picked_up`), and support conversations automatically ground active deliveries into prompt context (`[RESIDENT PACKAGES & PARCEL DELIVERIES]`) and macro variables (`{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}`).
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers can:
+1. Log package intakes for residents across major carriers (Amazon, UPS, FedEx, USPS, DHL, OnTrac, Other) with tracking number, storage locker location, and 6-digit pickup PIN.
+2. View and filter incoming deliveries across carriers and statuses (`delivered`, `picked_up`, `returned`, `expired`).
+3. Securely verify resident pickup PINs to release packages and record pickup timestamps.
+4. Review locker occupancy and parcel delivery turnaround metrics (total packages, pending pickups, completed pickups, average pickup hours, carrier breakdowns).
+5. Ground active resident chat sessions with package delivery status and resolve `{package_*}` macro variables automatically.
+
+### Scope
+- `api/packages.py`:
+  - SQLite table `packages` (`pkg_` id, `tenant_id`, `unit_id`, `carrier`, `tracking_number`, `pickup_pin`, `location`, `status`, `delivered_at`, `picked_up_at`, `notes`, `created_at`, `updated_at`).
+  - Helper functions: `create_package`, `get_package`, `list_packages`, `update_package`, `pickup_package`, `delete_package`, `get_package_summary_metrics`.
+- `api/db_utils.py`:
+  - Register webhook events `package.delivered` and `package.picked_up`.
+- `api/pydantic_models.py`:
+  - `PackageCarrier`, `PackageStatus`, `PackageCreateRequest`, `PackageUpdateRequest`, `PackagePickupRequest`, `PackageResponse`, `PackageListResponse`, `PackageMetricsResponse`.
+- `api/main.py`:
+  - Endpoints: `POST /packages`, `GET /packages`, `GET /packages/metrics`, `GET /packages/{id}`, `PATCH /packages/{id}`, `DELETE /packages/{id}`, `POST /packages/{id}/pickup`, `GET /tenants/{id}/packages`, `POST /sessions/{id}/intake-package`.
+- `api/tenant_context.py`:
+  - Add `[RESIDENT PACKAGES & PARCEL DELIVERIES]` section to resident prompt context grounding.
+  - Resolve macro variables `{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}`.
+- `app/api_utils.py`:
+  - Typed client helpers for package CRUD, pickup, metrics, and session intake.
+- `app/sidebar.py`:
+  - Streamlit sidebar expander `📦 Packages & Parcel Lockers` (Deliveries Board, Package Intake Form, Locker & Delivery KPIs).
+  - Quick package intake expander on the active session resident card.
+- Tests:
+  - Unit tests in `tests/test_packages.py`, `tests/test_package_routes.py`, `tests/test_tenant_context.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`.
+- Docs & Version:
+  - Update `docs/API.md`, `README.md`, `docs/PROGRESS.md`; bump version to `0.42.0` in `pyproject.toml` and `api/settings.py`.
+
+### Acceptance Criteria
+1. `packages` SQLite table is created idempotently with proper indices on `tenant_id`, `unit_id`, and `status`.
+2. Package intake (`create_package`) validates carrier, generates secure 6-digit PIN if unspecified, sets status to `delivered`, and fires `package.delivered` webhook.
+3. Package pickup (`pickup_package`) verifies secure PIN; valid PIN sets status to `picked_up`, records `picked_up_at`, and fires `package.picked_up` webhook; invalid PIN or already picked up package is rejected.
+4. Summary metrics calculate total packages, pending count, picked up count, return count, carrier breakdown, and average pickup turnaround hours.
+5. Resident prompt context automatically includes `[RESIDENT PACKAGES & PARCEL DELIVERIES]` when deliveries exist.
+6. Macro variables `{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}` resolve accurately.
+7. Streamlit UI renders Deliveries Board, Package Intake Form, Locker Metrics, and Session Quick Intake widget with full interactive controls.
+8. 100% CI parity: local pytest (>=80% coverage), ruff clean, mypy clean, secret scan clean, real E2E API run, and remote GitHub Actions CI green.
+
+### Granular Task Breakdown
+- [x] Task 1: Update ROADMAP.md (mark v0.41.0 complete, add v0.42.0 plan) & initialize docs/PROGRESS.md
+- [x] Task 2: Package database engine & metrics (`api/packages.py`) + tests in `tests/test_packages.py`
+- [x] Task 3: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py`
+- [x] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_package_routes.py`
+- [x] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
+- [x] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 7: Streamlit UI components in `app/sidebar.py` (Package intake, deliveries board, metrics, session card widget) + tests in `tests/test_app_ui.py`
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

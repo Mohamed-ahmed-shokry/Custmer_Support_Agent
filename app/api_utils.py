@@ -3319,3 +3319,170 @@ def list_work_order_dispatches(
         "listing work order dispatches",
         params=params,
     )
+
+
+# --- Resident Packages & Parcel Delivery Lockers (v0.42.0) ---
+
+
+def _package_call(  # noqa: PLR0913
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Issue an authenticated package/parcel API request.
+
+    Shows an error and returns None on failure.
+    """
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_package_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Intake an incoming parcel delivery into parcel locker management."""
+    return _package_call(
+        "post",
+        "/packages",
+        HTTP_CREATED,
+        "Failed to intake package",
+        "intaking package",
+        json=payload,
+    )
+
+
+def list_packages_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    carrier: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List and filter resident packages and locker deliveries."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (
+        ("tenant_id", tenant_id),
+        ("unit_id", unit_id),
+        ("carrier", carrier),
+        ("status", status),
+        ("search", search),
+    ):
+        if val and val.strip():
+            params[key] = val.strip()
+    return _package_call(
+        "get",
+        "/packages",
+        HTTP_OK,
+        "Failed to list packages",
+        "listing packages",
+        params=params,
+    )
+
+
+def get_package_api(package_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific parcel."""
+    return _package_call(
+        "get",
+        f"/packages/{package_id}",
+        HTTP_OK,
+        f"Failed to fetch package '{package_id}'",
+        "fetching package",
+    )
+
+
+def update_package_api(package_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update location, notes, or status for an existing parcel."""
+    return _package_call(
+        "patch",
+        f"/packages/{package_id}",
+        HTTP_OK,
+        f"Failed to update package '{package_id}'",
+        "updating package",
+        json=payload,
+    )
+
+
+def delete_package_api(package_id: str) -> bool:
+    """Delete a parcel from parcel locker storage."""
+    res = _package_call(
+        "delete",
+        f"/packages/{package_id}",
+        HTTP_OK,
+        f"Failed to delete package '{package_id}'",
+        "deleting package",
+    )
+    return res is not None
+
+
+def pickup_package_api(
+    package_id: str, pickup_pin: str, picked_up_at: str | None = None
+) -> dict[str, Any] | None:
+    """Verify resident pickup PIN and release parcel."""
+    payload: dict[str, Any] = {"pickup_pin": pickup_pin}
+    if picked_up_at:
+        payload["picked_up_at"] = picked_up_at
+    return _package_call(
+        "post",
+        f"/packages/{package_id}/pickup",
+        HTTP_OK,
+        f"Failed to pickup package '{package_id}'",
+        "picking up package",
+        json=payload,
+    )
+
+
+def get_package_metrics_api() -> dict[str, Any] | None:
+    """Retrieve parcel locker occupancy, carrier breakdown, and turnaround metrics."""
+    return _package_call(
+        "get",
+        "/packages/metrics",
+        HTTP_OK,
+        "Failed to fetch package metrics",
+        "fetching package metrics",
+    )
+
+
+def list_tenant_packages_api(
+    tenant_id: str, pending_only: bool = False
+) -> dict[str, Any] | None:
+    """Retrieve packages for a resident."""
+    params: dict[str, Any] = {}
+    if pending_only:
+        params["pending_only"] = True
+    return _package_call(
+        "get",
+        f"/tenants/{tenant_id}/packages",
+        HTTP_OK,
+        f"Failed to fetch packages for tenant '{tenant_id}'",
+        "fetching resident packages",
+        params=params,
+    )
+
+
+def session_intake_package_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Intake an incoming parcel directly for the resident linked to active support session."""
+    return _package_call(
+        "post",
+        f"/sessions/{session_id}/intake-package",
+        HTTP_CREATED,
+        "Failed to intake package for session",
+        "intaking session package",
+        json=payload,
+    )

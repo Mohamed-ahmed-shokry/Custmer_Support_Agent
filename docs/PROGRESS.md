@@ -1,24 +1,23 @@
-# v0.41.0 Progress Record: Maintenance Vendor Operations Board, Work Order Dispatch UI & Grounded Vendor Macro Variables
+# v0.42.0 Progress Record: Resident Package & Parcel Delivery Locker Management Engine
 
-**Phase Branch**: phase/v0.41.0-vendor-operations-ui  
-**Status**: ✅ COMPLETED  
-**Target Version**: 0.41.0  
-**Plan**: see ROADMAP.md ("v0.41.0 plan")
+**Phase Branch**: phase/v0.42.0-resident-packages  
+**Status**: 🟢 COMPLETED  
+**Target Version**: 0.42.0  
+**Plan**: see ROADMAP.md ("v0.42.0 plan")
 
 ---
 
 ## 1. Task Breakdown & Execution Status
 
-- [x] **Task 1**: Update ROADMAP.md (mark v0.40.0 complete, add v0.41.0 plan) & initialize docs/PROGRESS.md
-- [x] **Task 2**: Grounding engine: vendor dispatch info in prompt context + tests in tests/test_tenant_context.py
-- [x] **Task 3**: Macro variable resolution: vendor variables + tests in tests/test_tenant_context.py
-- [x] **Task 4**: Streamlit UI: vendor directory tab + tests in tests/test_app_ui.py
-- [x] **Task 5**: Streamlit UI: register vendor tab + tests in tests/test_app_ui.py
-- [x] **Task 6**: Streamlit UI: work order inline vendor dispatch & completion + tests in tests/test_app_ui.py
-- [x] **Task 7**: Streamlit UI: vendor performance KPIs tab + tests in tests/test_app_ui.py
-- [x] **Task 8**: Streamlit UI: integrate vendor navigation into maintenance board + tests in tests/test_app_ui.py
-- [x] **Task 9**: Documentation (docs/API.md, README.md) & version bump to 0.41.0
-- [x] **Task 10**: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
+- [x] **Task 1**: Update ROADMAP.md (mark v0.41.0 complete, add v0.42.0 plan) & initialize docs/PROGRESS.md (`c4b2a26`)
+- [x] **Task 2**: Package database engine & metrics (`api/packages.py`) + tests in `tests/test_packages.py` (`0dd4e59`)
+- [x] **Task 3**: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py` (`f9cd3a8`)
+- [x] **Task 4**: FastAPI endpoints in `api/main.py` + route tests in `tests/test_package_routes.py` (`a373607`)
+- [x] **Task 5**: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py` (`2234c31`)
+- [x] **Task 6**: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py` (`b1fbaa1`)
+- [x] **Task 7**: Streamlit UI components in `app/sidebar.py` (Package intake, deliveries board, metrics, session card widget) + tests in `tests/test_app_ui.py` (`0ea2bed`)
+- [x] **Task 8**: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`) (`67dc372`)
+- [x] **Task 9**: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
 ---
 
@@ -26,15 +25,14 @@
 
 | # | Status | Evidence |
 |---|--------|----------|
-| AC1 | ✅ PASSED | Prompt context includes assigned vendor name, trade, dispatch status, and phone in [ACTIVE MAINTENANCE WORK ORDERS] |
-| AC2 | ✅ PASSED | Macro variables ({vendor_name}, {vendor_trade}, {vendor_phone}, {vendor_hourly_rate}, {vendor_dispatch_status}, {vendor_agreed_cost}) resolved |
-| AC3 | ✅ PASSED | Maintenance board provides navigation tabs for Work Orders, Create Order, Vendors, Register Vendor, Vendor KPIs, Metrics |
-| AC4 | ✅ PASSED | Vendor directory tab renders cards, trade badges, rates, contact info, and status toggle buttons |
-| AC5 | ✅ PASSED | Vendor registration form validates input and registers vendor via API |
-| AC6 | ✅ PASSED | Open work orders provide 1-click active vendor dispatch via API |
-| AC7 | ✅ PASSED | Dispatched work orders provide inline completion with final cost, 1-5 rating, and feedback |
-| AC8 | ✅ PASSED | Vendor performance KPIs tab renders portfolio KPIs and contractor scorecards |
-| AC9 | ✅ PASSED | 100% CI parity: 867 pytest tests passed (92.67% coverage), ruff clean, mypy 33 files clean, secret scan 0 secrets, remote CI green |
+| AC1 | ✅ PASSED | `packages` SQLite table created idempotently with indices on `tenant_id`, `unit_id`, `status` (`api/packages.py`); 14/14 unit tests pass in `tests/test_packages.py`. |
+| AC2 | ✅ PASSED | Package intake validates carrier enum, auto-generates 6-digit secure PIN, assigns locker/bay location, sets status to `delivered`, and dispatches `package.delivered` webhook. |
+| AC3 | ✅ PASSED | Package pickup verifies secure 6-digit PIN; sets status `picked_up`, records `picked_up_at` ISO timestamp, and dispatches `package.picked_up` webhook; invalid PIN rejected with HTTP 400. |
+| AC4 | ✅ PASSED | Summary metrics calculate total packages, pending count, picked up count, return count, carrier breakdown, and average pickup turnaround hours (`get_package_summary_metrics`). |
+| AC5 | ✅ PASSED | Resident prompt context automatically includes `[RESIDENT PACKAGES & PARCEL DELIVERIES]` grounding section when deliveries exist for active session tenant (`api/tenant_context.py`). |
+| AC6 | ✅ PASSED | Canned response macro variables `{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}` resolve dynamically in prompt rendering. |
+| AC7 | ✅ PASSED | Streamlit UI renders Deliveries Board, Package Intake Form, Locker Metrics, and Session Quick Intake widget with full interactive controls in `app/sidebar.py`. |
+| AC8 | ✅ PASSED | 100% CI parity verified: local pytest (900 passed, 92.66% coverage >= 80%), ruff check clean (0 errors), mypy clean (0 issues across 34 source files), secret scan clean (0 matches), real E2E uvicorn API test passed. |
 
 ---
 
@@ -42,11 +40,12 @@
 
 | # | Decision | Options considered | Repository evidence |
 |---|----------|--------------------|---------------------|
-| D1 | Branch phase/v0.41.0-vendor-operations-ui from origin/main | Continue on merged v0.40.0 branch | PR #12 is merged into main; clean branch follows git lifecycle |
-| D2 | Embed Vendor operations directly inside the existing 🛠️ Maintenance & Work Orders sidebar expander | Create a new top-level sidebar expander | Follows single maintenance hub pattern; keeps sidebar uncluttered and co-locates work orders with contractor dispatching |
-| D3 | Extract vendor dispatch context for grounding from work orders rather than requiring tenant-vendor DB tables | Add new tenant_vendor associations | In v0.40.0, work orders link to vendors through endor_dispatches and ssigned_to; querying via work order ID is clean and zero-migration |
-| D4 | Maintain untouched pre-existing user files (uv.lock, write_pages.py) | Stage or delete them | Hard Rule #1: Protect user work and git history |
-| D5 | Add GET /work-orders/{id}/dispatches endpoint | Scan dispatches per vendor | Direct work order dispatch lookup allows fast inline dispatch completion directly from the work orders tab |
+| D1 | Branch `phase/v0.42.0-resident-packages` from `origin/main` | Continue on merged v0.41.0 branch | PR #13 merged into main; clean branch follows git lifecycle |
+| D2 | Maintain untouched pre-existing user files (`uv.lock`, `write_pages.py`) | Stage or delete them | Hard Rule #1: Protect user work and git history |
+| D3 | Modularize package engine in dedicated `api/packages.py` | Add directly into `db_utils.py` | Follows modular domain pattern (like `api/vendors.py`, `api/inspections.py`, `api/lease_renewals.py`) avoiding bloating `db_utils.py` |
+| D4 | Store numeric 6-digit secure PIN for package pickup | Plaintext string without format constraint | Standardizes self-service parcel locker hardware interaction and resident verification PIN UX |
+| D5 | Auto-resolve default carriers (Amazon, UPS, FedEx, USPS, DHL, OnTrac, Other) | Free-form string carrier field | Ensures strict Pydantic enum validation and consistent analytics grouping |
+| D6 | Pre-seed sample deliveries referencing standard tenants `tenant_1` and `tenant_2` | Random UUIDs | Ensures zero-config out-of-the-box functionality in development and testing environments |
 
 ---
 
@@ -54,9 +53,9 @@
 
 | Check | Command | Result |
 |-------|---------|--------|
-| Baseline CI (remote, main) | gh run list --branch main | ✅ run 40046016269 success |
-| Local pytest | python -m pytest | ✅ 867 passed, 92.67% coverage |
-| Local lint | python -m ruff check api/ app/ tests/ scripts/ | ✅ exit 0 |
-| Local typecheck | python -m mypy api/ app/ scripts/ | ✅ exit 0 (33 source files) |
-| Local secret scan | git grep -E ... | ✅ exit 1 (0 matches) |
-| Real E2E API run | Uvicorn + HTTP dispatch lifecycle | ✅ exit 0 (vendor 201, wo 201, dispatch 201, complete 200, metrics 200) |
+| Baseline CI (remote, main) | `gh run list --branch main` | ✅ PR #13 merged with green CI |
+| Local pytest full suite | `python -m pytest -q` | ✅ 900 passed, 21 deselected, 92.66% coverage (>= 80% threshold) |
+| Local lint check | `python -m ruff check api/ app/ tests/ scripts/` | ✅ Clean (0 issues across repository) |
+| Local typecheck | `python -m mypy api/ app/ scripts/` | ✅ Success: no issues found in 34 source files |
+| Secret scan | git grep patterns (`ghp_`, `sk-[a-zA-Z0-9]`, etc.) | ✅ 0 matches found |
+| Real E2E server run | Uvicorn server test (`POST /packages`, `GET /packages`, `POST /packages/{id}/pickup`, `GET /packages/metrics`) | ✅ HTTP 201, 200, 200, 200 all verified live |
