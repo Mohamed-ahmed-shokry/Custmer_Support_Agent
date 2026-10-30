@@ -1563,7 +1563,7 @@ python -m pytest (coverage >= 80%), python -m ruff check api/ app/ tests/ script
 - [x] Task 9: Documentation (docs/API.md, README.md) & version bump to 0.41.0
 - [x] Task 10: Final verification gate (pytest, ruff, mypy, remote CI green) & Draft PR delivery
 
-## v0.42.0 plan — Resident Package & Parcel Delivery Locker Management Engine (IN PROGRESS)
+## v0.42.0 plan — Resident Package & Parcel Delivery Locker Management Engine ✅ COMPLETED
 
 Give property management staff and residents an automated package intake and secure parcel locker delivery management engine. Operators log incoming carrier deliveries with tracking numbers, locker/storage bay locations, and auto-generated secure pickup PINs. Residents receive webhook alerts (`package.delivered`), retrieve deliveries securely with PIN verification (`package.picked_up`), and support conversations automatically ground active deliveries into prompt context (`[RESIDENT PACKAGES & PARCEL DELIVERIES]`) and macro variables (`{package_carrier}`, `{package_tracking_number}`, `{package_status}`, `{package_pickup_pin}`, `{package_location}`, `{pending_packages_count}`).
 
@@ -1610,14 +1610,14 @@ Via the API and Streamlit UI, property managers can:
 
 ### Granular Task Breakdown
 - [x] Task 1: Update ROADMAP.md (mark v0.41.0 complete, add v0.42.0 plan) & initialize docs/PROGRESS.md
-- [ ] Task 2: Package database engine & metrics (`api/packages.py`) + tests in `tests/test_packages.py`
-- [ ] Task 3: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py`
-- [ ] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_package_routes.py`
-- [ ] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
-- [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [ ] Task 7: Streamlit UI components in `app/sidebar.py` (Package intake, deliveries board, metrics, session card widget) + tests in `tests/test_app_ui.py`
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
+- [x] Task 2: Package database engine & metrics (`api/packages.py`) + tests in `tests/test_packages.py`
+- [x] Task 3: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py`
+- [x] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_package_routes.py`
+- [x] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
+- [x] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 7: Streamlit UI components in `app/sidebar.py` (Package intake, deliveries board, metrics, session card widget) + tests in `tests/test_app_ui.py`
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
