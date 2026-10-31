@@ -301,6 +301,9 @@ VALID_WEBHOOK_EVENTS = {
     "vendor.job_completed",
     "package.delivered",
     "package.picked_up",
+    "amenity_reservation.created",
+    "amenity_reservation.confirmed",
+    "amenity_reservation.cancelled",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

@@ -3847,3 +3847,162 @@ def test_render_session_package_intake_widget(monkeypatch):
     assert created_session_pkgs[0][1]["carrier"] == "DHL"
     assert created_session_pkgs[0][1]["tracking_number"] == "DHL-123456"
     assert st.reruns == 1
+
+
+
+
+
+def test_render_amenity_reservations_board_ui(monkeypatch):
+    """Test _render_amenity_reservations_board renders all amenity views."""
+    st = FakeStreamlit(
+        values={
+            "res_status_filter": "All",
+            "book_am_select": "Grand Community Clubhouse ($25.0/hr)",
+            "book_am_tenant": "Sarah Jenkins (unit_101)",
+        },
+        buttons={
+            "btn_cancel_res_res_001": False,
+            "btn_del_res_res_001": False,
+            "btn_submit_am_reservation": False,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_reservations_api",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "res_001",
+                    "amenity_name": "Grand Community Clubhouse",
+                    "tenant_id": "tenant_1",
+                    "unit_id": "unit_101",
+                    "start_time": "2026-11-20T17:00:00Z",
+                    "end_time": "2026-11-20T20:00:00Z",
+                    "attendees_count": 10,
+                    "status": "confirmed",
+                    "total_fee": 75.0,
+                    "deposit_paid": 100.0,
+                    "notes": "Community night",
+                }
+            ],
+            "total": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_amenities_api",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "am_001",
+                    "name": "Grand Community Clubhouse",
+                    "category": "clubhouse",
+                    "capacity": 50,
+                    "hourly_rate": 25.0,
+                    "deposit_amount": 100.0,
+                    "opening_hour": 9,
+                    "closing_hour": 23,
+                    "is_active": 1,
+                    "rules": "No smoking",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "get_amenity_metrics_api",
+        lambda: {
+            "total_reservations": 10,
+            "confirmed_count": 8,
+            "total_revenue": 450.0,
+            "total_deposits_held": 500.0,
+            "amenity_usage_breakdown": {"am_001": 8},
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenants",
+        lambda **kwargs: [
+            {"id": "tenant_1", "first_name": "Sarah", "last_name": "Jenkins", "unit_id": "unit_101"}
+        ],
+    )
+
+    # 1. Reservations Board view
+    st.values["amenity_board_tab_radio"] = "Reservations Board"
+    sidebar._render_amenity_reservations_board()
+
+    # 2. Book Amenity view
+    st.values["amenity_board_tab_radio"] = "Book Amenity"
+    sidebar._render_amenity_reservations_board()
+
+    # 3. Catalog & Rules view
+    st.values["amenity_board_tab_radio"] = "Catalog & Rules"
+    sidebar._render_amenity_reservations_board()
+
+    # 4. Utilization KPIs view
+    st.values["amenity_board_tab_radio"] = "Utilization KPIs"
+    sidebar._render_amenity_reservations_board()
+
+
+def test_render_session_amenity_widget(monkeypatch):
+    """Test _render_session_amenity_widget 1-click booking."""
+    booked_reservations = []
+    st = FakeStreamlit(
+        values={
+            "sess_am_sess_99": "Grand Community Clubhouse ($25.0/hr)",
+            "sess_am_st_sess_99": "2026-11-20T18:00:00Z",
+            "sess_am_end_sess_99": "2026-11-20T21:00:00Z",
+            "sess_am_att_sess_99": 5,
+            "sess_am_notes_sess_99": "Dinner party",
+        },
+        buttons={"btn_sess_book_am_sess_99": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_reservations_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "res_existing",
+                    "amenity_name": "Grand Community Clubhouse",
+                    "status": "confirmed",
+                    "start_time": "2026-11-15T18:00:00Z",
+                    "end_time": "2026-11-15T21:00:00Z",
+                    "total_fee": 75.0,
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_amenities_api",
+        lambda **kwargs: {
+            "items": [
+                {
+                    "id": "am_001",
+                    "name": "Grand Community Clubhouse",
+                    "hourly_rate": 25.0,
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_create_reservation_api",
+        lambda sid, payload: booked_reservations.append((sid, payload))
+        or {"reservation": {"id": "res_new"}},
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_amenity_widget("sess_99", tenant)
+
+    expected_count = 1
+    expected_attendees = 5
+    assert len(booked_reservations) == expected_count
+    assert booked_reservations[0][0] == "sess_99"
+    assert booked_reservations[0][1]["amenity_id"] == "am_001"
+    assert booked_reservations[0][1]["attendees_count"] == expected_attendees
