@@ -18,6 +18,7 @@ from app.api_utils import (
     create_lease_renewal,
     create_macro,
     create_package_api,
+    create_reservation_api,
     create_session_inspection,
     create_session_lease_renewal,
     create_sla_policy,
@@ -35,6 +36,7 @@ from app.api_utils import (
     delete_inspection,
     delete_lease_renewal,
     delete_macro,
+    delete_reservation_api,
     delete_session,
     delete_sessions,
     delete_sla_policy,
@@ -49,6 +51,7 @@ from app.api_utils import (
     export_session,
     get_agent_scorecards,
     get_agent_workload_analytics,
+    get_amenity_metrics_api,
     get_billing_metrics,
     get_business_hours_status,
     get_collection_analytics,
@@ -80,6 +83,7 @@ from app.api_utils import (
     get_vendor_metrics,
     get_work_order_metrics,
     link_session_tenant,
+    list_amenities_api,
     list_billing_transactions,
     list_collections,
     list_documents,
@@ -92,10 +96,12 @@ from app.api_utils import (
     list_macro_categories,
     list_macros,
     list_packages_api,
+    list_reservations_api,
     list_sessions,
     list_sla_policies,
     list_support_agents,
     list_tenant_packages_api,
+    list_tenant_reservations_api,
     list_tenants,
     list_units,
     list_vendors,
@@ -117,6 +123,7 @@ from app.api_utils import (
     render_macro,
     scan_knowledge_gaps,
     search_sessions,
+    session_create_reservation_api,
     session_intake_package_api,
     sign_lease_renewal,
     suggest_macros,
@@ -125,6 +132,7 @@ from app.api_utils import (
     update_feedback_review,
     update_inspection,
     update_knowledge_gap,
+    update_reservation_api,
     update_session,
     update_support_agent,
     update_vendor,
@@ -1070,6 +1078,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_lease_renewal_widget(selected, tenant)
     _render_session_inspection_widget(selected, tenant)
     _render_session_package_intake_widget(selected, tenant)
+    _render_session_amenity_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -3948,6 +3957,255 @@ def _render_packages_board():
             st.caption(f"Package panel temporarily unavailable: {e}")
 
 
+# --- Community Amenity Reservations UI (v0.43.0) ---
+
+
+def _render_session_amenity_widget(selected: str, tenant: dict):
+    """Render 1-click amenity booking widget for the resident linked to current session."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        res_resp = list_tenant_reservations_api(tenant_id)
+        reservations = res_resp.get("items", []) if res_resp else []
+        active_res = [r for r in reservations if r.get("status") in ("pending", "confirmed")]
+        if active_res:
+            st.sidebar.markdown("**🏊 Active Amenity Bookings:**")
+            for r in active_res[:2]:
+                st.sidebar.info(
+                    f"**{r.get('amenity_name')}** ({r.get('status').upper()}):\n\n"
+                    f"- **Time:** {r.get('start_time')} to {r.get('end_time')}\n"
+                    f"- **Fee:** ${r.get('total_fee', 0.0):.2f}"
+                )
+
+        with st.sidebar.expander("🏊 Quick Amenity Booking"):
+            ams_resp = list_amenities_api(is_active=True)
+            active_ams = ams_resp.get("items", []) if ams_resp else []
+            if not active_ams:
+                st.caption("No amenities available.")
+                return
+
+            am_map = {f"{a['name']} (${a['hourly_rate']}/hr)": a["id"] for a in active_ams}
+            am_choice = st.selectbox(
+                "Select Amenity",
+                list(am_map.keys()),
+                key=f"sess_am_{selected}",
+            )
+            selected_am_id = am_map[am_choice]
+
+            st_date = st.text_input(
+                "Start Time (ISO)",
+                value="2026-11-15T18:00:00Z",
+                key=f"sess_am_st_{selected}",
+            )
+            end_date = st.text_input(
+                "End Time (ISO)",
+                value="2026-11-15T21:00:00Z",
+                key=f"sess_am_end_{selected}",
+            )
+            attendees = st.number_input(
+                "Attendees",
+                min_value=1,
+                value=2,
+                key=f"sess_am_att_{selected}",
+            )
+            notes_in = st.text_area(
+                "Booking Notes",
+                placeholder="Event details...",
+                key=f"sess_am_notes_{selected}",
+            )
+
+            if st.button("📅 Confirm Amenity Booking", key=f"btn_sess_book_am_{selected}"):
+                payload = {
+                    "amenity_id": selected_am_id,
+                    "start_time": st_date.strip(),
+                    "end_time": end_date.strip(),
+                    "attendees_count": int(attendees),
+                    "notes": notes_in.strip(),
+                }
+                res = session_create_reservation_api(selected, payload)
+                if res:
+                    st.success("Amenity booked successfully!")
+    except Exception as e:
+        st.sidebar.caption(f"Amenity booking error: {e}")
+
+
+def _render_reservations_board_tab():
+    """Render filterable reservations list with status transitions."""
+    st.markdown("##### 📅 Community Amenity Reservations")
+    status_filter = st.selectbox(
+        "Filter Status",
+        ["All", "pending", "confirmed", "cancelled", "completed"],
+        key="res_status_filter",
+    )
+    status_param = None if status_filter == "All" else status_filter
+
+    res_resp = list_reservations_api(status=status_param, limit=50)
+    items = res_resp.get("items", []) if res_resp else []
+    total = res_resp.get("total", 0) if res_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** reservations.")
+    if not items:
+        st.info("No reservations match the selected filter.")
+        return
+
+    for r in items:
+        with st.container():
+            st.markdown(
+                f"**[{r.get('id')}] {r.get('amenity_name')}** — *{r.get('status').upper()}*\n\n"
+                f"- Resident: `{r.get('tenant_id')}` (Unit `{r.get('unit_id')}`)\n"
+                f"- Time: {r.get('start_time')} to {r.get('end_time')}\n"
+                f"- Attendees: {r.get('attendees_count')} | Fee: ${r.get('total_fee', 0.0):.2f}\n"
+                f"- Notes: {r.get('notes') or 'None'}"
+            )
+            col1, col2 = st.columns(2)
+            with col1:
+                cancel_clicked = (
+                    r.get("status") != "cancelled"
+                    and st.button("❌ Cancel", key=f"btn_cancel_res_{r.get('id')}")
+                )
+                if cancel_clicked and update_reservation_api(r.get("id"), {"status": "cancelled"}):
+                    st.success("Reservation cancelled.")
+            with col2:
+                if (
+                    st.button("🗑️ Delete", key=f"btn_del_res_{r.get('id')}")
+                    and delete_reservation_api(r.get("id"))
+                ):
+                    st.success("Reservation deleted.")
+            st.divider()
+
+
+def _render_book_amenity_tab():
+    """Render amenity reservation booking form."""
+    st.markdown("##### 📝 Book an Amenity")
+    ams_resp = list_amenities_api(is_active=True)
+    active_ams = ams_resp.get("items", []) if ams_resp else []
+    if not active_ams:
+        st.warning("No active community amenities found.")
+        return
+
+    am_options = {f"{a['name']} (${a['hourly_rate']}/hr)": a for a in active_ams}
+    choice = st.selectbox("Amenity", list(am_options.keys()), key="book_am_select")
+    am_data = am_options[choice]
+
+    t_list = list_tenants(limit=100) or []
+    tenant_opts = {
+        f"{t['first_name']} {t['last_name']} ({t.get('unit_id', 'No Unit')})": t
+        for t in t_list
+    }
+    if not tenant_opts:
+        st.warning("No resident profiles found.")
+        return
+
+    t_choice = st.selectbox("Resident", list(tenant_opts.keys()), key="book_am_tenant")
+    t_data = tenant_opts[t_choice]
+
+    st_in = st.text_input(
+        "Start Time (ISO 8601)",
+        value="2026-11-20T17:00:00Z",
+        key="book_am_start",
+    )
+    end_in = st.text_input(
+        "End Time (ISO 8601)",
+        value="2026-11-20T20:00:00Z",
+        key="book_am_end",
+    )
+    attendees = st.number_input(
+        "Attendees",
+        min_value=1,
+        max_value=am_data["capacity"],
+        value=4,
+        key="book_am_attendees",
+    )
+    notes_in = st.text_area(
+        "Notes",
+        placeholder="Special requests, setup instructions...",
+        key="book_am_notes",
+    )
+
+    if st.button("📅 Submit Reservation", key="btn_submit_am_reservation"):
+        unit_id = t_data.get("unit_id")
+        if not unit_id:
+            st.error("Selected resident has no assigned unit.")
+            return
+
+        payload = {
+            "amenity_id": am_data["id"],
+            "tenant_id": t_data["id"],
+            "unit_id": unit_id,
+            "start_time": st_in.strip(),
+            "end_time": end_in.strip(),
+            "attendees_count": int(attendees),
+            "notes": notes_in.strip(),
+        }
+        res = create_reservation_api(payload)
+        if res:
+            st.success("Amenity reservation confirmed!")
+
+
+def _render_amenity_catalog_tab():
+    """Render list of amenities and add new amenity form."""
+    st.markdown("##### 🏛️ Amenities Catalog & Rules")
+    ams_resp = list_amenities_api(limit=50)
+    items = ams_resp.get("items", []) if ams_resp else []
+    for am in items:
+        st.markdown(
+            f"**{am['name']}** (`{am['category']}`)\n\n"
+            f"- Capacity: **{am['capacity']}** | Rate: **${am['hourly_rate']:.2f}/hr**\n"
+            f"- Hours: **{am['opening_hour']}:00 - {am['closing_hour']}:00**\n"
+            f"- Rules: *{am['rules'] or 'Standard rules apply'}*"
+        )
+        st.divider()
+
+
+def _render_amenity_metrics_tab():
+    """Render amenity utilization and revenue KPIs."""
+    st.markdown("##### 📊 Amenity Utilization & Revenue")
+    metrics = get_amenity_metrics_api()
+    if not metrics:
+        st.info("Metrics currently unavailable.")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Total Bookings", metrics.get("total_reservations", 0))
+    with c2:
+        st.metric("Confirmed", metrics.get("confirmed_count", 0))
+    with c3:
+        st.metric("Total Revenue", f"${metrics.get('total_revenue', 0.0):.2f}")
+
+    st.markdown(f"**Held Security Deposits:** ${metrics.get('total_deposits_held', 0.0):.2f}")
+    usage = metrics.get("amenity_usage_breakdown", {})
+    if usage:
+        st.markdown("**Bookings Breakdown by Amenity:**")
+        for aid, count in usage.items():
+            st.caption(f"- **{aid}**: {count} reservation(s)")
+
+
+def _render_amenity_reservations_board():
+    """Render community amenity reservations expander in sidebar."""
+    with st.sidebar.expander("🏊 Amenity Reservations & Common Areas"):
+        try:
+            am_tab = st.radio(
+                "Amenity View",
+                ["Reservations Board", "Book Amenity", "Catalog & Rules", "Utilization KPIs"],
+                horizontal=True,
+                key="amenity_board_tab_radio",
+            )
+            if am_tab == "Reservations Board":
+                _render_reservations_board_tab()
+            elif am_tab == "Book Amenity":
+                _render_book_amenity_tab()
+            elif am_tab == "Catalog & Rules":
+                _render_amenity_catalog_tab()
+            else:
+                _render_amenity_metrics_tab()
+        except Exception as e:
+            st.caption(f"Amenity reservations panel temporarily unavailable: {e}")
+
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -3977,6 +4235,7 @@ def display_sidebar():
     _render_lease_renewals_board()
     _render_inspections_board()
     _render_packages_board()
+    _render_amenity_reservations_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
