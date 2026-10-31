@@ -1619,7 +1619,7 @@ Via the API and Streamlit UI, property managers can:
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
-## v0.43.0 plan — Community Amenity Reservations & Common Area Bookings Engine (IN PROGRESS)
+## v0.43.0 plan — Community Amenity Reservations & Common Area Bookings Engine ✅ COMPLETED
 
 Give property managers, leasing staff, and residents an automated community amenity catalog and conflict-free reservation engine. Operators define amenities (clubhouse, rooftop terrace, BBQ pavilion, guest suites, fitness studio) with capacity limits, operating hours, hourly rates, and deposit requirements. Residents request bookings with time slots, attendee counts, and fee calculations. Conflicting overlapping bookings are strictly prevented. Active resident chat conversations automatically ground reservations into prompt context (`[COMMUNITY AMENITY RESERVATIONS]`) and resolve canned response macros (`{amenity_name}`, `{reservation_start}`, `{reservation_end}`, `{reservation_status}`, `{reservation_fee}`, `{reservation_deposit}`). Webhook events (`amenity_reservation.created`, `amenity_reservation.confirmed`, `amenity_reservation.cancelled`) alert staff in real time.
 
@@ -1666,15 +1666,15 @@ Via the API and Streamlit UI, property managers can:
 9. 100% CI parity: local pytest (>=80% coverage), ruff clean, mypy clean, secret scan clean, real E2E API run, and remote GitHub Actions CI green.
 
 ### Granular Task Breakdown
-- [ ] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.43.0 plan
-- [ ] Task 2: Amenity & reservation database engine (`api/amenities.py`) + tests in `tests/test_amenities.py`
-- [ ] Task 3: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py`
-- [ ] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_amenity_routes.py`
-- [ ] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
-- [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [ ] Task 7: Streamlit UI components in `app/sidebar.py` (Reservations board, booking form, catalog, metrics, session widget) + tests in `tests/test_app_ui.py`
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.43.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
+- [x] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.43.0 plan
+- [x] Task 2: Amenity & reservation database engine (`api/amenities.py`) + tests in `tests/test_amenities.py`
+- [x] Task 3: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py`
+- [x] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_amenity_routes.py`
+- [x] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
+- [x] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 7: Streamlit UI components in `app/sidebar.py` (Reservations board, booking form, catalog, metrics, session widget) + tests in `tests/test_app_ui.py`
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.43.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
