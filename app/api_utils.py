@@ -3486,3 +3486,203 @@ def session_intake_package_api(
         "intaking session package",
         json=payload,
     )
+
+
+
+
+
+# --- Community Amenity Reservations & Common Area Bookings (v0.43.0) ---
+
+
+def _amenity_call(  # noqa: PLR0913
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Issue an authenticated amenity reservation API request.
+
+    Shows an error and returns None on failure.
+    """
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_amenity_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a new community amenity in the catalog."""
+    return _amenity_call(
+        "post",
+        "/amenities",
+        HTTP_CREATED,
+        "Failed to create amenity",
+        "creating amenity",
+        json=payload,
+    )
+
+
+def list_amenities_api(
+    category: str | None = None,
+    is_active: bool | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List community amenities."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if category and category.strip():
+        params["category"] = category.strip()
+    if is_active is not None:
+        params["is_active"] = is_active
+    return _amenity_call(
+        "get",
+        "/amenities",
+        HTTP_OK,
+        "Failed to list amenities",
+        "listing amenities",
+        params=params,
+    )
+
+
+def get_amenity_api(amenity_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific amenity."""
+    return _amenity_call(
+        "get",
+        f"/amenities/{amenity_id}",
+        HTTP_OK,
+        f"Failed to fetch amenity '{amenity_id}'",
+        "fetching amenity",
+    )
+
+
+def update_amenity_api(amenity_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update fields of an existing amenity."""
+    return _amenity_call(
+        "patch",
+        f"/amenities/{amenity_id}",
+        HTTP_OK,
+        f"Failed to update amenity '{amenity_id}'",
+        "updating amenity",
+        json=payload,
+    )
+
+
+def create_reservation_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Book an amenity reservation."""
+    return _amenity_call(
+        "post",
+        "/amenity-reservations",
+        HTTP_CREATED,
+        "Failed to book amenity reservation",
+        "booking amenity",
+        json=payload,
+    )
+
+
+def list_reservations_api(  # noqa: PLR0913, PLR0917
+    amenity_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List and filter amenity reservations."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (
+        ("amenity_id", amenity_id),
+        ("tenant_id", tenant_id),
+        ("status", status),
+    ):
+        if val and val.strip():
+            params[key] = val.strip()
+    return _amenity_call(
+        "get",
+        "/amenity-reservations",
+        HTTP_OK,
+        "Failed to list reservations",
+        "listing reservations",
+        params=params,
+    )
+
+
+def get_reservation_api(reservation_id: str) -> dict[str, Any] | None:
+    """Retrieve details for an amenity reservation."""
+    return _amenity_call(
+        "get",
+        f"/amenity-reservations/{reservation_id}",
+        HTTP_OK,
+        f"Failed to fetch reservation '{reservation_id}'",
+        "fetching reservation",
+    )
+
+
+def update_reservation_api(reservation_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update reservation status or notes."""
+    return _amenity_call(
+        "patch",
+        f"/amenity-reservations/{reservation_id}",
+        HTTP_OK,
+        f"Failed to update reservation '{reservation_id}'",
+        "updating reservation",
+        json=payload,
+    )
+
+
+def delete_reservation_api(reservation_id: str) -> bool:
+    """Delete an amenity reservation."""
+    res = _amenity_call(
+        "delete",
+        f"/amenity-reservations/{reservation_id}",
+        HTTP_OK,
+        f"Failed to delete reservation '{reservation_id}'",
+        "deleting reservation",
+    )
+    return res is not None
+
+
+def get_amenity_metrics_api() -> dict[str, Any] | None:
+    """Retrieve amenity utilization metrics and summary statistics."""
+    return _amenity_call(
+        "get",
+        "/amenity-reservations/metrics",
+        HTTP_OK,
+        "Failed to fetch amenity metrics",
+        "fetching amenity metrics",
+    )
+
+
+def list_tenant_reservations_api(tenant_id: str) -> dict[str, Any] | None:
+    """Retrieve reservations for a specific resident."""
+    return _amenity_call(
+        "get",
+        f"/tenants/{tenant_id}/amenity-reservations",
+        HTTP_OK,
+        f"Failed to fetch reservations for tenant '{tenant_id}'",
+        "fetching tenant reservations",
+    )
+
+
+def session_create_reservation_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Book an amenity reservation grounded to the active support session resident."""
+    return _amenity_call(
+        "post",
+        f"/sessions/{session_id}/create-reservation",
+        HTTP_CREATED,
+        "Failed to book amenity reservation for session",
+        "booking session amenity",
+        json=payload,
+    )

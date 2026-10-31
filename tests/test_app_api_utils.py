@@ -2788,3 +2788,90 @@ def test_package_pickup_and_session_helpers(fake_requests, fake_st):
         assert fake_st.errors
     finally:
         fake_requests.post = orig_post
+
+
+
+
+
+def test_amenity_and_reservation_api_helpers():
+    """Verify community amenity and reservation client API helpers."""
+    fake_requests = FakeRequests(FakeResponse())
+    fake_st = FakeStreamlit()
+    api_utils.requests = fake_requests
+    api_utils.st = fake_st
+
+    # create_amenity_api
+    am_payload = {"amenity": {"id": "am_1", "name": "Skyline Lounge"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=am_payload)
+    assert api_utils.create_amenity_api({"name": "Skyline Lounge"}) == am_payload
+    method, url, kwargs = fake_requests.calls[-1]
+    assert method == "post"
+    assert url.endswith("/amenities")
+    assert kwargs["json"] == {"name": "Skyline Lounge"}
+
+    # list_amenities_api
+    list_ams_payload = {"items": [am_payload["amenity"]], "total": 1, "limit": 100, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_ams_payload)
+    assert api_utils.list_amenities_api(category="rooftop", is_active=True) == list_ams_payload
+    assert fake_requests.calls[-1][1].endswith("/amenities")
+    assert fake_requests.calls[-1][2]["params"]["category"] == "rooftop"
+
+    # get_amenity_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=am_payload)
+    assert api_utils.get_amenity_api("am_1") == am_payload
+    assert fake_requests.calls[-1][1].endswith("/amenities/am_1")
+
+    # update_amenity_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=am_payload)
+    assert api_utils.update_amenity_api("am_1", {"name": "Skyline Lounge VIP"}) == am_payload
+    assert fake_requests.calls[-1][1].endswith("/amenities/am_1")
+
+    # create_reservation_api
+    res_payload = {"reservation": {"id": "res_1", "status": "confirmed"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=res_payload)
+    assert api_utils.create_reservation_api({"amenity_id": "am_1"}) == res_payload
+    assert fake_requests.calls[-1][1].endswith("/amenity-reservations")
+
+    # list_reservations_api
+    list_res_payload = {
+        "items": [res_payload["reservation"]],
+        "total": 1,
+        "limit": 100,
+        "offset": 0,
+    }
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_res_payload)
+    assert api_utils.list_reservations_api(tenant_id="tenant_1") == list_res_payload
+    assert fake_requests.calls[-1][1].endswith("/amenity-reservations")
+
+    # get_reservation_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=res_payload)
+    assert api_utils.get_reservation_api("res_1") == res_payload
+    assert fake_requests.calls[-1][1].endswith("/amenity-reservations/res_1")
+
+    # update_reservation_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=res_payload)
+    assert api_utils.update_reservation_api("res_1", {"status": "cancelled"}) == res_payload
+    assert fake_requests.calls[-1][1].endswith("/amenity-reservations/res_1")
+
+    # delete_reservation_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_reservation_api("res_1") is True
+    assert fake_requests.calls[-1][1].endswith("/amenity-reservations/res_1")
+
+    # get_amenity_metrics_api
+    metrics_payload = {"total_reservations": 10, "active_amenities_count": 5}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=metrics_payload)
+    assert api_utils.get_amenity_metrics_api() == metrics_payload
+    assert fake_requests.calls[-1][1].endswith("/amenity-reservations/metrics")
+
+    # list_tenant_reservations_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_res_payload)
+    assert api_utils.list_tenant_reservations_api("tenant_1") == list_res_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/tenant_1/amenity-reservations")
+
+    # session_create_reservation_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=res_payload)
+    assert api_utils.session_create_reservation_api("sess_1", {"amenity_id": "am_1"}) == res_payload
+    assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/create-reservation")
