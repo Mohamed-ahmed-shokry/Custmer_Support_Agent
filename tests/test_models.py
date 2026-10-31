@@ -7,6 +7,10 @@ from api.pydantic_models import (
     AgentScorecardItem,
     AgentWorkloadItem,
     AgentWorkloadResponse,
+    AmenityCreateRequest,
+    AmenityItem,
+    AmenityMetricsResponse,
+    AmenityResponse,
     AutoAssignRequest,
     BillingMetricsResponse,
     BillingTransactionCreateRequest,
@@ -82,6 +86,9 @@ from api.pydantic_models import (
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
+    ReservationCreateRequest,
+    ReservationItem,
+    ReservationResponse,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
@@ -2154,3 +2161,76 @@ def test_package_models_validation() -> None:
         location="Locker 4",
     )
     assert session_intake.carrier == "FedEx"
+
+
+
+def test_amenity_and_reservation_models():
+    """Verify v0.43.0 Community Amenity and Reservation Pydantic schemas."""
+    expected_total = 10
+    expected_revenue = 250.0
+    expected_attendees = 12
+
+    # AmenityCreateRequest
+    create_req = AmenityCreateRequest(
+        name="Skyline Lounge",
+        category="rooftop",
+        capacity=30,
+        hourly_rate=40.0,
+        deposit_amount=100.0,
+        opening_hour=10,
+        closing_hour=22,
+    )
+    assert create_req.name == "Skyline Lounge"
+    assert create_req.category == "rooftop"
+
+    # AmenityItem & Response
+    am_item = AmenityItem(
+        id="am_test_1",
+        name="Skyline Lounge",
+        category="rooftop",
+        capacity=30,
+        hourly_rate=40.0,
+        deposit_amount=100.0,
+        opening_hour=10,
+        closing_hour=22,
+    )
+    am_resp = AmenityResponse(amenity=am_item)
+    assert am_resp.amenity.id == "am_test_1"
+
+    # ReservationCreateRequest
+    res_req = ReservationCreateRequest(
+        amenity_id="am_test_1",
+        tenant_id="tenant_1",
+        unit_id="101",
+        start_time="2026-11-15T18:00:00Z",
+        end_time="2026-11-15T21:00:00Z",
+        attendees_count=12,
+    )
+    assert res_req.attendees_count == expected_attendees
+
+    # ReservationItem & Response
+    res_item = ReservationItem(
+        id="res_test_1",
+        amenity_id="am_test_1",
+        tenant_id="tenant_1",
+        unit_id="101",
+        start_time="2026-11-15T18:00:00Z",
+        end_time="2026-11-15T21:00:00Z",
+        total_fee=120.0,
+        deposit_paid=100.0,
+        amenity_name="Skyline Lounge",
+    )
+    res_resp = ReservationResponse(reservation=res_item)
+    assert res_resp.reservation.id == "res_test_1"
+
+    # AmenityMetricsResponse
+    metrics = AmenityMetricsResponse(
+        active_amenities_count=5,
+        total_reservations=expected_total,
+        confirmed_count=8,
+        cancelled_count=2,
+        total_revenue=expected_revenue,
+        amenity_usage_breakdown={"am_test_1": 8},
+    )
+    assert metrics.total_reservations == expected_total
+    assert metrics.total_revenue == expected_revenue
