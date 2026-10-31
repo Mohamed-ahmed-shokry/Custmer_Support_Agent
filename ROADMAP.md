@@ -1619,6 +1619,63 @@ Via the API and Streamlit UI, property managers can:
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.42.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
+## v0.43.0 plan — Community Amenity Reservations & Common Area Bookings Engine (IN PROGRESS)
+
+Give property managers, leasing staff, and residents an automated community amenity catalog and conflict-free reservation engine. Operators define amenities (clubhouse, rooftop terrace, BBQ pavilion, guest suites, fitness studio) with capacity limits, operating hours, hourly rates, and deposit requirements. Residents request bookings with time slots, attendee counts, and fee calculations. Conflicting overlapping bookings are strictly prevented. Active resident chat conversations automatically ground reservations into prompt context (`[COMMUNITY AMENITY RESERVATIONS]`) and resolve canned response macros (`{amenity_name}`, `{reservation_start}`, `{reservation_end}`, `{reservation_status}`, `{reservation_fee}`, `{reservation_deposit}`). Webhook events (`amenity_reservation.created`, `amenity_reservation.confirmed`, `amenity_reservation.cancelled`) alert staff in real time.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers can:
+1. Browse and configure community amenities with operational parameters: name, category, capacity, hourly rate, deposit, opening hour, closing hour, and rules.
+2. Submit amenity reservation requests for residents with automatic conflict checking preventing double-booking of any amenity during overlapping time intervals.
+3. Manage reservation lifecycle states: `pending`, `confirmed`, `cancelled`, and `completed`.
+4. Review amenity booking KPIs: total reservations, confirmed count, revenue collected, deposits held, utilization rate, and popular amenities.
+5. Ground active resident chat sessions with current amenity bookings and resolve `{amenity_*}` and `{reservation_*}` macro variables dynamically.
+
+### Scope
+- `api/amenities.py`:
+  - SQLite tables `amenities` and `amenity_reservations` with indices on `amenity_id`, `tenant_id`, and `reservation_date`/`time_slot`.
+  - Helpers: `create_amenity`, `get_amenity`, `list_amenities`, `update_amenity`, `create_reservation`, `get_reservation`, `list_reservations`, `update_reservation_status`, `check_reservation_conflict`, `get_amenity_summary_metrics`.
+- `api/db_utils.py`:
+  - Register webhook events `amenity_reservation.created`, `amenity_reservation.confirmed`, `amenity_reservation.cancelled`.
+- `api/pydantic_models.py`:
+  - `AmenityCategory`, `ReservationStatus`, `AmenityCreateRequest`, `AmenityResponse`, `AmenityListResponse`, `ReservationCreateRequest`, `ReservationUpdateRequest`, `ReservationResponse`, `ReservationListResponse`, `AmenityMetricsResponse`, `SessionCreateReservationRequest`.
+- `api/main.py`:
+  - Endpoints: `POST /amenities`, `GET /amenities`, `GET /amenities/{id}`, `POST /amenity-reservations`, `GET /amenity-reservations`, `GET /amenity-reservations/{id}`, `PATCH /amenity-reservations/{id}`, `GET /amenity-reservations/metrics`, `GET /tenants/{id}/amenity-reservations`, `POST /sessions/{id}/create-reservation`.
+- `api/tenant_context.py`:
+  - Ground active session tenant reservations under `[COMMUNITY AMENITY RESERVATIONS]`.
+  - Resolve macro variables `{amenity_name}`, `{reservation_start}`, `{reservation_end}`, `{reservation_status}`, `{reservation_fee}`, `{reservation_deposit}`.
+- `app/api_utils.py`:
+  - Typed client helpers for amenities CRUD, reservations, conflict checking, metrics, and session booking.
+- `app/sidebar.py`:
+  - Streamlit sidebar expander `🏊 Amenity Reservations & Common Areas` (Reservations Board, Book Amenity Form, Amenity Catalog & Rules, Utilization KPIs).
+  - Quick amenity booking expander on the active session resident card.
+- Tests:
+  - Unit tests in `tests/test_amenities.py`, `tests/test_amenity_routes.py`, `tests/test_tenant_context.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`.
+- Docs & Version:
+  - Update `docs/API.md`, `README.md`, `docs/PROGRESS.md`; bump version to `0.43.0` in `pyproject.toml` and `api/settings.py`.
+
+### Acceptance Criteria
+1. `amenities` and `amenity_reservations` SQLite tables created idempotently with proper indices and pre-seeded default amenities (Clubhouse, Rooftop Terrace, BBQ Pavilion, Guest Suite, Fitness Studio).
+2. Reservation creation checks for overlapping bookings for the same amenity and rejects conflicts with HTTP 409 Conflict.
+3. Total reservation fees and deposits are calculated automatically based on duration (hours) and amenity rates.
+4. Reservation status transitions (`pending` -> `confirmed`, `cancelled`, `completed`) trigger corresponding webhooks (`amenity_reservation.confirmed`, `amenity_reservation.cancelled`).
+5. Summary metrics report total reservations, confirmed count, cancelled count, total revenue, held deposits, and per-amenity utilization counts.
+6. Active resident chat prompt context automatically injects `[COMMUNITY AMENITY RESERVATIONS]` when bookings exist for active session tenant.
+7. Canned macro variables `{amenity_name}`, `{reservation_start}`, `{reservation_end}`, `{reservation_status}`, `{reservation_fee}`, `{reservation_deposit}` resolve accurately.
+8. Streamlit UI renders Reservations Board, Book Amenity Form, Amenity Catalog, Utilization Metrics, and Session Quick Booking widget with full interactive controls.
+9. 100% CI parity: local pytest (>=80% coverage), ruff clean, mypy clean, secret scan clean, real E2E API run, and remote GitHub Actions CI green.
+
+### Granular Task Breakdown
+- [ ] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.43.0 plan
+- [ ] Task 2: Amenity & reservation database engine (`api/amenities.py`) + tests in `tests/test_amenities.py`
+- [ ] Task 3: Pydantic models & webhook event registration in `api/pydantic_models.py` and `api/db_utils.py`
+- [ ] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_amenity_routes.py`
+- [ ] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
+- [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] Task 7: Streamlit UI components in `app/sidebar.py` (Reservations board, booking form, catalog, metrics, session widget) + tests in `tests/test_app_ui.py`
+- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.43.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
