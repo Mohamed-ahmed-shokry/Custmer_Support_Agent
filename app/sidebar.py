@@ -4089,10 +4089,11 @@ def _render_book_amenity_tab():
     choice = st.selectbox("Amenity", list(am_options.keys()), key="book_am_select")
     am_data = am_options[choice]
 
-    t_list = list_tenants(limit=100) or []
+    tenants_resp = list_tenants(limit=100)
+    tenants_list = tenants_resp.get("items", []) if tenants_resp else []
     tenant_opts = {
         f"{t['first_name']} {t['last_name']} ({t.get('unit_id', 'No Unit')})": t
-        for t in t_list
+        for t in tenants_list
     }
     if not tenant_opts:
         st.warning("No resident profiles found.")

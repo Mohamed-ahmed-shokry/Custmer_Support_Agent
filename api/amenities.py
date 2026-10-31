@@ -774,7 +774,7 @@ def delete_reservation(reservation_id: str) -> bool:
     with closing(db_utils.get_db_connection()) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM amenity_reservations WHERE id = ?", (reservation_id,))
-        return cursor.rowcount > 0
+        return bool(cursor.rowcount > 0)
 
 
 def get_amenity_summary_metrics() -> dict[str, Any]:
