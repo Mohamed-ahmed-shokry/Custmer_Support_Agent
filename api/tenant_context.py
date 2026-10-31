@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import packages, vendors
+from api import amenities, packages, vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -347,6 +347,71 @@ def _extract_package_vars(packages_list: list[dict[str, Any]]) -> dict[str, str]
         "package_delivered_at": str(primary.get("delivered_at", "")),
     }
 
+
+def _format_amenity_reservation_lines(reservations: list[dict[str, Any]]) -> list[str]:
+    """Format community amenity reservations into prompt context lines."""
+    if not reservations:
+        return []
+    lines = [
+        "[COMMUNITY AMENITY RESERVATIONS]",
+        f"- Total Reservations on Record: {len(reservations)}",
+    ]
+    active_count = sum(1 for r in reservations if r.get("status") in ("pending", "confirmed"))
+    lines.append(f"- Active/Upcoming Bookings: {active_count}")
+
+    for r in reservations[:5]:
+        rid = r.get("id", "Unknown")
+        am_name = r.get("amenity_name", "Amenity")
+        st_time = r.get("start_time", "N/A")
+        end_time = r.get("end_time", "N/A")
+        status = r.get("status", "confirmed")
+        fee = r.get("total_fee", 0.0)
+        attendees = r.get("attendees_count", 1)
+
+        detail = (
+            f"  - [{rid}] {am_name} | Status: {status.upper()} | "
+            f"Time: {st_time} to {end_time} | Attendees: {attendees} | Total Fee: ${fee:.2f}"
+        )
+        lines.append(detail)
+    lines.append("[END COMMUNITY AMENITY RESERVATIONS]")
+    return lines
+
+
+def _extract_amenity_vars(reservations: list[dict[str, Any]]) -> dict[str, str]:
+    """Extract macro variables from resident amenity reservations."""
+    if not reservations:
+        return {
+            "active_reservations_count": "0",
+            "reservation_id": "",
+            "amenity_id": "",
+            "amenity_name": "",
+            "reservation_start": "",
+            "reservation_end": "",
+            "reservation_status": "none",
+            "reservation_fee": "$0.00",
+            "reservation_deposit": "$0.00",
+            "reservation_attendees": "0",
+        }
+
+    active_res = [r for r in reservations if r.get("status") in ("pending", "confirmed")]
+    primary = active_res[0] if active_res else reservations[0]
+
+    fee = float(primary.get("total_fee", 0.0))
+    deposit = float(primary.get("deposit_paid", 0.0))
+
+    return {
+        "active_reservations_count": str(len(active_res)),
+        "reservation_id": str(primary.get("id", "")),
+        "amenity_id": str(primary.get("amenity_id", "")),
+        "amenity_name": str(primary.get("amenity_name", "")),
+        "reservation_start": str(primary.get("start_time", "")),
+        "reservation_end": str(primary.get("end_time", "")),
+        "reservation_status": str(primary.get("status", "none")),
+        "reservation_fee": f"${fee:.2f}",
+        "reservation_deposit": f"${deposit:.2f}",
+        "reservation_attendees": str(primary.get("attendees_count", "0")),
+    }
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -356,6 +421,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     include_renewals: bool = True,
     include_inspections: bool = True,
     include_packages: bool = True,
+    include_amenities: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -387,6 +453,9 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     packages_list: list[dict[str, Any]] = []
     if include_packages and resolved_tenant_id:
         packages_list = packages.list_tenant_packages(resolved_tenant_id)
+    amenity_reservations: list[dict[str, Any]] = []
+    if include_amenities and resolved_tenant_id:
+        amenity_reservations = amenities.list_reservations(tenant_id=resolved_tenant_id)
 
     if (
         not tenant
@@ -396,6 +465,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         and not renewals
         and not inspections
         and not packages_list
+        and not amenity_reservations
     ):
         return ""
 
@@ -432,6 +502,10 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(_format_package_lines(packages_list))
+    if amenity_reservations:
+        if lines:
+            lines.append("")
+        lines.extend(_format_amenity_reservation_lines(amenity_reservations))
 
     return "\n".join(lines)
 
@@ -650,5 +724,9 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     if resolved_tenant_id:
         packages_list = packages.list_tenant_packages(resolved_tenant_id)
     variables.update(_extract_package_vars(packages_list))
+    amenity_reservations: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        amenity_reservations = amenities.list_reservations(tenant_id=resolved_tenant_id)
+    variables.update(_extract_amenity_vars(amenity_reservations))
 
     return variables
