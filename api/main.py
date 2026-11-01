@@ -13,6 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, Uplo
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from api import (
+    amenities,
     assignment,
     business_hours,
     csat,
@@ -128,6 +129,12 @@ from api.pydantic_models import (
     AgentPerformanceScorecardsResponse,
     AgentScorecardItem,
     AgentWorkloadResponse,
+    AmenityCreateRequest,
+    AmenityItem,
+    AmenityListResponse,
+    AmenityMetricsResponse,
+    AmenityResponse,
+    AmenityUpdateRequest,
     AutoAssignRequest,
     BillingMetricsResponse,
     BillingTransactionCreateRequest,
@@ -224,11 +231,17 @@ from api.pydantic_models import (
     RechunkDocumentRequest,
     RenameCollectionRequest,
     RenameCollectionResponse,
+    ReservationCreateRequest,
+    ReservationItem,
+    ReservationListResponse,
+    ReservationResponse,
+    ReservationUpdateRequest,
     SearchInput,
     SearchResponse,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
+    SessionCreateReservationRequest,
     SessionDraftArticleRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
@@ -4594,3 +4607,315 @@ def session_intake_package_route(
         },
     )
     return PackageResponse(package=PackageItem(**created))
+
+
+# ---------------------------------------------------------------------------
+# Community Amenity Reservations & Common Area Bookings (v0.43.0)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/amenities", response_model=AmenityResponse, status_code=201)
+def create_amenity_route(request: AmenityCreateRequest):
+    """Create a new community amenity in the catalog."""
+    amenity_id = f"am_{uuid.uuid4().hex[:10]}"
+    try:
+        created = amenities.create_amenity(
+            amenity_id=amenity_id,
+            name=request.name,
+            category=request.category,
+            description=request.description,
+            capacity=request.capacity,
+            hourly_rate=request.hourly_rate,
+            deposit_amount=request.deposit_amount,
+            opening_hour=request.opening_hour,
+            closing_hour=request.closing_hour,
+            is_active=request.is_active,
+            rules=request.rules,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return AmenityResponse(amenity=AmenityItem(**created))
+
+
+@app.get("/amenities", response_model=AmenityListResponse)
+def list_amenities_route(
+    category: str | None = None,
+    is_active: bool | None = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List community amenities with optional filters."""
+    items = amenities.list_amenities(
+        category=category,
+        is_active=is_active,
+        limit=limit,
+        offset=offset,
+    )
+    return AmenityListResponse(
+        items=[AmenityItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/amenities/{amenity_id}", response_model=AmenityResponse)
+def get_amenity_route(amenity_id: str):
+    """Retrieve details for a specific amenity."""
+    am = amenities.get_amenity(amenity_id)
+    if not am:
+        raise HTTPException(status_code=404, detail=f"Amenity '{amenity_id}' not found.")
+    return AmenityResponse(amenity=AmenityItem(**am))
+
+
+@app.patch("/amenities/{amenity_id}", response_model=AmenityResponse)
+def update_amenity_route(amenity_id: str, request: AmenityUpdateRequest):
+    """Update fields of an existing amenity."""
+    try:
+        updated = amenities.update_amenity(
+            amenity_id=amenity_id,
+            name=request.name,
+            category=request.category,
+            description=request.description,
+            capacity=request.capacity,
+            hourly_rate=request.hourly_rate,
+            deposit_amount=request.deposit_amount,
+            opening_hour=request.opening_hour,
+            closing_hour=request.closing_hour,
+            is_active=request.is_active,
+            rules=request.rules,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Amenity '{amenity_id}' not found.")
+    return AmenityResponse(amenity=AmenityItem(**updated))
+
+
+@app.get("/amenity-reservations/metrics", response_model=AmenityMetricsResponse)
+def get_amenity_metrics_route():
+    """Retrieve summary metrics and utilization statistics for community amenities."""
+    return AmenityMetricsResponse(**amenities.get_amenity_summary_metrics())
+
+
+@app.post("/amenity-reservations", response_model=ReservationResponse, status_code=201)
+def create_reservation_route(
+    request: ReservationCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Book a community amenity reservation with conflict validation."""
+    if not db_utils.get_tenant(request.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{request.tenant_id}' not found.")
+    if not db_utils.get_unit(request.unit_id):
+        raise HTTPException(status_code=404, detail=f"Unit '{request.unit_id}' not found.")
+    if not amenities.get_amenity(request.amenity_id):
+        raise HTTPException(status_code=404, detail=f"Amenity '{request.amenity_id}' not found.")
+
+    res_id = f"res_{uuid.uuid4().hex[:10]}"
+    try:
+        created = amenities.create_reservation(
+            reservation_id=res_id,
+            amenity_id=request.amenity_id,
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            attendees_count=request.attendees_count,
+            status=request.status,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        err_msg = str(exc)
+        if "already reserved" in err_msg:
+            raise HTTPException(status_code=409, detail=err_msg) from exc
+        raise HTTPException(status_code=422, detail=err_msg) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "amenity_reservation.created",
+        {
+            "reservation_id": created["id"],
+            "amenity_id": created["amenity_id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "start_time": created["start_time"],
+            "end_time": created["end_time"],
+            "status": created["status"],
+            "total_fee": created["total_fee"],
+        },
+    )
+    return ReservationResponse(reservation=ReservationItem(**created))
+
+
+@app.get("/amenity-reservations", response_model=ReservationListResponse)
+def list_reservations_route(  # noqa: PLR0913, PLR0917
+    amenity_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List and filter amenity reservations."""
+    items = amenities.list_reservations(
+        amenity_id=amenity_id,
+        tenant_id=tenant_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return ReservationListResponse(
+        items=[ReservationItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/amenity-reservations/{reservation_id}", response_model=ReservationResponse)
+def get_reservation_route(reservation_id: str):
+    """Retrieve details for a specific amenity reservation."""
+    res = amenities.get_reservation(reservation_id)
+    if not res:
+        raise HTTPException(
+            status_code=404, detail=f"Reservation '{reservation_id}' not found."
+        )
+    return ReservationResponse(reservation=ReservationItem(**res))
+
+
+@app.patch("/amenity-reservations/{reservation_id}", response_model=ReservationResponse)
+def update_reservation_route(
+    reservation_id: str,
+    request: ReservationUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update status or notes for an existing amenity reservation."""
+    current = amenities.get_reservation(reservation_id)
+    if not current:
+        raise HTTPException(
+            status_code=404, detail=f"Reservation '{reservation_id}' not found."
+        )
+
+    try:
+        updated = amenities.update_reservation_status(
+            reservation_id,
+            status=request.status or current["status"],
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not updated:
+        raise HTTPException(
+            status_code=404, detail=f"Reservation '{reservation_id}' not found."
+        )
+
+    if request.status and request.status != current["status"]:
+        event_name = (
+            "amenity_reservation.confirmed"
+            if request.status == "confirmed"
+            else "amenity_reservation.cancelled"
+            if request.status == "cancelled"
+            else None
+        )
+        if event_name:
+            background_tasks.add_task(
+                webhooks.dispatch_event,
+                event_name,
+                {
+                    "reservation_id": updated["id"],
+                    "amenity_id": updated["amenity_id"],
+                    "tenant_id": updated["tenant_id"],
+                    "status": updated["status"],
+                },
+            )
+
+    return ReservationResponse(reservation=ReservationItem(**updated))
+
+
+@app.delete("/amenity-reservations/{reservation_id}")
+def delete_reservation_route(reservation_id: str):
+    """Delete an amenity reservation."""
+    if not amenities.delete_reservation(reservation_id):
+        raise HTTPException(
+            status_code=404, detail=f"Reservation '{reservation_id}' not found."
+        )
+    return {"status": "deleted", "reservation_id": reservation_id}
+
+
+@app.get("/tenants/{tenant_id}/amenity-reservations", response_model=ReservationListResponse)
+def list_tenant_reservations_route(tenant_id: str):
+    """List all amenity reservations for a specific tenant."""
+    if not db_utils.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    items = amenities.list_reservations(tenant_id=tenant_id)
+    return ReservationListResponse(
+        items=[ReservationItem(**i) for i in items],
+        total=len(items),
+        limit=len(items),
+        offset=0,
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/create-reservation",
+    response_model=ReservationResponse,
+    status_code=201,
+)
+def session_create_reservation_route(
+    session_id: str,
+    request: SessionCreateReservationRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Book an amenity reservation grounded to the active session's tenant."""
+    tenant = tenant_context.get_session_tenant_context(session_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified tenant profile.",
+        )
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = tenant.get("unit_id")
+    if not resolved_unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tenant '{resolved_tenant_id}' has no assigned unit.",
+        )
+
+    if not amenities.get_amenity(request.amenity_id):
+        raise HTTPException(status_code=404, detail=f"Amenity '{request.amenity_id}' not found.")
+
+    res_id = f"res_{uuid.uuid4().hex[:10]}"
+    try:
+        created = amenities.create_reservation(
+            reservation_id=res_id,
+            amenity_id=request.amenity_id,
+            tenant_id=resolved_tenant_id,
+            unit_id=resolved_unit_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            attendees_count=request.attendees_count,
+            status=request.status,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        err_msg = str(exc)
+        if "already reserved" in err_msg:
+            raise HTTPException(status_code=409, detail=err_msg) from exc
+        raise HTTPException(status_code=422, detail=err_msg) from exc
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "amenity_reservation.created",
+        {
+            "reservation_id": created["id"],
+            "amenity_id": created["amenity_id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "start_time": created["start_time"],
+            "end_time": created["end_time"],
+            "status": created["status"],
+            "total_fee": created["total_fee"],
+        },
+    )
+    return ReservationResponse(reservation=ReservationItem(**created))

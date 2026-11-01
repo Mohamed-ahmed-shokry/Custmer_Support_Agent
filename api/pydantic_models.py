@@ -2822,3 +2822,146 @@ class SessionIntakePackageRequest(BaseModel):
     pickup_pin: str | None = Field(default=None, max_length=packages.PIN_MAX_LENGTH)
     location: str = Field(default="Locker Bay 1", max_length=packages.MAX_LOCATION_LENGTH)
     notes: str = Field(default="", max_length=packages.MAX_NOTES_LENGTH)
+
+
+# ---------------------------------------------------------------------------
+# Community Amenity Reservations & Common Area Bookings Models (v0.43.0)
+# ---------------------------------------------------------------------------
+
+
+class AmenityCategory(StrEnum):
+    CLUBHOUSE = "clubhouse"
+    ROOFTOP = "rooftop"
+    BBQ_PAVILION = "bbq_pavilion"
+    GUEST_SUITE = "guest_suite"
+    FITNESS_STUDIO = "fitness_studio"
+    POOLSIDE_CABANA = "poolside_cabana"
+    CONFERENCE_ROOM = "conference_room"
+    OTHER = "other"
+
+
+class ReservationStatus(StrEnum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+
+
+class AmenityItem(BaseModel):
+    id: str
+    name: str
+    category: str
+    description: str = ""
+    capacity: int = 20
+    hourly_rate: float = 0.0
+    deposit_amount: float = 0.0
+    opening_hour: int = 8
+    closing_hour: int = 22
+    is_active: bool = True
+    rules: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class AmenityCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    category: str = Field(default="clubhouse")
+    description: str = Field(default="", max_length=1000)
+    capacity: int = Field(default=20, gt=0)
+    hourly_rate: float = Field(default=0.0, ge=0.0)
+    deposit_amount: float = Field(default=0.0, ge=0.0)
+    opening_hour: int = Field(default=8, ge=0, le=23)
+    closing_hour: int = Field(default=22, ge=0, le=23)
+    is_active: bool = True
+    rules: str = Field(default="", max_length=2000)
+
+
+class AmenityUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    category: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
+    capacity: int | None = Field(default=None, gt=0)
+    hourly_rate: float | None = Field(default=None, ge=0.0)
+    deposit_amount: float | None = Field(default=None, ge=0.0)
+    opening_hour: int | None = Field(default=None, ge=0, le=23)
+    closing_hour: int | None = Field(default=None, ge=0, le=23)
+    is_active: bool | None = None
+    rules: str | None = Field(default=None, max_length=2000)
+
+
+class AmenityResponse(BaseModel):
+    amenity: AmenityItem
+
+
+class AmenityListResponse(BaseModel):
+    items: list[AmenityItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 100
+    offset: int = 0
+
+
+class ReservationItem(BaseModel):
+    id: str
+    amenity_id: str
+    tenant_id: str
+    unit_id: str
+    start_time: str
+    end_time: str
+    attendees_count: int = 1
+    status: str = "confirmed"
+    total_fee: float = 0.0
+    deposit_paid: float = 0.0
+    notes: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+    amenity_name: str | None = None
+    amenity_category: str | None = None
+    amenity_hourly_rate: float | None = None
+
+
+class ReservationCreateRequest(BaseModel):
+    amenity_id: str
+    tenant_id: str
+    unit_id: str
+    start_time: str
+    end_time: str
+    attendees_count: int = Field(default=1, gt=0)
+    status: str = Field(default="confirmed")
+    notes: str = Field(default="", max_length=2000)
+
+
+class ReservationUpdateRequest(BaseModel):
+    status: str | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class ReservationResponse(BaseModel):
+    reservation: ReservationItem
+
+
+class ReservationListResponse(BaseModel):
+    items: list[ReservationItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 100
+    offset: int = 0
+
+
+class AmenityMetricsResponse(BaseModel):
+    active_amenities_count: int = 0
+    total_reservations: int = 0
+    confirmed_count: int = 0
+    pending_count: int = 0
+    cancelled_count: int = 0
+    completed_count: int = 0
+    total_revenue: float = 0.0
+    total_deposits_held: float = 0.0
+    amenity_usage_breakdown: dict[str, int] = Field(default_factory=dict)
+
+
+class SessionCreateReservationRequest(BaseModel):
+    amenity_id: str
+    start_time: str
+    end_time: str
+    attendees_count: int = Field(default=1, gt=0)
+    status: str = Field(default="confirmed")
+    notes: str = Field(default="", max_length=2000)

@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import db_utils, packages, vendors
+from api import amenities, db_utils, packages, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -472,3 +472,57 @@ def test_render_template_with_package_variables():
     assert "Tracking: TBA309481029104" in rendered
     assert "Locker: Locker Bay 1 - Slot 04" in rendered
     assert "Secure PIN: 482019" in rendered
+
+
+
+
+
+def test_tenant_context_with_amenity_reservations():
+    """Verify amenity reservations prompt context grounding."""
+    amenities.create_amenities_tables()
+    amenities.seed_default_amenities_if_empty()
+
+    context = build_tenant_rag_context(tenant_id="tenant_1")
+    assert "[COMMUNITY AMENITY RESERVATIONS]" in context
+    assert "Grand Community Clubhouse" in context
+    assert "Total Fee: $75.00" in context
+    assert "[END COMMUNITY AMENITY RESERVATIONS]" in context
+
+
+def test_extract_tenant_macro_variables_with_amenities():
+    """Verify amenity macro variables extraction from resident bookings."""
+    amenities.create_amenities_tables()
+    amenities.seed_default_amenities_if_empty()
+
+    sid = "sess-amenity-test"
+    db_utils.insert_application_logs(sid, "When is my reservation?", "Checking bookings", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["active_reservations_count"] == "1"
+    assert variables["amenity_name"] == "Grand Community Clubhouse"
+    assert variables["reservation_status"] == "confirmed"
+    assert variables["reservation_fee"] == "$75.00"
+    assert variables["reservation_deposit"] == "$100.00"
+
+
+def test_render_template_with_amenity_variables():
+    """Verify macro template rendering with amenity reservation variables."""
+    amenities.create_amenities_tables()
+    amenities.seed_default_amenities_if_empty()
+
+    sid = "sess-amenity-render"
+    db_utils.insert_application_logs(sid, "Confirm booking", "Confirming booking", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Hi {customer_name}, your booking for {amenity_name} is {reservation_status}. "
+        "Fee: {reservation_fee}, Deposit: {reservation_deposit}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Hi Sarah Connor" in rendered
+    assert "Grand Community Clubhouse" in rendered
+    assert "confirmed" in rendered
+    assert "$75.00" in rendered
+    assert "$100.00" in rendered

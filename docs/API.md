@@ -666,3 +666,81 @@ End-to-end parcel intake, carrier tracking, secure pickup PIN verification, and 
 - `--compare`: evaluate baseline vector search vs configured enhanced strategy side-by-side.
 - `--json-output <path>`: write structured evaluation metrics and per-case results to JSON.
 
+
+
+
+---
+
+## Community Amenity Reservations & Common Area Bookings (v0.43.0)
+
+Automated community amenity catalog, conflict-free booking reservations, fee calculations, and utilization analytics.
+
+### Endpoints
+
+- `POST /amenities`: Create a new community amenity.
+  - Body:
+    ```json
+    {
+      "name": "Skyline Rooftop Lounge",
+      "category": "rooftop",
+      "description": "Panoramic terrace with fire pits.",
+      "capacity": 30,
+      "hourly_rate": 35.0,
+      "deposit_amount": 150.0,
+      "opening_hour": 10,
+      "closing_hour": 22,
+      "is_active": true,
+      "rules": "No glassware outdoors."
+    }
+    ```
+  - Returns `201` with `AmenityResponse`.
+- `GET /amenities`: List community amenities.
+  - Query parameters: `category`, `is_active`, `limit`, `offset`.
+  - Returns `AmenityListResponse`.
+- `GET /amenities/{amenity_id}`: Retrieve details for a specific amenity (`404` if unknown).
+- `PATCH /amenities/{amenity_id}`: Update amenity settings, rates, capacity, or operating hours.
+- `GET /amenity-reservations/metrics`: Retrieve portfolio amenity booking KPIs and utilization breakdown.
+  - Returns: `active_amenities_count`, `total_reservations`, `confirmed_count`, `pending_count`, `cancelled_count`, `completed_count`, `total_revenue`, `total_deposits_held`, `amenity_usage_breakdown`.
+- `POST /amenity-reservations`: Book a community amenity with conflict validation.
+  - Body:
+    ```json
+    {
+      "amenity_id": "amenity_bbq",
+      "tenant_id": "tenant_1",
+      "unit_id": "unit_101",
+      "start_time": "2026-11-20T17:00:00Z",
+      "end_time": "2026-11-20T20:00:00Z",
+      "attendees_count": 6,
+      "notes": "Birthday cookout"
+    }
+    ```
+  - Overlapping active bookings for the same amenity are strictly rejected with `409 Conflict`.
+  - Calculates fees automatically based on hours and hourly rate.
+  - Returns `201` with `ReservationResponse`; triggers webhook `amenity_reservation.created`.
+- `GET /amenity-reservations`: List and filter bookings (`amenity_id`, `tenant_id`, `status`, `limit`, `offset`).
+- `GET /amenity-reservations/{reservation_id}`: Retrieve details for a reservation.
+- `PATCH /amenity-reservations/{reservation_id}`: Update status (`confirmed`, `cancelled`, `completed`) or notes.
+  - Triggers webhook `amenity_reservation.confirmed` or `amenity_reservation.cancelled`.
+- `DELETE /amenity-reservations/{reservation_id}`: Delete an amenity reservation record.
+- `GET /tenants/{tenant_id}/amenity-reservations`: List all reservations for a resident.
+- `POST /sessions/{session_id}/create-reservation`: Book an amenity directly for the resident linked to active chat session.
+
+### Context Grounding & Prompt Macros
+
+- **RAG Context Grounding**: Active conversational turns automatically ground resident bookings under:
+  ```text
+  [COMMUNITY AMENITY RESERVATIONS]
+  - Total Reservations on Record: 1
+  - Active/Upcoming Bookings: 1
+    - [res_001] Grand Community Clubhouse | Status: CONFIRMED | Time: 2026-11-05T18:00:00Z to 2026-11-05T21:00:00Z | Attendees: 15 | Total Fee: $75.00
+  [END COMMUNITY AMENITY RESERVATIONS]
+  ```
+- **Macro Template Variables**:
+  - `{active_reservations_count}`: Number of active/pending bookings
+  - `{amenity_name}`: Name of primary booked amenity
+  - `{reservation_start}`: Booking start ISO timestamp
+  - `{reservation_end}`: Booking end ISO timestamp
+  - `{reservation_status}`: Reservation status (`confirmed`, `pending`, `cancelled`, or `none`)
+  - `{reservation_fee}`: Formatted fee string (e.g. `$75.00`)
+  - `{reservation_deposit}`: Formatted deposit string (e.g. `$100.00`)
+  - `{reservation_attendees}`: Number of guests/attendees
