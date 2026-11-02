@@ -744,3 +744,116 @@ Automated community amenity catalog, conflict-free booking reservations, fee cal
   - `{reservation_fee}`: Formatted fee string (e.g. `$75.00`)
   - `{reservation_deposit}`: Formatted deposit string (e.g. `$100.00`)
   - `{reservation_attendees}`: Number of guests/attendees
+
+
+## Parking Management, Permit Passes & Vehicle Directory Engine (v0.44.0)
+
+Dedicated infrastructure managing parking stalls, household vehicle permits, visitor passes, infractions, and occupancy KPIs.
+
+### Parking Spots & Stalls
+- `POST /parking/spots`: Create a new parking stall.
+  - Body:
+    ```json
+    {
+      "spot_number": "P-105",
+      "zone": "Garage Level 1",
+      "spot_type": "assigned_resident",
+      "unit_id": "unit_101",
+      "tenant_id": "tenant_1",
+      "status": "assigned",
+      "notes": "Assigned stall"
+    }
+    ```
+  - Returns `201` with `ParkingSpotResponse`.
+- `GET /parking/spots`: List parking stalls with optional filters (`zone`, `spot_type`, `status`, `unit_id`, `tenant_id`, `search`, `limit`, `offset`).
+  - Returns `ParkingSpotListResponse`.
+- `GET /parking/spots/{spot_id}`: Retrieve details for a specific stall (`404` if not found).
+- `PATCH /parking/spots/{spot_id}`: Update stall configuration, status, or reassign/unassign tenants (`clear_unit`, `clear_tenant`).
+
+### Resident Vehicles & Decal Permits
+- `POST /parking/vehicles`: Register a resident household vehicle.
+  - Body:
+    ```json
+    {
+      "tenant_id": "tenant_1",
+      "unit_id": "unit_101",
+      "license_plate": "7XYZ890",
+      "make": "Toyota",
+      "model": "RAV4",
+      "color": "Silver",
+      "year": 2022,
+      "permit_number": "PERM-101A",
+      "notes": "Resident primary vehicle"
+    }
+    ```
+  - Returns `201` with `VehicleResponse`.
+- `GET /parking/vehicles`: List registered resident vehicles with filters (`tenant_id`, `unit_id`, `is_active`, `search`, `limit`, `offset`).
+  - Returns `VehicleListResponse`.
+- `GET /parking/vehicles/{vehicle_id}`: Retrieve details for a registered vehicle.
+- `PATCH /parking/vehicles/{vehicle_id}`: Update vehicle attributes, permit decal, or active status.
+- `DELETE /parking/vehicles/{vehicle_id}`: Deactivate/remove vehicle; triggers webhook `parking_permit.revoked`.
+- `GET /tenants/{tenant_id}/vehicles`: List registered vehicles for a specific resident.
+
+### Visitor Parking Passes
+- `POST /parking/visitor-passes`: Issue a temporary visitor parking permit.
+  - Body:
+    ```json
+    {
+      "unit_id": "unit_101",
+      "tenant_id": "tenant_1",
+      "visitor_name": "Jane Doe",
+      "vehicle_plate": "GUEST123",
+      "start_time": "2026-11-02T12:00:00Z",
+      "end_time": "2026-11-03T12:00:00Z",
+      "notes": "Weekend guest pass"
+    }
+    ```
+  - Automatically generates unique pass code (e.g. `VP-88219`).
+  - Returns `201` with `VisitorPassResponse`; triggers webhook `parking_pass.issued`.
+- `GET /parking/visitor-passes`: List and filter visitor passes (`unit_id`, `tenant_id`, `status`, `limit`, `offset`).
+  - Returns `VisitorPassListResponse`.
+- `GET /parking/visitor-passes/{pass_id}`: Retrieve details for a visitor pass.
+- `PATCH /parking/visitor-passes/{pass_id}`: Update pass status (`active`, `expired`, `revoked`) or expiration notes.
+- `POST /sessions/{session_id}/issue-visitor-pass`: Issue a visitor pass directly grounded to the resident linked to current support session.
+
+### Parking Violations & Towing Infractions
+- `POST /parking/violations`: Record an unauthorized parking infraction or towing warning.
+  - Body:
+    ```json
+    {
+      "license_plate": "BADPARK1",
+      "violation_type": "unauthorized_spot",
+      "spot_id": "spot_101",
+      "fine_amount": 50.0,
+      "notes": "Parked in reserved stall without permit"
+    }
+    ```
+  - Returns `201` with `ParkingViolationResponse`; triggers webhook `parking_violation.logged`.
+- `GET /parking/violations`: List logged infractions with filters (`spot_id`, `status`, `violation_type`, `search`, `limit`, `offset`).
+  - Returns `ParkingViolationListResponse`.
+- `GET /parking/violations/{violation_id}`: Retrieve details for an infraction.
+- `PATCH /parking/violations/{violation_id}`: Update violation status (`issued`, `paid`, `warning`, `towed`, `dismissed`).
+- `GET /parking/metrics`: Retrieve portfolio parking KPIs (`total_spots`, `occupied_spots`, `vacant_spots`, `assigned_resident_spots`, `visitor_spots`, `ev_spots`, `handicap_spots`, `occupancy_rate_pct`, `total_registered_vehicles`, `active_visitor_passes`, `total_violations`, `outstanding_fines`, `towed_vehicles_count`).
+
+### Context Grounding & Prompt Macros
+- **RAG Context Grounding**: Conversational prompt turns automatically ground resident parking stalls, vehicles, and active passes under:
+  ```text
+  [RESIDENT VEHICLES & PARKING PASSES]
+  - Assigned Parking Spot(s): P-12
+    - Spot P-12: Zone Garage Level 1 | Status: ASSIGNED
+  - Registered Household Vehicles: 1
+    - [7XYZ890] Silver Toyota RAV4 | Permit Decal: PERM-101A
+  - Active Visitor Passes: 1
+    - [VP-88219] Jane Doe (Plate: GUEST123) | Valid until: 2026-11-03T12:00:00Z
+  [END RESIDENT VEHICLES & PARKING PASSES]
+  ```
+- **Macro Template Variables**:
+  - `{assigned_parking_spot}`: Primary assigned parking space (e.g. `P-12`)
+  - `{parking_spot}`: Parking spot alias for backward compatibility
+  - `{parking_zone}`: Parking zone / garage level
+  - `{vehicle_plate}`: Primary registered vehicle license plate
+  - `{vehicle_make_model}`: Registered vehicle make and model
+  - `{permit_number}`: Resident parking permit decal code
+  - `{registered_vehicles_count}`: Number of active vehicles registered to household
+  - `{active_visitor_pass}`: `"true"` if active pass exists, otherwise `"false"`
+  - `{visitor_pass_code}`: Pass code of active visitor permit (or `""`)
