@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import amenities, db_utils, packages, vendors
+from api import amenities, db_utils, packages, parking, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -33,6 +33,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     db_utils.create_inspections()
     vendors.create_vendors()
     packages.init_packages()
+    parking.init_parking_db()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -526,3 +527,100 @@ def test_render_template_with_amenity_variables():
     assert "confirmed" in rendered
     assert "$75.00" in rendered
     assert "$100.00" in rendered
+
+
+
+def test_build_tenant_rag_context_with_parking():
+    """Verify prompt context building includes resident vehicles and parking passes."""
+    parking.register_vehicle(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        license_plate="7XYZ890",
+        make="Toyota",
+        model="RAV4",
+        color="Silver",
+        year=2022,
+        permit_number="PERM-101A",
+    )
+    parking.issue_visitor_pass(
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        visitor_name="Guest Visitor",
+        vehicle_plate="GUEST999",
+        start_time="2026-11-02T10:00:00Z",
+        end_time="2026-11-03T10:00:00Z",
+    )
+
+    rendered = build_tenant_rag_context(tenant_id="tenant_1")
+    assert "[RESIDENT VEHICLES & PARKING PASSES]" in rendered
+    assert "Assigned Parking Spot(s): P-12" in rendered
+    assert "Registered Household Vehicles: 1" in rendered
+    assert "[7XYZ890] Silver Toyota RAV4" in rendered
+    assert "Active Visitor Passes: 1" in rendered
+    assert "Guest Visitor (Plate: GUEST999)" in rendered
+    assert "[END RESIDENT VEHICLES & PARKING PASSES]" in rendered
+
+
+def test_extract_tenant_macro_variables_with_parking():
+    """Verify macro variable extraction for parking and vehicle details."""
+    parking.register_vehicle(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        license_plate="7XYZ890",
+        make="Toyota",
+        model="RAV4",
+        color="Silver",
+        year=2022,
+        permit_number="PERM-101A",
+    )
+    vpass = parking.issue_visitor_pass(
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        visitor_name="Guest Visitor",
+        vehicle_plate="GUEST999",
+        start_time="2026-11-02T10:00:00Z",
+        end_time="2026-11-03T10:00:00Z",
+    )
+
+    sid = "sess-parking-test"
+    db_utils.insert_application_logs(sid, "Where do I park?", "Checking parking spot", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["assigned_parking_spot"] == "P-12"
+    assert variables["parking_spot"] == "P-12"
+    assert variables["parking_zone"] == "Garage Level 1"
+    assert variables["vehicle_plate"] == "7XYZ890"
+    assert variables["vehicle_make_model"] == "Toyota RAV4"
+    assert variables["permit_number"] == "PERM-101A"
+    assert variables["active_visitor_pass"] == "true"
+    assert variables["visitor_pass_code"] == vpass["pass_code"]
+
+
+def test_render_template_with_parking_variables():
+    """Verify macro template rendering with parking and vehicle variables."""
+    parking.register_vehicle(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        license_plate="7XYZ890",
+        make="Toyota",
+        model="RAV4",
+        permit_number="PERM-101A",
+    )
+
+    sid = "sess-parking-render"
+    db_utils.insert_application_logs(sid, "Parking info", "Providing parking info", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Hello {customer_name}, your assigned parking space is "
+        "{assigned_parking_spot} in {parking_zone}. "
+        "Vehicle registered: {vehicle_plate} ({vehicle_make_model}), Permit: {permit_number}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Hello Sarah Connor" in rendered
+    assert "assigned parking space is P-12" in rendered
+    assert "Garage Level 1" in rendered
+    assert "Vehicle registered: 7XYZ890 (Toyota RAV4)" in rendered
+    assert "Permit: PERM-101A" in rendered

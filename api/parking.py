@@ -58,23 +58,33 @@ class ViolationStatus(StrEnum):
 DEFAULT_PARKING_SPOTS: list[dict[str, Any]] = [
     {
         "id": "spot_101",
-        "spot_number": "P-101",
+        "spot_number": "P-12",
         "zone": "Garage Level 1",
         "spot_type": SpotType.ASSIGNED_RESIDENT.value,
         "unit_id": "unit_101",
-        "tenant_id": "tenant_101",
+        "tenant_id": "tenant_1",
         "status": SpotStatus.ASSIGNED.value,
-        "notes": "Assigned to Unit 101 resident",
+        "notes": "Assigned to Unit 101 resident (Sarah Connor)",
     },
     {
         "id": "spot_102",
-        "spot_number": "P-102",
+        "spot_number": "P-24",
+        "zone": "Garage Level 2",
+        "spot_type": SpotType.ASSIGNED_RESIDENT.value,
+        "unit_id": "unit_204",
+        "tenant_id": "tenant_2",
+        "status": SpotStatus.ASSIGNED.value,
+        "notes": "Assigned to Unit 204 resident (Marcus Vance)",
+    },
+    {
+        "id": "spot_103",
+        "spot_number": "P-101",
         "zone": "Garage Level 1",
         "spot_type": SpotType.ASSIGNED_RESIDENT.value,
-        "unit_id": "unit_102",
-        "tenant_id": "tenant_102",
-        "status": SpotStatus.ASSIGNED.value,
-        "notes": "Assigned to Unit 102 resident",
+        "unit_id": None,
+        "tenant_id": None,
+        "status": SpotStatus.VACANT.value,
+        "notes": "Unassigned resident stall",
     },
     {
         "id": "spot_ev_1",
@@ -381,6 +391,27 @@ def list_parking_spots(  # noqa: PLR0913, PLR0917
         params.extend([limit, offset])
 
         cursor.execute(query, params)
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_tenant_parking_spots(tenant_id: str) -> list[dict[str, Any]]:
+    """Retrieve all parking stalls assigned directly to tenant or their leased unit."""
+    init_parking_db()
+    conn = db_utils.get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT * FROM parking_spots
+            WHERE tenant_id = ? OR unit_id IN (
+                SELECT unit_id FROM tenants WHERE id = ?
+            )
+            ORDER BY spot_number ASC
+            """,
+            (tenant_id, tenant_id),
+        )
         return [dict(r) for r in cursor.fetchall()]
     finally:
         conn.close()
