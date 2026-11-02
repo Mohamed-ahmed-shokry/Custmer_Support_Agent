@@ -2875,3 +2875,161 @@ def test_amenity_and_reservation_api_helpers():
     fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=res_payload)
     assert api_utils.session_create_reservation_api("sess_1", {"amenity_id": "am_1"}) == res_payload
     assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/create-reservation")
+
+
+def test_parking_spots_and_vehicles_api_utils(monkeypatch):
+    """Verify spots and vehicles API client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    # 1. create_parking_spot_api
+    spot_payload = {"spot": {"id": "spot_1", "spot_number": "P-101", "zone": "Garage"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=spot_payload)
+    assert api_utils.create_parking_spot_api({"spot_number": "P-101"}) == spot_payload
+    m, u, _ = fake_requests.calls[-1]
+    assert m == "post"
+    assert u.endswith("/parking/spots")
+
+    # 2. list_parking_spots_api
+    list_spots_payload = {"items": [spot_payload["spot"]], "total": 1, "limit": 100, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_spots_payload)
+    assert api_utils.list_parking_spots_api(zone="Garage", status="vacant") == list_spots_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/spots")
+    assert fake_requests.calls[-1][2]["params"]["zone"] == "Garage"
+
+    # 3. get_parking_spot_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=spot_payload)
+    assert api_utils.get_parking_spot_api("spot_1") == spot_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/spots/spot_1")
+
+    # 4. update_parking_spot_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=spot_payload)
+    assert api_utils.update_parking_spot_api("spot_1", {"status": "assigned"}) == spot_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/spots/spot_1")
+
+    # 5. register_vehicle_api
+    veh_payload = {"vehicle": {"id": "veh_1", "license_plate": "7ABC123"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=veh_payload)
+    assert api_utils.register_vehicle_api({"license_plate": "7ABC123"}) == veh_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/vehicles")
+
+    # 6. list_vehicles_api
+    list_vehs_payload = {"items": [veh_payload["vehicle"]], "total": 1, "limit": 100, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_vehs_payload)
+    assert api_utils.list_vehicles_api(tenant_id="tenant_1", is_active=True) == list_vehs_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/vehicles")
+
+    # 7. get_vehicle_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=veh_payload)
+    assert api_utils.get_vehicle_api("veh_1") == veh_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/vehicles/veh_1")
+
+    # 8. update_vehicle_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=veh_payload)
+    assert api_utils.update_vehicle_api("veh_1", {"color": "Blue"}) == veh_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/vehicles/veh_1")
+
+    # 9. delete_vehicle_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_vehicle_api("veh_1") is True
+    assert fake_requests.calls[-1][1].endswith("/parking/vehicles/veh_1")
+
+    # 10. list_tenant_vehicles_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_vehs_payload)
+    assert api_utils.list_tenant_vehicles_api("tenant_1") == list_vehs_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/tenant_1/vehicles")
+
+
+def test_parking_passes_and_violations_api_utils(monkeypatch):
+    """Verify visitor passes, violations, and metrics API client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    # 1. issue_visitor_pass_api
+    pass_payload = {"visitor_pass": {"id": "vp_1", "pass_code": "VP-999"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pass_payload)
+    assert api_utils.issue_visitor_pass_api({"visitor_name": "Alice"}) == pass_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/visitor-passes")
+
+    # 2. list_visitor_passes_api
+    list_passes_payload = {
+        "items": [pass_payload["visitor_pass"]],
+        "total": 1,
+        "limit": 100,
+        "offset": 0,
+    }
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_passes_payload
+    )
+    res = api_utils.list_visitor_passes_api(unit_id="unit_101", status="active")
+    assert res == list_passes_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/visitor-passes")
+
+    # 3. get_visitor_pass_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pass_payload)
+    assert api_utils.get_visitor_pass_api("vp_1") == pass_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/visitor-passes/vp_1")
+
+    # 4. update_visitor_pass_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pass_payload)
+    assert api_utils.update_visitor_pass_api("vp_1", {"status": "expired"}) == pass_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/visitor-passes/vp_1")
+
+    # 5. session_issue_visitor_pass_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pass_payload)
+    call_res = api_utils.session_issue_visitor_pass_api("sess_1", {"visitor_name": "Bob"})
+    assert call_res == pass_payload
+    assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/issue-visitor-pass")
+
+    # 6. record_parking_violation_api
+    viol_payload = {"violation": {"id": "viol_1", "license_plate": "BAD123"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=viol_payload)
+    assert api_utils.record_parking_violation_api({"license_plate": "BAD123"}) == viol_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/violations")
+
+    # 7. list_parking_violations_api
+    list_viols_payload = {
+        "items": [viol_payload["violation"]],
+        "total": 1,
+        "limit": 100,
+        "offset": 0,
+    }
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_viols_payload)
+    assert api_utils.list_parking_violations_api(status="issued") == list_viols_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/violations")
+
+    # 8. get_parking_violation_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=viol_payload)
+    assert api_utils.get_parking_violation_api("viol_1") == viol_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/violations/viol_1")
+
+    # 9. update_parking_violation_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=viol_payload)
+    assert api_utils.update_parking_violation_api("viol_1", {"status": "paid"}) == viol_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/violations/viol_1")
+
+    # 10. get_parking_metrics_api
+    metrics_payload = {"total_spots": 20, "occupancy_rate_pct": 80.0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=metrics_payload)
+    assert api_utils.get_parking_metrics_api() == metrics_payload
+    assert fake_requests.calls[-1][1].endswith("/parking/metrics")
+
+
+def test_parking_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in parking helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.create_parking_spot_api({"spot_number": "P-FAIL"}) is None
+    assert api_utils.list_parking_spots_api() is None
+    assert api_utils.get_parking_spot_api("spot_x") is None
+    assert api_utils.register_vehicle_api({}) is None
+    assert api_utils.issue_visitor_pass_api({}) is None
+    assert api_utils.delete_vehicle_api("veh_x") is False
