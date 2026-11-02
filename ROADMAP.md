@@ -1676,7 +1676,7 @@ Via the API and Streamlit UI, property managers can:
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.43.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
-## v0.44.0 plan — Parking Management, Permit Passes & Vehicle Directory Engine (IN PROGRESS)
+## v0.44.0 plan — Parking Management, Permit Passes & Vehicle Directory Engine ✅ COMPLETED
 
 Give property managers, leasing staff, and residents an automated parking spot directory, resident vehicle registration, visitor parking pass generator, and violation tracking engine. Operators define parking stalls and garages (assigned resident spots, visitor parking, EV charging stations, handicap stalls) with zone allocations, unit assignments, and operational status. Residents register household vehicles with license plate, make, model, color, and permit decal numbers. Staff issue digital visitor parking passes with custom validity windows and security passcodes. Parking violations (unauthorized parking, expired visitor passes, blocking stalls) are recorded with fine tracking and dispute statuses. Active resident chat conversations automatically ground assigned spots, vehicle permits, and active visitor passes into prompt context (`[RESIDENT VEHICLES & PARKING PASSES]`) and resolve canned response macros (`{assigned_parking_spot}`, `{vehicle_plate}`, `{vehicle_make_model}`, `{permit_number}`, `{active_visitor_pass}`, `{visitor_pass_code}`, `{visitor_pass_expires}`). Webhook events (`parking_pass.issued`, `parking_violation.logged`, `parking_permit.revoked`) alert staff and gate operations in real time.
 
