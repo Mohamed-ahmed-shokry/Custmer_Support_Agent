@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import sqlite3
 import tempfile
 import time
 import uuid
@@ -24,6 +25,7 @@ from api import (
     macro_suggestions,
     macros,
     packages,
+    parking,
     sla,
     tenant_context,
     vendors,
@@ -224,6 +226,17 @@ from api.pydantic_models import (
     PackagePickupRequest,
     PackageResponse,
     PackageUpdateRequest,
+    ParkingMetricsResponse,
+    ParkingSpotCreateRequest,
+    ParkingSpotItem,
+    ParkingSpotListResponse,
+    ParkingSpotResponse,
+    ParkingSpotUpdateRequest,
+    ParkingViolationCreateRequest,
+    ParkingViolationItem,
+    ParkingViolationListResponse,
+    ParkingViolationResponse,
+    ParkingViolationUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -246,6 +259,7 @@ from api.pydantic_models import (
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
+    SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
     SessionSearchResponse,
     SessionSearchResult,
@@ -286,6 +300,11 @@ from api.pydantic_models import (
     UnitUpdateRequest,
     UpdateSessionRequest,
     UploadDocumentResponse,
+    VehicleItem,
+    VehicleListResponse,
+    VehicleRegisterRequest,
+    VehicleResponse,
+    VehicleUpdateRequest,
     VendorCreateRequest,
     VendorDispatchCompleteRequest,
     VendorDispatchItem,
@@ -297,6 +316,11 @@ from api.pydantic_models import (
     VendorMetricsResponse,
     VendorResponse,
     VendorUpdateRequest,
+    VisitorPassCreateRequest,
+    VisitorPassItem,
+    VisitorPassListResponse,
+    VisitorPassResponse,
+    VisitorPassUpdateRequest,
     WebhookCreateRequest,
     WebhookDeliveryLogItem,
     WebhookDeliveryLogsResponse,
@@ -4919,3 +4943,429 @@ def session_create_reservation_route(
         },
     )
     return ReservationResponse(reservation=ReservationItem(**created))
+
+
+# ---------------------------------------------------------------------------
+# Parking Management, Permit Passes & Vehicle Directory (v0.44.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/parking/metrics", response_model=ParkingMetricsResponse)
+def get_parking_metrics_route():
+    """Retrieve summary metrics and occupancy statistics for property parking."""
+    return ParkingMetricsResponse(**parking.get_parking_summary_metrics())
+
+
+@app.post("/parking/spots", response_model=ParkingSpotResponse, status_code=201)
+def create_parking_spot_route(request: ParkingSpotCreateRequest):
+    """Create a new parking stall."""
+    try:
+        created = parking.create_parking_spot(
+            spot_number=request.spot_number,
+            zone=request.zone,
+            spot_type=request.spot_type,
+            unit_id=request.unit_id,
+            tenant_id=request.tenant_id,
+            status=request.status,
+            notes=request.notes,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Parking spot '{request.spot_number}' already exists.",
+        ) from exc
+    return ParkingSpotResponse(spot=ParkingSpotItem(**created))
+
+
+@app.get("/parking/spots", response_model=ParkingSpotListResponse)
+def list_parking_spots_route(  # noqa: PLR0913, PLR0917
+    zone: str | None = None,
+    spot_type: str | None = None,
+    status: str | None = None,
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List parking spots with zone, type, unit, tenant, and status filters."""
+    items = parking.list_parking_spots(
+        zone=zone,
+        spot_type=spot_type,
+        status=status,
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return ParkingSpotListResponse(
+        items=[ParkingSpotItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/parking/spots/{spot_id}", response_model=ParkingSpotResponse)
+def get_parking_spot_route(spot_id: str):
+    """Retrieve details for a specific parking stall."""
+    spot = parking.get_parking_spot(spot_id)
+    if not spot:
+        raise HTTPException(status_code=404, detail=f"Parking spot '{spot_id}' not found.")
+    return ParkingSpotResponse(spot=ParkingSpotItem(**spot))
+
+
+@app.patch("/parking/spots/{spot_id}", response_model=ParkingSpotResponse)
+def update_parking_spot_route(spot_id: str, request: ParkingSpotUpdateRequest):
+    """Update details or assignment status for an existing parking stall."""
+    updated = parking.update_parking_spot(
+        spot_id=spot_id,
+        spot_number=request.spot_number,
+        zone=request.zone,
+        spot_type=request.spot_type,
+        unit_id=request.unit_id,
+        tenant_id=request.tenant_id,
+        status=request.status,
+        notes=request.notes,
+        clear_unit=request.clear_unit,
+        clear_tenant=request.clear_tenant,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Parking spot '{spot_id}' not found.")
+    return ParkingSpotResponse(spot=ParkingSpotItem(**updated))
+
+
+@app.post("/parking/vehicles", response_model=VehicleResponse, status_code=201)
+def register_vehicle_route(request: VehicleRegisterRequest):
+    """Register a new resident vehicle."""
+    if not db_utils.get_tenant(request.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{request.tenant_id}' not found.")
+    try:
+        created = parking.register_vehicle(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            license_plate=request.license_plate,
+            make=request.make,
+            model=request.model,
+            state_province=request.state_province,
+            color=request.color,
+            year=request.year,
+            permit_number=request.permit_number,
+            notes=request.notes,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Vehicle or permit decal '{request.permit_number}' already registered.",
+        ) from exc
+    return VehicleResponse(vehicle=VehicleItem(**created))
+
+
+@app.get("/parking/vehicles", response_model=VehicleListResponse)
+def list_vehicles_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    license_plate: str | None = None,
+    is_active: bool | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List registered resident vehicles with filters."""
+    items = parking.list_vehicles(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        license_plate=license_plate,
+        is_active=is_active,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return VehicleListResponse(
+        items=[VehicleItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/parking/vehicles/{vehicle_id}", response_model=VehicleResponse)
+def get_vehicle_route(vehicle_id: str):
+    """Retrieve details for a registered vehicle."""
+    veh = parking.get_vehicle(vehicle_id)
+    if not veh:
+        raise HTTPException(status_code=404, detail=f"Vehicle '{vehicle_id}' not found.")
+    return VehicleResponse(vehicle=VehicleItem(**veh))
+
+
+@app.patch("/parking/vehicles/{vehicle_id}", response_model=VehicleResponse)
+def update_vehicle_route(vehicle_id: str, request: VehicleUpdateRequest):
+    """Update details or active status for a registered vehicle."""
+    updated = parking.update_vehicle(
+        vehicle_id=vehicle_id,
+        make=request.make,
+        model=request.model,
+        color=request.color,
+        year=request.year,
+        permit_number=request.permit_number,
+        is_active=request.is_active,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Vehicle '{vehicle_id}' not found.")
+    return VehicleResponse(vehicle=VehicleItem(**updated))
+
+
+@app.delete("/parking/vehicles/{vehicle_id}")
+def delete_vehicle_route(vehicle_id: str):
+    """Remove a resident vehicle registration."""
+    if not parking.delete_vehicle(vehicle_id):
+        raise HTTPException(status_code=404, detail=f"Vehicle '{vehicle_id}' not found.")
+    return {"status": "deleted", "vehicle_id": vehicle_id}
+
+
+@app.get("/tenants/{tenant_id}/vehicles", response_model=VehicleListResponse)
+def list_tenant_vehicles_route(tenant_id: str):
+    """List all registered vehicles for a specific tenant."""
+    if not db_utils.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    items = parking.list_vehicles(tenant_id=tenant_id)
+    return VehicleListResponse(
+        items=[VehicleItem(**i) for i in items],
+        total=len(items),
+        limit=len(items),
+        offset=0,
+    )
+
+
+@app.post("/parking/visitor-passes", response_model=VisitorPassResponse, status_code=201)
+def issue_visitor_pass_route(
+    request: VisitorPassCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a digital visitor parking pass."""
+    if not db_utils.get_tenant(request.tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{request.tenant_id}' not found.")
+    created = parking.issue_visitor_pass(
+        unit_id=request.unit_id,
+        tenant_id=request.tenant_id,
+        visitor_name=request.visitor_name,
+        vehicle_plate=request.vehicle_plate,
+        start_time=request.start_time,
+        end_time=request.end_time,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "parking_pass.issued",
+        {
+            "pass_id": created["id"],
+            "unit_id": created["unit_id"],
+            "tenant_id": created["tenant_id"],
+            "visitor_name": created["visitor_name"],
+            "vehicle_plate": created["vehicle_plate"],
+            "pass_code": created["pass_code"],
+            "start_time": created["start_time"],
+            "end_time": created["end_time"],
+        },
+    )
+    return VisitorPassResponse(pass_info=VisitorPassItem(**created))
+
+
+@app.get("/parking/visitor-passes", response_model=VisitorPassListResponse)
+def list_visitor_passes_route(  # noqa: PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    vehicle_plate: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List visitor parking passes."""
+    items = parking.list_visitor_passes(
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        status=status,
+        vehicle_plate=vehicle_plate,
+        limit=limit,
+        offset=offset,
+    )
+    return VisitorPassListResponse(
+        items=[VisitorPassItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/parking/visitor-passes/{pass_id}", response_model=VisitorPassResponse)
+def get_visitor_pass_route(pass_id: str):
+    """Retrieve details for a visitor parking pass."""
+    p_info = parking.get_visitor_pass(pass_id)
+    if not p_info:
+        raise HTTPException(status_code=404, detail=f"Visitor pass '{pass_id}' not found.")
+    return VisitorPassResponse(pass_info=VisitorPassItem(**p_info))
+
+
+@app.patch("/parking/visitor-passes/{pass_id}", response_model=VisitorPassResponse)
+def update_visitor_pass_route(
+    pass_id: str,
+    request: VisitorPassUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update status or notes for an issued visitor pass."""
+    current = parking.get_visitor_pass(pass_id)
+    if not current:
+        raise HTTPException(status_code=404, detail=f"Visitor pass '{pass_id}' not found.")
+
+    updated = parking.update_visitor_pass(
+        pass_id=pass_id,
+        status=request.status,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Visitor pass '{pass_id}' not found.")
+
+    if request.status == "revoked":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "parking_permit.revoked",
+            {
+                "pass_id": updated["id"],
+                "unit_id": updated["unit_id"],
+                "pass_code": updated["pass_code"],
+                "status": "revoked",
+            },
+        )
+    return VisitorPassResponse(pass_info=VisitorPassItem(**updated))
+
+
+@app.post(
+    "/sessions/{session_id}/issue-visitor-pass",
+    response_model=VisitorPassResponse,
+    status_code=201,
+)
+def session_issue_visitor_pass_route(
+    session_id: str,
+    request: SessionIssueVisitorPassRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a visitor pass grounded to the active session's tenant profile."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = tenant.get("unit_id")
+    if not resolved_unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tenant '{resolved_tenant_id}' has no assigned unit.",
+        )
+
+    created = parking.issue_visitor_pass(
+        unit_id=resolved_unit_id,
+        tenant_id=resolved_tenant_id,
+        visitor_name=request.visitor_name,
+        vehicle_plate=request.vehicle_plate,
+        start_time=request.start_time,
+        end_time=request.end_time,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "parking_pass.issued",
+        {
+            "pass_id": created["id"],
+            "unit_id": created["unit_id"],
+            "tenant_id": created["tenant_id"],
+            "visitor_name": created["visitor_name"],
+            "vehicle_plate": created["vehicle_plate"],
+            "pass_code": created["pass_code"],
+            "start_time": created["start_time"],
+            "end_time": created["end_time"],
+        },
+    )
+    return VisitorPassResponse(pass_info=VisitorPassItem(**created))
+
+
+@app.post("/parking/violations", response_model=ParkingViolationResponse, status_code=201)
+def record_parking_violation_route(
+    request: ParkingViolationCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Record a parking violation notice."""
+    created = parking.record_violation(
+        spot_id=request.spot_id,
+        license_plate=request.license_plate,
+        violation_type=request.violation_type,
+        fine_amount=request.fine_amount,
+        status=request.status,
+        vehicle_id=request.vehicle_id,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "parking_violation.logged",
+        {
+            "violation_id": created["id"],
+            "spot_id": created["spot_id"],
+            "license_plate": created["license_plate"],
+            "violation_type": created["violation_type"],
+            "fine_amount": created["fine_amount"],
+            "status": created["status"],
+        },
+    )
+    return ParkingViolationResponse(violation=ParkingViolationItem(**created))
+
+
+@app.get("/parking/violations", response_model=ParkingViolationListResponse)
+def list_parking_violations_route(  # noqa: PLR0913, PLR0917
+    spot_id: str | None = None,
+    license_plate: str | None = None,
+    violation_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List recorded parking violations with filters."""
+    items = parking.list_violations(
+        spot_id=spot_id,
+        license_plate=license_plate,
+        violation_type=violation_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return ParkingViolationListResponse(
+        items=[ParkingViolationItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/parking/violations/{violation_id}", response_model=ParkingViolationResponse)
+def get_parking_violation_route(violation_id: str):
+    """Retrieve details for a specific parking violation."""
+    viol = parking.get_violation(violation_id)
+    if not viol:
+        raise HTTPException(status_code=404, detail=f"Violation '{violation_id}' not found.")
+    return ParkingViolationResponse(violation=ParkingViolationItem(**viol))
+
+
+@app.patch("/parking/violations/{violation_id}", response_model=ParkingViolationResponse)
+def update_parking_violation_route(violation_id: str, request: ParkingViolationUpdateRequest):
+    """Update status or notes for a parking violation."""
+    updated = parking.update_violation(
+        violation_id=violation_id,
+        status=request.status,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Violation '{violation_id}' not found.")
+    return ParkingViolationResponse(violation=ParkingViolationItem(**updated))
