@@ -83,6 +83,17 @@ from api.pydantic_models import (
     PackageResponse,
     PackageStatus,
     PackageUpdateRequest,
+    ParkingMetricsResponse,
+    ParkingSpotCreateRequest,
+    ParkingSpotItem,
+    ParkingSpotListResponse,
+    ParkingSpotResponse,
+    ParkingSpotUpdateRequest,
+    ParkingViolationCreateRequest,
+    ParkingViolationItem,
+    ParkingViolationListResponse,
+    ParkingViolationResponse,
+    ParkingViolationUpdateRequest,
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
@@ -132,6 +143,16 @@ from api.pydantic_models import (
     UnitResponse,
     UnitUpdateRequest,
     UpdateSessionRequest,
+    VehicleItem,
+    VehicleListResponse,
+    VehicleRegisterRequest,
+    VehicleResponse,
+    VehicleUpdateRequest,
+    VisitorPassCreateRequest,
+    VisitorPassItem,
+    VisitorPassListResponse,
+    VisitorPassResponse,
+    VisitorPassUpdateRequest,
     WebhookCreateRequest,
     WebhookDeliveryLogItem,
     WebhookDeliveryLogsResponse,
@@ -2234,3 +2255,142 @@ def test_amenity_and_reservation_models():
     )
     assert metrics.total_reservations == expected_total
     assert metrics.total_revenue == expected_revenue
+
+
+
+def test_parking_models_validation() -> None:
+    """Test validation and serialization of parking and vehicle models."""
+    expected_fine = 60.0
+    expected_total_spots = 20
+    expected_occupancy = 75.0
+
+    # Spot models
+    spot_req = ParkingSpotCreateRequest(
+        spot_number="P-301",
+        zone="Garage Level 3",
+        spot_type="assigned_resident",
+        unit_id="unit_301",
+        status="vacant",
+    )
+    assert spot_req.spot_number == "P-301"
+
+    spot_item = ParkingSpotItem(
+        id="spot_301",
+        spot_number="P-301",
+        zone="Garage Level 3",
+        spot_type="assigned_resident",
+        unit_id="unit_301",
+        status="vacant",
+    )
+    spot_resp = ParkingSpotResponse(spot=spot_item)
+    assert spot_resp.spot.id == "spot_301"
+
+    spot_list = ParkingSpotListResponse(items=[spot_item], total=1)
+    assert len(spot_list.items) == 1
+
+    spot_up = ParkingSpotUpdateRequest(status="maintenance", clear_unit=True)
+    assert spot_up.status == "maintenance"
+    assert spot_up.clear_unit is True
+
+    # Vehicle models
+    veh_req = VehicleRegisterRequest(
+        tenant_id="tenant_101",
+        unit_id="unit_101",
+        license_plate="7ABC123",
+        make="Honda",
+        model="Civic",
+        year=2021,
+    )
+    assert veh_req.license_plate == "7ABC123"
+
+    veh_item = VehicleItem(
+        id="veh_101",
+        tenant_id="tenant_101",
+        unit_id="unit_101",
+        license_plate="7ABC123",
+        state_province="CA",
+        make="Honda",
+        model="Civic",
+        year=2021,
+    )
+    veh_resp = VehicleResponse(vehicle=veh_item)
+    assert veh_resp.vehicle.id == "veh_101"
+
+    veh_list = VehicleListResponse(items=[veh_item], total=1)
+    assert len(veh_list.items) == 1
+
+    veh_up = VehicleUpdateRequest(color="Red", is_active=False)
+    assert veh_up.color == "Red"
+    assert veh_up.is_active is False
+
+    # Visitor pass models
+    pass_req = VisitorPassCreateRequest(
+        unit_id="unit_101",
+        tenant_id="tenant_101",
+        visitor_name="Jane Doe",
+        vehicle_plate="8XYZ987",
+        start_time="2026-11-02T10:00:00Z",
+        end_time="2026-11-03T10:00:00Z",
+    )
+    assert pass_req.visitor_name == "Jane Doe"
+
+    pass_item = VisitorPassItem(
+        id="vpass_101",
+        unit_id="unit_101",
+        tenant_id="tenant_101",
+        visitor_name="Jane Doe",
+        vehicle_plate="8XYZ987",
+        pass_code="VP-99881",
+        start_time="2026-11-02T10:00:00Z",
+        end_time="2026-11-03T10:00:00Z",
+        status="active",
+    )
+    pass_resp = VisitorPassResponse(pass_info=pass_item)
+    assert pass_resp.pass_info.pass_code == "VP-99881"
+
+    pass_list = VisitorPassListResponse(items=[pass_item], total=1)
+    assert len(pass_list.items) == 1
+
+    pass_up = VisitorPassUpdateRequest(status="expired")
+    assert pass_up.status == "expired"
+
+    # Violation models
+    viol_req = ParkingViolationCreateRequest(
+        spot_id="spot_301",
+        license_plate="BADCAR1",
+        violation_type="unauthorized_parking",
+        fine_amount=expected_fine,
+    )
+    assert viol_req.fine_amount == expected_fine
+
+    viol_item = ParkingViolationItem(
+        id="viol_101",
+        spot_id="spot_301",
+        license_plate="BADCAR1",
+        violation_type="unauthorized_parking",
+        fine_amount=expected_fine,
+        status="issued",
+    )
+    viol_resp = ParkingViolationResponse(violation=viol_item)
+    assert viol_resp.violation.id == "viol_101"
+
+    viol_list = ParkingViolationListResponse(items=[viol_item], total=1)
+    assert len(viol_list.items) == 1
+
+    viol_up = ParkingViolationUpdateRequest(status="paid")
+    assert viol_up.status == "paid"
+
+    # Metrics model
+    metrics = ParkingMetricsResponse(
+        total_spots=expected_total_spots,
+        assigned_spots=15,
+        vacant_spots=5,
+        visitor_spots=4,
+        occupancy_rate_pct=expected_occupancy,
+        active_vehicles_count=18,
+        active_visitor_passes=2,
+        open_violations_count=1,
+        total_fines_assessed=expected_fine,
+    )
+    assert metrics.total_spots == expected_total_spots
+    assert metrics.occupancy_rate_pct == expected_occupancy
