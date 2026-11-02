@@ -1676,6 +1676,64 @@ Via the API and Streamlit UI, property managers can:
 - [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.43.0` (`pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
+## v0.44.0 plan — Parking Management, Permit Passes & Vehicle Directory Engine (IN PROGRESS)
+
+Give property managers, leasing staff, and residents an automated parking spot directory, resident vehicle registration, visitor parking pass generator, and violation tracking engine. Operators define parking stalls and garages (assigned resident spots, visitor parking, EV charging stations, handicap stalls) with zone allocations, unit assignments, and operational status. Residents register household vehicles with license plate, make, model, color, and permit decal numbers. Staff issue digital visitor parking passes with custom validity windows and security passcodes. Parking violations (unauthorized parking, expired visitor passes, blocking stalls) are recorded with fine tracking and dispute statuses. Active resident chat conversations automatically ground assigned spots, vehicle permits, and active visitor passes into prompt context (`[RESIDENT VEHICLES & PARKING PASSES]`) and resolve canned response macros (`{assigned_parking_spot}`, `{vehicle_plate}`, `{vehicle_make_model}`, `{permit_number}`, `{active_visitor_pass}`, `{visitor_pass_code}`, `{visitor_pass_expires}`). Webhook events (`parking_pass.issued`, `parking_violation.logged`, `parking_permit.revoked`) alert staff and gate operations in real time.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers can:
+1. Browse and configure parking stalls with zones, stall types, unit assignments, and operational status.
+2. Register and manage resident vehicles with license plate, make, model, and permit decal numbers.
+3. Issue digital visitor parking passes with custom validity windows, vehicle info, and unique pass codes.
+4. Record and manage parking violations with violation categories, fines, vehicle plates, and status updates.
+5. Review parking KPIs: total stalls, assigned stalls, visitor spots, registered vehicles, active visitor passes, and open violations.
+6. Ground active resident chat sessions with parking details and resolve `{parking_*}` and `{vehicle_*}` macro variables dynamically.
+
+### Scope
+- `api/parking.py`:
+  - SQLite tables `parking_spots`, `resident_vehicles`, `visitor_parking_passes`, and `parking_violations` with appropriate indexes.
+  - Helpers: `create_parking_spot`, `get_parking_spot`, `list_parking_spots`, `update_parking_spot`, `register_vehicle`, `get_vehicle`, `list_vehicles`, `update_vehicle`, `delete_vehicle`, `issue_visitor_pass`, `get_visitor_pass`, `list_visitor_passes`, `update_visitor_pass`, `record_violation`, `get_violation`, `list_violations`, `update_violation`, and `get_parking_metrics`.
+- `api/db_utils.py`:
+  - Register webhook events `parking_pass.issued`, `parking_violation.logged`, `parking_permit.revoked`.
+- `api/pydantic_models.py`:
+  - Spot, vehicle, visitor pass, and violation schemas and request/response models.
+- `api/main.py`:
+  - Endpoints: `POST/GET /parking/spots`, `GET/PATCH /parking/spots/{id}`, `POST/GET /parking/vehicles`, `GET/PATCH/DELETE /parking/vehicles/{id}`, `GET /tenants/{id}/vehicles`, `POST/GET /parking/visitor-passes`, `GET/PATCH /parking/visitor-passes/{id}`, `POST /sessions/{id}/issue-visitor-pass`, `POST/GET /parking/violations`, `GET/PATCH /parking/violations/{id}`, `GET /parking/metrics`.
+- `api/tenant_context.py`:
+  - Ground resident vehicles and parking passes under `[RESIDENT VEHICLES & PARKING PASSES]`.
+  - Resolve macro variables `{assigned_parking_spot}`, `{vehicle_plate}`, `{vehicle_make_model}`, `{permit_number}`, `{active_visitor_pass}`, `{visitor_pass_code}`, `{visitor_pass_expires}`.
+- `app/api_utils.py`:
+  - Typed client helpers for parking spots, vehicles, visitor passes, violations, and metrics.
+- `app/sidebar.py`:
+  - Streamlit sidebar expander `🚗 Parking Management & Vehicle Passes` (Spots Directory, Vehicles, Visitor Passes, Violations, Parking KPIs).
+  - Quick visitor pass issuance widget in the active session resident card.
+- Tests:
+  - Unit tests in `tests/test_parking.py`, `tests/test_parking_routes.py`, `tests/test_tenant_context.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`.
+- Docs & Version:
+  - Update `docs/API.md`, `README.md`, `docs/PROGRESS.md`; bump version to `0.44.0` in `pyproject.toml` and `api/settings.py`.
+
+### Acceptance Criteria
+1. SQLite tables `parking_spots`, `resident_vehicles`, `visitor_parking_passes`, and `parking_violations` created idempotently with proper indices and pre-seeded default parking spots.
+2. Vehicle registration enforces unique license plate validation and associates vehicle with tenant and unit.
+3. Visitor parking pass issuance generates unique pass codes and enforces expiration windows.
+4. Parking violations record incident details, license plates, violation types, and fine amounts.
+5. Summary metrics report total spots, occupied spots, registered vehicles, active visitor passes, and pending violations.
+6. Active resident chat prompt context automatically injects `[RESIDENT VEHICLES & PARKING PASSES]` when parking or vehicle records exist.
+7. Canned macro variables `{assigned_parking_spot}`, `{vehicle_plate}`, `{vehicle_make_model}`, `{permit_number}`, `{active_visitor_pass}`, `{visitor_pass_code}`, `{visitor_pass_expires}` resolve accurately.
+8. Streamlit UI renders Spots Directory, Vehicles, Visitor Passes, Violations, Metrics, and Session Quick Pass widget.
+9. 100% CI parity: local pytest (>=80% coverage), ruff clean, mypy clean, secret scan clean, real E2E API run, and remote GitHub Actions CI green.
+
+### Granular Task Breakdown
+- [ ] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.44.0 plan
+- [ ] Task 2: Parking engine database schema & helpers (`api/parking.py`) + tests in `tests/test_parking.py`
+- [ ] Task 3: Pydantic schemas & webhook registration in `api/pydantic_models.py` and `api/db_utils.py` + tests in `tests/test_models.py`
+- [ ] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_parking_routes.py`
+- [ ] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
+- [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [ ] Task 7: Streamlit UI components in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
+- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.44.0` (`pyproject.toml`, `api/settings.py`)
+- [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
