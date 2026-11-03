@@ -304,6 +304,9 @@ VALID_WEBHOOK_EVENTS = {
     "amenity_reservation.created",
     "amenity_reservation.confirmed",
     "amenity_reservation.cancelled",
+    "parking_pass.issued",
+    "parking_violation.logged",
+    "parking_permit.revoked",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

@@ -2965,3 +2965,206 @@ class SessionCreateReservationRequest(BaseModel):
     attendees_count: int = Field(default=1, gt=0)
     status: str = Field(default="confirmed")
     notes: str = Field(default="", max_length=2000)
+
+
+# ---------------------------------------------------------------------------
+# Parking Management & Vehicle Directory Models
+# ---------------------------------------------------------------------------
+
+
+class ParkingSpotItem(BaseModel):
+    id: str
+    spot_number: str
+    zone: str
+    spot_type: str
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    status: str
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ParkingSpotCreateRequest(BaseModel):
+    spot_number: str = Field(..., min_length=1, max_length=50)
+    zone: str = Field(..., min_length=1, max_length=100)
+    spot_type: str = Field(default="assigned_resident")
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    status: str = Field(default="vacant")
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class ParkingSpotUpdateRequest(BaseModel):
+    spot_number: str | None = None
+    zone: str | None = None
+    spot_type: str | None = None
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    status: str | None = None
+    notes: str | None = None
+    clear_unit: bool = False
+    clear_tenant: bool = False
+
+
+class ParkingSpotResponse(BaseModel):
+    spot: ParkingSpotItem
+
+
+class ParkingSpotListResponse(BaseModel):
+    items: list[ParkingSpotItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class VehicleItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    license_plate: str
+    state_province: str
+    make: str
+    model: str
+    color: str | None = None
+    year: int | None = None
+    permit_number: str | None = None
+    is_active: bool = True
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class VehicleRegisterRequest(BaseModel):
+    tenant_id: str
+    unit_id: str
+    license_plate: str = Field(..., min_length=2, max_length=20)
+    state_province: str = Field(default="CA", max_length=10)
+    make: str = Field(..., min_length=1, max_length=50)
+    model: str = Field(..., min_length=1, max_length=50)
+    color: str | None = Field(default=None, max_length=30)
+    year: int | None = None
+    permit_number: str | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class VehicleUpdateRequest(BaseModel):
+    make: str | None = None
+    model: str | None = None
+    color: str | None = None
+    year: int | None = None
+    permit_number: str | None = None
+    is_active: bool | None = None
+    notes: str | None = None
+
+
+class VehicleResponse(BaseModel):
+    vehicle: VehicleItem
+
+
+class VehicleListResponse(BaseModel):
+    items: list[VehicleItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class VisitorPassItem(BaseModel):
+    id: str
+    unit_id: str
+    tenant_id: str
+    visitor_name: str
+    vehicle_plate: str
+    pass_code: str
+    start_time: str
+    end_time: str
+    status: str
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class VisitorPassCreateRequest(BaseModel):
+    unit_id: str
+    tenant_id: str
+    visitor_name: str = Field(..., min_length=1, max_length=100)
+    vehicle_plate: str = Field(..., min_length=2, max_length=20)
+    start_time: str
+    end_time: str
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class VisitorPassUpdateRequest(BaseModel):
+    status: str | None = None
+    notes: str | None = None
+
+
+class VisitorPassResponse(BaseModel):
+    pass_info: VisitorPassItem
+
+
+class VisitorPassListResponse(BaseModel):
+    items: list[VisitorPassItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class SessionIssueVisitorPassRequest(BaseModel):
+    visitor_name: str = Field(..., min_length=1, max_length=100)
+    vehicle_plate: str = Field(..., min_length=2, max_length=20)
+    start_time: str
+    end_time: str
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class ParkingViolationItem(BaseModel):
+    id: str
+    spot_id: str | None = None
+    license_plate: str
+    violation_type: str
+    fine_amount: float = 50.0
+    status: str
+    vehicle_id: str | None = None
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ParkingViolationCreateRequest(BaseModel):
+    spot_id: str | None = None
+    license_plate: str = Field(..., min_length=2, max_length=20)
+    violation_type: str = Field(default="unauthorized_parking")
+    fine_amount: float = Field(default=50.0, ge=0.0)
+    status: str = Field(default="issued")
+    vehicle_id: str | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class ParkingViolationUpdateRequest(BaseModel):
+    status: str | None = None
+    notes: str | None = None
+
+
+class ParkingViolationResponse(BaseModel):
+    violation: ParkingViolationItem
+
+
+class ParkingViolationListResponse(BaseModel):
+    items: list[ParkingViolationItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class ParkingMetricsResponse(BaseModel):
+    total_spots: int = 0
+    assigned_spots: int = 0
+    vacant_spots: int = 0
+    visitor_spots: int = 0
+    ev_charging_spots: int = 0
+    occupancy_rate_pct: float = 0.0
+    active_vehicles_count: int = 0
+    active_visitor_passes: int = 0
+    open_violations_count: int = 0
+    total_fines_assessed: float = 0.0

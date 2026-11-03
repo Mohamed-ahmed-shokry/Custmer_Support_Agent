@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import amenities, packages, vendors
+from api import amenities, packages, parking, vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -412,6 +412,86 @@ def _extract_amenity_vars(reservations: list[dict[str, Any]]) -> dict[str, str]:
         "reservation_attendees": str(primary.get("attendees_count", "0")),
     }
 
+
+def _format_parking_lines(
+    spots: list[dict[str, Any]],
+    vehicles: list[dict[str, Any]],
+    passes: list[dict[str, Any]],
+) -> list[str]:
+    """Format resident vehicles, assigned spots, and visitor passes into prompt context lines."""
+    if not spots and not vehicles and not passes:
+        return []
+
+    lines = ["[RESIDENT VEHICLES & PARKING PASSES]"]
+    if spots:
+        assigned_nums = [s.get("spot_number", "") for s in spots if s.get("spot_number")]
+        joined_spots = ", ".join(assigned_nums) if assigned_nums else "None"
+        lines.append(f"- Assigned Parking Spot(s): {joined_spots}")
+        for s in spots[:3]:
+            spot_num = s.get("spot_number")
+            zone = s.get("zone", "General")
+            status = str(s.get("status", "assigned")).upper()
+            lines.append(f"  - Spot {spot_num}: Zone {zone} | Status: {status}")
+
+    if vehicles:
+        active_vehs = [v for v in vehicles if v.get("is_active")]
+        lines.append(f"- Registered Household Vehicles: {len(active_vehs)}")
+        for v in vehicles[:3]:
+            plate = v.get("license_plate", "N/A")
+            make = v.get("make", "")
+            model = v.get("model", "")
+            color = v.get("color", "")
+            permit = v.get("permit_number", "None")
+            lines.append(f"  - [{plate}] {color} {make} {model} | Permit Decal: {permit}".strip())
+
+    if passes:
+        active_passes = [p for p in passes if p.get("status") == "active"]
+        lines.append(f"- Active Visitor Passes: {len(active_passes)}")
+        for p in passes[:3]:
+            v_name = p.get("visitor_name", "Guest")
+            v_plate = p.get("vehicle_plate", "N/A")
+            code = p.get("pass_code", "")
+            end_t = p.get("end_time", "")
+            lines.append(f"  - [{code}] {v_name} (Plate: {v_plate}) | Valid until: {end_t}")
+
+    lines.append("[END RESIDENT VEHICLES & PARKING PASSES]")
+    return lines
+
+
+def _extract_parking_vars(
+    spots: list[dict[str, Any]],
+    vehicles: list[dict[str, Any]],
+    passes: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Extract macro variables for parking, resident vehicles, and visitor passes."""
+    assigned_spot = str(spots[0].get("spot_number", "")) if spots else ""
+    parking_zone = str(spots[0].get("zone", "")) if spots else ""
+
+    latest_veh = vehicles[0] if vehicles else None
+    veh_plate = str(latest_veh.get("license_plate", "")) if latest_veh else ""
+    veh_make = str(latest_veh.get("make", "")) if latest_veh else ""
+    veh_model = str(latest_veh.get("model", "")) if latest_veh else ""
+    veh_make_model = f"{veh_make} {veh_model}".strip() if latest_veh else ""
+    permit_num = str(latest_veh.get("permit_number", "")) if latest_veh else ""
+
+    active_passes = [p for p in passes if p.get("status") == "active"]
+    latest_pass = active_passes[0] if active_passes else (passes[0] if passes else None)
+    vpass_code = str(latest_pass.get("pass_code", "")) if latest_pass else ""
+    vpass_expires = str(latest_pass.get("end_time", "")) if latest_pass else ""
+    active_vpass = "true" if active_passes else "false"
+
+    return {
+        "assigned_parking_spot": assigned_spot,
+        "parking_spot": assigned_spot,
+        "parking_zone": parking_zone,
+        "vehicle_plate": veh_plate,
+        "vehicle_make_model": veh_make_model,
+        "permit_number": permit_num,
+        "active_visitor_pass": active_vpass,
+        "visitor_pass_code": vpass_code,
+        "visitor_pass_expires": vpass_expires,
+    }
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -422,6 +502,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     include_inspections: bool = True,
     include_packages: bool = True,
     include_amenities: bool = True,
+    include_parking: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -457,6 +538,19 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     if include_amenities and resolved_tenant_id:
         amenity_reservations = amenities.list_reservations(tenant_id=resolved_tenant_id)
 
+    parking_spots: list[dict[str, Any]] = []
+    resident_vehicles: list[dict[str, Any]] = []
+    visitor_passes: list[dict[str, Any]] = []
+    if include_parking:
+        if resolved_tenant_id:
+            parking_spots = parking.get_tenant_parking_spots(resolved_tenant_id)
+            resident_vehicles = parking.list_vehicles(tenant_id=resolved_tenant_id)
+            visitor_passes = parking.list_visitor_passes(tenant_id=resolved_tenant_id)
+        elif resolved_unit_id:
+            parking_spots = parking.list_parking_spots(unit_id=resolved_unit_id)
+            resident_vehicles = parking.list_vehicles(unit_id=resolved_unit_id)
+            visitor_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -466,6 +560,9 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         and not inspections
         and not packages_list
         and not amenity_reservations
+        and not parking_spots
+        and not resident_vehicles
+        and not visitor_passes
     ):
         return ""
 
@@ -506,6 +603,11 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(_format_amenity_reservation_lines(amenity_reservations))
+
+    if parking_spots or resident_vehicles or visitor_passes:
+        if lines:
+            lines.append("")
+        lines.extend(_format_parking_lines(parking_spots, resident_vehicles, visitor_passes))
 
     return "\n".join(lines)
 
@@ -728,5 +830,18 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     if resolved_tenant_id:
         amenity_reservations = amenities.list_reservations(tenant_id=resolved_tenant_id)
     variables.update(_extract_amenity_vars(amenity_reservations))
+
+    park_spots: list[dict[str, Any]] = []
+    res_vehs: list[dict[str, Any]] = []
+    v_passes: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        park_spots = parking.get_tenant_parking_spots(resolved_tenant_id)
+        res_vehs = parking.list_vehicles(tenant_id=resolved_tenant_id)
+        v_passes = parking.list_visitor_passes(tenant_id=resolved_tenant_id)
+    elif resolved_unit_id:
+        park_spots = parking.list_parking_spots(unit_id=resolved_unit_id)
+        res_vehs = parking.list_vehicles(unit_id=resolved_unit_id)
+        v_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
+    variables.update(_extract_parking_vars(park_spots, res_vehs, v_passes))
 
     return variables

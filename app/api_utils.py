@@ -3686,3 +3686,348 @@ def session_create_reservation_api(
         "booking session amenity",
         json=payload,
     )
+
+
+def _parking_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute parking management API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Parking Management: Spots API
+# ---------------------------------------------------------------------------
+
+
+def create_parking_spot_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a new parking stall."""
+    return _parking_call(
+        "post",
+        "/parking/spots",
+        HTTP_CREATED,
+        "Failed to create parking spot",
+        "creating parking spot",
+        json=payload,
+    )
+
+
+def list_parking_spots_api(  # noqa: PLR0913, PLR0917
+    zone: str | None = None,
+    spot_type: str | None = None,
+    status: str | None = None,
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    search: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List parking spots with optional filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (
+        ("zone", zone),
+        ("spot_type", spot_type),
+        ("status", status),
+        ("unit_id", unit_id),
+        ("tenant_id", tenant_id),
+        ("search", search),
+    ):
+        if val and val.strip():
+            params[key] = val.strip()
+    return _parking_call(
+        "get",
+        "/parking/spots",
+        HTTP_OK,
+        "Failed to list parking spots",
+        "listing parking spots",
+        params=params,
+    )
+
+
+def get_parking_spot_api(spot_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific parking stall."""
+    return _parking_call(
+        "get",
+        f"/parking/spots/{spot_id}",
+        HTTP_OK,
+        f"Failed to fetch parking spot '{spot_id}'",
+        "fetching parking spot",
+    )
+
+
+def update_parking_spot_api(spot_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update parking stall configuration or assignment."""
+    return _parking_call(
+        "patch",
+        f"/parking/spots/{spot_id}",
+        HTTP_OK,
+        f"Failed to update parking spot '{spot_id}'",
+        "updating parking spot",
+        json=payload,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parking Management: Vehicles API
+# ---------------------------------------------------------------------------
+
+
+def register_vehicle_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Register a resident vehicle with a permit decal."""
+    return _parking_call(
+        "post",
+        "/parking/vehicles",
+        HTTP_CREATED,
+        "Failed to register vehicle",
+        "registering vehicle",
+        json=payload,
+    )
+
+
+def list_vehicles_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    is_active: bool | None = None,
+    search: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List registered resident vehicles."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id and tenant_id.strip():
+        params["tenant_id"] = tenant_id.strip()
+    if unit_id and unit_id.strip():
+        params["unit_id"] = unit_id.strip()
+    if is_active is not None:
+        params["is_active"] = is_active
+    if search and search.strip():
+        params["search"] = search.strip()
+    return _parking_call(
+        "get",
+        "/parking/vehicles",
+        HTTP_OK,
+        "Failed to list vehicles",
+        "listing vehicles",
+        params=params,
+    )
+
+
+def get_vehicle_api(vehicle_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a registered vehicle."""
+    return _parking_call(
+        "get",
+        f"/parking/vehicles/{vehicle_id}",
+        HTTP_OK,
+        f"Failed to fetch vehicle '{vehicle_id}'",
+        "fetching vehicle",
+    )
+
+
+def update_vehicle_api(vehicle_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update vehicle registration, permit decal, or status."""
+    return _parking_call(
+        "patch",
+        f"/parking/vehicles/{vehicle_id}",
+        HTTP_OK,
+        f"Failed to update vehicle '{vehicle_id}'",
+        "updating vehicle",
+        json=payload,
+    )
+
+
+def delete_vehicle_api(vehicle_id: str) -> bool:
+    """Deactivate or remove a resident vehicle."""
+    res = _parking_call(
+        "delete",
+        f"/parking/vehicles/{vehicle_id}",
+        HTTP_OK,
+        f"Failed to delete vehicle '{vehicle_id}'",
+        "deleting vehicle",
+    )
+    return res is not None
+
+
+def list_tenant_vehicles_api(tenant_id: str) -> dict[str, Any] | None:
+    """List registered vehicles for a specific resident."""
+    return _parking_call(
+        "get",
+        f"/tenants/{tenant_id}/vehicles",
+        HTTP_OK,
+        f"Failed to fetch vehicles for tenant '{tenant_id}'",
+        "fetching tenant vehicles",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parking Management: Visitor Passes API
+# ---------------------------------------------------------------------------
+
+
+def issue_visitor_pass_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Issue a temporary visitor parking permit pass."""
+    return _parking_call(
+        "post",
+        "/parking/visitor-passes",
+        HTTP_CREATED,
+        "Failed to issue visitor pass",
+        "issuing visitor pass",
+        json=payload,
+    )
+
+
+def list_visitor_passes_api(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List visitor parking passes."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (("unit_id", unit_id), ("tenant_id", tenant_id), ("status", status)):
+        if val and val.strip():
+            params[key] = val.strip()
+    return _parking_call(
+        "get",
+        "/parking/visitor-passes",
+        HTTP_OK,
+        "Failed to list visitor passes",
+        "listing visitor passes",
+        params=params,
+    )
+
+
+def get_visitor_pass_api(pass_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a visitor parking pass."""
+    return _parking_call(
+        "get",
+        f"/parking/visitor-passes/{pass_id}",
+        HTTP_OK,
+        f"Failed to fetch visitor pass '{pass_id}'",
+        "fetching visitor pass",
+    )
+
+
+def update_visitor_pass_api(pass_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update visitor pass status or expiration notes."""
+    return _parking_call(
+        "patch",
+        f"/parking/visitor-passes/{pass_id}",
+        HTTP_OK,
+        f"Failed to update visitor pass '{pass_id}'",
+        "updating visitor pass",
+        json=payload,
+    )
+
+
+def session_issue_visitor_pass_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Issue a visitor pass grounded to the active support session resident."""
+    return _parking_call(
+        "post",
+        f"/sessions/{session_id}/issue-visitor-pass",
+        HTTP_CREATED,
+        "Failed to issue visitor pass for session",
+        "issuing session visitor pass",
+        json=payload,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parking Management: Violations & Metrics API
+# ---------------------------------------------------------------------------
+
+
+def record_parking_violation_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Log an unauthorized parking infraction or towing notice."""
+    return _parking_call(
+        "post",
+        "/parking/violations",
+        HTTP_CREATED,
+        "Failed to log parking violation",
+        "logging parking violation",
+        json=payload,
+    )
+
+
+def list_parking_violations_api(  # noqa: PLR0913, PLR0917
+    spot_id: str | None = None,
+    status: str | None = None,
+    violation_type: str | None = None,
+    search: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List logged parking violations."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    for key, val in (
+        ("spot_id", spot_id),
+        ("status", status),
+        ("violation_type", violation_type),
+        ("search", search),
+    ):
+        if val and val.strip():
+            params[key] = val.strip()
+    return _parking_call(
+        "get",
+        "/parking/violations",
+        HTTP_OK,
+        "Failed to list parking violations",
+        "listing parking violations",
+        params=params,
+    )
+
+
+def get_parking_violation_api(violation_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a parking infraction."""
+    return _parking_call(
+        "get",
+        f"/parking/violations/{violation_id}",
+        HTTP_OK,
+        f"Failed to fetch parking violation '{violation_id}'",
+        "fetching parking violation",
+    )
+
+
+def update_parking_violation_api(
+    violation_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update violation status or notes."""
+    return _parking_call(
+        "patch",
+        f"/parking/violations/{violation_id}",
+        HTTP_OK,
+        f"Failed to update parking violation '{violation_id}'",
+        "updating parking violation",
+        json=payload,
+    )
+
+
+def get_parking_metrics_api() -> dict[str, Any] | None:
+    """Retrieve parking stall utilization, active permits, and violation KPIs."""
+    return _parking_call(
+        "get",
+        "/parking/metrics",
+        HTTP_OK,
+        "Failed to fetch parking metrics",
+        "fetching parking metrics",
+    )

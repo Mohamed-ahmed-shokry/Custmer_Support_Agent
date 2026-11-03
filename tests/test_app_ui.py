@@ -4006,3 +4006,189 @@ def test_render_session_amenity_widget(monkeypatch):
     assert booked_reservations[0][0] == "sess_99"
     assert booked_reservations[0][1]["amenity_id"] == "am_001"
     assert booked_reservations[0][1]["attendees_count"] == expected_attendees
+
+
+
+def test_render_parking_management_board_ui(monkeypatch):
+    """Test _render_parking_management_board renders all parking views."""
+    st = FakeStreamlit(
+        values={
+            "parking_board_tab_radio": "Spots Directory",
+            "parking_zone_filter": "All",
+            "new_spot_num": "P-201",
+            "new_spot_zone": "Garage Level 2",
+            "new_spot_type": "assigned_resident",
+            "veh_search_input": "7XYZ",
+            "new_veh_tid": "tenant_1",
+            "new_veh_uid": "unit_101",
+            "new_veh_plate": "7XYZ890",
+            "new_veh_make": "Toyota",
+            "new_veh_model": "RAV4",
+            "new_veh_color": "Silver",
+            "new_veh_permit": "PERM-101A",
+            "new_vp_uid": "unit_101",
+            "new_vp_tid": "tenant_1",
+            "new_vp_name": "Alice Guest",
+            "new_vp_plate": "GUEST123",
+            "new_vp_start": "2026-11-02T12:00:00Z",
+            "new_vp_end": "2026-11-03T12:00:00Z",
+            "new_viol_plate": "BADPARK1",
+            "new_viol_type": "unauthorized_spot",
+            "new_viol_fine": 50.0,
+            "new_viol_notes": "Parked in handicap stall",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # Spots mock
+    sample_spots = {
+        "items": [
+            {
+                "id": "spot_101",
+                "spot_number": "P-12",
+                "zone": "Garage Level 1",
+                "spot_type": "assigned_resident",
+                "status": "assigned",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_parking_spots_api", lambda **kwargs: sample_spots)
+    monkeypatch.setattr(
+        sidebar, "create_parking_spot_api", lambda payload: {"spot": {"id": "spot_new"}}
+    )
+
+    # Vehicles mock
+    sample_vehs = {
+        "items": [
+            {
+                "id": "veh_1",
+                "license_plate": "7XYZ890",
+                "make": "Toyota",
+                "model": "RAV4",
+                "color": "Silver",
+                "permit_number": "PERM-101A",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_vehicles_api", lambda **kwargs: sample_vehs)
+    monkeypatch.setattr(
+        sidebar, "register_vehicle_api", lambda payload: {"vehicle": {"id": "veh_new"}}
+    )
+
+    # Passes mock
+    sample_passes = {
+        "items": [
+            {
+                "id": "vp_1",
+                "pass_code": "VP-88219",
+                "visitor_name": "Alice Guest",
+                "vehicle_plate": "GUEST123",
+                "status": "active",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_visitor_passes_api", lambda **kwargs: sample_passes)
+    monkeypatch.setattr(
+        sidebar, "issue_visitor_pass_api", lambda payload: {"visitor_pass": {"id": "vp_new"}}
+    )
+
+    # Violations mock
+    sample_viols = {
+        "items": [
+            {
+                "id": "viol_1",
+                "license_plate": "BADPARK1",
+                "violation_type": "unauthorized_spot",
+                "fine_amount": 50.0,
+                "status": "issued",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_parking_violations_api", lambda **kwargs: sample_viols)
+    monkeypatch.setattr(
+        sidebar,
+        "record_parking_violation_api",
+        lambda payload: {"violation": {"id": "viol_new"}},
+    )
+
+    # Metrics mock
+    sample_metrics = {
+        "total_spots": 20,
+        "occupancy_rate_pct": 75.0,
+        "visitor_spots": 4,
+        "assigned_resident_spots": 12,
+        "active_visitor_passes": 2,
+        "outstanding_fines": 150.0,
+    }
+    monkeypatch.setattr(sidebar, "get_parking_metrics_api", lambda: sample_metrics)
+
+    # 1. Spots Directory view
+    st.values["parking_board_tab_radio"] = "Spots Directory"
+    sidebar._render_parking_management_board()
+
+    # 2. Registered Vehicles view
+    st.values["parking_board_tab_radio"] = "Registered Vehicles"
+    sidebar._render_parking_management_board()
+
+    # 3. Visitor Passes view
+    st.values["parking_board_tab_radio"] = "Visitor Passes"
+    sidebar._render_parking_management_board()
+
+    # 4. Violations & Towing view
+    st.values["parking_board_tab_radio"] = "Violations & Towing"
+    sidebar._render_parking_management_board()
+
+    # 5. Parking KPIs view
+    st.values["parking_board_tab_radio"] = "Parking KPIs"
+    sidebar._render_parking_management_board()
+
+
+def test_render_session_parking_widget(monkeypatch):
+    """Test _render_session_parking_widget 1-click visitor pass issuance."""
+    issued_passes = []
+    st = FakeStreamlit(
+        values={
+            "sess_vp_name_sess_77": "Jane Visitor",
+            "sess_vp_plate_sess_77": "9XYZ123",
+            "sess_vp_dur_sess_77": 48,
+            "sess_vp_notes_sess_77": "Visiting weekend",
+        },
+        buttons={"btn_sess_issue_vp_sess_77": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_vehicles_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "veh_sarah",
+                    "license_plate": "7XYZ890",
+                    "make": "Toyota",
+                    "model": "RAV4",
+                    "color": "Silver",
+                    "permit_number": "PERM-101A",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_issue_visitor_pass_api",
+        lambda sid, payload: issued_passes.append((sid, payload))
+        or {"visitor_pass": {"id": "vp_new", "pass_code": "VP-77777"}},
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_parking_widget("sess_77", tenant)
+
+    expected_count = 1
+    assert len(issued_passes) == expected_count
+    assert issued_passes[0][0] == "sess_77"
+    assert issued_passes[0][1]["visitor_name"] == "Jane Visitor"
+    assert issued_passes[0][1]["vehicle_plate"] == "9XYZ123"

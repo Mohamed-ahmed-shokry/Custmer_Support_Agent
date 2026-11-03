@@ -1,3 +1,4 @@
+import datetime
 from typing import Any
 
 import streamlit as st
@@ -18,6 +19,7 @@ from app.api_utils import (
     create_lease_renewal,
     create_macro,
     create_package_api,
+    create_parking_spot_api,
     create_reservation_api,
     create_session_inspection,
     create_session_lease_renewal,
@@ -66,6 +68,7 @@ from app.api_utils import (
     get_lease_renewal_metrics,
     get_metrics,
     get_package_metrics_api,
+    get_parking_metrics_api,
     get_quota,
     get_session_assignment_history,
     get_session_history,
@@ -82,6 +85,7 @@ from app.api_utils import (
     get_unit_work_orders,
     get_vendor_metrics,
     get_work_order_metrics,
+    issue_visitor_pass_api,
     link_session_tenant,
     list_amenities_api,
     list_billing_transactions,
@@ -96,15 +100,20 @@ from app.api_utils import (
     list_macro_categories,
     list_macros,
     list_packages_api,
+    list_parking_spots_api,
+    list_parking_violations_api,
     list_reservations_api,
     list_sessions,
     list_sla_policies,
     list_support_agents,
     list_tenant_packages_api,
     list_tenant_reservations_api,
+    list_tenant_vehicles_api,
     list_tenants,
     list_units,
+    list_vehicles_api,
     list_vendors,
+    list_visitor_passes_api,
     list_webhook_deliveries,
     list_webhooks,
     list_work_order_dispatches,
@@ -116,8 +125,10 @@ from app.api_utils import (
     publish_lease_renewal_document,
     rechunk_collection,
     rechunk_document,
+    record_parking_violation_api,
     record_session_payment,
     record_tenant_payment,
+    register_vehicle_api,
     rename_collection,
     rename_session,
     render_macro,
@@ -125,6 +136,7 @@ from app.api_utils import (
     search_sessions,
     session_create_reservation_api,
     session_intake_package_api,
+    session_issue_visitor_pass_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
@@ -1079,6 +1091,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_inspection_widget(selected, tenant)
     _render_session_package_intake_widget(selected, tenant)
     _render_session_amenity_widget(selected, tenant)
+    _render_session_parking_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -4207,6 +4220,303 @@ def _render_amenity_reservations_board():
 
 
 
+
+
+# --- Parking Management & Vehicle Directory UI (v0.44.0) ---
+
+
+def _render_session_parking_widget(selected: str, tenant: dict):
+    """Render 1-click visitor parking pass widget for the resident linked to current session."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        vehs_resp = list_tenant_vehicles_api(tenant_id)
+        vehs = vehs_resp.get("items", []) if vehs_resp else []
+        if vehs:
+            st.sidebar.markdown("**🚗 Registered Vehicles:**")
+            for v in vehs[:2]:
+                v_desc = f"{v.get('color')} {v.get('make')} {v.get('model')}".strip()
+                st.sidebar.info(
+                    f"**{v.get('license_plate')}** ({v_desc}):\n"
+                    f"- **Permit Decal:** `{v.get('permit_number') or 'None'}`"
+                )
+
+        with st.sidebar.expander("🚗 Quick Visitor Pass"):
+            v_name = st.text_input(
+                "Visitor Name",
+                placeholder="e.g. John Doe",
+                key=f"sess_vp_name_{selected}",
+            )
+            v_plate = st.text_input(
+                "Vehicle License Plate",
+                placeholder="e.g. 8ABC123",
+                key=f"sess_vp_plate_{selected}",
+            )
+            validity_hours = st.selectbox(
+                "Pass Duration",
+                [24, 48, 72],
+                index=0,
+                key=f"sess_vp_dur_{selected}",
+            )
+            notes_in = st.text_area(
+                "Pass Notes",
+                placeholder="Guest parking notes...",
+                key=f"sess_vp_notes_{selected}",
+            )
+
+            if st.button("🎫 Issue Visitor Pass", key=f"btn_sess_issue_vp_{selected}"):
+                if not v_name.strip() or not v_plate.strip():
+                    st.error("Visitor name and vehicle license plate are required.")
+                else:
+                    now = datetime.datetime.now(datetime.UTC)
+                    end = now + datetime.timedelta(hours=int(validity_hours))
+                    payload = {
+                        "visitor_name": v_name.strip(),
+                        "vehicle_plate": v_plate.strip().upper(),
+                        "start_time": now.isoformat(),
+                        "end_time": end.isoformat(),
+                        "notes": notes_in.strip(),
+                    }
+                    res = session_issue_visitor_pass_api(selected, payload)
+                    if res:
+                        pass_code = res.get("visitor_pass", {}).get("pass_code", "ISSUED")
+                        st.success(f"Visitor pass issued! Pass code: {pass_code}")
+    except Exception as e:
+        st.sidebar.caption(f"Parking widget error: {e}")
+
+
+def _render_parking_spots_tab():
+    """Render parking stalls directory and stall creation form."""
+    st.markdown("##### 🅿️ Parking Spots & Stalls")
+    z_filter = st.selectbox(
+        "Filter Zone",
+        ["All", "Garage Level 1", "Garage Level 2", "North Lot", "Visitor Lot", "Main Entrance"],
+        key="parking_zone_filter",
+    )
+    zone_param = None if z_filter == "All" else z_filter
+    spots_resp = list_parking_spots_api(zone=zone_param, limit=50)
+    items = spots_resp.get("items", []) if spots_resp else []
+    total = spots_resp.get("total", 0) if spots_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** parking spots.")
+    for s in items[:10]:
+        st_val = s.get("status")
+        badge = "🟢" if st_val == "vacant" else "🔵" if st_val == "assigned" else "🟡"
+        st.markdown(
+            f"**{badge} {s.get('spot_number')}** — *{s.get('zone')}* ({s.get('spot_type')}) | "
+            f"Status: `{st_val}`"
+        )
+
+    with st.expander("➕ Add Parking Stall"):
+        s_num = st.text_input("Spot Number", placeholder="e.g. P-105", key="new_spot_num")
+        s_zone = st.text_input("Zone", value="Garage Level 1", key="new_spot_zone")
+        s_type = st.selectbox(
+            "Spot Type",
+            ["assigned_resident", "unassigned_open", "visitor", "handicap", "ev_charging", "staff"],
+            key="new_spot_type",
+        )
+        if st.button("Save Parking Stall", key="btn_save_parking_stall"):
+            if not s_num.strip():
+                st.error("Spot number is required.")
+            else:
+                res = create_parking_spot_api({
+                    "spot_number": s_num.strip().upper(),
+                    "zone": s_zone.strip(),
+                    "spot_type": s_type,
+                })
+                if res:
+                    st.success("Parking spot created!")
+
+
+def _render_registered_vehicles_tab():
+    """Render registered household vehicles and vehicle registration form."""
+    st.markdown("##### 🚗 Registered Household Vehicles")
+    search_q = st.text_input(
+        "Search License Plate / Make", placeholder="e.g. 7XYZ", key="veh_search_input"
+    )
+    search_param = search_q.strip() if search_q.strip() else None
+    vehs_resp = list_vehicles_api(search=search_param, limit=50)
+    items = vehs_resp.get("items", []) if vehs_resp else []
+
+    for v in items[:10]:
+        decal = v.get("permit_number") or "None"
+        st.markdown(
+            f"**[{v.get('license_plate')}]** {v.get('color')} {v.get('make')} {v.get('model')} | "
+            f"Permit: `{decal}`"
+        )
+
+    with st.expander("➕ Register Resident Vehicle"):
+        v_tid = st.text_input("Tenant ID", value="tenant_1", key="new_veh_tid")
+        v_uid = st.text_input("Unit ID", value="unit_101", key="new_veh_uid")
+        v_plate = st.text_input("License Plate", placeholder="e.g. 7ABC123", key="new_veh_plate")
+        v_make = st.text_input("Make", placeholder="e.g. Toyota", key="new_veh_make")
+        v_model = st.text_input("Model", placeholder="e.g. RAV4", key="new_veh_model")
+        v_color = st.text_input("Color", placeholder="e.g. Silver", key="new_veh_color")
+        v_permit = st.text_input(
+            "Permit Decal #", placeholder="e.g. PERM-101B", key="new_veh_permit"
+        )
+
+        if st.button("Register Vehicle", key="btn_register_veh"):
+            if not v_plate.strip():
+                st.error("License plate is required.")
+            else:
+                res = register_vehicle_api({
+                    "tenant_id": v_tid.strip(),
+                    "unit_id": v_uid.strip() if v_uid.strip() else None,
+                    "license_plate": v_plate.strip().upper(),
+                    "make": v_make.strip(),
+                    "model": v_model.strip(),
+                    "color": v_color.strip(),
+                    "permit_number": v_permit.strip() if v_permit.strip() else None,
+                })
+                if res:
+                    st.success("Vehicle registered successfully!")
+
+
+def _render_visitor_passes_tab():
+    """Render visitor passes and issuance form."""
+    st.markdown("##### 🎫 Visitor Parking Passes")
+    passes_resp = list_visitor_passes_api(limit=50)
+    items = passes_resp.get("items", []) if passes_resp else []
+
+    for p in items[:10]:
+        v_plate = p.get("vehicle_plate")
+        st.markdown(
+            f"**[{p.get('pass_code')}]** {p.get('visitor_name')} (Plate: `{v_plate}`) | "
+            f"Status: `{p.get('status')}`"
+        )
+
+    with st.expander("🎫 Issue New Visitor Pass"):
+        vp_uid = st.text_input("Unit ID", value="unit_101", key="new_vp_uid")
+        vp_tid = st.text_input("Tenant ID", value="tenant_1", key="new_vp_tid")
+        vp_name = st.text_input("Visitor Name", placeholder="e.g. Jane Doe", key="new_vp_name")
+        vp_plate = st.text_input("Vehicle Plate", placeholder="e.g. GUEST123", key="new_vp_plate")
+        vp_start = st.text_input(
+            "Start Time (ISO)", value="2026-11-02T12:00:00Z", key="new_vp_start"
+        )
+        vp_end = st.text_input(
+            "End Time (ISO)", value="2026-11-03T12:00:00Z", key="new_vp_end"
+        )
+
+        if st.button("Issue Pass", key="btn_issue_new_vp"):
+            if not vp_name.strip() or not vp_plate.strip():
+                st.error("Visitor name and vehicle plate are required.")
+            else:
+                res = issue_visitor_pass_api({
+                    "unit_id": vp_uid.strip(),
+                    "tenant_id": vp_tid.strip(),
+                    "visitor_name": vp_name.strip(),
+                    "vehicle_plate": vp_plate.strip().upper(),
+                    "start_time": vp_start.strip(),
+                    "end_time": vp_end.strip(),
+                })
+                if res:
+                    st.success("Visitor pass issued!")
+
+
+def _render_parking_violations_tab():
+    """Render logged parking infractions and violation logging form."""
+    st.markdown("##### ⚠️ Parking Violations & Towing")
+    viols_resp = list_parking_violations_api(limit=50)
+    items = viols_resp.get("items", []) if viols_resp else []
+
+    for v in items[:10]:
+        st_v = v.get("status")
+        badge = "🔴" if st_v == "issued" else "🟢" if st_v == "paid" else "⚪"
+        fine = v.get("fine_amount", 0.0)
+        st.markdown(
+            f"**{badge} [{v.get('license_plate')}]** {v.get('violation_type')} | "
+            f"Fine: ${fine:.2f} | Status: `{st_v}`"
+        )
+
+    with st.expander("⚠️ Log Parking Infraction"):
+        viol_plate = st.text_input(
+            "Infringing Plate", placeholder="e.g. BADPARK1", key="new_viol_plate"
+        )
+        viol_type = st.selectbox(
+            "Violation Type",
+            [
+                "unauthorized_spot",
+                "expired_permit",
+                "blocking_fire_lane",
+                "handicap_unauthorized",
+                "no_visitor_pass",
+            ],
+            key="new_viol_type",
+        )
+        viol_fine = st.number_input("Fine Amount ($)", value=50.0, step=10.0, key="new_viol_fine")
+        viol_notes = st.text_area(
+            "Infraction Notes",
+            placeholder="e.g. Parked in assigned stall P-101",
+            key="new_viol_notes",
+        )
+
+        if st.button("Log Violation", key="btn_log_viol"):
+            if not viol_plate.strip():
+                st.error("License plate is required.")
+            else:
+                res = record_parking_violation_api({
+                    "license_plate": viol_plate.strip().upper(),
+                    "violation_type": viol_type,
+                    "fine_amount": float(viol_fine),
+                    "notes": viol_notes.strip(),
+                })
+                if res:
+                    st.success("Violation logged!")
+
+
+def _render_parking_metrics_tab():
+    """Render parking occupancy, permit status, and violation KPIs."""
+    st.markdown("##### 📊 Parking KPIs & Stall Occupancy")
+    metrics = get_parking_metrics_api()
+    if not metrics:
+        st.caption("Parking metrics temporarily unavailable.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Stalls", metrics.get("total_spots", 0))
+        st.metric("Occupancy Rate", f"{metrics.get('occupancy_rate_pct', 0.0):.1f}%")
+        st.metric("Visitor Stalls", metrics.get("visitor_spots", 0))
+    with col2:
+        st.metric("Resident Assigned", metrics.get("assigned_resident_spots", 0))
+        st.metric("Active Visitor Passes", metrics.get("active_visitor_passes", 0))
+        st.metric("Outstanding Fines", f"${metrics.get('outstanding_fines', 0.0):,.2f}")
+
+
+def _render_parking_management_board():
+    """Render parking management expander in sidebar."""
+    with st.sidebar.expander("🚗 Parking Management & Vehicle Passes"):
+        try:
+            views = [
+                "Spots Directory",
+                "Registered Vehicles",
+                "Visitor Passes",
+                "Violations & Towing",
+                "Parking KPIs",
+            ]
+            p_tab = st.radio(
+                "Parking View",
+                views,
+                horizontal=True,
+                key="parking_board_tab_radio",
+            )
+            if p_tab == "Spots Directory":
+                _render_parking_spots_tab()
+            elif p_tab == "Registered Vehicles":
+                _render_registered_vehicles_tab()
+            elif p_tab == "Visitor Passes":
+                _render_visitor_passes_tab()
+            elif p_tab == "Violations & Towing":
+                _render_parking_violations_tab()
+            else:
+                _render_parking_metrics_tab()
+        except Exception as e:
+            st.caption(f"Parking panel temporarily unavailable: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -4237,6 +4547,7 @@ def display_sidebar():
     _render_inspections_board()
     _render_packages_board()
     _render_amenity_reservations_board()
+    _render_parking_management_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
