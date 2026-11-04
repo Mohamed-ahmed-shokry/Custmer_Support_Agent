@@ -26,6 +26,7 @@ from api import (
     macros,
     packages,
     parking,
+    pets,
     sla,
     tenant_context,
     vendors,
@@ -237,6 +238,22 @@ from api.pydantic_models import (
     ParkingViolationListResponse,
     ParkingViolationResponse,
     ParkingViolationUpdateRequest,
+    PetCreateRequest,
+    PetIncidentCreateRequest,
+    PetIncidentItem,
+    PetIncidentListResponse,
+    PetIncidentResponse,
+    PetIncidentUpdateRequest,
+    PetItem,
+    PetListResponse,
+    PetMetricsResponse,
+    PetPolicyCreateRequest,
+    PetPolicyItem,
+    PetPolicyListResponse,
+    PetPolicyResponse,
+    PetPolicyUpdateRequest,
+    PetResponse,
+    PetUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -261,6 +278,7 @@ from api.pydantic_models import (
     SessionIntakePackageRequest,
     SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
+    SessionRegisterPetRequest,
     SessionSearchResponse,
     SessionSearchResult,
     SessionSLAStatusResponse,
@@ -5369,3 +5387,361 @@ def update_parking_violation_route(violation_id: str, request: ParkingViolationU
     if not updated:
         raise HTTPException(status_code=404, detail=f"Violation '{violation_id}' not found.")
     return ParkingViolationResponse(violation=ParkingViolationItem(**updated))
+
+
+# ---------------------------------------------------------------------------
+# Resident Pet Registry & Animal Policies Routes (v0.45.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/pets/metrics", response_model=PetMetricsResponse)
+def get_pet_metrics_route():
+    """Retrieve summary metrics and pet demographics for the community."""
+    return PetMetricsResponse(**pets.get_pet_summary_metrics())
+
+
+@app.post("/pets", response_model=PetResponse, status_code=201)
+def create_resident_pet_route(
+    request: PetCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Register a new pet for a tenant and unit."""
+    created = pets.create_resident_pet(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        name=request.name,
+        pet_type=request.pet_type,
+        breed=request.breed,
+        weight_lbs=request.weight_lbs,
+        color=request.color,
+        age_years=request.age_years,
+        is_service_animal=request.is_service_animal,
+        is_esa=request.is_esa,
+        rabies_tag=request.rabies_tag,
+        vaccination_expires=request.vaccination_expires,
+        license_number=request.license_number,
+        status=request.status,
+        photo_url=request.photo_url,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "pet.registered",
+        {
+            "pet_id": created["id"],
+            "name": created["name"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "pet_type": created["pet_type"],
+            "breed": created.get("breed"),
+            "is_service_animal": created["is_service_animal"],
+            "is_esa": created["is_esa"],
+            "status": created["status"],
+        },
+    )
+    return PetResponse(pet=PetItem(**created))
+
+
+@app.get("/pets", response_model=PetListResponse)
+def list_resident_pets_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    pet_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List resident pets with tenant, unit, type, and status filters."""
+    items = pets.list_resident_pets(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        pet_type=pet_type,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return PetListResponse(
+        items=[PetItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/pets/{pet_id}", response_model=PetResponse)
+def get_resident_pet_route(pet_id: str):
+    """Retrieve details for a specific resident pet."""
+    pet = pets.get_resident_pet(pet_id)
+    if not pet:
+        raise HTTPException(status_code=404, detail=f"Pet '{pet_id}' not found.")
+    return PetResponse(pet=PetItem(**pet))
+
+
+@app.patch("/pets/{pet_id}", response_model=PetResponse)
+def update_resident_pet_route(pet_id: str, request: PetUpdateRequest):
+    """Update profile, vaccinations, or status for a resident pet."""
+    updated = pets.update_resident_pet(
+        pet_id=pet_id,
+        name=request.name,
+        pet_type=request.pet_type,
+        breed=request.breed,
+        weight_lbs=request.weight_lbs,
+        color=request.color,
+        age_years=request.age_years,
+        is_service_animal=request.is_service_animal,
+        is_esa=request.is_esa,
+        rabies_tag=request.rabies_tag,
+        vaccination_expires=request.vaccination_expires,
+        license_number=request.license_number,
+        status=request.status,
+        photo_url=request.photo_url,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Pet '{pet_id}' not found.")
+    return PetResponse(pet=PetItem(**updated))
+
+
+@app.delete("/pets/{pet_id}")
+def delete_resident_pet_route(pet_id: str):
+    """Remove a resident pet registration."""
+    if not pets.delete_resident_pet(pet_id):
+        raise HTTPException(status_code=404, detail=f"Pet '{pet_id}' not found.")
+    return {"status": "deleted", "pet_id": pet_id}
+
+
+@app.get("/tenants/{tenant_id}/pets", response_model=PetListResponse)
+def list_tenant_pets_route(tenant_id: str):
+    """List all registered pets for a specific tenant."""
+    if not db_utils.get_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    items = pets.get_tenant_pets(tenant_id)
+    return PetListResponse(
+        items=[PetItem(**i) for i in items],
+        total=len(items),
+        limit=50,
+        offset=0,
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/register-pet",
+    response_model=PetResponse,
+    status_code=201,
+)
+def session_register_pet_route(
+    session_id: str,
+    request: SessionRegisterPetRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Register a pet grounded to the active session's tenant profile."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = tenant.get("unit_id")
+    if not resolved_unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tenant '{resolved_tenant_id}' has no assigned unit.",
+        )
+
+    created = pets.create_resident_pet(
+        tenant_id=resolved_tenant_id,
+        unit_id=resolved_unit_id,
+        name=request.name,
+        pet_type=request.pet_type,
+        breed=request.breed,
+        weight_lbs=request.weight_lbs,
+        color=request.color,
+        age_years=request.age_years,
+        is_service_animal=request.is_service_animal,
+        is_esa=request.is_esa,
+        rabies_tag=request.rabies_tag,
+        vaccination_expires=request.vaccination_expires,
+        license_number=request.license_number,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "pet.registered",
+        {
+            "pet_id": created["id"],
+            "name": created["name"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "pet_type": created["pet_type"],
+            "is_service_animal": created["is_service_animal"],
+            "is_esa": created["is_esa"],
+        },
+    )
+    return PetResponse(pet=PetItem(**created))
+
+
+@app.post("/pet-policies", response_model=PetPolicyResponse, status_code=201)
+def create_pet_policy_route(
+    request: PetPolicyCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Create community or building animal guidelines and restrictions."""
+    created = pets.create_pet_policy(
+        property_name=request.property_name,
+        building=request.building,
+        pet_type=request.pet_type,
+        max_weight_lbs=request.max_weight_lbs,
+        max_pets_per_unit=request.max_pets_per_unit,
+        monthly_pet_rent=request.monthly_pet_rent,
+        one_time_deposit=request.one_time_deposit,
+        restricted_breeds=request.restricted_breeds,
+        rules_and_restrictions=request.rules_and_restrictions,
+        policy_id=request.id,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "pet_policy.updated",
+        {
+            "policy_id": created["id"],
+            "property_name": created["property_name"],
+            "building": created.get("building"),
+            "monthly_pet_rent": created["monthly_pet_rent"],
+        },
+    )
+    return PetPolicyResponse(policy=PetPolicyItem(**created))
+
+
+@app.get("/pet-policies", response_model=PetPolicyListResponse)
+def list_pet_policies_route(building: str | None = None):
+    """List configured animal policies."""
+    items = pets.list_pet_policies(building=building)
+    return PetPolicyListResponse(
+        items=[PetPolicyItem(**i) for i in items],
+        total=len(items),
+    )
+
+
+@app.get("/pet-policies/{policy_id}", response_model=PetPolicyResponse)
+def get_pet_policy_route(policy_id: str):
+    """Retrieve details for a specific pet policy."""
+    pol = pets.get_pet_policy(policy_id)
+    if not pol:
+        raise HTTPException(status_code=404, detail=f"Pet policy '{policy_id}' not found.")
+    return PetPolicyResponse(policy=PetPolicyItem(**pol))
+
+
+@app.patch("/pet-policies/{policy_id}", response_model=PetPolicyResponse)
+def update_pet_policy_route(
+    policy_id: str,
+    request: PetPolicyUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update terms, weights, fees, or breed bans for a pet policy."""
+    updated = pets.update_pet_policy(
+        policy_id=policy_id,
+        property_name=request.property_name,
+        building=request.building,
+        max_weight_lbs=request.max_weight_lbs,
+        max_pets_per_unit=request.max_pets_per_unit,
+        monthly_pet_rent=request.monthly_pet_rent,
+        one_time_deposit=request.one_time_deposit,
+        restricted_breeds=request.restricted_breeds,
+        rules_and_restrictions=request.rules_and_restrictions,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Pet policy '{policy_id}' not found.")
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "pet_policy.updated",
+        {
+            "policy_id": updated["id"],
+            "property_name": updated["property_name"],
+            "building": updated.get("building"),
+            "monthly_pet_rent": updated["monthly_pet_rent"],
+        },
+    )
+    return PetPolicyResponse(policy=PetPolicyItem(**updated))
+
+
+@app.post("/pet-incidents", response_model=PetIncidentResponse, status_code=201)
+def record_pet_incident_route(
+    request: PetIncidentCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Record an animal complaint or rule violation notice."""
+    created = pets.record_pet_incident(
+        incident_type=request.incident_type,
+        incident_date=request.incident_date,
+        pet_id=request.pet_id,
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        fine_amount=request.fine_amount,
+        status=request.status,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "pet_incident.logged",
+        {
+            "incident_id": created["id"],
+            "pet_id": created.get("pet_id"),
+            "tenant_id": created.get("tenant_id"),
+            "incident_type": created["incident_type"],
+            "fine_amount": created["fine_amount"],
+            "status": created["status"],
+        },
+    )
+    return PetIncidentResponse(incident=PetIncidentItem(**created))
+
+
+@app.get("/pet-incidents", response_model=PetIncidentListResponse)
+def list_pet_incidents_route(  # noqa: PLR0913, PLR0917
+    pet_id: str | None = None,
+    tenant_id: str | None = None,
+    incident_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List recorded pet incidents and violations with filters."""
+    items = pets.list_pet_incidents(
+        pet_id=pet_id,
+        tenant_id=tenant_id,
+        incident_type=incident_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return PetIncidentListResponse(
+        items=[PetIncidentItem(**i) for i in items],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/pet-incidents/{incident_id}", response_model=PetIncidentResponse)
+def get_pet_incident_route(incident_id: str):
+    """Retrieve details for a specific pet incident."""
+    inc = pets.get_pet_incident(incident_id)
+    if not inc:
+        raise HTTPException(status_code=404, detail=f"Pet incident '{incident_id}' not found.")
+    return PetIncidentResponse(incident=PetIncidentItem(**inc))
+
+
+@app.patch("/pet-incidents/{incident_id}", response_model=PetIncidentResponse)
+def update_pet_incident_route(incident_id: str, request: PetIncidentUpdateRequest):
+    """Update status, fine, or notes for a pet incident."""
+    updated = pets.update_pet_incident(
+        incident_id=incident_id,
+        status=request.status,
+        fine_amount=request.fine_amount,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Pet incident '{incident_id}' not found.")
+    return PetIncidentResponse(incident=PetIncidentItem(**updated))

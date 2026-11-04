@@ -427,6 +427,7 @@ def get_tenant_pets(tenant_id: str) -> list[dict[str, Any]]:
 def update_resident_pet(  # noqa: PLR0913, PLR0917
     pet_id: str,
     name: str | None = None,
+    pet_type: str | None = None,
     breed: str | None = None,
     weight_lbs: float | None = None,
     color: str | None = None,
@@ -449,11 +450,16 @@ def update_resident_pet(  # noqa: PLR0913, PLR0917
         if not current:
             return None
 
+        norm_pet_type = pet_type.lower().strip() if pet_type else None
+        if norm_pet_type and norm_pet_type not in [p.value for p in PetType]:
+            norm_pet_type = PetType.OTHER.value
+
         now = datetime.datetime.now(datetime.UTC).isoformat()
         cursor.execute(
             """
             UPDATE resident_pets SET
                 name = COALESCE(?, name),
+                pet_type = COALESCE(?, pet_type),
                 breed = COALESCE(?, breed),
                 weight_lbs = COALESCE(?, weight_lbs),
                 color = COALESCE(?, color),
@@ -471,6 +477,7 @@ def update_resident_pet(  # noqa: PLR0913, PLR0917
             """,
             (
                 name.strip() if name is not None else None,
+                norm_pet_type,
                 breed.strip() if breed is not None else None,
                 float(weight_lbs) if weight_lbs is not None else None,
                 color.strip() if color is not None else None,
