@@ -94,6 +94,22 @@ from api.pydantic_models import (
     ParkingViolationListResponse,
     ParkingViolationResponse,
     ParkingViolationUpdateRequest,
+    PetCreateRequest,
+    PetIncidentCreateRequest,
+    PetIncidentItem,
+    PetIncidentListResponse,
+    PetIncidentResponse,
+    PetIncidentUpdateRequest,
+    PetItem,
+    PetListResponse,
+    PetMetricsResponse,
+    PetPolicyCreateRequest,
+    PetPolicyItem,
+    PetPolicyListResponse,
+    PetPolicyResponse,
+    PetPolicyUpdateRequest,
+    PetResponse,
+    PetUpdateRequest,
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
@@ -108,6 +124,7 @@ from api.pydantic_models import (
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
     SessionMacroSuggestionsResponse,
+    SessionRegisterPetRequest,
     SessionSLAStatusResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -2394,3 +2411,126 @@ def test_parking_models_validation() -> None:
     )
     assert metrics.total_spots == expected_total_spots
     assert metrics.occupancy_rate_pct == expected_occupancy
+
+
+def test_pet_models_validation():
+    """Verify serialization, validation, and defaults for Pet Registry models."""
+    expected_weight = 42.5
+    expected_updated_weight = 44.0
+    expected_age = 4
+    expected_rent = 35.0
+    expected_updated_rent = 40.0
+    expected_deposit = 300.0
+    expected_fine = 50.0
+    expected_active_count = 12
+    expected_restricted_count = 2
+    expected_revenue = 350.0
+
+    # PetCreateRequest and PetItem
+    req = PetCreateRequest(
+        tenant_id="tenant_10",
+        unit_id="unit_302",
+        name="Charlie",
+        pet_type="dog",
+        breed="Beagle",
+        weight_lbs=expected_weight,
+        age_years=expected_age,
+        is_service_animal=False,
+        rabies_tag="RAB-9921",
+        vaccination_expires="2027-01-15",
+    )
+    assert req.name == "Charlie"
+    assert req.weight_lbs == expected_weight
+
+    item = PetItem(
+        id="pet_101",
+        tenant_id="tenant_10",
+        unit_id="unit_302",
+        name="Charlie",
+        pet_type="dog",
+        breed="Beagle",
+        weight_lbs=expected_weight,
+        is_service_animal=False,
+        status="active",
+    )
+    resp = PetResponse(pet=item)
+    assert resp.pet.id == "pet_101"
+
+    pet_list = PetListResponse(items=[item], total=1)
+    assert len(pet_list.items) == 1
+
+    pet_up = PetUpdateRequest(weight_lbs=expected_updated_weight, status="active")
+    assert pet_up.weight_lbs == expected_updated_weight
+
+    # PetPolicy models
+    policy_req = PetPolicyCreateRequest(
+        property_name="Sunset Gardens",
+        pet_type="dog",
+        max_weight_lbs=expected_weight,
+        monthly_pet_rent=expected_rent,
+        one_time_deposit=expected_deposit,
+        restricted_breeds=["Pit Bull", "Rottweiler"],
+    )
+    assert policy_req.monthly_pet_rent == expected_rent
+    assert len(policy_req.restricted_breeds) == expected_restricted_count
+
+    policy_item = PetPolicyItem(
+        id="policy_01",
+        property_name="Sunset Gardens",
+        monthly_pet_rent=expected_rent,
+        one_time_deposit=expected_deposit,
+        restricted_breeds=["Pit Bull"],
+    )
+    policy_resp = PetPolicyResponse(policy=policy_item)
+    assert policy_resp.policy.id == "policy_01"
+
+    policy_list = PetPolicyListResponse(items=[policy_item], total=1)
+    assert len(policy_list.items) == 1
+
+    policy_up = PetPolicyUpdateRequest(monthly_pet_rent=expected_updated_rent)
+    assert policy_up.monthly_pet_rent == expected_updated_rent
+
+    # PetIncident models
+    inc_req = PetIncidentCreateRequest(
+        incident_type="noise_barking",
+        pet_id="pet_101",
+        tenant_id="tenant_10",
+        fine_amount=expected_fine,
+    )
+    assert inc_req.incident_type == "noise_barking"
+
+    inc_item = PetIncidentItem(
+        id="inc_01",
+        incident_type="noise_barking",
+        incident_date="2026-11-01",
+        pet_id="pet_101",
+        fine_amount=expected_fine,
+        status="reported",
+    )
+    inc_resp = PetIncidentResponse(incident=inc_item)
+    assert inc_resp.incident.id == "inc_01"
+
+    inc_list = PetIncidentListResponse(items=[inc_item], total=1)
+    assert len(inc_list.items) == 1
+
+    inc_up = PetIncidentUpdateRequest(status="resolved")
+    assert inc_up.status == "resolved"
+
+    # SessionRegisterPetRequest
+    sess_req = SessionRegisterPetRequest(
+        name="Milo",
+        pet_type="cat",
+        weight_lbs=9.0,
+    )
+    assert sess_req.name == "Milo"
+
+    # PetMetricsResponse
+    metrics = PetMetricsResponse(
+        total_active_pets=expected_active_count,
+        total_dogs=8,
+        total_cats=4,
+        monthly_pet_revenue=expected_revenue,
+    )
+    assert metrics.total_active_pets == expected_active_count
+    assert metrics.monthly_pet_revenue == expected_revenue
+

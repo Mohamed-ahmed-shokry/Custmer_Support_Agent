@@ -3168,3 +3168,196 @@ class ParkingMetricsResponse(BaseModel):
     active_visitor_passes: int = 0
     open_violations_count: int = 0
     total_fines_assessed: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Resident Pet Registry & Animal Policies Models
+# ---------------------------------------------------------------------------
+
+
+class PetItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    name: str
+    pet_type: str = "dog"
+    breed: str | None = None
+    weight_lbs: float = 0.0
+    color: str | None = None
+    age_years: int | None = None
+    is_service_animal: bool = False
+    is_esa: bool = False
+    rabies_tag: str | None = None
+    vaccination_expires: str | None = None
+    license_number: str | None = None
+    status: str = "active"
+    photo_url: str | None = None
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class PetCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=100)
+    pet_type: str = Field(default="dog")
+    breed: str | None = Field(default=None, max_length=100)
+    weight_lbs: float = Field(default=0.0, ge=0.0)
+    color: str | None = Field(default=None, max_length=100)
+    age_years: int | None = Field(default=None, ge=0)
+    is_service_animal: bool = False
+    is_esa: bool = False
+    rabies_tag: str | None = Field(default=None, max_length=100)
+    vaccination_expires: str | None = None
+    license_number: str | None = Field(default=None, max_length=100)
+    status: str = Field(default="active")
+    photo_url: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PetUpdateRequest(BaseModel):
+    name: str | None = None
+    pet_type: str | None = None
+    breed: str | None = None
+    weight_lbs: float | None = None
+    color: str | None = None
+    age_years: int | None = None
+    is_service_animal: bool | None = None
+    is_esa: bool | None = None
+    rabies_tag: str | None = None
+    vaccination_expires: str | None = None
+    license_number: str | None = None
+    status: str | None = None
+    photo_url: str | None = None
+    notes: str | None = None
+
+
+class PetResponse(BaseModel):
+    pet: PetItem
+
+
+class PetListResponse(BaseModel):
+    items: list[PetItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class PetPolicyItem(BaseModel):
+    id: str
+    property_name: str
+    building: str | None = None
+    pet_type: str = "all"
+    max_weight_lbs: float = 65.0
+    max_pets_per_unit: int = 2
+    monthly_pet_rent: float = 35.0
+    one_time_deposit: float = 300.0
+    restricted_breeds: list[str] = Field(default_factory=list)
+    rules_and_restrictions: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class PetPolicyCreateRequest(BaseModel):
+    id: str | None = None
+    property_name: str = Field(default="Grand Community Apartments", max_length=200)
+    building: str | None = Field(default=None, max_length=100)
+    pet_type: str = Field(default="all")
+    max_weight_lbs: float = Field(default=65.0, ge=0.0)
+    max_pets_per_unit: int = Field(default=2, ge=0)
+    monthly_pet_rent: float = Field(default=35.0, ge=0.0)
+    one_time_deposit: float = Field(default=300.0, ge=0.0)
+    restricted_breeds: list[str] = Field(default_factory=list)
+    rules_and_restrictions: str | None = Field(default=None, max_length=2000)
+
+
+class PetPolicyUpdateRequest(BaseModel):
+    property_name: str | None = None
+    building: str | None = None
+    pet_type: str | None = None
+    max_weight_lbs: float | None = None
+    max_pets_per_unit: int | None = None
+    monthly_pet_rent: float | None = None
+    one_time_deposit: float | None = None
+    restricted_breeds: list[str] | None = None
+    rules_and_restrictions: str | None = None
+
+
+class PetPolicyResponse(BaseModel):
+    policy: PetPolicyItem
+
+
+class PetPolicyListResponse(BaseModel):
+    items: list[PetPolicyItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class PetIncidentItem(BaseModel):
+    id: str
+    pet_id: str | None = None
+    tenant_id: str | None = None
+    unit_id: str | None = None
+    incident_type: str
+    incident_date: str
+    fine_amount: float = 50.0
+    status: str = "reported"
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class PetIncidentCreateRequest(BaseModel):
+    incident_type: str = Field(...)
+    incident_date: str | None = None
+    pet_id: str | None = None
+    tenant_id: str | None = None
+    unit_id: str | None = None
+    fine_amount: float = Field(default=50.0, ge=0.0)
+    status: str = Field(default="reported")
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PetIncidentUpdateRequest(BaseModel):
+    status: str | None = None
+    fine_amount: float | None = None
+    notes: str | None = None
+
+
+class PetIncidentResponse(BaseModel):
+    incident: PetIncidentItem
+
+
+class PetIncidentListResponse(BaseModel):
+    items: list[PetIncidentItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class SessionRegisterPetRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    pet_type: str = Field(default="dog")
+    breed: str | None = Field(default=None, max_length=100)
+    weight_lbs: float = Field(default=0.0, ge=0.0)
+    color: str | None = Field(default=None, max_length=100)
+    age_years: int | None = Field(default=None, ge=0)
+    is_service_animal: bool = False
+    is_esa: bool = False
+    rabies_tag: str | None = Field(default=None, max_length=100)
+    vaccination_expires: str | None = None
+    license_number: str | None = Field(default=None, max_length=100)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PetMetricsResponse(BaseModel):
+    total_active_pets: int = 0
+    total_dogs: int = 0
+    total_cats: int = 0
+    total_service_animals: int = 0
+    pending_approvals: int = 0
+    expiring_vaccinations: int = 0
+    active_incidents: int = 0
+    outstanding_fines: float = 0.0
+    monthly_pet_revenue: float = 0.0
+
