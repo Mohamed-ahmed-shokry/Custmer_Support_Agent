@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import amenities, packages, parking, vendors
+from api import amenities, packages, parking, pets, vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -492,6 +492,86 @@ def _extract_parking_vars(
         "visitor_pass_expires": vpass_expires,
     }
 
+
+def _format_pet_lines(
+    pets_list: list[dict[str, Any]],
+    policy: dict[str, Any] | None = None,
+) -> list[str]:
+    """Format resident pets, vaccination status, and animal policy into prompt lines."""
+    if not pets_list and not policy:
+        return []
+
+    lines = ["[RESIDENT PETS & ANIMAL POLICIES]"]
+    if pets_list:
+        lines.append(f"- Registered Household Pets: {len(pets_list)}")
+        for p in pets_list[:3]:
+            name = p.get("name", "Unknown")
+            ptype = str(p.get("pet_type", "pet")).capitalize()
+            breed = p.get("breed") or "Mixed"
+            weight = f"{p.get('weight_lbs', 0.0)} lbs"
+            status = str(p.get("status", "active")).upper()
+            is_service = bool(p.get("is_service_animal"))
+            is_esa = bool(p.get("is_esa"))
+            designation = " [SERVICE ANIMAL]" if is_service else (" [ESA]" if is_esa else "")
+            vacc_exp = p.get("vaccination_expires") or "Not recorded"
+            tag = p.get("rabies_tag") or "None"
+            lines.append(
+                f"  - {name} ({ptype} - {breed}, {weight}){designation} | "
+                f"Status: {status} | Rabies Tag: {tag} | Vacc Expires: {vacc_exp}"
+            )
+    else:
+        lines.append("- Registered Household Pets: None")
+
+    if policy:
+        rent = format_currency(policy.get("monthly_pet_rent", 0.0))
+        deposit = format_currency(policy.get("one_time_deposit", 0.0))
+        max_wt = policy.get("max_weight_lbs", 65.0)
+        lines.append(
+            f"- Community Animal Policy: Rent: {rent}/mo | Deposit: {deposit} | "
+            f"Max Weight: {max_wt} lbs"
+        )
+
+    return lines
+
+
+def _extract_pet_vars(
+    pets_list: list[dict[str, Any]],
+    policy: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Extract macro template replacement variables for pets and animal policies."""
+    vars_dict: dict[str, str] = {
+        "registered_pets_count": str(len(pets_list)),
+        "pet_names": ", ".join(p.get("name", "") for p in pets_list if p.get("name")) or "None",
+        "primary_pet_breed": "",
+        "pet_name": "",
+        "pet_breed": "",
+        "pet_vaccination_status": "none",
+        "pet_rent_monthly": "$0.00",
+        "pet_deposit_amount": "$0.00",
+        "service_animal_verified": "false",
+    }
+    if policy:
+        vars_dict["pet_rent_monthly"] = format_currency(policy.get("monthly_pet_rent", 0.0))
+        vars_dict["pet_deposit_amount"] = format_currency(policy.get("one_time_deposit", 0.0))
+
+    if pets_list:
+        primary = pets_list[0]
+        name = str(primary.get("name") or "")
+        breed = str(primary.get("breed") or primary.get("pet_type") or "")
+        vars_dict["pet_name"] = name
+        vars_dict["pet_breed"] = breed
+        vars_dict["primary_pet_breed"] = breed
+        any_service = any(p.get("is_service_animal") or p.get("is_esa") for p in pets_list)
+        vars_dict["service_animal_verified"] = "true" if any_service else "false"
+
+        vacc_exp = primary.get("vaccination_expires")
+        if vacc_exp:
+            vars_dict["pet_vaccination_status"] = f"expires {vacc_exp}"
+        else:
+            vars_dict["pet_vaccination_status"] = "current"
+
+    return vars_dict
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -503,6 +583,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     include_packages: bool = True,
     include_amenities: bool = True,
     include_parking: bool = True,
+    include_pets: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -551,6 +632,15 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             resident_vehicles = parking.list_vehicles(unit_id=resolved_unit_id)
             visitor_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
 
+    tenant_pets: list[dict[str, Any]] = []
+    pet_policy: dict[str, Any] | None = None
+    if include_pets:
+        if resolved_tenant_id:
+            tenant_pets = pets.get_tenant_pets(resolved_tenant_id)
+        elif resolved_unit_id:
+            tenant_pets = pets.list_resident_pets(unit_id=resolved_unit_id)
+        pet_policy = pets.get_pet_policy("policy_default")
+
     if (
         not tenant
         and not unit
@@ -563,6 +653,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         and not parking_spots
         and not resident_vehicles
         and not visitor_passes
+        and not tenant_pets
     ):
         return ""
 
@@ -608,6 +699,11 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(_format_parking_lines(parking_spots, resident_vehicles, visitor_passes))
+
+    if tenant_pets or pet_policy:
+        if lines:
+            lines.append("")
+        lines.extend(_format_pet_lines(tenant_pets, pet_policy))
 
     return "\n".join(lines)
 
@@ -843,5 +939,13 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         res_vehs = parking.list_vehicles(unit_id=resolved_unit_id)
         v_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
     variables.update(_extract_parking_vars(park_spots, res_vehs, v_passes))
+
+    t_pets: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        t_pets = pets.get_tenant_pets(resolved_tenant_id)
+    elif resolved_unit_id:
+        t_pets = pets.list_resident_pets(unit_id=resolved_unit_id)
+    default_policy = pets.get_pet_policy("policy_default")
+    variables.update(_extract_pet_vars(t_pets, default_policy))
 
     return variables

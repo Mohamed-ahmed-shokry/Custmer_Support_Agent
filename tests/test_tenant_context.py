@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import amenities, db_utils, packages, parking, vendors
+from api import amenities, db_utils, packages, parking, pets, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -34,6 +34,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     vendors.create_vendors()
     packages.init_packages()
     parking.init_parking_db()
+    pets.init_pets_db()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -624,3 +625,50 @@ def test_render_template_with_parking_variables():
     assert "Garage Level 1" in rendered
     assert "Vehicle registered: 7XYZ890 (Toyota RAV4)" in rendered
     assert "Permit: PERM-101A" in rendered
+
+
+def test_build_tenant_rag_context_with_pets():
+    """Verify prompt context building includes resident pets and animal policies."""
+    # Seed tenant_3 has Barnaby
+    rendered = build_tenant_rag_context(tenant_id="tenant_3")
+    assert "[RESIDENT PETS & ANIMAL POLICIES]" in rendered
+    assert "Registered Household Pets: 1" in rendered
+    assert "Barnaby" in rendered
+    assert "Golden Retriever Mix" in rendered
+    assert "RAB-2026-8812" in rendered
+    assert (
+        "Community Animal Policy: Rent: $35.00/mo | Deposit: $300.00 | Max Weight: 65.0 lbs"
+        in rendered
+    )
+
+
+def test_extract_tenant_macro_variables_with_pets():
+    """Verify macro variable extraction for pet details and policy terms."""
+    sid = "sess-pet-test"
+    db_utils.insert_application_logs(sid, "Pet inquiry", "Checking pet registration", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["registered_pets_count"] == "1"
+    assert variables["pet_names"] == "Barnaby"
+    assert variables["primary_pet_breed"] == "Golden Retriever Mix"
+    assert variables["pet_rent_monthly"] == "$35.00"
+    assert variables["pet_deposit_amount"] == "$300.00"
+    assert variables["service_animal_verified"] == "false"
+
+
+def test_render_template_with_pet_variables():
+    """Verify macro template rendering with pet registry variables."""
+    sid = "sess-pet-render"
+    db_utils.insert_application_logs(sid, "Pet check", "Providing pet status", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    template = (
+        "Hello {customer_name}, you have {registered_pets_count} registered pet(s): "
+        "{pet_names} ({primary_pet_breed}). Monthly pet fee: {pet_rent_monthly}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Elena Rostova" in rendered
+    assert "1 registered pet(s): Barnaby (Golden Retriever Mix)" in rendered
+    assert "Monthly pet fee: $35.00" in rendered
