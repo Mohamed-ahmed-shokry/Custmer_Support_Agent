@@ -1734,6 +1734,56 @@ Via the API and Streamlit UI, property managers can:
 - [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.44.0` (`pyproject.toml`, `api/settings.py`)
 - [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
+
+
+## v0.45.0 plan — Resident Pet Registry, Animal Policies, Vaccination Records & Service Animal Verification Engine (IN PROGRESS)
+
+Give property managers, leasing staff, and residents an automated pet directory, vaccination tracker, service/assistance animal (ESA) documentation, community policy compliance, and pet incident logging engine. Operators configure building-level pet policies (allowed species, weight thresholds, maximum pets per unit, breed restrictions, monthly pet rent, and one-time deposits). Residents register pets with photos, breed details, weight, license numbers, rabies tag numbers, and vaccination expiration dates. Staff and security track barking/noise complaints, off-leash incidents, and waste infractions with fine accounting. Active resident chat conversations automatically ground registered household pets, vaccination health statuses, and applicable community policies into prompt context (`[RESIDENT PETS & ANIMAL POLICIES]`) and resolve canned response macros (`{registered_pets_count}`, `{pet_names}`, `{primary_pet_breed}`, `{pet_vaccination_status}`, `{pet_rent_monthly}`, `{pet_deposit_amount}`, `{service_animal_verified}`). Real-time webhook events (`pet.registered`, `pet_vaccination.expiring`, `pet_incident.logged`, `pet_policy.updated`) keep leasing and maintenance teams synchronized.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers can:
+1. Browse and manage registered household pets with breed, weight, rabies tag, vaccination dates, and service/ESA status.
+2. Configure and enforce property pet policies, breed restrictions, monthly pet rent fees, and one-time pet deposits.
+3. Track upcoming vaccination expirations with 30-day proactive alert badges.
+4. Record and resolve pet infractions (noise/barking, off-leash, waste cleanup) with fine assessment and dispute workflows.
+5. Review portfolio pet analytics: total pets, species distribution, service/ESA animal ratio, upcoming expiring records, and monthly pet rent roll.
+6. Ground active resident chat sessions with pet details and resolve `{pet_*}` macro variables dynamically.
+
+### Scope
+- `api/pets.py`:
+  - SQLite tables `resident_pets`, `pet_policies`, and `pet_incidents` with indexes and foreign keys.
+  - Category enums: `PetType`, `PetStatus`, `IncidentType`, `IncidentStatus`.
+  - Helpers: `create_pet`, `get_pet`, `list_pets`, `update_pet`, `delete_pet`, `get_tenant_pets`, `create_pet_policy`, `get_pet_policy`, `list_pet_policies`, `update_pet_policy`, `record_pet_incident`, `get_pet_incident`, `list_pet_incidents`, `update_pet_incident`, `get_pet_summary_metrics`.
+- `api/db_utils.py`:
+  - Register webhook events `pet.registered`, `pet_vaccination.expiring`, `pet_incident.logged`, `pet_policy.updated`.
+- `api/pydantic_models.py`:
+  - Pet, policy, and incident schemas and request/response models.
+- `api/main.py`:
+  - Endpoints: `POST/GET /pets`, `GET/PATCH/DELETE /pets/{id}`, `GET /tenants/{id}/pets`, `POST /sessions/{id}/register-pet`, `POST/GET /pet-policies`, `GET/PATCH /pet-policies/{id}`, `POST/GET /pet-incidents`, `GET/PATCH /pet-incidents/{id}`, `GET /pets/metrics`.
+- `api/tenant_context.py`:
+  - Ground resident pets and building policy terms under `[RESIDENT PETS & ANIMAL POLICIES]`.
+  - Resolve macro variables `{registered_pets_count}`, `{pet_names}`, `{primary_pet_breed}`, `{pet_vaccination_status}`, `{pet_rent_monthly}`, `{pet_deposit_amount}`, `{service_animal_verified}`.
+- `app/api_utils.py`:
+  - Typed client helpers for pets, policies, incidents, metrics, and session pet registration.
+- `app/sidebar.py`:
+  - Streamlit sidebar expander `🐾 Pet Registry & Animal Policies` (Pets Directory, Community Policies, Incidents & Complaints, Vaccination Watch, Pet KPIs).
+  - Quick pet registration widget on active session resident card (`🐾 Quick Pet Registration`).
+- Tests:
+  - Unit tests in `tests/test_pets.py`, `tests/test_pet_routes.py`, `tests/test_models.py`, `tests/test_tenant_context.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`.
+- Docs & Version:
+  - Update `docs/API.md`, `README.md`, `docs/PROGRESS.md`; bump version to `0.45.0` in `pyproject.toml` and `api/settings.py`.
+
+### Acceptance Criteria
+- [ ] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.45.0 plan
+- [ ] Task 2: Pet Database Schema, Policy Rules & Seed Engine (`api/pets.py`)
+- [ ] Task 3: Pydantic Validation Models & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)
+- [ ] Task 4: FastAPI Route Handlers & 1-Click Session Registration (`api/main.py`)
+- [ ] Task 5: Conversational RAG Prompt Grounding & Macro Variable Resolution (`api/tenant_context.py`)
+- [ ] Task 6: Frontend API Client Helpers (`app/api_utils.py`)
+- [ ] Task 7: Streamlit Pet Registry Board & 1-Click Session Widget (`app/sidebar.py`)
+- [ ] Task 8: Documentation Updates & Version Bump (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`)
+- [ ] Task 9: Verification Gate (ruff, mypy, pytest >= 80%, secret scan, real E2E run) & Draft PR delivery
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
