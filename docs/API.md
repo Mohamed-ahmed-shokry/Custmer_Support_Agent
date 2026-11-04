@@ -857,3 +857,94 @@ Dedicated infrastructure managing parking stalls, household vehicle permits, vis
   - `{registered_vehicles_count}`: Number of active vehicles registered to household
   - `{active_visitor_pass}`: `"true"` if active pass exists, otherwise `"false"`
   - `{visitor_pass_code}`: Pass code of active visitor permit (or `""`)
+
+## Resident Pet Registry & Animal Policies (v0.45.0)
+
+### Pet Directory & Registration
+- `POST /pets`: Register a resident pet for a tenant and unit.
+  - Body:
+    ```json
+    {
+      "tenant_id": "tenant_1",
+      "unit_id": "unit_101",
+      "name": "Cooper",
+      "pet_type": "dog",
+      "breed": "Golden Retriever",
+      "weight_lbs": 62.0,
+      "color": "Golden",
+      "age_years": 3,
+      "is_service_animal": false,
+      "is_esa": false,
+      "rabies_tag": "RAB-2026-9999",
+      "vaccination_expires": "2027-05-15",
+      "notes": "Friendly, fully vaccinated"
+    }
+    ```
+  - Returns `201` with `PetResponse`; triggers webhook `pet.registered`.
+- `GET /pets`: List registered pets with filters (`tenant_id`, `unit_id`, `pet_type`, `status`, `search`, `limit`, `offset`).
+  - Returns `PetListResponse`.
+- `GET /pets/{pet_id}`: Retrieve details for a specific registered pet.
+- `PATCH /pets/{pet_id}`: Update profile, weight, vaccination expiry, or status.
+- `DELETE /pets/{pet_id}`: Remove pet registration (`{"status": "deleted", "pet_id": "..."}`).
+- `GET /tenants/{tenant_id}/pets`: List all registered pets for a specific verified tenant.
+- `POST /sessions/{session_id}/register-pet`: 1-click registration grounded in active support session tenant profile.
+- `GET /pets/metrics`: Retrieve community pet demographics and revenue KPIs (`total_active_pets`, `total_dogs`, `total_cats`, `total_service_animals`, `pending_approvals`, `expiring_vaccinations`, `active_incidents`, `outstanding_fines`, `monthly_pet_revenue`).
+
+### Community Animal Policies
+- `POST /pet-policies`: Create property or building animal policy guidelines.
+  - Body:
+    ```json
+    {
+      "property_name": "Grand Community Apartments",
+      "building": "Tower B",
+      "max_weight_lbs": 65.0,
+      "max_pets_per_unit": 2,
+      "monthly_pet_rent": 35.0,
+      "one_time_deposit": 300.0,
+      "restricted_breeds": ["Pit Bull", "Rottweiler"],
+      "rules_and_restrictions": "Leash required in common areas."
+    }
+    ```
+  - Returns `201` with `PetPolicyResponse`; triggers webhook `pet_policy.updated`.
+- `GET /pet-policies`: List active animal policies with optional `building` filter.
+- `GET /pet-policies/{policy_id}`: Retrieve details for a specific policy.
+- `PATCH /pet-policies/{policy_id}`: Update policy terms, rent, deposit, or breed restrictions. Triggers webhook `pet_policy.updated`.
+
+### Animal Incidents & Complaints
+- `POST /pet-incidents`: Log an animal rule violation or noise complaint.
+  - Body:
+    ```json
+    {
+      "incident_type": "noise_barking",
+      "incident_date": "2026-11-04",
+      "pet_id": "pet_101",
+      "tenant_id": "tenant_1",
+      "unit_id": "unit_101",
+      "fine_amount": 50.0,
+      "status": "warning_issued",
+      "notes": "Excessive barking reported after 10 PM."
+    }
+    ```
+  - Returns `201` with `PetIncidentResponse`; triggers webhook `pet_incident.logged`.
+- `GET /pet-incidents`: List logged animal incidents with filters (`pet_id`, `tenant_id`, `incident_type`, `status`, `limit`, `offset`).
+- `GET /pet-incidents/{incident_id}`: Retrieve details for an incident.
+- `PATCH /pet-incidents/{incident_id}`: Update incident status (`reported`, `warning_issued`, `fine_assessed`, `resolved`) or fine amount.
+
+### Context Grounding & Prompt Macros
+- **RAG Context Grounding**: Conversational prompt turns automatically ground resident pets and animal policies under:
+  ```text
+  [RESIDENT PETS & ANIMAL POLICIES]
+  - Registered Household Pets: 1
+    - Barnaby (Dog - Golden Retriever Mix, 38.0 lbs) | Status: ACTIVE | Rabies Tag: RAB-2026-8812 | Vacc Expires: 2027-02-15
+  - Community Animal Policy: Rent: $35.00/mo | Deposit: $300.00 | Max Weight: 65.0 lbs
+  ```
+- **Macro Template Variables**:
+  - `{registered_pets_count}`: Number of registered pets for household (e.g. `1`)
+  - `{pet_names}`: Comma-separated names of household pets (e.g. `Barnaby`)
+  - `{pet_name}`: Primary pet name
+  - `{pet_breed}`: Primary pet breed or species
+  - `{primary_pet_breed}`: Alias for primary pet breed
+  - `{pet_vaccination_status}`: Vaccination status (e.g. `expires 2027-02-15` or `current`)
+  - `{pet_rent_monthly}`: Monthly pet rent amount (e.g. `$35.00`)
+  - `{pet_deposit_amount}`: One-time pet deposit (e.g. `$300.00`)
+  - `{service_animal_verified}`: `"true"` if service animal or ESA verified, otherwise `"false"`
