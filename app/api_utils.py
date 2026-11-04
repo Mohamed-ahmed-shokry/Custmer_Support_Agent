@@ -4031,3 +4031,259 @@ def get_parking_metrics_api() -> dict[str, Any] | None:
         "Failed to fetch parking metrics",
         "fetching parking metrics",
     )
+
+
+# ---------------------------------------------------------------------------
+# Pet Registry & Animal Policies API Client Helpers (v0.45.0)
+# ---------------------------------------------------------------------------
+
+
+def _pet_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute pet registry API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_pet_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Register a new pet for a tenant and unit."""
+    return _pet_call(
+        "post",
+        "/pets",
+        HTTP_CREATED,
+        "Failed to register pet",
+        "registering pet",
+        json=payload,
+    )
+
+
+def list_pets_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    pet_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List resident pets with optional filtering."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if pet_type:
+        params["pet_type"] = pet_type
+    if status:
+        params["status"] = status
+    if search:
+        params["search"] = search
+
+    return _pet_call(
+        "get",
+        "/pets",
+        HTTP_OK,
+        "Failed to fetch resident pets",
+        "fetching resident pets",
+        params=params,
+    )
+
+
+def get_pet_api(pet_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific registered pet."""
+    return _pet_call(
+        "get",
+        f"/pets/{pet_id}",
+        HTTP_OK,
+        f"Failed to fetch pet '{pet_id}'",
+        "fetching pet details",
+    )
+
+
+def update_pet_api(pet_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update profile, vaccinations, or status for a pet."""
+    return _pet_call(
+        "patch",
+        f"/pets/{pet_id}",
+        HTTP_OK,
+        f"Failed to update pet '{pet_id}'",
+        "updating pet",
+        json=payload,
+    )
+
+
+def delete_pet_api(pet_id: str) -> bool:
+    """Remove a resident pet registration."""
+    res = _pet_call(
+        "delete",
+        f"/pets/{pet_id}",
+        HTTP_OK,
+        f"Failed to delete pet '{pet_id}'",
+        "deleting pet",
+    )
+    return res is not None
+
+
+def list_tenant_pets_api(tenant_id: str) -> dict[str, Any] | None:
+    """List registered pets for a specific verified resident."""
+    return _pet_call(
+        "get",
+        f"/tenants/{tenant_id}/pets",
+        HTTP_OK,
+        f"Failed to fetch pets for tenant '{tenant_id}'",
+        "fetching tenant pets",
+    )
+
+
+def session_register_pet_api(session_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Register a pet grounded to the active support session profile."""
+    return _pet_call(
+        "post",
+        f"/sessions/{session_id}/register-pet",
+        HTTP_CREATED,
+        "Failed to register pet for session",
+        "registering session pet",
+        json=payload,
+    )
+
+
+def create_pet_policy_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create community or building animal guidelines and restrictions."""
+    return _pet_call(
+        "post",
+        "/pet-policies",
+        HTTP_CREATED,
+        "Failed to create pet policy",
+        "creating pet policy",
+        json=payload,
+    )
+
+
+def list_pet_policies_api(building: str | None = None) -> dict[str, Any] | None:
+    """List configured animal policies."""
+    params: dict[str, Any] = {}
+    if building:
+        params["building"] = building
+    return _pet_call(
+        "get",
+        "/pet-policies",
+        HTTP_OK,
+        "Failed to fetch pet policies",
+        "fetching pet policies",
+        params=params,
+    )
+
+
+def get_pet_policy_api(policy_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific pet policy."""
+    return _pet_call(
+        "get",
+        f"/pet-policies/{policy_id}",
+        HTTP_OK,
+        f"Failed to fetch pet policy '{policy_id}'",
+        "fetching pet policy",
+    )
+
+
+def update_pet_policy_api(policy_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update terms, weights, fees, or breed bans for a pet policy."""
+    return _pet_call(
+        "patch",
+        f"/pet-policies/{policy_id}",
+        HTTP_OK,
+        f"Failed to update pet policy '{policy_id}'",
+        "updating pet policy",
+        json=payload,
+    )
+
+
+def record_pet_incident_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Record an animal complaint or rule violation notice."""
+    return _pet_call(
+        "post",
+        "/pet-incidents",
+        HTTP_CREATED,
+        "Failed to record pet incident",
+        "recording pet incident",
+        json=payload,
+    )
+
+
+def list_pet_incidents_api(  # noqa: PLR0913, PLR0917
+    pet_id: str | None = None,
+    tenant_id: str | None = None,
+    incident_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List recorded pet incidents and violations with filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if pet_id:
+        params["pet_id"] = pet_id
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if incident_type:
+        params["incident_type"] = incident_type
+    if status:
+        params["status"] = status
+    return _pet_call(
+        "get",
+        "/pet-incidents",
+        HTTP_OK,
+        "Failed to fetch pet incidents",
+        "fetching pet incidents",
+        params=params,
+    )
+
+
+def get_pet_incident_api(incident_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific pet incident."""
+    return _pet_call(
+        "get",
+        f"/pet-incidents/{incident_id}",
+        HTTP_OK,
+        f"Failed to fetch pet incident '{incident_id}'",
+        "fetching pet incident",
+    )
+
+
+def update_pet_incident_api(incident_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update status, fine, or notes for a pet incident."""
+    return _pet_call(
+        "patch",
+        f"/pet-incidents/{incident_id}",
+        HTTP_OK,
+        f"Failed to update pet incident '{incident_id}'",
+        "updating pet incident",
+        json=payload,
+    )
+
+
+def get_pet_metrics_api() -> dict[str, Any] | None:
+    """Retrieve summary metrics and pet demographics for the community."""
+    return _pet_call(
+        "get",
+        "/pets/metrics",
+        HTTP_OK,
+        "Failed to fetch pet metrics",
+        "fetching pet metrics",
+    )

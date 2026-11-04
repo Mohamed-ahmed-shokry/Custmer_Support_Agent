@@ -3033,3 +3033,139 @@ def test_parking_api_utils_errors(monkeypatch):
     assert api_utils.register_vehicle_api({}) is None
     assert api_utils.issue_visitor_pass_api({}) is None
     assert api_utils.delete_vehicle_api("veh_x") is False
+
+
+def test_resident_pets_api_utils(monkeypatch):
+    """Verify resident pet API client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    # 1. create_pet_api
+    pet_payload = {"pet": {"id": "pet_1", "name": "Barnaby", "pet_type": "dog"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pet_payload)
+    assert api_utils.create_pet_api({"name": "Barnaby"}) == pet_payload
+    m, u, _ = fake_requests.calls[-1]
+    assert m == "post"
+    assert u.endswith("/pets")
+
+    # 2. list_pets_api
+    list_pets_payload = {"items": [pet_payload["pet"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_pets_payload)
+    assert api_utils.list_pets_api(tenant_id="tenant_3", pet_type="dog") == list_pets_payload
+    assert fake_requests.calls[-1][1].endswith("/pets")
+
+    # 3. get_pet_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pet_payload)
+    assert api_utils.get_pet_api("pet_1") == pet_payload
+    assert fake_requests.calls[-1][1].endswith("/pets/pet_1")
+
+    # 4. update_pet_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pet_payload)
+    assert api_utils.update_pet_api("pet_1", {"weight_lbs": 40.0}) == pet_payload
+    assert fake_requests.calls[-1][1].endswith("/pets/pet_1")
+
+    # 5. delete_pet_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_pet_api("pet_1") is True
+    assert fake_requests.calls[-1][1].endswith("/pets/pet_1")
+
+    # 6. list_tenant_pets_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_pets_payload)
+    assert api_utils.list_tenant_pets_api("tenant_3") == list_pets_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/tenant_3/pets")
+
+    # 7. session_register_pet_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pet_payload)
+    assert api_utils.session_register_pet_api("sess_1", {"name": "Barnaby"}) == pet_payload
+    assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/register-pet")
+
+
+def test_pet_policies_and_incidents_api_utils(monkeypatch):
+    """Verify pet policies and incidents API client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    # 1. create_pet_policy_api
+    policy_payload = {"policy": {"id": "pol_1", "max_weight_lbs": 65.0}}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=policy_payload
+    )
+    assert api_utils.create_pet_policy_api({"max_weight_lbs": 65.0}) == policy_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-policies")
+
+    # 2. list_pet_policies_api
+    list_pol_payload = {"items": [policy_payload["policy"]], "total": 1}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_pol_payload)
+    assert api_utils.list_pet_policies_api(building="Building A") == list_pol_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-policies")
+
+    # 3. get_pet_policy_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=policy_payload)
+    assert api_utils.get_pet_policy_api("pol_1") == policy_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-policies/pol_1")
+
+    # 4. update_pet_policy_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=policy_payload)
+    assert api_utils.update_pet_policy_api("pol_1", {"monthly_pet_rent": 40.0}) == policy_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-policies/pol_1")
+
+    # 5. record_pet_incident_api
+    inc_payload = {"incident": {"id": "inc_1", "incident_type": "noise_barking"}}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=inc_payload)
+    assert (
+        api_utils.record_pet_incident_api({"incident_type": "noise_barking"})
+        == inc_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/pet-incidents")
+
+    # 6. list_pet_incidents_api
+    list_inc_payload = {"items": [inc_payload["incident"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_inc_payload)
+    assert api_utils.list_pet_incidents_api(status="reported") == list_inc_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-incidents")
+
+    # 7. get_pet_incident_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=inc_payload)
+    assert api_utils.get_pet_incident_api("inc_1") == inc_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-incidents/inc_1")
+
+    # 8. update_pet_incident_api
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=inc_payload)
+    assert api_utils.update_pet_incident_api("inc_1", {"status": "resolved"}) == inc_payload
+    assert fake_requests.calls[-1][1].endswith("/pet-incidents/inc_1")
+
+    # 9. get_pet_metrics_api
+    metrics_payload = {"total_active_pets": 10, "monthly_pet_revenue": 350.0}
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=metrics_payload)
+    assert api_utils.get_pet_metrics_api() == metrics_payload
+    assert fake_requests.calls[-1][1].endswith("/pets/metrics")
+
+
+def test_pet_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in pet helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.create_pet_api({"name": "Ghost"}) is None
+    assert api_utils.list_pets_api() is None
+    assert api_utils.get_pet_api("pet_fail") is None
+    assert api_utils.update_pet_api("pet_fail", {}) is None
+    assert api_utils.delete_pet_api("pet_fail") is False
+    assert api_utils.list_tenant_pets_api("tenant_fail") is None
+    assert api_utils.session_register_pet_api("sess_fail", {}) is None
+    assert api_utils.create_pet_policy_api({}) is None
+    assert api_utils.list_pet_policies_api() is None
+    assert api_utils.get_pet_policy_api("pol_fail") is None
+    assert api_utils.update_pet_policy_api("pol_fail", {}) is None
+    assert api_utils.record_pet_incident_api({}) is None
+    assert api_utils.list_pet_incidents_api() is None
+    assert api_utils.get_pet_incident_api("inc_fail") is None
+    assert api_utils.update_pet_incident_api("inc_fail", {}) is None
+    assert api_utils.get_pet_metrics_api() is None
