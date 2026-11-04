@@ -4192,3 +4192,177 @@ def test_render_session_parking_widget(monkeypatch):
     assert issued_passes[0][0] == "sess_77"
     assert issued_passes[0][1]["visitor_name"] == "Jane Visitor"
     assert issued_passes[0][1]["vehicle_plate"] == "9XYZ123"
+
+
+def test_render_pet_registry_board_ui(monkeypatch):
+    """Test _render_pet_registry_board renders all pet registry views."""
+    st = FakeStreamlit(
+        values={
+            "pet_board_tab_radio": "Pets Directory",
+            "pet_type_filter": "all",
+            "new_pet_name": "Buster",
+            "new_pet_tenant": "tenant_1",
+            "new_pet_unit": "unit_101",
+            "new_pet_type": "dog",
+            "new_pet_breed": "Labrador",
+            "new_pet_weight": 35.0,
+            "new_pet_is_service": False,
+            "new_pet_is_esa": False,
+            "new_pet_tag": "RAB-2026-9999",
+            "new_pet_exp": "2027-01-01",
+            "new_pet_notes": "Very friendly",
+            "pol_prop_name": "Grand Community Apartments",
+            "pol_bldg_name": "Tower B",
+            "pol_max_weight": 65.0,
+            "pol_max_pets": 2,
+            "pol_rent_input": 35.0,
+            "pol_dep_input": 300.0,
+            "pol_rules_input": "Keep dogs leashed.",
+            "new_inc_type": "off_leash",
+            "new_inc_date": "2026-11-04",
+            "new_inc_pet": "pet_101",
+            "new_inc_tenant": "tenant_1",
+            "new_inc_fine": 50.0,
+            "new_inc_status": "reported",
+            "new_inc_notes": "Off leash in lobby.",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # Pets mock
+    sample_pets = {
+        "items": [
+            {
+                "id": "pet_101",
+                "name": "Barnaby",
+                "pet_type": "dog",
+                "breed": "Golden Retriever Mix",
+                "weight_lbs": 38.0,
+                "unit_id": "unit_PH1",
+                "status": "active",
+                "is_service_animal": 0,
+                "is_esa": 0,
+                "vaccination_expires": "2027-02-15",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_pets_api", lambda **kwargs: sample_pets)
+    monkeypatch.setattr(
+        sidebar, "create_pet_api", lambda payload: {"pet": {"id": "pet_new"}}
+    )
+
+    # Policies mock
+    sample_policies = {
+        "items": [
+            {
+                "id": "policy_default",
+                "property_name": "Grand Community Apartments",
+                "max_weight_lbs": 65.0,
+                "max_pets_per_unit": 2,
+                "monthly_pet_rent": 35.0,
+                "one_time_deposit": 300.0,
+                "restricted_breeds": ["Pit Bull"],
+            }
+        ]
+    }
+    monkeypatch.setattr(sidebar, "list_pet_policies_api", lambda **kwargs: sample_policies)
+    monkeypatch.setattr(
+        sidebar, "create_pet_policy_api", lambda payload: {"policy": {"id": "pol_new"}}
+    )
+
+    # Incidents mock
+    sample_incidents = {
+        "items": [
+            {
+                "id": "inc_1",
+                "incident_type": "off_leash",
+                "incident_date": "2026-11-04",
+                "fine_amount": 50.0,
+                "status": "reported",
+            }
+        ]
+    }
+    monkeypatch.setattr(sidebar, "list_pet_incidents_api", lambda **kwargs: sample_incidents)
+    monkeypatch.setattr(
+        sidebar, "record_pet_incident_api", lambda payload: {"incident": {"id": "inc_new"}}
+    )
+
+    # Metrics mock
+    sample_metrics = {
+        "total_active_pets": 12,
+        "total_dogs": 8,
+        "total_cats": 4,
+        "total_service_animals": 2,
+        "expiring_vaccinations": 1,
+        "active_incidents": 1,
+        "monthly_pet_revenue": 350.0,
+    }
+    monkeypatch.setattr(sidebar, "get_pet_metrics_api", lambda: sample_metrics)
+
+    # 1. Pets Directory view
+    st.values["pet_board_tab_radio"] = "Pets Directory"
+    sidebar._render_pet_registry_board()
+
+    # 2. Community Policies view
+    st.values["pet_board_tab_radio"] = "Community Policies"
+    sidebar._render_pet_registry_board()
+
+    # 3. Incidents & Complaints view
+    st.values["pet_board_tab_radio"] = "Incidents & Complaints"
+    sidebar._render_pet_registry_board()
+
+    # 4. Pet KPIs view
+    st.values["pet_board_tab_radio"] = "Pet KPIs"
+    sidebar._render_pet_registry_board()
+
+
+def test_render_session_pet_widget(monkeypatch):
+    """Test _render_session_pet_widget 1-click resident pet registration."""
+    registered_pets = []
+    st = FakeStreamlit(
+        values={
+            "sess_pet_name_sess_88": "Charlie",
+            "sess_pet_type_sess_88": "dog",
+            "sess_pet_breed_sess_88": "Beagle",
+            "sess_pet_wt_sess_88": 25.0,
+            "sess_pet_sa_sess_88": False,
+            "sess_pet_esa_sess_88": False,
+            "sess_pet_tag_sess_88": "RAB-2026-5555",
+            "sess_pet_exp_sess_88": "2027-01-01",
+        },
+        buttons={"btn_sess_reg_pet_sess_88": True},
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_pets_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "pet_existing",
+                    "name": "Barnaby",
+                    "pet_type": "dog",
+                    "breed": "Golden Retriever Mix",
+                    "weight_lbs": 38.0,
+                    "rabies_tag": "RAB-2026-8812",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_register_pet_api",
+        lambda sid, payload: registered_pets.append((sid, payload))
+        or {"pet": {"id": "pet_new", "name": "Charlie"}},
+    )
+
+    tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
+    sidebar._render_session_pet_widget("sess_88", tenant)
+
+    expected_count = 1
+    assert len(registered_pets) == expected_count
+    assert registered_pets[0][0] == "sess_88"
+    assert registered_pets[0][1]["name"] == "Charlie"
+    assert registered_pets[0][1]["breed"] == "Beagle"
