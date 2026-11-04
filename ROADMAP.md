@@ -1736,7 +1736,7 @@ Via the API and Streamlit UI, property managers can:
 
 
 
-## v0.45.0 plan — Resident Pet Registry, Animal Policies, Vaccination Records & Service Animal Verification Engine (IN PROGRESS)
+## v0.45.0 plan — Resident Pet Registry, Animal Policies, Vaccination Records & Service Animal Verification Engine ✅ COMPLETED
 
 Give property managers, leasing staff, and residents an automated pet directory, vaccination tracker, service/assistance animal (ESA) documentation, community policy compliance, and pet incident logging engine. Operators configure building-level pet policies (allowed species, weight thresholds, maximum pets per unit, breed restrictions, monthly pet rent, and one-time deposits). Residents register pets with photos, breed details, weight, license numbers, rabies tag numbers, and vaccination expiration dates. Staff and security track barking/noise complaints, off-leash incidents, and waste infractions with fine accounting. Active resident chat conversations automatically ground registered household pets, vaccination health statuses, and applicable community policies into prompt context (`[RESIDENT PETS & ANIMAL POLICIES]`) and resolve canned response macros (`{registered_pets_count}`, `{pet_names}`, `{primary_pet_breed}`, `{pet_vaccination_status}`, `{pet_rent_monthly}`, `{pet_deposit_amount}`, `{service_animal_verified}`). Real-time webhook events (`pet.registered`, `pet_vaccination.expiring`, `pet_incident.logged`, `pet_policy.updated`) keep leasing and maintenance teams synchronized.
 
@@ -1774,15 +1774,15 @@ Via the API and Streamlit UI, property managers can:
   - Update `docs/API.md`, `README.md`, `docs/PROGRESS.md`; bump version to `0.45.0` in `pyproject.toml` and `api/settings.py`.
 
 ### Acceptance Criteria
-- [ ] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.45.0 plan
-- [ ] Task 2: Pet Database Schema, Policy Rules & Seed Engine (`api/pets.py`)
-- [ ] Task 3: Pydantic Validation Models & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)
-- [ ] Task 4: FastAPI Route Handlers & 1-Click Session Registration (`api/main.py`)
-- [ ] Task 5: Conversational RAG Prompt Grounding & Macro Variable Resolution (`api/tenant_context.py`)
-- [ ] Task 6: Frontend API Client Helpers (`app/api_utils.py`)
-- [ ] Task 7: Streamlit Pet Registry Board & 1-Click Session Widget (`app/sidebar.py`)
-- [ ] Task 8: Documentation Updates & Version Bump (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`)
-- [ ] Task 9: Verification Gate (ruff, mypy, pytest >= 80%, secret scan, real E2E run) & Draft PR delivery
+- [x] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.45.0 plan
+- [x] Task 2: Pet Database Schema, Policy Rules & Seed Engine (`api/pets.py`)
+- [x] Task 3: Pydantic Validation Models & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)
+- [x] Task 4: FastAPI Route Handlers & 1-Click Session Registration (`api/main.py`)
+- [x] Task 5: Conversational RAG Prompt Grounding & Macro Variable Resolution (`api/tenant_context.py`)
+- [x] Task 6: Frontend API Client Helpers (`app/api_utils.py`)
+- [x] Task 7: Streamlit Pet Registry Board & 1-Click Session Widget (`app/sidebar.py`)
+- [x] Task 8: Documentation Updates & Version Bump (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`)
+- [x] Task 9: Verification Gate (ruff, mypy, pytest >= 80%, secret scan, real E2E run) & Draft PR delivery
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
