@@ -507,7 +507,7 @@ def delete_resident_pet(pet_id: str) -> bool:
     try:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM resident_pets WHERE id = ?", (pet_id,))
-        deleted = cursor.rowcount > 0
+        deleted = bool(cursor.rowcount > 0)
         conn.commit()
         return deleted
     finally:
