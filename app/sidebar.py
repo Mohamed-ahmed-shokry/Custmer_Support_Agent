@@ -20,6 +20,8 @@ from app.api_utils import (
     create_macro,
     create_package_api,
     create_parking_spot_api,
+    create_pet_api,
+    create_pet_policy_api,
     create_reservation_api,
     create_session_inspection,
     create_session_lease_renewal,
@@ -69,6 +71,7 @@ from app.api_utils import (
     get_metrics,
     get_package_metrics_api,
     get_parking_metrics_api,
+    get_pet_metrics_api,
     get_quota,
     get_session_assignment_history,
     get_session_history,
@@ -102,11 +105,15 @@ from app.api_utils import (
     list_packages_api,
     list_parking_spots_api,
     list_parking_violations_api,
+    list_pet_incidents_api,
+    list_pet_policies_api,
+    list_pets_api,
     list_reservations_api,
     list_sessions,
     list_sla_policies,
     list_support_agents,
     list_tenant_packages_api,
+    list_tenant_pets_api,
     list_tenant_reservations_api,
     list_tenant_vehicles_api,
     list_tenants,
@@ -126,6 +133,7 @@ from app.api_utils import (
     rechunk_collection,
     rechunk_document,
     record_parking_violation_api,
+    record_pet_incident_api,
     record_session_payment,
     record_tenant_payment,
     register_vehicle_api,
@@ -137,6 +145,7 @@ from app.api_utils import (
     session_create_reservation_api,
     session_intake_package_api,
     session_issue_visitor_pass_api,
+    session_register_pet_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
@@ -1092,6 +1101,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_package_intake_widget(selected, tenant)
     _render_session_amenity_widget(selected, tenant)
     _render_session_parking_widget(selected, tenant)
+    _render_session_pet_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -4517,6 +4527,372 @@ def _render_parking_management_board():
             st.caption(f"Parking panel temporarily unavailable: {e}")
 
 
+# --- Pet Registry & Animal Policies UI (v0.45.0) ---
+
+
+def _render_session_pet_widget(selected: str, tenant: dict):
+    """Render 1-click resident pet registration widget for current session."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        pets_resp = list_tenant_pets_api(tenant_id)
+        resident_pets = pets_resp.get("items", []) if pets_resp else []
+        if resident_pets:
+            st.sidebar.markdown("**🐾 Registered Pets:**")
+            for p in resident_pets[:2]:
+                sa = (
+                    " [Service]"
+                    if p.get("is_service_animal")
+                    else (" [ESA]" if p.get("is_esa") else "")
+                )
+                p_type_label = str(p.get("pet_type")).capitalize()
+                p_breed_label = p.get("breed") or "Mixed"
+                p_desc = f"{p_type_label} - {p_breed_label}, {p.get('weight_lbs')} lbs"
+                st.sidebar.info(
+                    f"**{p.get('name')}** ({p_desc}){sa}:\n"
+                    f"- **Rabies Tag:** `{p.get('rabies_tag') or 'None'}`"
+                )
+
+        with st.sidebar.expander("🐾 Quick Pet Registration"):
+            p_name = st.text_input(
+                "Pet Name*", placeholder="e.g. Charlie", key=f"sess_pet_name_{selected}"
+            )
+            p_type = st.selectbox(
+                "Pet Type",
+                ["dog", "cat", "bird", "fish", "small_animal", "reptile", "other"],
+                key=f"sess_pet_type_{selected}",
+            )
+            p_breed = st.text_input(
+                "Breed",
+                placeholder="e.g. Golden Retriever",
+                key=f"sess_pet_breed_{selected}",
+            )
+            p_weight = st.number_input(
+                "Weight (lbs)",
+                min_value=0.0,
+                max_value=250.0,
+                value=25.0,
+                step=0.5,
+                key=f"sess_pet_wt_{selected}",
+            )
+            col_sa, col_esa = st.columns(2)
+            with col_sa:
+                p_service = st.checkbox("Service Animal", key=f"sess_pet_sa_{selected}")
+            with col_esa:
+                p_esa = st.checkbox("ESA", key=f"sess_pet_esa_{selected}")
+            p_tag = st.text_input(
+                "Rabies Tag #", placeholder="e.g. RAB-2026-101", key=f"sess_pet_tag_{selected}"
+            )
+            p_exp = st.text_input(
+                "Vaccination Expires (YYYY-MM-DD)",
+                placeholder="2027-01-01",
+                key=f"sess_pet_exp_{selected}",
+            )
+
+            if st.button("🐾 Register Pet to Unit", key=f"btn_sess_reg_pet_{selected}"):
+                if not p_name.strip():
+                    st.error("Pet name is required.")
+                else:
+                    payload = {
+                        "name": p_name.strip(),
+                        "pet_type": p_type,
+                        "breed": p_breed.strip() if p_breed.strip() else None,
+                        "weight_lbs": float(p_weight),
+                        "is_service_animal": p_service,
+                        "is_esa": p_esa,
+                        "rabies_tag": p_tag.strip() if p_tag.strip() else None,
+                        "vaccination_expires": p_exp.strip() if p_exp.strip() else None,
+                    }
+                    res = session_register_pet_api(selected, payload)
+                    if res and res.get("pet"):
+                        st.success(f"Registered {p_name} to Unit {tenant.get('unit_id')}!")
+                        st.rerun()
+    except Exception as e:
+        st.sidebar.caption(f"Pet widget error: {e}")
+
+
+def _render_pets_directory_tab():
+    """Render community resident pets directory and registration form."""
+    st.markdown("##### 🐾 Resident Pets Directory")
+    type_filter = st.selectbox(
+        "Filter Pet Type",
+        ["all", "dog", "cat", "bird", "fish", "small_animal", "reptile", "other"],
+        key="pet_type_filter",
+    )
+    type_param = None if type_filter == "all" else type_filter
+    pets_resp = list_pets_api(pet_type=type_param, limit=50)
+    items = pets_resp.get("items", []) if pets_resp else []
+    total = pets_resp.get("total", len(items)) if pets_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** resident pets.")
+
+    for p in items[:10]:
+        sa_badge = (
+            " 🦮 [Service]"
+            if p.get("is_service_animal")
+            else (" 🐱 [ESA]" if p.get("is_esa") else "")
+        )
+        status = p.get("status", "active")
+        badge = "🟢" if status == "active" else "🟡" if status == "pending_approval" else "⚪"
+        exp = p.get("vaccination_expires") or "N/A"
+        st.markdown(
+            f"**{badge} {p.get('name')}** "
+            f"({str(p.get('pet_type')).capitalize()} - {p.get('breed') or 'Mixed'}, "
+            f"{p.get('weight_lbs')} lbs){sa_badge} | Unit: `{p.get('unit_id')}` | Vacc: `{exp}`"
+        )
+
+    with st.expander("➕ Register New Pet"):
+        pet_name = st.text_input("Pet Name*", placeholder="e.g. Buster", key="new_pet_name")
+        col_t, col_u = st.columns(2)
+        with col_t:
+            pet_tenant = st.text_input(
+                "Tenant ID*", placeholder="e.g. tenant_1", key="new_pet_tenant"
+            )
+        with col_u:
+            pet_unit = st.text_input("Unit ID*", placeholder="e.g. unit_101", key="new_pet_unit")
+        pet_type = st.selectbox(
+            "Species/Type",
+            ["dog", "cat", "bird", "fish", "small_animal", "reptile", "other"],
+            key="new_pet_type",
+        )
+        pet_breed = st.text_input("Breed", placeholder="e.g. Labrador", key="new_pet_breed")
+        pet_weight = st.number_input("Weight (lbs)", value=30.0, step=0.5, key="new_pet_weight")
+        c1, c2 = st.columns(2)
+        with c1:
+            pet_service = st.checkbox("Service Animal", key="new_pet_is_service")
+        with c2:
+            pet_esa = st.checkbox("Emotional Support Animal (ESA)", key="new_pet_is_esa")
+        pet_tag = st.text_input(
+            "Rabies Tag #", placeholder="e.g. RAB-2026-8800", key="new_pet_tag"
+        )
+        pet_exp = st.text_input(
+            "Vaccination Expiry (YYYY-MM-DD)", placeholder="2027-01-01", key="new_pet_exp"
+        )
+        pet_notes = st.text_area(
+            "Notes", placeholder="Friendly, up to date on shots", key="new_pet_notes"
+        )
+
+        if st.button("Save Pet Registration", key="btn_save_pet"):
+            if not pet_name.strip() or not pet_tenant.strip() or not pet_unit.strip():
+                st.error("Pet name, Tenant ID, and Unit ID are required.")
+            else:
+                res = create_pet_api({
+                    "name": pet_name.strip(),
+                    "tenant_id": pet_tenant.strip(),
+                    "unit_id": pet_unit.strip(),
+                    "pet_type": pet_type,
+                    "breed": pet_breed.strip() if pet_breed.strip() else None,
+                    "weight_lbs": float(pet_weight),
+                    "is_service_animal": pet_service,
+                    "is_esa": pet_esa,
+                    "rabies_tag": pet_tag.strip() if pet_tag.strip() else None,
+                    "vaccination_expires": pet_exp.strip() if pet_exp.strip() else None,
+                    "notes": pet_notes.strip() if pet_notes.strip() else None,
+                })
+                if res:
+                    st.success("Resident pet registered!")
+                    st.rerun()
+
+
+def _render_pet_policies_tab():
+    """Render community animal rules, deposit requirements, and breed guidelines."""
+    st.markdown("##### 📜 Community Animal Policies")
+    pol_resp = list_pet_policies_api()
+    policies = pol_resp.get("items", []) if pol_resp else []
+
+    for pol in policies:
+        bldg = f" (Building: {pol.get('building')})" if pol.get("building") else ""
+        rent_amt = pol.get("monthly_pet_rent", 0.0)
+        dep_amt = pol.get("one_time_deposit", 0.0)
+        restricted = ", ".join(pol.get("restricted_breeds", [])) or "None"
+        st.markdown(
+            f"**📋 {pol.get('property_name')}{bldg}**\n"
+            f"- Max Weight: **{pol.get('max_weight_lbs')} lbs** | "
+            f"Max Pets: **{pol.get('max_pets_per_unit')}**\n"
+            f"- Monthly Rent: **${rent_amt:.2f}** | Deposit: **${dep_amt:.2f}**\n"
+            f"- Restricted Breeds: `{restricted}`"
+        )
+        if pol.get("rules_and_restrictions"):
+            st.caption(f"Rules: {pol.get('rules_and_restrictions')}")
+
+    with st.expander("➕ Create / Update Animal Policy"):
+        pol_prop = st.text_input(
+            "Property / Building Name", value="Grand Community Apartments", key="pol_prop_name"
+        )
+        pol_bldg = st.text_input(
+            "Building (Optional)", placeholder="e.g. Tower B", key="pol_bldg_name"
+        )
+        col_w, col_p = st.columns(2)
+        with col_w:
+            pol_max_w = st.number_input(
+                "Max Weight (lbs)", value=65.0, step=5.0, key="pol_max_weight"
+            )
+        with col_p:
+            pol_max_n = st.number_input(
+                "Max Pets Per Unit", value=2, min_value=1, max_value=5, key="pol_max_pets"
+            )
+        col_r, col_d = st.columns(2)
+        with col_r:
+            pol_rent = st.number_input(
+                "Monthly Pet Rent ($)", value=35.0, step=5.0, key="pol_rent_input"
+            )
+        with col_d:
+            pol_dep = st.number_input(
+                "One-time Deposit ($)", value=300.0, step=25.0, key="pol_dep_input"
+            )
+        pol_rules = st.text_area(
+            "Rules & Restrictions",
+            value="All dogs must be on leash in common areas. Rabies vaccination required.",
+            key="pol_rules_input",
+        )
+
+        if st.button("Save Policy", key="btn_save_pet_policy"):
+            payload = {
+                "property_name": pol_prop.strip(),
+                "building": pol_bldg.strip() if pol_bldg.strip() else None,
+                "max_weight_lbs": float(pol_max_w),
+                "max_pets_per_unit": int(pol_max_n),
+                "monthly_pet_rent": float(pol_rent),
+                "one_time_deposit": float(pol_dep),
+                "rules_and_restrictions": pol_rules.strip(),
+            }
+            res = create_pet_policy_api(payload)
+            if res:
+                st.success("Pet policy saved!")
+                st.rerun()
+
+
+def _render_pet_incidents_tab():
+    """Render pet incidents, barking/leash complaints, and fine logs."""
+    st.markdown("##### ⚠️ Animal Incidents & Complaints")
+    inc_resp = list_pet_incidents_api(limit=50)
+    incidents = inc_resp.get("items", []) if inc_resp else []
+
+    for inc in incidents[:10]:
+        st_i = inc.get("status")
+        badge = (
+            "🔴"
+            if st_i in ("reported", "fine_assessed")
+            else "🟡" if st_i == "warning_issued" else "🟢"
+        )
+        fine = inc.get("fine_amount", 0.0)
+        st.markdown(
+            f"**{badge} {inc.get('incident_type')}** ({inc.get('incident_date')}) | "
+            f"Fine: ${fine:.2f} | Status: `{st_i}`"
+        )
+        if inc.get("notes"):
+            st.caption(f"Notes: {inc.get('notes')}")
+
+    with st.expander("⚠️ Log Animal Incident"):
+        inc_type = st.selectbox(
+            "Incident Type",
+            [
+                "off_leash",
+                "noise_barking",
+                "waste_uncleaned",
+                "aggressive_behavior",
+                "unauthorized_pet",
+                "property_damage",
+                "other",
+            ],
+            key="new_inc_type",
+        )
+        inc_date = st.text_input(
+            "Incident Date (YYYY-MM-DD)", placeholder="2026-11-04", key="new_inc_date"
+        )
+        c_p, c_t = st.columns(2)
+        with c_p:
+            inc_pet_id = st.text_input(
+                "Pet ID (Optional)", placeholder="e.g. pet_elena_01", key="new_inc_pet"
+            )
+        with c_t:
+            inc_tenant_id = st.text_input(
+                "Tenant ID (Optional)", placeholder="e.g. tenant_3", key="new_inc_tenant"
+            )
+        inc_fine = st.number_input(
+            "Fine Amount ($)", value=50.0, step=10.0, key="new_inc_fine"
+        )
+        inc_status = st.selectbox(
+            "Status",
+            ["reported", "warning_issued", "fine_assessed", "resolved"],
+            key="new_inc_status",
+        )
+        inc_notes = st.text_area(
+            "Incident Details",
+            placeholder="Resident reported dog unleashed near courtyard.",
+            key="new_inc_notes",
+        )
+
+        if st.button("Log Animal Incident", key="btn_log_pet_inc"):
+            payload = {
+                "incident_type": inc_type,
+                "incident_date": inc_date.strip() if inc_date.strip() else None,
+                "pet_id": inc_pet_id.strip() if inc_pet_id.strip() else None,
+                "tenant_id": inc_tenant_id.strip() if inc_tenant_id.strip() else None,
+                "fine_amount": float(inc_fine),
+                "status": inc_status,
+                "notes": inc_notes.strip() if inc_notes.strip() else None,
+            }
+            res = record_pet_incident_api(payload)
+            if res:
+                st.success("Animal incident recorded!")
+                st.rerun()
+
+
+def _render_pet_metrics_tab():
+    """Render pet demographics, species distribution, vaccination, and rent KPIs."""
+    st.markdown("##### 📊 Pet Demographics & Compliance KPIs")
+    metrics = get_pet_metrics_api()
+    if not metrics:
+        st.caption("Pet metrics temporarily unavailable.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Active Pets", metrics.get("total_active_pets", 0))
+        st.metric(
+            "Dogs / Cats",
+            f"{metrics.get('total_dogs', 0)} / {metrics.get('total_cats', 0)}",
+        )
+        st.metric("Expiring Vaccinations", metrics.get("expiring_vaccinations", 0))
+    with col2:
+        st.metric("Service / ESA Animals", metrics.get("total_service_animals", 0))
+        st.metric("Active Incidents", metrics.get("active_incidents", 0))
+        st.metric(
+            "Monthly Pet Rent", f"${metrics.get('monthly_pet_revenue', 0.0):,.2f}"
+        )
+
+
+def _render_pet_registry_board():
+    """Render resident pet registry and animal policies expander in sidebar."""
+    with st.sidebar.expander("🐾 Pet Registry & Animal Policies"):
+        try:
+            views = [
+                "Pets Directory",
+                "Community Policies",
+                "Incidents & Complaints",
+                "Pet KPIs",
+            ]
+            p_tab = st.radio(
+                "Pet Registry View",
+                views,
+                horizontal=True,
+                key="pet_board_tab_radio",
+            )
+            if p_tab == "Pets Directory":
+                _render_pets_directory_tab()
+            elif p_tab == "Community Policies":
+                _render_pet_policies_tab()
+            elif p_tab == "Incidents & Complaints":
+                _render_pet_incidents_tab()
+            else:
+                _render_pet_metrics_tab()
+        except Exception as e:
+            st.caption(f"Pet panel temporarily unavailable: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -4548,6 +4924,7 @@ def display_sidebar():
     _render_packages_board()
     _render_amenity_reservations_board()
     _render_parking_management_board()
+    _render_pet_registry_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 

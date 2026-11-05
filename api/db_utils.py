@@ -307,6 +307,10 @@ VALID_WEBHOOK_EVENTS = {
     "parking_pass.issued",
     "parking_violation.logged",
     "parking_permit.revoked",
+    "pet.registered",
+    "pet_vaccination.expiring",
+    "pet_incident.logged",
+    "pet_policy.updated",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
