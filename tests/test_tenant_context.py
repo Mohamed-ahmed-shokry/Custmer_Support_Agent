@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import amenities, db_utils, packages, parking, pets, vendors
+from api import access_control, amenities, db_utils, packages, parking, pets, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -35,6 +35,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     packages.init_packages()
     parking.init_parking_db()
     pets.init_pets_db()
+    access_control.init_access_control_db()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -672,3 +673,49 @@ def test_render_template_with_pet_variables():
     assert "Elena Rostova" in rendered
     assert "1 registered pet(s): Barnaby (Golden Retriever Mix)" in rendered
     assert "Monthly pet fee: $35.00" in rendered
+
+
+def test_build_tenant_rag_context_with_access_control():
+    """Verify prompt context building includes access credentials, guest passes, and intercom."""
+    rendered = build_tenant_rag_context(tenant_id="tenant_3")
+    assert "[RESIDENTIAL ACCESS CREDENTIALS & GUEST PASSES]" in rendered
+    assert "Active Access Credentials: 2 (Key Fobs: 1, Mobile Keys: 1)" in rendered
+    assert "FOB-9042" in rendered
+    assert "MOB-3319" in rendered
+    assert "Active Guest Passes: 1" in rendered
+    assert "Paws & Walk Dog Walker (Dog Walker) | Code: 618902" in rendered
+    assert "Building Callbox / Intercom: Code: PH1" in rendered
+    assert "Display: Rostova, E. | Forwarding Phone: +1-555-0199 | Buzzer: ENABLED" in rendered
+
+
+def test_extract_tenant_macro_variables_with_access_control():
+    """Verify macro variable extraction for key fobs, guest passes, and callbox."""
+    sid = "sess-access-test"
+    db_utils.insert_application_logs(sid, "Access query", "Checking fob access", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["active_fob_count"] == "1"
+    assert variables["primary_fob_number"] == "FOB-9042"
+    assert variables["guest_pass_code"] == "618902"
+    assert variables["intercom_code"] == "PH1"
+    assert variables["fob_replacement_fee"] == "$50.00"
+    assert "main_lobby" in variables["access_zones"]
+
+
+def test_render_template_with_access_control_variables():
+    """Verify macro template rendering with access control variables."""
+    sid = "sess-access-render"
+    db_utils.insert_application_logs(sid, "Fob check", "Providing fob details", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    template = (
+        "Hello {customer_name}, your active key fob is {primary_fob_number} and your "
+        "intercom buzzer code is #{intercom_code}. Your visitor guest code is {guest_pass_code}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Elena Rostova" in rendered
+    assert "active key fob is FOB-9042" in rendered
+    assert "intercom buzzer code is #PH1" in rendered
+    assert "visitor guest code is 618902" in rendered
