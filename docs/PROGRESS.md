@@ -1,37 +1,42 @@
-# Phase Execution Progress: v0.45.0
+# Phase Execution Progress: v0.46.0
 
-## Phase Scope: Resident Pet Registry, Animal Policies, Vaccination Records & Service Animal Verification Engine
-Comprehensive pet registry, vaccination health tracking, service/assistance animal (ESA) verification, community policy rules and fees, noise/barking complaint logging, conversational RAG grounding, and Streamlit management hub.
+## Phase Scope: Smart Access Control, Key Fobs, Digital Mobile Keys, Intercom & Guest Passes Engine
+Complete residential access credentials management, temporary visitor PIN pass generation, callbox/intercom directory, lost fob deactivation and replacement billing, conversational RAG grounding, and Streamlit management hub.
 
 ## Acceptance Criteria Status
 
-- [x] **AC1: SQLite Database Tables & Schema Migration (`api/pets.py`)**
-  - Tables `resident_pets`, `pet_policies`, and `pet_incidents` bootstrapped with UUID/hex primary keys, foreign references to `units` and `tenants`, indexing on lookup keys, and pre-seeded default pet and policy.
-- [x] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)**
-  - Request/response schemas for pets, policies, infractions, and summary KPIs with full field validations.
-- [x] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)**
-  - RESTful endpoints for pets, policies, incidents, metrics, and webhook triggers for `pet.registered`, `pet_vaccination.expiring`, `pet_incident.logged`, and `pet_policy.updated`.
-- [x] **AC4: Active Session 1-Click Pet Registration (`api/main.py`)**
-  - `POST /sessions/{id}/register-pet` grounds pet registration directly to the resident and unit linked to the current support session.
-- [x] **AC5: Conversational RAG Prompt Grounding (`api/tenant_context.py`)**
-  - Prompt context formats resident pets and building policy rules under `[RESIDENT PETS & ANIMAL POLICIES]`.
-- [x] **AC6: Macro Variable Resolution (`api/tenant_context.py`)**
-  - Template variables `{registered_pets_count}`, `{pet_names}`, `{primary_pet_breed}`, `{pet_vaccination_status}`, `{pet_rent_monthly}`, `{pet_deposit_amount}`, and `{service_animal_verified}` auto-resolve.
-- [x] **AC7: Typed Frontend API Client Helpers (`app/api_utils.py`)**
-  - Client functions wrapping all pet endpoints with structured error handling.
-- [x] **AC8: Streamlit Sidebar Management Board & Session Widget (`app/sidebar.py`)**
-  - Interactive "🐾 Pet Registry & Animal Policies" sidebar board (Pets Directory, Policies, Incidents, Vaccination Watch, KPIs) and "🐾 Quick Pet Registration" 1-click resident widget.
-- [x] **AC9: 100% Green Verification Gate & remote CI**
-  - `ruff` clean, `mypy` clean, secret scan clean, 100% test pass rate with coverage 92.06% (above 80.0% threshold).
+- [ ] **AC1: SQLite Database Tables & Schema Migration (`api/access_control.py`)**
+  - Tables `access_credentials`, `guest_passes`, and `intercom_directory` bootstrapped with UUID/hex primary keys, foreign references to `units` and `tenants`, indexing on lookup keys, and pre-seeded default credentials and guest passes.
+- [ ] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)**
+  - Request/response schemas for credentials, guest passes, intercom entries, session actions, and summary KPIs with full field validations.
+- [ ] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)**
+  - RESTful endpoints for access credentials, guest passes, intercom directory, metrics, and 1-click session actions `POST /sessions/{id}/generate-guest-pass` and `POST /sessions/{id}/report-lost-fob`.
+- [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
+  - Context injection `[RESIDENTIAL ACCESS CREDENTIALS & GUEST PASSES]` and auto-resolution of `{active_fob_count}`, `{primary_fob_number}`, `{guest_pass_code}`, `{guest_pass_expires}`, `{access_zones}`, `{intercom_code}`, `{fob_replacement_fee}`.
+- [ ] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)**
+  - Typed client API wrappers with error handling, session header forwarding, and payload verification.
+- [ ] **AC6: Streamlit UI Access Board & Session Actions (`app/sidebar.py`)**
+  - 4-tab access management board (`Credentials & Fobs`, `Guest Passes`, `Intercom Directory`, `Access KPIs`) and 1-click resident profile guest pass & lost fob actions.
+- [ ] **AC7: Automated Unit & Integration Tests (`tests/`)**
+  - Test suites for database operations, models, FastAPI routes, RAG context, client utilities, and UI mocks.
+- [ ] **AC8: Documentation Updates & Version Bump**
+  - Endpoints documented in `docs/API.md`, feature highlights in `README.md`, version bump to `0.46.0` in `pyproject.toml` and `api/settings.py`.
+- [ ] **AC9: 100% Green CI Parity & Remote Actions Pass**
+  - All formatters, linters, type checks, secret scans, unit tests (coverage >= 80%), and remote CI runs green.
 
-## Commit Log
+## Micro-Task Execution Checklist
 
-- `53666ad`: `docs(roadmap): define v0.45.0 pet registry, animal policy, and vaccination engine plan`
-- `2b5f813`: `feat(pets): implement resident pets, policies, incidents schema, and seed engine`
-- `ce38700`: `feat(pets): add Pydantic schemas, validation models, and webhook events`
-- `00d3156`: `feat(pets): add FastAPI pet endpoints, session 1-click registration, and route tests`
-- `7a20ef7`: `feat(pets): add prompt grounding, macro variables, and tenant context tests`
-- `86de4bb`: `feat(pets): add Streamlit API client helpers and comprehensive unit tests`
-- `b1c5a1b`: `feat(pets): implement Streamlit Pet Registry & Animal Policies sidebar board and UI tests`
-- `2fd5f44`: `docs: bump version to 0.45.0, document Pet Registry API and features in README and API.md`
-- `30948af`: `fix(pets): cast cursor.rowcount deletion check to bool for strict mypy compliance`
+- [x] Task 1: Document v0.46.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [ ] Task 2: Implement `api/access_control.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_access_control.py`.
+- [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_access_control_routes.py`.
+- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [ ] Task 7: Implement Streamlit UI access board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [ ] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
+- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+
+## Decision Log
+- **D1: Integrated Fob & Guest Pass Storage**: Followed existing modular pattern established in `api/parking.py`, `api/amenities.py`, and `api/pets.py` using dedicated `api/access_control.py`.
+- **D2: Security Standard for Guest Passes**: Formatted guest pass access codes as 6-digit cryptographic-quality numeric PINs with explicit expiry and multi-zone permission arrays (`main_lobby`, `elevator`, `unit_door`, `garage`, `amenities`).
+- **D3: Lost Fob Replacement Fee**: Standardized replacement fee at $50 per lost fob, automatically emitting webhook `access.fob_reported_lost` and integrating with the resident's unit billing ledger.
