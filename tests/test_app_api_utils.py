@@ -3169,3 +3169,252 @@ def test_pet_api_utils_errors(monkeypatch):
     assert api_utils.get_pet_incident_api("inc_fail") is None
     assert api_utils.update_pet_incident_api("inc_fail", {}) is None
     assert api_utils.get_pet_metrics_api() is None
+
+
+
+def test_access_control_credentials_api_utils(monkeypatch):
+    """Verify happy-path execution for access credentials API client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(
+        response=FakeResponse(status_code=200, payload={"status": "ok"})
+    )
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # 1. create_access_credential_api
+    cred_payload = {
+        "credential": {
+            "id": "cred_1",
+            "credential_number": "FOB-101",
+            "status": "active",
+        }
+    }
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=cred_payload
+    )
+    assert (
+        api_utils.create_access_credential_api({"tenant_id": "t1", "unit_id": "u1"})
+        == cred_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/credentials")
+
+    # 2. list_access_credentials_api
+    list_payload = {
+        "items": [cred_payload["credential"]],
+        "total": 1,
+        "limit": 50,
+        "offset": 0,
+    }
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_payload
+    )
+    assert (
+        api_utils.list_access_credentials_api(
+            tenant_id="t1", status="active", credential_type="key_fob"
+        )
+        == list_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/credentials")
+
+    # 3. get_access_credential_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=cred_payload
+    )
+    assert api_utils.get_access_credential_api("cred_1") == cred_payload
+    assert fake_requests.calls[-1][1].endswith("/access/credentials/cred_1")
+
+    # 4. update_access_credential_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=cred_payload
+    )
+    assert (
+        api_utils.update_access_credential_api("cred_1", {"status": "lost"})
+        == cred_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/credentials/cred_1")
+
+    # 5. delete_access_credential_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"deleted": True}
+    )
+    assert api_utils.delete_access_credential_api("cred_1") is True
+    assert fake_requests.calls[-1][1].endswith("/access/credentials/cred_1")
+
+    # 6. list_tenant_credentials_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_payload
+    )
+    assert api_utils.list_tenant_credentials_api("t1") == list_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/t1/credentials")
+
+    # 7. session_report_lost_fob_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=cred_payload
+    )
+    assert (
+        api_utils.session_report_lost_fob_api("s1", {"credential_id": "cred_1"})
+        == cred_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/sessions/s1/report-lost-fob")
+
+
+def test_access_control_passes_and_intercom_api_utils(monkeypatch):
+    """Verify happy-path execution for guest passes and intercom directory client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(
+        response=FakeResponse(status_code=200, payload={"status": "ok"})
+    )
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # 1. create_guest_pass_api
+    pass_payload = {
+        "guest_pass": {
+            "id": "pass_1",
+            "guest_name": "Dog Walker",
+            "access_code": "654321",
+        }
+    }
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=pass_payload
+    )
+    assert (
+        api_utils.create_guest_pass_api({"tenant_id": "t1", "guest_name": "Dog Walker"})
+        == pass_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/guest-passes")
+
+    # 2. list_guest_passes_api
+    list_pass_payload = {
+        "items": [pass_payload["guest_pass"]],
+        "total": 1,
+        "limit": 50,
+        "offset": 0,
+    }
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_pass_payload
+    )
+    assert (
+        api_utils.list_guest_passes_api(tenant_id="t1", status="active")
+        == list_pass_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/guest-passes")
+
+    # 3. get_guest_pass_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=pass_payload
+    )
+    assert api_utils.get_guest_pass_api("pass_1") == pass_payload
+    assert fake_requests.calls[-1][1].endswith("/access/guest-passes/pass_1")
+
+    # 4. update_guest_pass_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=pass_payload
+    )
+    assert (
+        api_utils.update_guest_pass_api("pass_1", {"increment_use": True})
+        == pass_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/guest-passes/pass_1")
+
+    # 5. delete_guest_pass_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"deleted": True}
+    )
+    assert api_utils.delete_guest_pass_api("pass_1") is True
+    assert fake_requests.calls[-1][1].endswith("/access/guest-passes/pass_1")
+
+    # 6. list_tenant_guest_passes_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_pass_payload
+    )
+    assert api_utils.list_tenant_guest_passes_api("t1") == list_pass_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/t1/guest-passes")
+
+    # 7. session_generate_guest_pass_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=pass_payload
+    )
+    assert (
+        api_utils.session_generate_guest_pass_api("s1", {"guest_name": "Dog Walker"})
+        == pass_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/sessions/s1/generate-guest-pass")
+
+    # 8. create_intercom_entry_api
+    dir_payload = {"entry": {"id": "dir_1", "directory_code": "101"}}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=dir_payload
+    )
+    assert (
+        api_utils.create_intercom_entry_api({"directory_code": "101"}) == dir_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/intercom")
+
+    # 9. list_intercom_entries_api
+    list_dir_payload = {"items": [dir_payload["entry"]], "total": 1}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_dir_payload
+    )
+    assert api_utils.list_intercom_entries_api(unit_id="u1") == list_dir_payload
+    assert fake_requests.calls[-1][1].endswith("/access/intercom")
+
+    # 10. get_intercom_entry_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=dir_payload
+    )
+    assert api_utils.get_intercom_entry_api("dir_1") == dir_payload
+    assert fake_requests.calls[-1][1].endswith("/access/intercom/dir_1")
+
+    # 11. update_intercom_entry_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=dir_payload
+    )
+    assert (
+        api_utils.update_intercom_entry_api("dir_1", {"buzzer_enabled": False})
+        == dir_payload
+    )
+    assert fake_requests.calls[-1][1].endswith("/access/intercom/dir_1")
+
+    # 12. delete_intercom_entry_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"deleted": True}
+    )
+    assert api_utils.delete_intercom_entry_api("dir_1") is True
+    assert fake_requests.calls[-1][1].endswith("/access/intercom/dir_1")
+
+    # 13. get_access_control_metrics_api
+    metrics_payload = {"total_credentials": 25, "active_guest_passes": 5}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=metrics_payload
+    )
+    assert api_utils.get_access_control_metrics_api() == metrics_payload
+    assert fake_requests.calls[-1][1].endswith("/access/metrics")
+
+
+def test_access_control_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in access control client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.create_access_credential_api({}) is None
+    assert api_utils.list_access_credentials_api() is None
+    assert api_utils.get_access_credential_api("fail") is None
+    assert api_utils.update_access_credential_api("fail", {}) is None
+    assert api_utils.delete_access_credential_api("fail") is False
+    assert api_utils.list_tenant_credentials_api("fail") is None
+    assert api_utils.create_guest_pass_api({}) is None
+    assert api_utils.list_guest_passes_api() is None
+    assert api_utils.get_guest_pass_api("fail") is None
+    assert api_utils.update_guest_pass_api("fail", {}) is None
+    assert api_utils.delete_guest_pass_api("fail") is False
+    assert api_utils.list_tenant_guest_passes_api("fail") is None
+    assert api_utils.create_intercom_entry_api({}) is None
+    assert api_utils.list_intercom_entries_api() is None
+    assert api_utils.get_intercom_entry_api("fail") is None
+    assert api_utils.update_intercom_entry_api("fail", {}) is None
+    assert api_utils.delete_intercom_entry_api("fail") is False
+    assert api_utils.session_generate_guest_pass_api("fail", {}) is None
+    assert api_utils.session_report_lost_fob_api("fail", {}) is None
+    assert api_utils.get_access_control_metrics_api() is None

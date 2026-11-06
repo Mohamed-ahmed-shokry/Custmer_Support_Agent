@@ -4287,3 +4287,317 @@ def get_pet_metrics_api() -> dict[str, Any] | None:
         "Failed to fetch pet metrics",
         "fetching pet metrics",
     )
+
+
+# ---------------------------------------------------------------------------
+# Smart Access Control, Key Fobs & Guest Passes API Client Helpers (v0.46.0)
+# ---------------------------------------------------------------------------
+
+
+def _access_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute access control API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_access_credential_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Issue a new access credential (key fob, access card, mobile key, or PIN)."""
+    return _access_call(
+        "post",
+        "/access/credentials",
+        HTTP_CREATED,
+        "Failed to issue access credential",
+        "issuing access credential",
+        json=payload,
+    )
+
+
+def list_access_credentials_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    credential_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List access credentials with tenant, unit, status, and type filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    if credential_type:
+        params["credential_type"] = credential_type
+    return _access_call(
+        "get",
+        "/access/credentials",
+        HTTP_OK,
+        "Failed to fetch access credentials",
+        "fetching access credentials",
+        params=params,
+    )
+
+
+def get_access_credential_api(cred_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific access credential."""
+    return _access_call(
+        "get",
+        f"/access/credentials/{cred_id}",
+        HTTP_OK,
+        f"Failed to fetch access credential '{cred_id}'",
+        "fetching access credential",
+    )
+
+
+def update_access_credential_api(
+    cred_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update status, access level, or expiration for an access credential."""
+    return _access_call(
+        "patch",
+        f"/access/credentials/{cred_id}",
+        HTTP_OK,
+        f"Failed to update access credential '{cred_id}'",
+        "updating access credential",
+        json=payload,
+    )
+
+
+def delete_access_credential_api(cred_id: str) -> bool:
+    """Delete an access credential record."""
+    res = _access_call(
+        "delete",
+        f"/access/credentials/{cred_id}",
+        HTTP_OK,
+        f"Failed to delete access credential '{cred_id}'",
+        "deleting access credential",
+    )
+    return bool(res and res.get("deleted"))
+
+
+def list_tenant_credentials_api(tenant_id: str) -> dict[str, Any] | None:
+    """List all access credentials belonging to a specific resident."""
+    return _access_call(
+        "get",
+        f"/tenants/{tenant_id}/credentials",
+        HTTP_OK,
+        f"Failed to fetch credentials for tenant '{tenant_id}'",
+        "fetching tenant credentials",
+    )
+
+
+def create_guest_pass_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Issue a temporary visitor guest pass."""
+    return _access_call(
+        "post",
+        "/access/guest-passes",
+        HTTP_CREATED,
+        "Failed to generate guest pass",
+        "generating guest pass",
+        json=payload,
+    )
+
+
+def list_guest_passes_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    pass_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List guest passes with optional filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    if pass_type:
+        params["pass_type"] = pass_type
+    return _access_call(
+        "get",
+        "/access/guest-passes",
+        HTTP_OK,
+        "Failed to fetch guest passes",
+        "fetching guest passes",
+        params=params,
+    )
+
+
+def get_guest_pass_api(pass_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific guest pass."""
+    return _access_call(
+        "get",
+        f"/access/guest-passes/{pass_id}",
+        HTTP_OK,
+        f"Failed to fetch guest pass '{pass_id}'",
+        "fetching guest pass",
+    )
+
+
+def update_guest_pass_api(
+    pass_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update a guest pass or increment check-in count."""
+    return _access_call(
+        "patch",
+        f"/access/guest-passes/{pass_id}",
+        HTTP_OK,
+        f"Failed to update guest pass '{pass_id}'",
+        "updating guest pass",
+        json=payload,
+    )
+
+
+def delete_guest_pass_api(pass_id: str) -> bool:
+    """Revoke or delete a guest pass."""
+    res = _access_call(
+        "delete",
+        f"/access/guest-passes/{pass_id}",
+        HTTP_OK,
+        f"Failed to delete guest pass '{pass_id}'",
+        "deleting guest pass",
+    )
+    return bool(res and res.get("deleted"))
+
+
+def list_tenant_guest_passes_api(tenant_id: str) -> dict[str, Any] | None:
+    """List all guest passes generated by a specific resident."""
+    return _access_call(
+        "get",
+        f"/tenants/{tenant_id}/guest-passes",
+        HTTP_OK,
+        f"Failed to fetch guest passes for tenant '{tenant_id}'",
+        "fetching tenant guest passes",
+    )
+
+
+def create_intercom_entry_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a callbox/intercom directory entry."""
+    return _access_call(
+        "post",
+        "/access/intercom",
+        HTTP_CREATED,
+        "Failed to create intercom entry",
+        "creating intercom entry",
+        json=payload,
+    )
+
+
+def list_intercom_entries_api(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+) -> dict[str, Any] | None:
+    """List intercom directory entries with optional tenant/unit filters."""
+    params: dict[str, Any] = {}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    return _access_call(
+        "get",
+        "/access/intercom",
+        HTTP_OK,
+        "Failed to fetch intercom directory",
+        "fetching intercom directory",
+        params=params,
+    )
+
+
+def get_intercom_entry_api(entry_id: str) -> dict[str, Any] | None:
+    """Retrieve a specific intercom directory listing."""
+    return _access_call(
+        "get",
+        f"/access/intercom/{entry_id}",
+        HTTP_OK,
+        f"Failed to fetch intercom entry '{entry_id}'",
+        "fetching intercom entry",
+    )
+
+
+def update_intercom_entry_api(
+    entry_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update callbox/intercom directory listing settings."""
+    return _access_call(
+        "patch",
+        f"/access/intercom/{entry_id}",
+        HTTP_OK,
+        f"Failed to update intercom entry '{entry_id}'",
+        "updating intercom entry",
+        json=payload,
+    )
+
+
+def delete_intercom_entry_api(entry_id: str) -> bool:
+    """Delete an intercom directory entry."""
+    res = _access_call(
+        "delete",
+        f"/access/intercom/{entry_id}",
+        HTTP_OK,
+        f"Failed to delete intercom entry '{entry_id}'",
+        "deleting intercom entry",
+    )
+    return bool(res and res.get("deleted"))
+
+
+def session_generate_guest_pass_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Generate a temporary visitor guest pass grounded to the active resident session."""
+    return _access_call(
+        "post",
+        f"/sessions/{session_id}/generate-guest-pass",
+        HTTP_CREATED,
+        f"Failed to generate guest pass for session '{session_id}'",
+        "generating session guest pass",
+        json=payload,
+    )
+
+
+def session_report_lost_fob_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Report a key fob as lost via resident support session, deactivating it immediately."""
+    return _access_call(
+        "post",
+        f"/sessions/{session_id}/report-lost-fob",
+        HTTP_OK,
+        f"Failed to report lost fob for session '{session_id}'",
+        "reporting lost fob",
+        json=payload,
+    )
+
+
+def get_access_control_metrics_api() -> dict[str, Any] | None:
+    """Retrieve summary metrics and counts for access credentials and guest passes."""
+    return _access_call(
+        "get",
+        "/access/metrics",
+        HTTP_OK,
+        "Failed to fetch access control metrics",
+        "fetching access control metrics",
+    )
