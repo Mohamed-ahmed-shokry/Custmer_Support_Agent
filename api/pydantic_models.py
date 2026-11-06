@@ -3361,3 +3361,185 @@ class PetMetricsResponse(BaseModel):
     outstanding_fines: float = 0.0
     monthly_pet_revenue: float = 0.0
 
+
+
+# =========================================================================
+# Access Control, Key Fobs, Guest Passes & Intercom Schemas
+# =========================================================================
+
+
+class AccessCredentialItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    credential_type: str = "key_fob"
+    credential_number: str
+    status: str = "active"
+    access_level: str = "standard"
+    assigned_to_name: str | None = None
+    issued_at: str
+    expires_at: str | None = None
+    deactivated_at: str | None = None
+    deactivation_reason: str | None = None
+    replacement_fee: float = 50.0
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class AccessCredentialCreateRequest(BaseModel):
+    tenant_id: str = Field(...)
+    unit_id: str = Field(...)
+    credential_type: str = Field(default="key_fob")
+    credential_number: str | None = Field(default=None)
+    status: str = Field(default="active")
+    access_level: str = Field(default="standard")
+    assigned_to_name: str | None = Field(default=None, max_length=150)
+    issued_at: str | None = None
+    expires_at: str | None = None
+    replacement_fee: float = Field(default=50.0, ge=0.0)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class AccessCredentialUpdateRequest(BaseModel):
+    status: str | None = None
+    access_level: str | None = None
+    assigned_to_name: str | None = None
+    expires_at: str | None = None
+    deactivation_reason: str | None = None
+    replacement_fee: float | None = None
+    notes: str | None = None
+
+
+class AccessCredentialResponse(BaseModel):
+    credential: AccessCredentialItem
+
+
+class AccessCredentialListResponse(BaseModel):
+    items: list[AccessCredentialItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class GuestPassItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    guest_name: str
+    guest_phone: str | None = None
+    pass_type: str = "visitor"
+    access_code: str
+    status: str = "active"
+    valid_from: str
+    valid_until: str
+    max_uses: int | None = 1
+    uses_count: int = 0
+    allowed_zones: list[str] = Field(default_factory=list)
+    notes: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class GuestPassCreateRequest(BaseModel):
+    tenant_id: str = Field(...)
+    unit_id: str = Field(...)
+    guest_name: str = Field(..., min_length=1, max_length=150)
+    guest_phone: str | None = Field(default=None, max_length=50)
+    pass_type: str = Field(default="visitor")
+    access_code: str | None = Field(default=None, max_length=20)
+    valid_from: str | None = None
+    valid_until: str | None = None
+    max_uses: int = Field(default=1, ge=0)
+    allowed_zones: list[str] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class GuestPassUpdateRequest(BaseModel):
+    status: str | None = None
+    valid_until: str | None = None
+    allowed_zones: list[str] | None = None
+    notes: str | None = None
+    increment_use: bool = False
+
+
+class GuestPassResponse(BaseModel):
+    guest_pass: GuestPassItem
+
+
+class GuestPassListResponse(BaseModel):
+    items: list[GuestPassItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class IntercomDirectoryItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    display_name: str
+    directory_code: str
+    forwarding_phone: str
+    buzzer_enabled: bool = True
+    allow_video: bool = False
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class IntercomDirectoryCreateRequest(BaseModel):
+    tenant_id: str = Field(...)
+    unit_id: str = Field(...)
+    display_name: str = Field(..., min_length=1, max_length=100)
+    directory_code: str = Field(..., min_length=1, max_length=20)
+    forwarding_phone: str = Field(..., min_length=1, max_length=50)
+    buzzer_enabled: bool = True
+    allow_video: bool = False
+
+
+class IntercomDirectoryUpdateRequest(BaseModel):
+    display_name: str | None = None
+    forwarding_phone: str | None = None
+    buzzer_enabled: bool | None = None
+    allow_video: bool | None = None
+
+
+class IntercomDirectoryResponse(BaseModel):
+    entry: IntercomDirectoryItem
+
+
+class IntercomDirectoryListResponse(BaseModel):
+    items: list[IntercomDirectoryItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class SessionGenerateGuestPassRequest(BaseModel):
+    guest_name: str = Field(..., min_length=1, max_length=150)
+    guest_phone: str | None = Field(default=None, max_length=50)
+    pass_type: str = Field(default="visitor")
+    valid_hours: int = Field(default=24, ge=1, le=720)
+    allowed_zones: list[str] | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class SessionReportLostFobRequest(BaseModel):
+    credential_id: str = Field(..., min_length=1)
+    deactivation_reason: str = Field(
+        default="Resident reported key fob lost or stolen via chat support"
+    )
+    charge_replacement_fee: bool = True
+
+
+class AccessControlMetricsResponse(BaseModel):
+    total_credentials: int = 0
+    active_credentials: int = 0
+    lost_credentials: int = 0
+    mobile_keys_count: int = 0
+    replacement_fees_assessed: float = 0.0
+    total_guest_passes: int = 0
+    active_guest_passes: int = 0
+    total_guest_entries: int = 0
+    intercom_directory_count: int = 0
+    buzzer_enabled_count: int = 0

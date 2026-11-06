@@ -3,6 +3,12 @@ from datetime import datetime
 import pytest
 from api.pydantic_models import (
     DEFAULT_MODEL,
+    AccessControlMetricsResponse,
+    AccessCredentialCreateRequest,
+    AccessCredentialItem,
+    AccessCredentialListResponse,
+    AccessCredentialResponse,
+    AccessCredentialUpdateRequest,
     AgentPerformanceScorecardsResponse,
     AgentScorecardItem,
     AgentWorkloadItem,
@@ -30,6 +36,11 @@ from api.pydantic_models import (
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
+    GuestPassCreateRequest,
+    GuestPassItem,
+    GuestPassListResponse,
+    GuestPassResponse,
+    GuestPassUpdateRequest,
     InspectionCompleteRequest,
     InspectionCreateRequest,
     InspectionDocumentPublishRequest,
@@ -41,6 +52,11 @@ from api.pydantic_models import (
     InspectionResponse,
     InspectionUpdateRequest,
     InspectionWorkOrderConversionRequest,
+    IntercomDirectoryCreateRequest,
+    IntercomDirectoryItem,
+    IntercomDirectoryListResponse,
+    IntercomDirectoryResponse,
+    IntercomDirectoryUpdateRequest,
     KnowledgeArticleCreateRequest,
     KnowledgeArticleItem,
     KnowledgeArticleListResponse,
@@ -120,11 +136,13 @@ from api.pydantic_models import (
     SessionAssignmentRecord,
     SessionAssignmentRequest,
     SessionDraftArticleRequest,
+    SessionGenerateGuestPassRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
+    SessionReportLostFobRequest,
     SessionSLAStatusResponse,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -2534,3 +2552,114 @@ def test_pet_models_validation():
     assert metrics.total_active_pets == expected_active_count
     assert metrics.monthly_pet_revenue == expected_revenue
 
+
+
+def test_access_control_models_validation():
+    """Verify validation and serialization for access control Pydantic models."""
+    expected_fee = 50.0
+    expected_total_creds = 42
+
+    # Credential models
+    cred_req = AccessCredentialCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        credential_type="key_fob",
+        credential_number="FOB-8811",
+        access_level="all_access",
+    )
+    assert cred_req.credential_number == "FOB-8811"
+
+    cred_item = AccessCredentialItem(
+        id="cred_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        credential_number="FOB-8811",
+        issued_at="2026-11-01T00:00:00",
+        replacement_fee=expected_fee,
+    )
+    cred_resp = AccessCredentialResponse(credential=cred_item)
+    assert cred_resp.credential.id == "cred_01"
+
+    cred_list = AccessCredentialListResponse(items=[cred_item], total=1)
+    assert len(cred_list.items) == 1
+
+    cred_up = AccessCredentialUpdateRequest(status="suspended")
+    assert cred_up.status == "suspended"
+
+    # Guest pass models
+    pass_req = GuestPassCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        guest_name="Sarah Visitor",
+        pass_type="visitor",
+        max_uses=2,
+    )
+    assert pass_req.guest_name == "Sarah Visitor"
+
+    pass_item = GuestPassItem(
+        id="pass_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        guest_name="Sarah Visitor",
+        access_code="123456",
+        valid_from="2026-11-01T00:00:00",
+        valid_until="2026-11-02T00:00:00",
+        allowed_zones=["main_lobby", "elevator"],
+    )
+    pass_resp = GuestPassResponse(guest_pass=pass_item)
+    assert pass_resp.guest_pass.access_code == "123456"
+
+    pass_list = GuestPassListResponse(items=[pass_item], total=1)
+    assert len(pass_list.items) == 1
+
+    pass_up = GuestPassUpdateRequest(increment_use=True)
+    assert pass_up.increment_use is True
+
+    # Intercom directory models
+    intercom_req = IntercomDirectoryCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        display_name="Smith, J.",
+        directory_code="101",
+        forwarding_phone="+1-555-0101",
+    )
+    assert intercom_req.directory_code == "101"
+
+    intercom_item = IntercomDirectoryItem(
+        id="dir_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        display_name="Smith, J.",
+        directory_code="101",
+        forwarding_phone="+1-555-0101",
+    )
+    intercom_resp = IntercomDirectoryResponse(entry=intercom_item)
+    assert intercom_resp.entry.display_name == "Smith, J."
+
+    intercom_list = IntercomDirectoryListResponse(items=[intercom_item], total=1)
+    assert len(intercom_list.items) == 1
+
+    intercom_up = IntercomDirectoryUpdateRequest(buzzer_enabled=False)
+    assert intercom_up.buzzer_enabled is False
+
+    # Session actions
+    expected_hours = 12
+    gen_pass = SessionGenerateGuestPassRequest(
+        guest_name="Delivery Courier",
+        valid_hours=expected_hours,
+    )
+    assert gen_pass.valid_hours == expected_hours
+
+    lost_fob = SessionReportLostFobRequest(
+        credential_id="cred_01",
+        deactivation_reason="Lost on subway",
+    )
+    assert lost_fob.credential_id == "cred_01"
+
+    # Metrics
+    metrics = AccessControlMetricsResponse(
+        total_credentials=expected_total_creds,
+        active_credentials=38,
+        lost_credentials=4,
+    )
+    assert metrics.total_credentials == expected_total_creds
