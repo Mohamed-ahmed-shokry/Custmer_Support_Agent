@@ -1840,6 +1840,62 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.47.0 plan — Resident Incident Reports, Community Violations, Security Patrols & Notice-to-Cure Engine (IN PROGRESS)
+
+Give property managers, leasing staff, and residents an automated incident reporting, community violation notice, notice-to-cure, fine assessment, appeal review, and security patrol log engine. Operators log community incidents (noise complaints, common area damage, smoking infractions, pet waste, unauthorized alterations), issue formal notices to cure with statutory deadlines (e.g. 3-day notice, 7-day cure window), assess standard violation fines to the resident billing ledger, review appeals submitted by residents, and monitor compliance KPIs. Active resident chat conversations automatically ground open incidents, violation notices, and appeal statuses into prompt context (`[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]`) and resolve canned response macros (`{active_violations_count}`, `{primary_violation_type}`, `{notice_type}`, `{cure_deadline}`, `{fine_amount}`, `{appeal_status}`). Real-time webhook events (`incident.reported`, `violation.notice_issued`, `violation.fine_assessed`, `violation.appeal_resolved`) keep property operations, security, and legal teams synchronized.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers and residents can:
+1. Log and review property incidents (incident type, severity, reporting party, description, unit/location).
+2. Issue formal community violation notices to residents with violation classifications, notice types (`warning`, `first_cure_notice`, `final_cure_notice`, `fine_notice`), cure deadlines, and fine amounts.
+3. Automatically assess violation fines directly into the tenant's unit billing ledger.
+4. Process resident violation appeals with status tracking (`submitted`, `under_review`, `waived`, `upheld`).
+5. Track property compliance and security metrics (total incidents, open violations, assessed fines, collected fines, active appeals).
+6. Ground active resident chat sessions with violation notices and resolve `{violation_*}` and `{notice_*}` macro variables dynamically.
+
+### Scope
+- `api/incidents.py`:
+  - SQLite tables `community_incidents`, `violation_notices`, and `violation_appeals` with indexes and foreign keys.
+  - Enums: `IncidentType`, `IncidentSeverity`, `IncidentStatus`, `NoticeType`, `ViolationStatus`, `AppealStatus`.
+  - CRUD operations and metrics aggregator `get_incident_metrics_summary()`.
+  - Seed data: sample noise incident, cure notice, and appeal for Elena Rostova (`tenant_3`, `unit_PH1`).
+- `api/pydantic_models.py`:
+  - Pydantic models for incidents, notices, appeals, session actions, and metrics.
+- `api/db_utils.py`:
+  - Webhook event types for incident and violation lifecycle.
+- `api/main.py`:
+  - REST endpoints for `/incidents`, `/violations`, `/appeals`, `/incidents/metrics`, and session 1-click actions `POST /sessions/{id}/issue-violation-notice` and `POST /sessions/{id}/submit-violation-appeal`.
+- `api/tenant_context.py`:
+  - RAG prompt grounding block `[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]` and macro variables.
+- `app/api_utils.py`:
+  - Typed client API wrappers for incident and violation endpoints.
+- `app/sidebar.py`:
+  - Streamlit `🚨 Incidents & Community Violations` sidebar management panel (Incidents, Notices, Appeals, KPIs) and 1-click resident profile violation notice & appeal actions.
+- Tests:
+  - Unit tests for engine, models, tenant context, routes, app client, and UI.
+
+### Acceptance Criteria
+- [ ] AC1: Core SQLite database schema & migrations in `api/incidents.py` with foreign keys to `tenants` and `units` and seeds.
+- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [ ] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click issue-notice and submit-appeal actions.
+- [ ] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [ ] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [ ] AC6: Streamlit UI components in `app/sidebar.py` (incidents & violations board & session widget).
+- [ ] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [ ] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [ ] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Breakdown
+- [ ] Task 1: Document v0.47.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [ ] Task 2: Implement `api/incidents.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_incidents.py`.
+- [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_incident_routes.py`.
+- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [ ] Task 7: Implement Streamlit UI incident board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [ ] Task 8: Version bump to `0.47.0` and documentation updates in `docs/API.md` and `README.md`.
+- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
 Big update: user-defined collections scope documents, retrieval, and the UI
