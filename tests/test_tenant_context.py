@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import access_control, amenities, db_utils, packages, parking, pets, vendors
+from api import access_control, amenities, db_utils, incidents, packages, parking, pets, vendors
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -36,6 +36,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     parking.init_parking_db()
     pets.init_pets_db()
     access_control.init_access_control_db()
+    incidents.init_incidents_db()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -719,3 +720,50 @@ def test_render_template_with_access_control_variables():
     assert "active key fob is FOB-9042" in rendered
     assert "intercom buzzer code is #PH1" in rendered
     assert "visitor guest code is 618902" in rendered
+
+
+def test_build_tenant_rag_context_with_incidents():
+    """Verify that build_tenant_rag_context includes incidents and violation notices."""
+    context = build_tenant_rag_context(tenant_id="tenant_3")
+    assert "[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]" in context
+    assert "Active Violation Notices: 1" in context
+    assert "Courtesy Warning: Noise Complaint" in context
+    assert "Open Community Incidents: 1" in context
+    assert "Incident #INC-2026-101" in context
+    assert "Active Appeals: 1" in context
+    assert "Appeal #APL-2026-042" in context
+
+
+def test_extract_tenant_macro_variables_with_incidents():
+    """Verify macro variable extraction for community violations and appeals."""
+    sid = "sess-incident-test"
+    db_utils.insert_application_logs(sid, "Violation query", "Checking noise notice", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["active_violations_count"] == "1"
+    assert variables["primary_violation_type"] == "Noise Complaint"
+    assert variables["notice_type"] == "Courtesy Warning"
+    assert variables["violation_fine_amount"] == "$0.00"
+    assert variables["cure_deadline"] == "2026-11-12"
+    assert variables["appeal_status"] == "under_review"
+    assert variables["active_incidents_count"] == "1"
+
+
+def test_render_template_with_incident_variables():
+    """Verify macro template rendering with incident and violation variables."""
+    sid = "sess-incident-render"
+    db_utils.insert_application_logs(sid, "Violation check", "Providing notice details", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    template = (
+        "Hello {customer_name}, you have {active_violations_count} active notice "
+        "({notice_type}) for {primary_violation_type} with cure deadline {cure_deadline}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Elena Rostova" in rendered
+    assert "1 active notice" in rendered
+    assert "Courtesy Warning" in rendered
+    assert "Noise Complaint" in rendered
+    assert "cure deadline 2026-11-12" in rendered

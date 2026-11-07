@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import access_control, amenities, packages, parking, pets, vendors
+from api import access_control, amenities, incidents, packages, parking, pets, vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -662,6 +662,142 @@ def _extract_access_control_vars(
     }
 
 
+def _format_incident_lines(
+    incident_items: list[dict[str, Any]],
+    notice_items: list[dict[str, Any]],
+    appeal_items: list[dict[str, Any]],
+) -> list[str]:
+    """Format community incidents, violation notices, and resident appeals for prompt context."""
+    if not incident_items and not notice_items and not appeal_items:
+        return []
+
+    lines = ["[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]"]
+
+    if notice_items:
+        active_notices = [
+            n for n in notice_items if n.get("status") in ("issued", "escalated", "appealed")
+        ]
+        lines.append(
+            f"- Active Violation Notices: {len(active_notices)} (Total Issued: {len(notice_items)})"
+        )
+        for n in notice_items[:3]:
+            ntype = str(n.get("notice_type", "warning")).replace("_", " ").title()
+            vtype = str(n.get("violation_type", "violation")).replace("_", " ").title()
+            issued = str(n.get("issued_at", ""))[:10]
+            deadline = str(n.get("cure_deadline", "None"))[:10]
+            fine = format_currency(n.get("fine_amount", 0.0))
+            status = str(n.get("status", "issued")).upper()
+            lines.append(
+                f"  - {ntype}: {vtype} | Issued: {issued} | Cure Deadline: {deadline} "
+                f"| Fine: {fine} | Status: {status}"
+            )
+            remedy = n.get("remedy_instructions")
+            if remedy:
+                lines.append(f"    Remedy: {remedy}")
+    else:
+        lines.append("- Active Violation Notices: None")
+
+    if incident_items:
+        open_incs = [
+            i for i in incident_items
+            if i.get("status") in ("reported", "under_investigation", "notice_issued")
+        ]
+        lines.append(f"- Open Community Incidents: {len(open_incs)}")
+        for inc in incident_items[:2]:
+            num = inc.get("incident_number", "Unknown")
+            itype = str(inc.get("incident_type", "incident")).replace("_", " ").title()
+            sev = str(inc.get("severity", "low")).title()
+            idate = str(inc.get("incident_date", ""))[:10]
+            stat = str(inc.get("status", "reported")).upper()
+            lines.append(
+                f"  - Incident #{num}: {itype} (Severity: {sev}) | Date: {idate} | Status: {stat}"
+            )
+    else:
+        lines.append("- Open Community Incidents: None")
+
+    if appeal_items:
+        pending_apps = [
+            a for a in appeal_items if a.get("status") in ("submitted", "under_review")
+        ]
+        lines.append(f"- Active Appeals: {len(appeal_items)} (Pending Review: {len(pending_apps)})")
+        for a in appeal_items[:2]:
+            num = a.get("appeal_number", "Unknown")
+            nid = a.get("notice_id", "Unknown")
+            astat = str(a.get("status", "submitted")).upper()
+            asub = str(a.get("submitted_at", ""))[:10]
+            lines.append(f"  - Appeal #{num} (Notice #{nid}) | Status: {astat} | Submitted: {asub}")
+
+    lines.append("[END INCIDENTS & VIOLATIONS]")
+    return lines
+
+
+def _extract_incident_vars(
+    incident_items: list[dict[str, Any]],
+    notice_items: list[dict[str, Any]],
+    appeal_items: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Extract macro template replacement variables for incidents and violations."""
+    active_notices = [
+        n for n in notice_items if n.get("status") in ("issued", "escalated", "appealed")
+    ]
+    open_incidents = [
+        i for i in incident_items
+        if i.get("status") in ("reported", "under_investigation", "notice_issued")
+    ]
+    pending_appeals = [a for a in appeal_items if a.get("status") in ("submitted", "under_review")]
+
+    primary_notice = (
+        active_notices[0]
+        if active_notices
+        else (notice_items[0] if notice_items else None)
+    )
+    latest_appeal = (
+        pending_appeals[0]
+        if pending_appeals
+        else (appeal_items[0] if appeal_items else None)
+    )
+
+    v_count = str(len(active_notices))
+    v_type = (
+        str(primary_notice.get("violation_type", "None")).replace("_", " ").title()
+        if primary_notice
+        else "None"
+    )
+    n_type = (
+        str(primary_notice.get("notice_type", "None")).replace("_", " ").title()
+        if primary_notice
+        else "None"
+    )
+    c_deadline = (
+        str(primary_notice.get("cure_deadline", "None"))[:10]
+        if primary_notice and primary_notice.get("cure_deadline")
+        else "None"
+    )
+    f_amount = (
+        format_currency(primary_notice.get("fine_amount", 0.0))
+        if primary_notice
+        else "$0.00"
+    )
+    remedy = primary_notice.get("remedy_instructions", "None") if primary_notice else "None"
+    a_stat = (
+        str(latest_appeal.get("status", "none")).lower()
+        if latest_appeal
+        else "none"
+    )
+
+    return {
+        "active_violations_count": v_count,
+        "primary_violation_type": v_type,
+        "notice_type": n_type,
+        "cure_deadline": c_deadline,
+        "fine_amount": f_amount,
+        "violation_fine_amount": f_amount,
+        "violation_remedy": remedy,
+        "appeal_status": a_stat,
+        "active_incidents_count": str(len(open_incidents)),
+    }
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -721,6 +857,24 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             parking_spots = parking.list_parking_spots(unit_id=resolved_unit_id)
             resident_vehicles = parking.list_vehicles(unit_id=resolved_unit_id)
             visitor_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
+
+    community_incidents: list[dict[str, Any]] = []
+    violation_notices: list[dict[str, Any]] = []
+    violation_appeals: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        inc_res = incidents.list_incidents(tenant_id=resolved_tenant_id)
+        community_incidents = inc_res.get("items", [])
+        vn_res = incidents.list_violation_notices(tenant_id=resolved_tenant_id)
+        violation_notices = vn_res.get("items", [])
+        ap_res = incidents.list_violation_appeals(tenant_id=resolved_tenant_id)
+        violation_appeals = ap_res.get("items", [])
+    elif resolved_unit_id:
+        inc_res = incidents.list_incidents(unit_id=resolved_unit_id)
+        community_incidents = inc_res.get("items", [])
+        vn_res = incidents.list_violation_notices(unit_id=resolved_unit_id)
+        violation_notices = vn_res.get("items", [])
+        ap_res = incidents.list_violation_appeals(tenant_id=resolved_unit_id)
+        violation_appeals = ap_res.get("items", [])
 
     access_credentials: list[dict[str, Any]] = []
     active_guest_passes: list[dict[str, Any]] = []
@@ -821,6 +975,11 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         lines.extend(
             _format_access_control_lines(access_credentials, active_guest_passes, intercom_entry)
         )
+        if community_incidents or violation_notices or violation_appeals:
+            lines.append("")
+            lines.extend(
+                _format_incident_lines(community_incidents, violation_notices, violation_appeals)
+            )
 
     return "\n".join(lines)
 
@@ -1064,6 +1223,20 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         t_pets = pets.list_resident_pets(unit_id=resolved_unit_id)
     default_policy = pets.get_pet_policy("policy_default")
     variables.update(_extract_pet_vars(t_pets, default_policy))
+
+    t_incidents: list[dict[str, Any]] = []
+    t_notices: list[dict[str, Any]] = []
+    t_appeals: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        t_incidents = incidents.list_incidents(tenant_id=resolved_tenant_id).get("items", [])
+        t_notices = incidents.list_violation_notices(tenant_id=resolved_tenant_id).get("items", [])
+        t_appeals = incidents.list_violation_appeals(tenant_id=resolved_tenant_id).get("items", [])
+    elif resolved_unit_id:
+        t_incidents = incidents.list_incidents(unit_id=resolved_unit_id).get("items", [])
+        t_notices = incidents.list_violation_notices(unit_id=resolved_unit_id).get("items", [])
+        t_appeals = incidents.list_violation_appeals(unit_id=resolved_unit_id).get("items", [])
+
+    variables.update(_extract_incident_vars(t_incidents, t_notices, t_appeals))
 
     t_creds: list[dict[str, Any]] = []
     t_passes: list[dict[str, Any]] = []

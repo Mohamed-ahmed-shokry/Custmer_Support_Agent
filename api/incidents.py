@@ -502,6 +502,9 @@ def list_incidents(  # noqa: PLR0913, PLR0917
         if unit_id:
             query += " AND unit_id = ?"
             params.append(unit_id)
+        if unit_id:
+            query += " AND unit_id = ?"
+            params.append(unit_id)
         if incident_type:
             query += " AND incident_type = ?"
             params.append(incident_type)
@@ -993,9 +996,10 @@ def get_violation_appeal(appeal_id: str) -> dict[str, Any] | None:
         conn.close()
 
 
-def list_violation_appeals(  # noqa: PLR0913
+def list_violation_appeals(  # noqa: PLR0913, PLR0917
     notice_id: str | None = None,
     tenant_id: str | None = None,
+    unit_id: str | None = None,
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
