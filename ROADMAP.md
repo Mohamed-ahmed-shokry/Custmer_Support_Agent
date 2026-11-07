@@ -1840,7 +1840,7 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
-## v0.47.0 plan — Resident Incident Reports, Community Violations, Security Patrols & Notice-to-Cure Engine (IN PROGRESS)
+## v0.47.0 plan — Resident Incident Reports, Community Violations, Security Patrols & Notice-to-Cure Engine ✅ COMPLETED
 
 Give property managers, leasing staff, and residents an automated incident reporting, community violation notice, notice-to-cure, fine assessment, appeal review, and security patrol log engine. Operators log community incidents (noise complaints, common area damage, smoking infractions, pet waste, unauthorized alterations), issue formal notices to cure with statutory deadlines (e.g. 3-day notice, 7-day cure window), assess standard violation fines to the resident billing ledger, review appeals submitted by residents, and monitor compliance KPIs. Active resident chat conversations automatically ground open incidents, violation notices, and appeal statuses into prompt context (`[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]`) and resolve canned response macros (`{active_violations_count}`, `{primary_violation_type}`, `{notice_type}`, `{cure_deadline}`, `{fine_amount}`, `{appeal_status}`). Real-time webhook events (`incident.reported`, `violation.notice_issued`, `violation.fine_assessed`, `violation.appeal_resolved`) keep property operations, security, and legal teams synchronized.
 
@@ -1875,26 +1875,26 @@ Via the API and Streamlit UI, property managers and residents can:
   - Unit tests for engine, models, tenant context, routes, app client, and UI.
 
 ### Acceptance Criteria
-- [ ] AC1: Core SQLite database schema & migrations in `api/incidents.py` with foreign keys to `tenants` and `units` and seeds.
-- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
-- [ ] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click issue-notice and submit-appeal actions.
-- [ ] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
-- [ ] AC5: Streamlit API client utilities in `app/api_utils.py`.
-- [ ] AC6: Streamlit UI components in `app/sidebar.py` (incidents & violations board & session widget).
-- [ ] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
-- [ ] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
-- [ ] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+- [x] AC1: Core SQLite database schema & migrations in `api/incidents.py` with foreign keys to `tenants` and `units` and seeds.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click issue-notice and submit-appeal actions.
+- [x] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [x] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [x] AC6: Streamlit UI components in `app/sidebar.py` (incidents & violations board & session widget).
+- [x] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [x] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [x] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
 
 ### Micro-Task Breakdown
-- [ ] Task 1: Document v0.47.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/incidents.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_incidents.py`.
-- [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_incident_routes.py`.
-- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
-- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
-- [ ] Task 7: Implement Streamlit UI incident board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
-- [ ] Task 8: Version bump to `0.47.0` and documentation updates in `docs/API.md` and `README.md`.
-- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+- [x] Task 1: Document v0.47.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/incidents.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_incidents.py`.
+- [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_incident_routes.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 7: Implement Streamlit UI incident board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.47.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 
