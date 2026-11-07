@@ -3418,3 +3418,207 @@ def test_access_control_api_utils_errors(monkeypatch):
     assert api_utils.session_generate_guest_pass_api("fail", {}) is None
     assert api_utils.session_report_lost_fob_api("fail", {}) is None
     assert api_utils.get_access_control_metrics_api() is None
+
+
+
+def test_incidents_api_utils(monkeypatch):
+    """Verify happy-path execution for incident API client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(
+        response=FakeResponse(status_code=200, payload={"status": "ok"})
+    )
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # 1. create_incident_api
+    inc_payload = {"incident": {"id": "inc_1", "incident_number": "INC-2026-101"}}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=inc_payload
+    )
+    assert api_utils.create_incident_api({"description": "Test"}) == inc_payload
+    assert fake_requests.calls[-1][1].endswith("/incidents")
+
+    # 2. list_incidents_api
+    list_payload = {"items": [inc_payload["incident"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_payload
+    )
+    assert api_utils.list_incidents_api(severity="medium") == list_payload
+    params = fake_requests.calls[-1][2].get("params", {})
+    assert "severity=medium" in fake_requests.calls[-1][1] or params.get("severity") == "medium"
+
+    # 3. get_incident_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=inc_payload
+    )
+    assert api_utils.get_incident_api("inc_1") == inc_payload
+    assert fake_requests.calls[-1][1].endswith("/incidents/inc_1")
+
+    # 4. update_incident_api
+    updated_payload = {"incident": {"id": "inc_1", "status": "resolved"}}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=updated_payload
+    )
+    assert api_utils.update_incident_api("inc_1", {"status": "resolved"}) == updated_payload
+    assert fake_requests.calls[-1][1].endswith("/incidents/inc_1")
+
+    # 5. delete_incident_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_incident_api("inc_1") is True
+    assert fake_requests.calls[-1][1].endswith("/incidents/inc_1")
+
+    # 6. list_tenant_incidents_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=list_payload
+    )
+    assert api_utils.list_tenant_incidents_api("tenant_1") == list_payload
+    assert fake_requests.calls[-1][1].endswith("/tenants/tenant_1/incidents")
+
+
+def test_violations_and_appeals_api_utils(monkeypatch):
+    """Verify happy-path execution for violation notices and appeals client helpers."""
+    fake_st = FakeStreamlit()
+    fake_requests = FakeRequests(
+        response=FakeResponse(status_code=200, payload={"status": "ok"})
+    )
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # 1. create_violation_notice_api
+    vn_payload = {"notice": {"id": "viol_1", "notice_number": "VN-2026-089"}}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=vn_payload
+    )
+    assert api_utils.create_violation_notice_api({"tenant_id": "t1"}) == vn_payload
+    assert fake_requests.calls[-1][1].endswith("/violations")
+
+    # 2. list_violation_notices_api
+    vn_list = {"items": [vn_payload["notice"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=vn_list
+    )
+    assert api_utils.list_violation_notices_api(tenant_id="t1") == vn_list
+    assert fake_requests.calls[-1][1].endswith("/violations")
+
+    # 3. get_violation_notice_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=vn_payload
+    )
+    assert api_utils.get_violation_notice_api("viol_1") == vn_payload
+    assert fake_requests.calls[-1][1].endswith("/violations/viol_1")
+
+    # 4. update_violation_notice_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=vn_payload
+    )
+    assert api_utils.update_violation_notice_api("viol_1", {"status": "cured"}) == vn_payload
+
+    # 5. delete_violation_notice_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_violation_notice_api("viol_1") is True
+
+    # 6. list_tenant_violation_notices_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=vn_list
+    )
+    assert api_utils.list_tenant_violation_notices_api("t1") == vn_list
+    assert fake_requests.calls[-1][1].endswith("/tenants/t1/violations")
+
+    # 7. create_violation_appeal_api
+    apl_payload = {"appeal": {"id": "apl_1", "appeal_number": "APL-2026-042"}}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=apl_payload
+    )
+    assert api_utils.create_violation_appeal_api({"reason": "Test"}) == apl_payload
+    assert fake_requests.calls[-1][1].endswith("/appeals")
+
+    # 8. list_violation_appeals_api
+    apl_list = {"items": [apl_payload["appeal"]], "total": 1, "limit": 50, "offset": 0}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=apl_list
+    )
+    assert api_utils.list_violation_appeals_api(tenant_id="t1") == apl_list
+    assert fake_requests.calls[-1][1].endswith("/appeals")
+
+    # 9. get_violation_appeal_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=apl_payload
+    )
+    assert api_utils.get_violation_appeal_api("apl_1") == apl_payload
+
+    # 10. update_violation_appeal_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=apl_payload
+    )
+    assert api_utils.update_violation_appeal_api("apl_1", {"status": "waived"}) == apl_payload
+
+    # 11. delete_violation_appeal_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload={"status": "deleted"}
+    )
+    assert api_utils.delete_violation_appeal_api("apl_1") is True
+
+    # 12. list_tenant_violation_appeals_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=apl_list
+    )
+    assert api_utils.list_tenant_violation_appeals_api("t1") == apl_list
+    assert fake_requests.calls[-1][1].endswith("/tenants/t1/appeals")
+
+    # 13. session_issue_violation_notice_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=vn_payload
+    )
+    assert api_utils.session_issue_violation_notice_api("sess_1", {}) == vn_payload
+    assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/issue-violation-notice")
+
+    # 14. session_submit_violation_appeal_api
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_CREATED, payload=apl_payload
+    )
+    assert api_utils.session_submit_violation_appeal_api("sess_1", {}) == apl_payload
+    assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/submit-violation-appeal")
+
+    # 15. get_incident_metrics_api
+    metrics_payload = {"total_incidents": 10, "total_violations": 5}
+    fake_requests.response = FakeResponse(
+        status_code=api_utils.HTTP_OK, payload=metrics_payload
+    )
+    assert api_utils.get_incident_metrics_api() == metrics_payload
+    assert fake_requests.calls[-1][1].endswith("/incidents/metrics")
+
+
+def test_incident_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in incident client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.create_incident_api({}) is None
+    assert api_utils.list_incidents_api() is None
+    assert api_utils.get_incident_api("fail") is None
+    assert api_utils.update_incident_api("fail", {}) is None
+    assert api_utils.delete_incident_api("fail") is False
+    assert api_utils.list_tenant_incidents_api("fail") is None
+
+    assert api_utils.create_violation_notice_api({}) is None
+    assert api_utils.list_violation_notices_api() is None
+    assert api_utils.get_violation_notice_api("fail") is None
+    assert api_utils.update_violation_notice_api("fail", {}) is None
+    assert api_utils.delete_violation_notice_api("fail") is False
+    assert api_utils.list_tenant_violation_notices_api("fail") is None
+
+    assert api_utils.create_violation_appeal_api({}) is None
+    assert api_utils.list_violation_appeals_api() is None
+    assert api_utils.get_violation_appeal_api("fail") is None
+    assert api_utils.update_violation_appeal_api("fail", {}) is None
+    assert api_utils.delete_violation_appeal_api("fail") is False
+    assert api_utils.list_tenant_violation_appeals_api("fail") is None
+
+    assert api_utils.session_issue_violation_notice_api("fail", {}) is None
+    assert api_utils.session_submit_violation_appeal_api("fail", {}) is None
+    assert api_utils.get_incident_metrics_api() is None

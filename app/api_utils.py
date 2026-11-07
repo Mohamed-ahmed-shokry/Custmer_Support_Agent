@@ -4601,3 +4601,335 @@ def get_access_control_metrics_api() -> dict[str, Any] | None:
         "Failed to fetch access control metrics",
         "fetching access control metrics",
     )
+
+
+
+def _incident_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute incident and violation API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_incident_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Log a new community incident report via the API."""
+    return _incident_call(
+        "post",
+        "/incidents",
+        HTTP_CREATED,
+        "Failed to create incident report",
+        "creating incident report",
+        json=payload,
+    )
+
+
+def list_incidents_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    incident_type: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List community incidents with filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if incident_type:
+        params["incident_type"] = incident_type
+    if severity:
+        params["severity"] = severity
+    if status:
+        params["status"] = status
+    if search:
+        params["search"] = search
+    return _incident_call(
+        "get",
+        "/incidents",
+        HTTP_OK,
+        "Failed to fetch incidents",
+        "fetching incidents",
+        params=params,
+    )
+
+
+def get_incident_api(incident_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific incident report."""
+    return _incident_call(
+        "get",
+        f"/incidents/{incident_id}",
+        HTTP_OK,
+        f"Failed to fetch incident '{incident_id}'",
+        f"fetching incident '{incident_id}'",
+    )
+
+
+def update_incident_api(incident_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update community incident record status, severity, or resolution."""
+    return _incident_call(
+        "patch",
+        f"/incidents/{incident_id}",
+        HTTP_OK,
+        f"Failed to update incident '{incident_id}'",
+        f"updating incident '{incident_id}'",
+        json=payload,
+    )
+
+
+def delete_incident_api(incident_id: str) -> bool:
+    """Permanently delete an incident record."""
+    res = _incident_call(
+        "delete",
+        f"/incidents/{incident_id}",
+        HTTP_OK,
+        f"Failed to delete incident '{incident_id}'",
+        f"deleting incident '{incident_id}'",
+    )
+    return bool(res and res.get("status") == "deleted")
+
+
+def list_tenant_incidents_api(tenant_id: str) -> dict[str, Any] | None:
+    """List all incidents involving a specific tenant."""
+    return _incident_call(
+        "get",
+        f"/tenants/{tenant_id}/incidents",
+        HTTP_OK,
+        f"Failed to fetch incidents for tenant '{tenant_id}'",
+        f"fetching incidents for tenant '{tenant_id}'",
+    )
+
+
+def create_violation_notice_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Issue a formal community violation notice to a resident."""
+    return _incident_call(
+        "post",
+        "/violations",
+        HTTP_CREATED,
+        "Failed to issue violation notice",
+        "issuing violation notice",
+        json=payload,
+    )
+
+
+def list_violation_notices_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    violation_type: str | None = None,
+    notice_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List violation notices with filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if violation_type:
+        params["violation_type"] = violation_type
+    if notice_type:
+        params["notice_type"] = notice_type
+    if status:
+        params["status"] = status
+    if search:
+        params["search"] = search
+    return _incident_call(
+        "get",
+        "/violations",
+        HTTP_OK,
+        "Failed to fetch violation notices",
+        "fetching violation notices",
+        params=params,
+    )
+
+
+def get_violation_notice_api(notice_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific violation notice."""
+    return _incident_call(
+        "get",
+        f"/violations/{notice_id}",
+        HTTP_OK,
+        f"Failed to fetch violation notice '{notice_id}'",
+        f"fetching violation notice '{notice_id}'",
+    )
+
+
+def update_violation_notice_api(notice_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update violation notice status, cure deadline, or fine amount."""
+    return _incident_call(
+        "patch",
+        f"/violations/{notice_id}",
+        HTTP_OK,
+        f"Failed to update violation notice '{notice_id}'",
+        f"updating violation notice '{notice_id}'",
+        json=payload,
+    )
+
+
+def delete_violation_notice_api(notice_id: str) -> bool:
+    """Delete a violation notice."""
+    res = _incident_call(
+        "delete",
+        f"/violations/{notice_id}",
+        HTTP_OK,
+        f"Failed to delete violation notice '{notice_id}'",
+        f"deleting violation notice '{notice_id}'",
+    )
+    return bool(res and res.get("status") == "deleted")
+
+
+def list_tenant_violation_notices_api(tenant_id: str) -> dict[str, Any] | None:
+    """List all violation notices issued to a specific tenant."""
+    return _incident_call(
+        "get",
+        f"/tenants/{tenant_id}/violations",
+        HTTP_OK,
+        f"Failed to fetch violations for tenant '{tenant_id}'",
+        f"fetching violations for tenant '{tenant_id}'",
+    )
+
+
+def create_violation_appeal_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Submit a formal resident appeal against a violation notice."""
+    return _incident_call(
+        "post",
+        "/appeals",
+        HTTP_CREATED,
+        "Failed to submit violation appeal",
+        "submitting violation appeal",
+        json=payload,
+    )
+
+
+def list_violation_appeals_api(
+    notice_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List violation appeals with filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if notice_id:
+        params["notice_id"] = notice_id
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if status:
+        params["status"] = status
+    return _incident_call(
+        "get",
+        "/appeals",
+        HTTP_OK,
+        "Failed to fetch violation appeals",
+        "fetching violation appeals",
+        params=params,
+    )
+
+
+def get_violation_appeal_api(appeal_id: str) -> dict[str, Any] | None:
+    """Retrieve details for a specific violation appeal."""
+    return _incident_call(
+        "get",
+        f"/appeals/{appeal_id}",
+        HTTP_OK,
+        f"Failed to fetch appeal '{appeal_id}'",
+        f"fetching appeal '{appeal_id}'",
+    )
+
+
+def update_violation_appeal_api(appeal_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Review or decide on a violation appeal."""
+    return _incident_call(
+        "patch",
+        f"/appeals/{appeal_id}",
+        HTTP_OK,
+        f"Failed to update appeal '{appeal_id}'",
+        f"updating appeal '{appeal_id}'",
+        json=payload,
+    )
+
+
+def delete_violation_appeal_api(appeal_id: str) -> bool:
+    """Delete a violation appeal record."""
+    res = _incident_call(
+        "delete",
+        f"/appeals/{appeal_id}",
+        HTTP_OK,
+        f"Failed to delete appeal '{appeal_id}'",
+        f"deleting appeal '{appeal_id}'",
+    )
+    return bool(res and res.get("status") == "deleted")
+
+
+def list_tenant_violation_appeals_api(tenant_id: str) -> dict[str, Any] | None:
+    """List all appeals submitted by a specific resident."""
+    return _incident_call(
+        "get",
+        f"/tenants/{tenant_id}/appeals",
+        HTTP_OK,
+        f"Failed to fetch appeals for tenant '{tenant_id}'",
+        f"fetching appeals for tenant '{tenant_id}'",
+    )
+
+
+def session_issue_violation_notice_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Issue a violation notice directly grounded in resident support session."""
+    return _incident_call(
+        "post",
+        f"/sessions/{session_id}/issue-violation-notice",
+        HTTP_CREATED,
+        f"Failed to issue violation notice for session '{session_id}'",
+        "issuing session violation notice",
+        json=payload,
+    )
+
+
+def session_submit_violation_appeal_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Submit a violation appeal directly grounded in resident support session."""
+    return _incident_call(
+        "post",
+        f"/sessions/{session_id}/submit-violation-appeal",
+        HTTP_CREATED,
+        f"Failed to submit appeal for session '{session_id}'",
+        "submitting session violation appeal",
+        json=payload,
+    )
+
+
+def get_incident_metrics_api() -> dict[str, Any] | None:
+    """Retrieve portfolio incident and violation summary metrics."""
+    return _incident_call(
+        "get",
+        "/incidents/metrics",
+        HTTP_OK,
+        "Failed to fetch incident metrics",
+        "fetching incident metrics",
+    )
