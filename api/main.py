@@ -20,6 +20,7 @@ from api import (
     business_hours,
     csat,
     db_utils,
+    incidents,
     inspections,
     knowledge_base,
     lease_renewals,
@@ -166,6 +167,11 @@ from api.pydantic_models import (
     CollectionDetailResponse,
     CollectionRechunkRequest,
     CollectionRechunkResponse,
+    CommunityIncidentCreateRequest,
+    CommunityIncidentItem,
+    CommunityIncidentListResponse,
+    CommunityIncidentResponse,
+    CommunityIncidentUpdateRequest,
     ConfigResponse,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
@@ -190,6 +196,7 @@ from api.pydantic_models import (
     GuestPassResponse,
     GuestPassUpdateRequest,
     HealthResponse,
+    IncidentMetricsResponse,
     InspectionCompleteRequest,
     InspectionCreateRequest,
     InspectionDocumentPublishRequest,
@@ -294,6 +301,7 @@ from api.pydantic_models import (
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
+    SessionIssueViolationNoticeRequest,
     SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
@@ -301,6 +309,7 @@ from api.pydantic_models import (
     SessionSearchResponse,
     SessionSearchResult,
     SessionSLAStatusResponse,
+    SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
     SessionTenantContextResponse,
@@ -353,6 +362,16 @@ from api.pydantic_models import (
     VendorMetricsResponse,
     VendorResponse,
     VendorUpdateRequest,
+    ViolationAppealCreateRequest,
+    ViolationAppealItem,
+    ViolationAppealListResponse,
+    ViolationAppealResponse,
+    ViolationAppealUpdateRequest,
+    ViolationNoticeCreateRequest,
+    ViolationNoticeItem,
+    ViolationNoticeListResponse,
+    ViolationNoticeResponse,
+    ViolationNoticeUpdateRequest,
     VisitorPassCreateRequest,
     VisitorPassItem,
     VisitorPassListResponse,
@@ -6203,3 +6222,485 @@ def session_report_lost_fob_route(
         },
     )
     return AccessCredentialResponse(credential=AccessCredentialItem(**updated))
+
+
+
+# ---------------------------------------------------------------------------
+# Community Incidents, Violation Notices & Appeals Endpoints (v0.47.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/incidents/metrics", response_model=IncidentMetricsResponse)
+def get_incident_metrics_route():
+    """Retrieve portfolio metrics and counts for incidents, violations, and appeals."""
+    return IncidentMetricsResponse(**incidents.get_incident_metrics_summary())
+
+
+@app.post("/incidents", response_model=CommunityIncidentResponse, status_code=201)
+def create_incident_route(
+    request: CommunityIncidentCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Log a new community incident report."""
+    created = incidents.create_incident(
+        incident_type=request.incident_type,
+        description=request.description,
+        severity=request.severity,
+        status=request.status,
+        unit_id=request.unit_id,
+        tenant_id=request.tenant_id,
+        reported_by=request.reported_by,
+        reporter_name=request.reporter_name,
+        location=request.location,
+        incident_date=request.incident_date,
+        action_taken=request.action_taken,
+        resolution_notes=request.resolution_notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "incident.reported",
+        {
+            "incident_id": created["id"],
+            "incident_number": created["incident_number"],
+            "incident_type": created["incident_type"],
+            "severity": created["severity"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "status": created["status"],
+        },
+    )
+    return CommunityIncidentResponse(incident=CommunityIncidentItem(**created))
+
+
+@app.get("/incidents", response_model=CommunityIncidentListResponse)
+def list_incidents_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    incident_type: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List community incidents with filters and keyword search."""
+    items = incidents.list_incidents(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        incident_type=incident_type,
+        severity=severity,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return CommunityIncidentListResponse(
+        items=[CommunityIncidentItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.get("/incidents/{incident_id}", response_model=CommunityIncidentResponse)
+def get_incident_route(incident_id: str):
+    """Retrieve details for a specific incident."""
+    inc = incidents.get_incident(incident_id)
+    if not inc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Community incident '{incident_id}' not found.",
+        )
+    return CommunityIncidentResponse(incident=CommunityIncidentItem(**inc))
+
+
+@app.patch("/incidents/{incident_id}", response_model=CommunityIncidentResponse)
+def update_incident_route(  # noqa: PLR0913, PLR0917
+    incident_id: str,
+    request: CommunityIncidentUpdateRequest,
+):
+    """Update community incident record status, severity, or resolution."""
+    existing = incidents.get_incident(incident_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Community incident '{incident_id}' not found.",
+        )
+    updated = incidents.update_incident(
+        incident_id=incident_id,
+        incident_type=request.incident_type,
+        severity=request.severity,
+        status=request.status,
+        location=request.location,
+        description=request.description,
+        action_taken=request.action_taken,
+        resolution_notes=request.resolution_notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update incident record.")
+    return CommunityIncidentResponse(incident=CommunityIncidentItem(**updated))
+
+
+@app.delete("/incidents/{incident_id}")
+def delete_incident_route(incident_id: str):
+    """Permanently delete an incident record."""
+    deleted = incidents.delete_incident(incident_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Community incident '{incident_id}' not found.",
+        )
+    return {"status": "deleted", "incident_id": incident_id}
+
+
+@app.get("/tenants/{tenant_id}/incidents", response_model=CommunityIncidentListResponse)
+def get_tenant_incidents_route(tenant_id: str):
+    """List all incidents involving a specific tenant."""
+    items = incidents.list_incidents(tenant_id=tenant_id)
+    return CommunityIncidentListResponse(
+        items=[CommunityIncidentItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.post("/violations", response_model=ViolationNoticeResponse, status_code=201)
+def create_violation_notice_route(
+    request: ViolationNoticeCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a formal community violation notice to a resident."""
+    created = incidents.create_violation_notice(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        violation_type=request.violation_type,
+        remedy_instructions=request.remedy_instructions,
+        incident_id=request.incident_id,
+        notice_type=request.notice_type,
+        status=request.status,
+        cure_days=request.cure_days,
+        fine_amount=request.fine_amount,
+        charge_to_ledger=request.charge_to_ledger,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "violation.notice_issued",
+        {
+            "notice_id": created["id"],
+            "notice_number": created["notice_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "violation_type": created["violation_type"],
+            "notice_type": created["notice_type"],
+            "fine_amount": created["fine_amount"],
+            "cure_deadline": created["cure_deadline"],
+        },
+    )
+    if created["fine_amount"] > 0 and created["fine_charged_to_ledger"]:
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "violation.fine_assessed",
+            {
+                "notice_id": created["id"],
+                "tenant_id": created["tenant_id"],
+                "unit_id": created["unit_id"],
+                "fine_amount": created["fine_amount"],
+            },
+        )
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**created))
+
+
+@app.get("/violations", response_model=ViolationNoticeListResponse)
+def list_violation_notices_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    violation_type: str | None = None,
+    notice_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List violation notices with status, type, and keyword filters."""
+    items = incidents.list_violation_notices(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        violation_type=violation_type,
+        notice_type=notice_type,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return ViolationNoticeListResponse(
+        items=[ViolationNoticeItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.get("/violations/{notice_id}", response_model=ViolationNoticeResponse)
+def get_violation_notice_route(notice_id: str):
+    """Retrieve details for a specific violation notice."""
+    vn = incidents.get_violation_notice(notice_id)
+    if not vn:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{notice_id}' not found.",
+        )
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**vn))
+
+
+@app.patch("/violations/{notice_id}", response_model=ViolationNoticeResponse)
+def update_violation_notice_route(
+    notice_id: str,
+    request: ViolationNoticeUpdateRequest,
+):
+    """Update violation notice status, cure deadline, or fine amount."""
+    existing = incidents.get_violation_notice(notice_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{notice_id}' not found.",
+        )
+    updated = incidents.update_violation_notice(
+        notice_id=notice_id,
+        status=request.status,
+        cure_deadline=request.cure_deadline,
+        fine_amount=request.fine_amount,
+        fine_charged_to_ledger=request.fine_charged_to_ledger,
+        remedy_instructions=request.remedy_instructions,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update violation notice.")
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**updated))
+
+
+@app.delete("/violations/{notice_id}")
+def delete_violation_notice_route(notice_id: str):
+    """Delete a violation notice."""
+    deleted = incidents.delete_violation_notice(notice_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{notice_id}' not found.",
+        )
+    return {"status": "deleted", "notice_id": notice_id}
+
+
+@app.get("/tenants/{tenant_id}/violations", response_model=ViolationNoticeListResponse)
+def get_tenant_violations_route(tenant_id: str):
+    """List all violation notices issued to a specific tenant."""
+    items = incidents.list_violation_notices(tenant_id=tenant_id)
+    return ViolationNoticeListResponse(
+        items=[ViolationNoticeItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.post("/appeals", response_model=ViolationAppealResponse, status_code=201)
+def create_violation_appeal_route(
+    request: ViolationAppealCreateRequest,
+):
+    """Submit a formal resident appeal against a violation notice."""
+    existing_notice = incidents.get_violation_notice(request.notice_id)
+    if not existing_notice:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{request.notice_id}' not found.",
+        )
+    created = incidents.create_violation_appeal(
+        notice_id=request.notice_id,
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        reason=request.reason,
+    )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**created))
+
+
+@app.get("/appeals", response_model=ViolationAppealListResponse)
+def list_violation_appeals_route(
+    notice_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List violation appeals with notice, tenant, and status filters."""
+    items = incidents.list_violation_appeals(
+        notice_id=notice_id,
+        tenant_id=tenant_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return ViolationAppealListResponse(
+        items=[ViolationAppealItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.get("/appeals/{appeal_id}", response_model=ViolationAppealResponse)
+def get_violation_appeal_route(appeal_id: str):
+    """Retrieve details for a specific violation appeal."""
+    appeal = incidents.get_violation_appeal(appeal_id)
+    if not appeal:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation appeal '{appeal_id}' not found.",
+        )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**appeal))
+
+
+@app.patch("/appeals/{appeal_id}", response_model=ViolationAppealResponse)
+def update_violation_appeal_route(
+    appeal_id: str,
+    request: ViolationAppealUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Review or decide on a violation appeal."""
+    existing = incidents.get_violation_appeal(appeal_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation appeal '{appeal_id}' not found.",
+        )
+    updated = incidents.update_violation_appeal(
+        appeal_id=appeal_id,
+        status=request.status,
+        reviewed_by=request.reviewed_by,
+        decision_notes=request.decision_notes,
+        adjusted_fine_amount=request.adjusted_fine_amount,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update violation appeal.")
+
+    if request.status in ("waived", "upheld", "reduced"):
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "violation.appeal_resolved",
+            {
+                "appeal_id": updated["id"],
+                "notice_id": updated["notice_id"],
+                "tenant_id": updated["tenant_id"],
+                "status": updated["status"],
+                "adjusted_fine_amount": updated["adjusted_fine_amount"],
+            },
+        )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**updated))
+
+
+@app.delete("/appeals/{appeal_id}")
+def delete_violation_appeal_route(appeal_id: str):
+    """Delete a violation appeal record."""
+    deleted = incidents.delete_violation_appeal(appeal_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation appeal '{appeal_id}' not found.",
+        )
+    return {"status": "deleted", "appeal_id": appeal_id}
+
+
+@app.get("/tenants/{tenant_id}/appeals", response_model=ViolationAppealListResponse)
+def get_tenant_appeals_route(tenant_id: str):
+    """List all appeals submitted by a specific resident."""
+    items = incidents.list_violation_appeals(tenant_id=tenant_id)
+    return ViolationAppealListResponse(
+        items=[ViolationAppealItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/issue-violation-notice",
+    response_model=ViolationNoticeResponse,
+    status_code=201,
+)
+def session_issue_violation_notice_route(
+    session_id: str,
+    request: SessionIssueViolationNoticeRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a violation notice directly grounded in resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    created = incidents.create_violation_notice(
+        tenant_id=tenant["id"],
+        unit_id=tenant["unit_id"],
+        violation_type=request.violation_type,
+        notice_type=request.notice_type,
+        remedy_instructions=request.remedy_instructions,
+        cure_days=request.cure_days,
+        fine_amount=request.fine_amount,
+        charge_to_ledger=request.charge_to_ledger,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "violation.notice_issued",
+        {
+            "notice_id": created["id"],
+            "notice_number": created["notice_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "session_id": session_id,
+            "fine_amount": created["fine_amount"],
+        },
+    )
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**created))
+
+
+@app.post(
+    "/sessions/{session_id}/submit-violation-appeal",
+    response_model=ViolationAppealResponse,
+    status_code=201,
+)
+def session_submit_violation_appeal_route(
+    session_id: str,
+    request: SessionSubmitViolationAppealRequest,
+):
+    """Submit a violation appeal directly grounded in resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    notice = incidents.get_violation_notice(request.notice_id)
+    if not notice:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{request.notice_id}' not found.",
+        )
+    if notice["tenant_id"] != tenant["id"]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Violation notice '{request.notice_id}' is not issued to "
+                f"resident '{tenant['id']}'."
+            ),
+        )
+    created = incidents.create_violation_appeal(
+        notice_id=request.notice_id,
+        tenant_id=tenant["id"],
+        unit_id=tenant["unit_id"],
+        reason=request.reason,
+    )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**created))
