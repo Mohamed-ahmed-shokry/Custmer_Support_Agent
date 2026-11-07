@@ -14,8 +14,11 @@ from app.api_utils import (
     complete_inspection,
     complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
+    create_access_credential_api,
     create_billing_transaction,
+    create_guest_pass_api,
     create_inspection,
+    create_intercom_entry_api,
     create_lease_renewal,
     create_macro,
     create_package_api,
@@ -53,6 +56,7 @@ from app.api_utils import (
     draft_article_from_session,
     evaluate_sla_alerts,
     export_session,
+    get_access_control_metrics_api,
     get_agent_scorecards,
     get_agent_workload_analytics,
     get_amenity_metrics_api,
@@ -90,13 +94,16 @@ from app.api_utils import (
     get_work_order_metrics,
     issue_visitor_pass_api,
     link_session_tenant,
+    list_access_credentials_api,
     list_amenities_api,
     list_billing_transactions,
     list_collections,
     list_documents,
     list_feedback,
     list_feedback_review_queue,
+    list_guest_passes_api,
     list_inspections,
+    list_intercom_entries_api,
     list_knowledge_articles,
     list_knowledge_gaps,
     list_lease_renewals,
@@ -112,6 +119,8 @@ from app.api_utils import (
     list_sessions,
     list_sla_policies,
     list_support_agents,
+    list_tenant_credentials_api,
+    list_tenant_guest_passes_api,
     list_tenant_packages_api,
     list_tenant_pets_api,
     list_tenant_reservations_api,
@@ -143,9 +152,11 @@ from app.api_utils import (
     scan_knowledge_gaps,
     search_sessions,
     session_create_reservation_api,
+    session_generate_guest_pass_api,
     session_intake_package_api,
     session_issue_visitor_pass_api,
     session_register_pet_api,
+    session_report_lost_fob_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
@@ -1102,6 +1113,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_amenity_widget(selected, tenant)
     _render_session_parking_widget(selected, tenant)
     _render_session_pet_widget(selected, tenant)
+    _render_session_access_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -4865,6 +4877,335 @@ def _render_pet_metrics_tab():
         )
 
 
+
+
+def _render_session_access_widget(selected: str, tenant: dict):  # noqa: PLR0912, PLR0915
+    """Render 1-click visitor guest pass and lost fob widgets for active session resident."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        creds_resp = list_tenant_credentials_api(tenant_id)
+        creds = creds_resp.get("items", []) if creds_resp else []
+        active_fobs = [c for c in creds if c.get("status") == "active"]
+
+        passes_resp = list_tenant_guest_passes_api(tenant_id)
+        passes = passes_resp.get("items", []) if passes_resp else []
+        active_passes = [p for p in passes if p.get("status") == "active"]
+
+        if active_fobs or active_passes:
+            st.sidebar.markdown("**🔑 Access and Credentials:**")
+            for c in active_fobs[:2]:
+                ctype = str(c.get("credential_type", "key_fob")).replace("_", " ").title()
+                level = str(c.get("access_level")).title()
+                cnum = c.get("credential_number")
+                st.sidebar.info(f"**{ctype}** `{cnum}` ({level}) | Status: Active")
+            for p in active_passes[:1]:
+                g_exp = p.get("valid_until", "")[:10]
+                p_code = p.get("access_code")
+                p_name = p.get("guest_name")
+                st.sidebar.success(
+                    f"**Guest Pass:** {p_name} | Code: `{p_code}` (Expires: {g_exp})"
+                )
+
+        with st.sidebar.expander("🔑 Quick Guest Pass and Fob Actions"):
+            st.markdown("##### 🎟️ Generate Visitor PIN Pass")
+            g_name = st.text_input(
+                "Guest / Courier Name*",
+                placeholder="e.g. Amazon Delivery",
+                key=f"sess_gp_name_{selected}",
+            )
+            g_type = st.selectbox(
+                "Pass Type",
+                ["visitor", "delivery", "contractor", "dog_walker"],
+                key=f"sess_gp_type_{selected}",
+            )
+            g_hours = st.number_input(
+                "Valid Hours",
+                min_value=1,
+                max_value=168,
+                value=24,
+                step=1,
+                key=f"sess_gp_hrs_{selected}",
+            )
+            g_notes = st.text_input(
+                "Access Notes",
+                placeholder="e.g. Leave package by unit door",
+                key=f"sess_gp_notes_{selected}",
+            )
+
+            if st.button("Generate 6-Digit Guest PIN", key=f"btn_sess_gen_pass_{selected}"):
+                if not g_name.strip():
+                    st.error("Please enter a guest name.")
+                else:
+                    payload = {
+                        "guest_name": g_name.strip(),
+                        "pass_type": g_type,
+                        "valid_hours": int(g_hours),
+                        "notes": g_notes.strip() if g_notes.strip() else None,
+                    }
+                    res = session_generate_guest_pass_api(selected, payload)
+                    if res and res.get("guest_pass"):
+                        gp = res["guest_pass"]
+                        code = gp.get("access_code")
+                        st.success(
+                            f"Guest pass generated! Code: **{code}** (Valid for {g_hours}h)"
+                        )
+
+            st.markdown("---")
+            st.markdown("##### 🚨 Report Lost / Stolen Key Fob")
+            if active_fobs:
+                fob_opts = {
+                    c["id"]: f"{c.get('credential_number')} ({c.get('credential_type')})"
+                    for c in active_fobs
+                }
+                selected_fob = st.selectbox(
+                    "Select Lost Credential",
+                    list(fob_opts.keys()),
+                    format_func=lambda x: fob_opts[x],
+                    key=f"sess_lost_fob_select_{selected}",
+                )
+                fob_reason = st.text_input(
+                    "Deactivation Reason",
+                    value="Resident reported lost key fob",
+                    key=f"sess_lost_reason_{selected}",
+                )
+                fob_fee_check = st.checkbox(
+                    "Assess $50.00 Replacement Fee",
+                    value=True,
+                    key=f"sess_lost_fee_cb_{selected}",
+                )
+                if st.button("Deactivate and Report Lost", key=f"btn_sess_report_lost_{selected}"):
+                    lost_res = session_report_lost_fob_api(
+                        selected,
+                        {
+                            "credential_id": selected_fob,
+                            "deactivation_reason": fob_reason.strip(),
+                            "charge_replacement_fee": fob_fee_check,
+                        },
+                    )
+                    if lost_res and lost_res.get("credential"):
+                        st.warning("Credential deactivated! Replacement billing item assessed.")
+            else:
+                st.caption("No active fobs currently registered.")
+    except Exception as e:
+        st.sidebar.caption(f"Access actions temporarily unavailable: {e}")
+
+
+def _render_access_credentials_tab():
+    """Render list of credentials with search and new credential issuance form."""
+    creds_resp = list_access_credentials_api()
+    items = creds_resp.get("items", []) if creds_resp else []
+    total = creds_resp.get("total", len(items)) if creds_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** active credentials.")
+    for c in items[:6]:
+        cnum = c.get("credential_number")
+        ctype = str(c.get("credential_type")).replace("_", " ").title()
+        stat = str(c.get("status")).upper()
+        cname = c.get("assigned_to_name", "Resident")
+        st.markdown(f"- **{cnum}** ({ctype}) | Assigned: `{cname}` | Status: **{stat}**")
+
+    with st.expander("➕ Issue New Key Fob / Credential"):
+        c_tenant = st.text_input("Tenant ID*", placeholder="e.g. tenant_1", key="new_cred_tenant")
+        c_unit = st.text_input("Unit ID*", placeholder="e.g. unit_101", key="new_cred_unit")
+        c_type = st.selectbox(
+            "Credential Type",
+            ["key_fob", "access_card", "mobile_key", "pin_code"],
+            key="new_cred_type",
+        )
+        c_num = st.text_input(
+            "Credential Number (Optional)",
+            placeholder="Auto-generated if blank",
+            key="new_cred_num",
+        )
+        c_level = st.selectbox(
+            "Access Level",
+            ["standard", "all_access", "parking_only", "resident_staff"],
+            key="new_cred_level",
+        )
+        c_name = st.text_input(
+            "Assigned To Name",
+            placeholder="e.g. Sarah Chen",
+            key="new_cred_name",
+        )
+        c_fee = st.number_input("Replacement Fee ($)", value=50.0, step=5.0, key="new_cred_fee")
+
+        if st.button("Issue Credential", key="btn_create_cred"):
+            if not c_tenant.strip() or not c_unit.strip():
+                st.error("Tenant ID and Unit ID are required.")
+            else:
+                payload = {
+                    "tenant_id": c_tenant.strip(),
+                    "unit_id": c_unit.strip(),
+                    "credential_type": c_type,
+                    "credential_number": c_num.strip() if c_num.strip() else None,
+                    "access_level": c_level,
+                    "assigned_to_name": c_name.strip() if c_name.strip() else None,
+                    "replacement_fee": float(c_fee),
+                }
+                res = create_access_credential_api(payload)
+                if res and res.get("credential"):
+                    num = res["credential"].get("credential_number")
+                    st.success(f"Credential issued successfully! ID: **{num}**")
+
+
+def _render_guest_passes_tab():
+    """Render list of guest passes with issuance form."""
+    passes_resp = list_guest_passes_api()
+    items = passes_resp.get("items", []) if passes_resp else []
+    total = passes_resp.get("total", len(items)) if passes_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** guest passes.")
+    for p in items[:6]:
+        gname = p.get("guest_name")
+        code = p.get("access_code")
+        stat = str(p.get("status")).upper()
+        ptype = str(p.get("pass_type")).title()
+        uses = f"{p.get('uses_count', 0)}/{p.get('max_uses', 1)}"
+        p_summary = f"- **{gname}** ({ptype}) | PIN: `{code}` | Uses: `{uses}` | Status: **{stat}**"
+        st.markdown(p_summary)
+
+    with st.expander("➕ Generate Guest Pass"):
+        gp_tenant = st.text_input("Tenant ID*", placeholder="e.g. tenant_1", key="man_gp_tenant")
+        gp_unit = st.text_input("Unit ID*", placeholder="e.g. unit_101", key="man_gp_unit")
+        gp_guest = st.text_input(
+            "Guest Name*",
+            placeholder="e.g. John Courier",
+            key="man_gp_guest",
+        )
+        gp_type = st.selectbox(
+            "Pass Type",
+            ["visitor", "delivery", "contractor", "dog_walker"],
+            key="man_gp_type",
+        )
+        gp_uses = st.number_input(
+            "Max Uses",
+            min_value=1,
+            max_value=50,
+            value=1,
+            step=1,
+            key="man_gp_uses",
+        )
+
+        if st.button("Create Visitor Pass", key="btn_man_create_gp"):
+            if not gp_tenant.strip() or not gp_unit.strip() or not gp_guest.strip():
+                st.error("Tenant ID, Unit ID, and Guest Name are required.")
+            else:
+                payload = {
+                    "tenant_id": gp_tenant.strip(),
+                    "unit_id": gp_unit.strip(),
+                    "guest_name": gp_guest.strip(),
+                    "pass_type": gp_type,
+                    "max_uses": int(gp_uses),
+                }
+                res = create_guest_pass_api(payload)
+                if res and res.get("guest_pass"):
+                    code = res["guest_pass"].get("access_code")
+                    st.success(f"Guest pass generated! Access Code: **{code}**")
+
+
+def _render_intercom_directory_tab():
+    """Render building intercom callbox directory and entry form."""
+    dir_resp = list_intercom_entries_api()
+    items = dir_resp.get("items", []) if dir_resp else []
+
+    st.caption(f"Showing **{len(items)}** callbox directory listings.")
+    for d in items[:6]:
+        dcode = d.get("directory_code")
+        dname = d.get("display_name")
+        phone = d.get("forwarding_phone")
+        buzzer = "Active" if d.get("buzzer_enabled") else "Disabled"
+        st.markdown(f"- **#{dcode}**: {dname} | Phone: `{phone}` | Buzzer: **{buzzer}**")
+
+    with st.expander("➕ Add Intercom Listing"):
+        dir_tenant = st.text_input("Tenant ID*", placeholder="e.g. tenant_1", key="new_dir_tenant")
+        dir_unit = st.text_input("Unit ID*", placeholder="e.g. unit_101", key="new_dir_unit")
+        dir_name = st.text_input("Display Name*", placeholder="e.g. Chen, S.", key="new_dir_name")
+        dir_code = st.text_input("Directory Code*", placeholder="e.g. 101", key="new_dir_code")
+        dir_phone = st.text_input(
+            "Forwarding Phone*",
+            placeholder="e.g. +1-555-0101",
+            key="new_dir_phone",
+        )
+        dir_buzzer = st.checkbox("Buzzer Enabled", value=True, key="new_dir_buzzer")
+
+        if st.button("Save Callbox Listing", key="btn_save_dir_entry"):
+            fields = [
+                dir_tenant.strip(),
+                dir_unit.strip(),
+                dir_name.strip(),
+                dir_code.strip(),
+                dir_phone.strip(),
+            ]
+            if not all(fields):
+                st.error("All required fields must be filled.")
+            else:
+                payload = {
+                    "tenant_id": dir_tenant.strip(),
+                    "unit_id": dir_unit.strip(),
+                    "display_name": dir_name.strip(),
+                    "directory_code": dir_code.strip(),
+                    "forwarding_phone": dir_phone.strip(),
+                    "buzzer_enabled": dir_buzzer,
+                }
+                res = create_intercom_entry_api(payload)
+                if res and res.get("entry"):
+                    st.success("Callbox listing saved successfully!")
+
+
+def _render_access_metrics_tab():
+    """Render portfolio access control KPIs."""
+    metrics = get_access_control_metrics_api()
+    if not metrics:
+        st.info("No access control metrics available.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Credentials", metrics.get("total_credentials", 0))
+        st.metric("Active Credentials", metrics.get("active_credentials", 0))
+        st.metric("Lost Fobs Reported", metrics.get("lost_credentials", 0))
+        st.metric(
+            "Replacement Fees",
+            f"${metrics.get('replacement_fees_assessed', 0.0):,.2f}",
+        )
+    with col2:
+        st.metric("Active Guest Passes", metrics.get("active_guest_passes", 0))
+        st.metric("Total Guest Entries", metrics.get("total_guest_entries", 0))
+        st.metric("Callbox Listings", metrics.get("intercom_directory_count", 0))
+        st.metric("Mobile Keys", metrics.get("mobile_keys_count", 0))
+
+
+def _render_access_control_board():
+    """Render resident access control, key fobs, and visitor passes expander in sidebar."""
+    with st.sidebar.expander("🔑 Access Control and Key Fobs"):
+        try:
+            views = [
+                "Credentials & Fobs",
+                "Guest Passes",
+                "Intercom Directory",
+                "Access KPIs",
+            ]
+            a_tab = st.radio(
+                "Access Management View",
+                views,
+                horizontal=True,
+                key="access_board_tab_radio",
+            )
+            if a_tab == "Credentials & Fobs":
+                _render_access_credentials_tab()
+            elif a_tab == "Guest Passes":
+                _render_guest_passes_tab()
+            elif a_tab == "Intercom Directory":
+                _render_intercom_directory_tab()
+            else:
+                _render_access_metrics_tab()
+        except Exception as e:
+            st.caption(f"Access control panel temporarily unavailable: {e}")
+
+
 def _render_pet_registry_board():
     """Render resident pet registry and animal policies expander in sidebar."""
     with st.sidebar.expander("🐾 Pet Registry & Animal Policies"):
@@ -4925,6 +5266,7 @@ def display_sidebar():
     _render_amenity_reservations_board()
     _render_parking_management_board()
     _render_pet_registry_board()
+    _render_access_control_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 

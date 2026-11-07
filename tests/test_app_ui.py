@@ -4366,3 +4366,206 @@ def test_render_session_pet_widget(monkeypatch):
     assert registered_pets[0][0] == "sess_88"
     assert registered_pets[0][1]["name"] == "Charlie"
     assert registered_pets[0][1]["breed"] == "Beagle"
+
+
+
+def test_render_access_control_board(monkeypatch):
+    """Test _render_access_control_board across all tabs and creation flows."""
+    st = FakeStreamlit(
+        values={
+            "new_cred_tenant": "tenant_1",
+            "new_cred_unit": "unit_101",
+            "new_cred_type": "key_fob",
+            "new_cred_num": "FOB-9999",
+            "new_cred_level": "standard",
+            "new_cred_name": "Test Resident",
+            "new_cred_fee": 50.0,
+            "man_gp_tenant": "tenant_1",
+            "man_gp_unit": "unit_101",
+            "man_gp_guest": "Courier Person",
+            "man_gp_type": "delivery",
+            "man_gp_uses": 2,
+            "new_dir_tenant": "tenant_1",
+            "new_dir_unit": "unit_101",
+            "new_dir_name": "Test Resident",
+            "new_dir_code": "101",
+            "new_dir_phone": "+1-555-0199",
+            "new_dir_buzzer": True,
+        },
+        buttons={
+            "btn_create_cred": True,
+            "btn_man_create_gp": True,
+            "btn_save_dir_entry": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # 1. Credentials mock
+    sample_creds = {
+        "items": [
+            {
+                "id": "cred_1",
+                "credential_number": "FOB-1001",
+                "credential_type": "key_fob",
+                "status": "active",
+                "assigned_to_name": "Sarah Chen",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_access_credentials_api", lambda **kwargs: sample_creds)
+    monkeypatch.setattr(
+        sidebar,
+        "create_access_credential_api",
+        lambda payload: {"credential": {"id": "cred_new", "credential_number": "FOB-9999"}},
+    )
+
+    # 2. Passes mock
+    sample_passes = {
+        "items": [
+            {
+                "id": "pass_1",
+                "guest_name": "Delivery Guy",
+                "access_code": "123456",
+                "pass_type": "delivery",
+                "status": "active",
+                "uses_count": 0,
+                "max_uses": 1,
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_guest_passes_api", lambda **kwargs: sample_passes)
+    monkeypatch.setattr(
+        sidebar,
+        "create_guest_pass_api",
+        lambda payload: {"guest_pass": {"id": "pass_new", "access_code": "987654"}},
+    )
+
+    # 3. Intercom mock
+    sample_dir = {
+        "items": [
+            {
+                "id": "dir_1",
+                "directory_code": "101",
+                "display_name": "Chen, S.",
+                "forwarding_phone": "+1-555-0101",
+                "buzzer_enabled": True,
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_intercom_entries_api", lambda **kwargs: sample_dir)
+    monkeypatch.setattr(
+        sidebar,
+        "create_intercom_entry_api",
+        lambda payload: {"entry": {"id": "dir_new"}},
+    )
+
+    # 4. Metrics mock
+    sample_metrics = {
+        "total_credentials": 15,
+        "active_credentials": 14,
+        "lost_credentials": 1,
+        "replacement_fees_assessed": 50.0,
+        "active_guest_passes": 3,
+        "total_guest_entries": 12,
+        "intercom_directory_count": 8,
+        "mobile_keys_count": 5,
+    }
+    monkeypatch.setattr(sidebar, "get_access_control_metrics_api", lambda: sample_metrics)
+
+    # Credentials tab
+    st.values["access_board_tab_radio"] = "Credentials & Fobs"
+    sidebar._render_access_control_board()
+
+    # Guest Passes tab
+    st.values["access_board_tab_radio"] = "Guest Passes"
+    sidebar._render_access_control_board()
+
+    # Intercom Directory tab
+    st.values["access_board_tab_radio"] = "Intercom Directory"
+    sidebar._render_access_control_board()
+
+    # Access KPIs tab
+    st.values["access_board_tab_radio"] = "Access KPIs"
+    sidebar._render_access_control_board()
+
+
+def test_render_session_access_widget(monkeypatch):
+    """Test _render_session_access_widget 1-click guest pass and lost fob actions."""
+    gen_passes = []
+    lost_fobs = []
+
+    st = FakeStreamlit(
+        values={
+            "sess_gp_name_sess_99": "Courier Bob",
+            "sess_gp_type_sess_99": "delivery",
+            "sess_gp_hrs_sess_99": 24,
+            "sess_gp_notes_sess_99": "Leave with concierge",
+            "sess_lost_fob_select_sess_99": "cred_active_1",
+            "sess_lost_reason_sess_99": "Lost at gym",
+            "sess_lost_fee_cb_sess_99": True,
+        },
+        buttons={
+            "btn_sess_gen_pass_sess_99": True,
+            "btn_sess_report_lost_sess_99": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_credentials_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "cred_active_1",
+                    "credential_number": "FOB-9042",
+                    "credential_type": "key_fob",
+                    "access_level": "all_access",
+                    "status": "active",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_guest_passes_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "pass_active_1",
+                    "guest_name": "Dog Walker",
+                    "access_code": "618902",
+                    "valid_until": "2026-12-31T23:59:59",
+                    "status": "active",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_generate_guest_pass_api",
+        lambda sid, payload: gen_passes.append((sid, payload))
+        or {"guest_pass": {"id": "pass_new_2", "access_code": "771122"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_report_lost_fob_api",
+        lambda sid, payload: lost_fobs.append((sid, payload))
+        or {"credential": {"id": "cred_active_1", "status": "lost"}},
+    )
+
+    tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
+    sidebar._render_session_access_widget("sess_99", tenant)
+
+    expected_count = 1
+    assert len(gen_passes) == expected_count
+    assert gen_passes[0][0] == "sess_99"
+    assert gen_passes[0][1]["guest_name"] == "Courier Bob"
+
+    assert len(lost_fobs) == expected_count
+    assert lost_fobs[0][0] == "sess_99"
+    assert lost_fobs[0][1]["credential_id"] == "cred_active_1"
+    assert lost_fobs[0][1]["charge_replacement_fee"] is True

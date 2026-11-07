@@ -7,13 +7,14 @@ import tempfile
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from api import (
+    access_control,
     amenities,
     assignment,
     business_hours,
@@ -129,6 +130,12 @@ from api.presenters import (
     render_session_markdown,
 )
 from api.pydantic_models import (
+    AccessControlMetricsResponse,
+    AccessCredentialCreateRequest,
+    AccessCredentialItem,
+    AccessCredentialListResponse,
+    AccessCredentialResponse,
+    AccessCredentialUpdateRequest,
     AgentPerformanceScorecardsResponse,
     AgentScorecardItem,
     AgentWorkloadResponse,
@@ -177,6 +184,11 @@ from api.pydantic_models import (
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
+    GuestPassCreateRequest,
+    GuestPassItem,
+    GuestPassListResponse,
+    GuestPassResponse,
+    GuestPassUpdateRequest,
     HealthResponse,
     InspectionCompleteRequest,
     InspectionCreateRequest,
@@ -188,6 +200,11 @@ from api.pydantic_models import (
     InspectionResponse,
     InspectionUpdateRequest,
     InspectionWorkOrderConversionRequest,
+    IntercomDirectoryCreateRequest,
+    IntercomDirectoryItem,
+    IntercomDirectoryListResponse,
+    IntercomDirectoryResponse,
+    IntercomDirectoryUpdateRequest,
     KnowledgeArticleCreateRequest,
     KnowledgeArticleItem,
     KnowledgeArticleListResponse,
@@ -273,12 +290,14 @@ from api.pydantic_models import (
     SessionAssignmentRequest,
     SessionCreateReservationRequest,
     SessionDraftArticleRequest,
+    SessionGenerateGuestPassRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
     SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
+    SessionReportLostFobRequest,
     SessionSearchResponse,
     SessionSearchResult,
     SessionSLAStatusResponse,
@@ -5745,3 +5764,442 @@ def update_pet_incident_route(incident_id: str, request: PetIncidentUpdateReques
     if not updated:
         raise HTTPException(status_code=404, detail=f"Pet incident '{incident_id}' not found.")
     return PetIncidentResponse(incident=PetIncidentItem(**updated))
+
+
+# ---------------------------------------------------------------------------
+# Smart Access Control, Key Fobs, Intercom & Guest Passes Routes (v0.46.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/access/metrics", response_model=AccessControlMetricsResponse)
+def get_access_control_metrics_route():
+    """Retrieve aggregate metrics and counts for access credentials and guest passes."""
+    return AccessControlMetricsResponse(**access_control.get_access_control_summary_metrics())
+
+
+@app.post("/access/credentials", response_model=AccessCredentialResponse, status_code=201)
+def create_access_credential_route(
+    request: AccessCredentialCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a new access credential (key fob, access card, mobile key, or PIN)."""
+    created = access_control.create_access_credential(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        credential_type=request.credential_type,
+        credential_number=request.credential_number,
+        status=request.status,
+        access_level=request.access_level,
+        assigned_to_name=request.assigned_to_name,
+        issued_at=request.issued_at,
+        expires_at=request.expires_at,
+        replacement_fee=request.replacement_fee,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "access.credential_issued",
+        {
+            "credential_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "credential_type": created["credential_type"],
+            "credential_number": created["credential_number"],
+            "access_level": created["access_level"],
+            "status": created["status"],
+        },
+    )
+    return AccessCredentialResponse(credential=AccessCredentialItem(**created))
+
+
+@app.get("/access/credentials", response_model=AccessCredentialListResponse)
+def list_access_credentials_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    credential_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List access credentials with tenant, unit, status, and type filters."""
+    items = access_control.list_access_credentials(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        credential_type=credential_type,
+    )
+    paginated = items[offset : offset + limit]
+    return AccessCredentialListResponse(
+        items=[AccessCredentialItem(**i) for i in paginated],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/access/credentials/{cred_id}", response_model=AccessCredentialResponse)
+def get_access_credential_route(cred_id: str):
+    """Retrieve details for a specific access credential."""
+    cred = access_control.get_access_credential(cred_id)
+    if not cred:
+        raise HTTPException(
+            status_code=404, detail=f"Access credential '{cred_id}' not found."
+        )
+    return AccessCredentialResponse(credential=AccessCredentialItem(**cred))
+
+
+@app.patch("/access/credentials/{cred_id}", response_model=AccessCredentialResponse)
+def update_access_credential_route(
+    cred_id: str,
+    request: AccessCredentialUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update status, access level, or expiration for an access credential."""
+    existing = access_control.get_access_credential(cred_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404, detail=f"Access credential '{cred_id}' not found."
+        )
+    updated = access_control.update_access_credential(
+        cred_id=cred_id,
+        status=request.status,
+        access_level=request.access_level,
+        assigned_to_name=request.assigned_to_name,
+        expires_at=request.expires_at,
+        deactivation_reason=request.deactivation_reason,
+        replacement_fee=request.replacement_fee,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=404, detail=f"Access credential '{cred_id}' not found."
+        )
+    if request.status in ("lost", "revoked", "suspended"):
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "access.credential_deactivated",
+            {
+                "credential_id": cred_id,
+                "status": request.status,
+                "reason": request.deactivation_reason,
+            },
+        )
+    return AccessCredentialResponse(credential=AccessCredentialItem(**updated))
+
+
+@app.delete("/access/credentials/{cred_id}")
+def delete_access_credential_route(cred_id: str):
+    """Delete an access credential record."""
+    deleted = access_control.delete_access_credential(cred_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, detail=f"Access credential '{cred_id}' not found."
+        )
+    return {"deleted": True, "id": cred_id}
+
+
+@app.get(
+    "/tenants/{tenant_id}/credentials", response_model=AccessCredentialListResponse
+)
+def list_tenant_credentials_route(tenant_id: str):
+    """List all access credentials belonging to a specific resident."""
+    items = access_control.list_access_credentials(tenant_id=tenant_id)
+    return AccessCredentialListResponse(
+        items=[AccessCredentialItem(**i) for i in items],
+        total=len(items),
+        limit=50,
+        offset=0,
+    )
+
+
+@app.post("/access/guest-passes", response_model=GuestPassResponse, status_code=201)
+def create_guest_pass_route(
+    request: GuestPassCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a temporary guest pass with 6-digit access code."""
+    created = access_control.create_guest_pass(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        guest_name=request.guest_name,
+        guest_phone=request.guest_phone,
+        pass_type=request.pass_type,
+        access_code=request.access_code,
+        valid_from=request.valid_from,
+        valid_until=request.valid_until,
+        max_uses=request.max_uses,
+        allowed_zones=request.allowed_zones,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "access.guest_pass_generated",
+        {
+            "pass_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "guest_name": created["guest_name"],
+            "pass_type": created["pass_type"],
+            "access_code": created["access_code"],
+            "valid_until": created["valid_until"],
+        },
+    )
+    return GuestPassResponse(guest_pass=GuestPassItem(**created))
+
+
+@app.get("/access/guest-passes", response_model=GuestPassListResponse)
+def list_guest_passes_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    pass_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List guest passes with optional filters."""
+    items = access_control.list_guest_passes(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        pass_type=pass_type,
+    )
+    paginated = items[offset : offset + limit]
+    return GuestPassListResponse(
+        items=[GuestPassItem(**i) for i in paginated],
+        total=len(items),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/access/guest-passes/{pass_id}", response_model=GuestPassResponse)
+def get_guest_pass_route(pass_id: str):
+    """Retrieve details for a specific guest pass."""
+    gpass = access_control.get_guest_pass(pass_id)
+    if not gpass:
+        raise HTTPException(
+            status_code=404, detail=f"Guest pass '{pass_id}' not found."
+        )
+    return GuestPassResponse(guest_pass=GuestPassItem(**gpass))
+
+
+@app.patch("/access/guest-passes/{pass_id}", response_model=GuestPassResponse)
+def update_guest_pass_route(pass_id: str, request: GuestPassUpdateRequest):
+    """Update a guest pass or increment access check-in count."""
+    updated = access_control.update_guest_pass(
+        pass_id=pass_id,
+        status=request.status,
+        valid_until=request.valid_until,
+        allowed_zones=request.allowed_zones,
+        notes=request.notes,
+        increment_use=request.increment_use,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=404, detail=f"Guest pass '{pass_id}' not found."
+        )
+    return GuestPassResponse(guest_pass=GuestPassItem(**updated))
+
+
+@app.delete("/access/guest-passes/{pass_id}")
+def delete_guest_pass_route(pass_id: str):
+    """Revoke or delete a guest pass."""
+    deleted = access_control.delete_guest_pass(pass_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, detail=f"Guest pass '{pass_id}' not found."
+        )
+    return {"deleted": True, "id": pass_id}
+
+
+@app.get("/tenants/{tenant_id}/guest-passes", response_model=GuestPassListResponse)
+def list_tenant_guest_passes_route(tenant_id: str):
+    """List all guest passes generated by a specific resident."""
+    items = access_control.list_guest_passes(tenant_id=tenant_id)
+    return GuestPassListResponse(
+        items=[GuestPassItem(**i) for i in items],
+        total=len(items),
+        limit=50,
+        offset=0,
+    )
+
+
+@app.post(
+    "/access/intercom", response_model=IntercomDirectoryResponse, status_code=201
+)
+def create_intercom_entry_route(request: IntercomDirectoryCreateRequest):
+    """Create a callbox/intercom directory entry for a unit and resident."""
+    created = access_control.create_intercom_entry(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        display_name=request.display_name,
+        directory_code=request.directory_code,
+        forwarding_phone=request.forwarding_phone,
+        buzzer_enabled=request.buzzer_enabled,
+        allow_video=request.allow_video,
+    )
+    return IntercomDirectoryResponse(entry=IntercomDirectoryItem(**created))
+
+
+@app.get("/access/intercom", response_model=IntercomDirectoryListResponse)
+def list_intercom_entries_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+):
+    """List intercom directory entries with optional tenant/unit filters."""
+    items = access_control.list_intercom_entries(tenant_id=tenant_id, unit_id=unit_id)
+    return IntercomDirectoryListResponse(
+        items=[IntercomDirectoryItem(**i) for i in items],
+        total=len(items),
+        limit=50,
+        offset=0,
+    )
+
+
+@app.get("/access/intercom/{entry_id}", response_model=IntercomDirectoryResponse)
+def get_intercom_entry_route(entry_id: str):
+    """Retrieve a specific intercom directory listing."""
+    entry = access_control.get_intercom_entry(entry_id)
+    if not entry:
+        raise HTTPException(
+            status_code=404, detail=f"Intercom entry '{entry_id}' not found."
+        )
+    return IntercomDirectoryResponse(entry=IntercomDirectoryItem(**entry))
+
+
+@app.patch("/access/intercom/{entry_id}", response_model=IntercomDirectoryResponse)
+def update_intercom_entry_route(
+    entry_id: str, request: IntercomDirectoryUpdateRequest
+):
+    """Update callbox/intercom directory listing settings."""
+    updated = access_control.update_intercom_entry(
+        entry_id=entry_id,
+        display_name=request.display_name,
+        forwarding_phone=request.forwarding_phone,
+        buzzer_enabled=request.buzzer_enabled,
+        allow_video=request.allow_video,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=404, detail=f"Intercom entry '{entry_id}' not found."
+        )
+    return IntercomDirectoryResponse(entry=IntercomDirectoryItem(**updated))
+
+
+@app.delete("/access/intercom/{entry_id}")
+def delete_intercom_entry_route(entry_id: str):
+    """Delete an intercom directory entry."""
+    deleted = access_control.delete_intercom_entry(entry_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, detail=f"Intercom entry '{entry_id}' not found."
+        )
+    return {"deleted": True, "id": entry_id}
+
+
+@app.post(
+    "/sessions/{session_id}/generate-guest-pass",
+    response_model=GuestPassResponse,
+    status_code=201,
+)
+def session_generate_guest_pass_route(
+    session_id: str,
+    request: SessionGenerateGuestPassRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Generate a temporary visitor guest pass grounded to the active session resident."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    resolved_tenant_id = tenant["id"]
+    resolved_unit_id = tenant.get("unit_id")
+    if not resolved_unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tenant '{resolved_tenant_id}' has no assigned unit.",
+        )
+
+    now = datetime.now(UTC)
+    valid_from = now.isoformat()
+    valid_until = (now + timedelta(hours=request.valid_hours)).isoformat()
+
+    created = access_control.create_guest_pass(
+        tenant_id=resolved_tenant_id,
+        unit_id=resolved_unit_id,
+        guest_name=request.guest_name,
+        guest_phone=request.guest_phone,
+        pass_type=request.pass_type,
+        valid_from=valid_from,
+        valid_until=valid_until,
+        allowed_zones=request.allowed_zones,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "access.guest_pass_generated",
+        {
+            "pass_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "guest_name": created["guest_name"],
+            "pass_type": created["pass_type"],
+            "access_code": created["access_code"],
+            "valid_until": created["valid_until"],
+            "session_id": session_id,
+        },
+    )
+    return GuestPassResponse(guest_pass=GuestPassItem(**created))
+
+
+@app.post(
+    "/sessions/{session_id}/report-lost-fob",
+    response_model=AccessCredentialResponse,
+)
+def session_report_lost_fob_route(
+    session_id: str,
+    request: SessionReportLostFobRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Report a key fob as lost via resident support session, deactivating it immediately."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+
+    cred = access_control.get_access_credential(request.credential_id)
+    if not cred:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Access credential '{request.credential_id}' not found.",
+        )
+
+    updated = access_control.report_lost_fob(
+        cred_id=request.credential_id,
+        deactivation_reason=request.deactivation_reason,
+        charge_replacement_fee=request.charge_replacement_fee,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=500, detail="Failed to update access credential status."
+        )
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "access.fob_reported_lost",
+        {
+            "credential_id": updated["id"],
+            "tenant_id": updated["tenant_id"],
+            "unit_id": updated["unit_id"],
+            "credential_number": updated["credential_number"],
+            "replacement_fee": updated["replacement_fee"],
+            "session_id": session_id,
+            "reason": request.deactivation_reason,
+        },
+    )
+    return AccessCredentialResponse(credential=AccessCredentialItem(**updated))

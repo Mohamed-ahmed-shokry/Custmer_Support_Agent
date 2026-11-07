@@ -1724,15 +1724,15 @@ Via the API and Streamlit UI, property managers can:
 9. 100% CI parity: local pytest (>=80% coverage), ruff clean, mypy clean, secret scan clean, real E2E API run, and remote GitHub Actions CI green.
 
 ### Granular Task Breakdown
-- [ ] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.44.0 plan
-- [ ] Task 2: Parking engine database schema & helpers (`api/parking.py`) + tests in `tests/test_parking.py`
-- [ ] Task 3: Pydantic schemas & webhook registration in `api/pydantic_models.py` and `api/db_utils.py` + tests in `tests/test_models.py`
-- [ ] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_parking_routes.py`
-- [ ] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
-- [ ] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
-- [ ] Task 7: Streamlit UI components in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
-- [ ] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.44.0` (`pyproject.toml`, `api/settings.py`)
-- [ ] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
+- [x] Task 1: Update ROADMAP.md & initialize docs/PROGRESS.md with v0.44.0 plan
+- [x] Task 2: Parking engine database schema & helpers (`api/parking.py`) + tests in `tests/test_parking.py`
+- [x] Task 3: Pydantic schemas & webhook registration in `api/pydantic_models.py` and `api/db_utils.py` + tests in `tests/test_models.py`
+- [x] Task 4: FastAPI endpoints in `api/main.py` + route tests in `tests/test_parking_routes.py`
+- [x] Task 5: Context grounding & macro variable resolution in `api/tenant_context.py` + tests in `tests/test_tenant_context.py`
+- [x] Task 6: Streamlit client API helpers in `app/api_utils.py` + unit tests in `tests/test_app_api_utils.py`
+- [x] Task 7: Streamlit UI components in `app/sidebar.py` + UI tests in `tests/test_app_ui.py`
+- [x] Task 8: Documentation updates (`docs/API.md`, `README.md`) and version bump to `0.44.0` (`pyproject.toml`, `api/settings.py`)
+- [x] Task 9: Final verification gate (`pytest` >= 80% coverage, `ruff`, `mypy`, secret scan, real E2E run) & Draft PR delivery
 
 
 
@@ -1783,6 +1783,62 @@ Via the API and Streamlit UI, property managers can:
 - [x] Task 7: Streamlit Pet Registry Board & 1-Click Session Widget (`app/sidebar.py`)
 - [x] Task 8: Documentation Updates & Version Bump (`docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`)
 - [x] Task 9: Verification Gate (ruff, mypy, pytest >= 80%, secret scan, real E2E run) & Draft PR delivery
+
+## v0.46.0 plan — Smart Access Control, Key Fobs, Digital Mobile Keys, Intercom & Guest Passes Engine (COMPLETED)
+
+Give property managers, leasing staff, and residents an automated access credential directory, temporary visitor guest pass generator, callbox/intercom directory, and lost fob deactivation engine. Operators issue and manage key fobs, RFID cards, mobile keys, and PIN codes linked to units and residents. Residents generate visitor PIN passes for deliveries, guests, and dog walkers with custom validity windows and access zone permissions (lobby, elevator, garage, unit door). Staff and security handle lost or stolen fobs with instant credential revocation and automated replacement fee assessment ($50 replacement fee). Active resident chat conversations automatically ground access credentials, intercom buzzer codes, and active guest passes into prompt context (`[RESIDENTIAL ACCESS CREDENTIALS & GUEST PASSES]`) and resolve canned response macros (`{active_fob_count}`, `{primary_fob_number}`, `{guest_pass_code}`, `{guest_pass_expires}`, `{access_zones}`, `{intercom_code}`, `{fob_replacement_fee}`). Real-time webhook events (`access.credential_issued`, `access.credential_deactivated`, `access.guest_pass_generated`, `access.fob_reported_lost`) keep security, leasing, and front desk teams synchronized.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers and residents can:
+1. Browse and manage access credentials (key fobs, access cards, mobile digital keys, PIN codes) with status, access levels, and issued/expiration dates.
+2. Issue temporary guest passes with 6-digit access PIN codes, expiration times, and zone permissions.
+3. Maintain the building intercom/callbox directory with unit codes and resident forwarding phone numbers.
+4. Report lost/stolen fobs with instant deactivation and automatic replacement billing.
+5. Review access control KPIs: total active credentials, lost fobs, active guest passes, and replacement fee revenue.
+6. Ground active resident chat sessions with credential data and resolve `{access_*}` and `{guest_pass_*}` macro variables dynamically.
+
+### Scope
+- `api/access_control.py`:
+  - SQLite tables `access_credentials`, `guest_passes`, and `intercom_directory` with indexes and foreign keys.
+  - Enums: `CredentialType`, `CredentialStatus`, `AccessLevel`, `GuestPassType`, `GuestPassStatus`.
+  - CRUD operations and metrics aggregator `get_access_control_summary_metrics()`.
+  - Seed data: credentials, guest pass, and intercom directory entry for Elena Rostova (`tenant_3`, `unit_PH1`).
+- `api/pydantic_models.py`:
+  - Pydantic models for credentials, guest passes, intercom entries, session actions, and metrics.
+- `api/db_utils.py`:
+  - Webhook event types for access control lifecycle.
+- `api/main.py`:
+  - REST endpoints for `/access/credentials`, `/access/guest-passes`, `/access/intercom`, `/access/metrics`, and session 1-click actions `POST /sessions/{id}/generate-guest-pass` and `POST /sessions/{id}/report-lost-fob`.
+- `api/tenant_context.py`:
+  - RAG prompt grounding block `[RESIDENTIAL ACCESS CREDENTIALS & GUEST PASSES]` and macro variables.
+- `app/api_utils.py`:
+  - Typed client API wrappers for access control endpoints.
+- `app/sidebar.py`:
+  - Streamlit `🔑 Access Control & Key Fobs` sidebar management panel (Credentials, Guest Passes, Intercom, KPIs) and 1-click resident profile guest pass & lost fob actions.
+- Tests:
+  - Unit tests for engine, models, tenant context, routes, app client, and UI.
+
+### Acceptance Criteria
+- [x] AC1: Core SQLite database schema & migrations in `api/access_control.py` with foreign keys to `tenants` and `units` and seeds.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click guest pass and lost fob reporting.
+- [x] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [x] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [x] AC6: Streamlit UI components in `app/sidebar.py` (access management board & session widget).
+- [x] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [x] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [x] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Breakdown
+- [x] Task 1: Document v0.46.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/access_control.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_access_control.py`.
+- [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_access_control_routes.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 7: Implement Streamlit UI access board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
 ## v0.6.0 plan — Document collections ✅ COMPLETED
 

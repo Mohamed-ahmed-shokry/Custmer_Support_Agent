@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import amenities, packages, parking, pets, vendors
+from api import access_control, amenities, packages, parking, pets, vendors
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -572,6 +572,96 @@ def _extract_pet_vars(
 
     return vars_dict
 
+
+
+def _format_access_control_lines(
+    credentials: list[dict[str, Any]],
+    guest_passes: list[dict[str, Any]],
+    intercom: dict[str, Any] | None = None,
+) -> list[str]:
+    """Format access credentials, active guest passes, and callbox directory."""
+    if not credentials and not guest_passes and not intercom:
+        return []
+
+    lines = ["[RESIDENTIAL ACCESS CREDENTIALS & GUEST PASSES]"]
+    if credentials:
+        active_creds = [c for c in credentials if c.get("status") == "active"]
+        fob_count = sum(1 for c in active_creds if c.get("credential_type") == "key_fob")
+        mobile_count = sum(1 for c in active_creds if c.get("credential_type") == "mobile_key")
+        lines.append(
+            f"- Active Access Credentials: {len(active_creds)} "
+            f"(Key Fobs: {fob_count}, Mobile Keys: {mobile_count})"
+        )
+        for c in credentials[:3]:
+            ctype = str(c.get("credential_type", "key_fob")).replace("_", " ").title()
+            num = c.get("credential_number", "Unknown")
+            status = str(c.get("status", "active")).upper()
+            level = str(c.get("access_level", "standard")).replace("_", " ").title()
+            assigned = c.get("assigned_to_name") or "Resident"
+            lines.append(f"  - {ctype}: {num} ({level}) | Status: {status} | Holder: {assigned}")
+    else:
+        lines.append("- Active Access Credentials: None")
+
+    if guest_passes:
+        lines.append(f"- Active Guest Passes: {len(guest_passes)}")
+        for g in guest_passes[:2]:
+            guest = g.get("guest_name", "Visitor")
+            ptype = str(g.get("pass_type", "visitor")).replace("_", " ").title()
+            code = g.get("access_code", "")
+            until = g.get("valid_until", "")
+            lines.append(f"  - {guest} ({ptype}) | Code: {code} | Valid Until: {until}")
+
+    if intercom:
+        code = intercom.get("directory_code", "None")
+        dname = intercom.get("display_name", "Resident")
+        phone = intercom.get("forwarding_phone", "None")
+        buzzer = "ENABLED" if intercom.get("buzzer_enabled") else "DISABLED"
+        lines.append(
+            f"- Building Callbox / Intercom: Code: {code} | Display: {dname} | "
+            f"Forwarding Phone: {phone} | Buzzer: {buzzer}"
+        )
+
+    return lines
+
+
+def _extract_access_control_vars(
+    credentials: list[dict[str, Any]],
+    guest_passes: list[dict[str, Any]],
+    intercom: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Extract macro template replacement variables for access credentials and guest passes."""
+    active_fobs = [
+        c for c in credentials
+        if c.get("credential_type") == "key_fob" and c.get("status") == "active"
+    ]
+    primary_fob = active_fobs[0].get("credential_number", "None") if active_fobs else "None"
+
+    pass_code = "None"
+    pass_expires = "None"
+    pass_zones = "main_lobby, elevator, unit_door"
+    if guest_passes:
+        first_pass = guest_passes[0]
+        pass_code = str(first_pass.get("access_code") or "None")
+        pass_expires = str(first_pass.get("valid_until") or "None")
+        allowed = first_pass.get("allowed_zones")
+        if isinstance(allowed, list) and allowed:
+            pass_zones = ", ".join(str(z) for z in allowed)
+        elif isinstance(allowed, str):
+            pass_zones = allowed
+
+    intercom_code = str(intercom.get("directory_code", "None")) if intercom else "None"
+
+    return {
+        "active_fob_count": str(len(active_fobs)),
+        "primary_fob_number": primary_fob,
+        "guest_pass_code": pass_code,
+        "guest_pass_expires": pass_expires,
+        "access_zones": pass_zones,
+        "intercom_code": intercom_code,
+        "fob_replacement_fee": "$50.00",
+    }
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -631,6 +721,26 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             parking_spots = parking.list_parking_spots(unit_id=resolved_unit_id)
             resident_vehicles = parking.list_vehicles(unit_id=resolved_unit_id)
             visitor_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
+
+    access_credentials: list[dict[str, Any]] = []
+    active_guest_passes: list[dict[str, Any]] = []
+    intercom_entry: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        access_credentials = access_control.list_access_credentials(tenant_id=resolved_tenant_id)
+        active_guest_passes = access_control.list_guest_passes(
+            tenant_id=resolved_tenant_id, status="active"
+        )
+        int_list = access_control.list_intercom_entries(tenant_id=resolved_tenant_id)
+        if int_list:
+            intercom_entry = int_list[0]
+    elif resolved_unit_id:
+        access_credentials = access_control.list_access_credentials(unit_id=resolved_unit_id)
+        active_guest_passes = access_control.list_guest_passes(
+            unit_id=resolved_unit_id, status="active"
+        )
+        int_list = access_control.list_intercom_entries(unit_id=resolved_unit_id)
+        if int_list:
+            intercom_entry = int_list[0]
 
     tenant_pets: list[dict[str, Any]] = []
     pet_policy: dict[str, Any] | None = None
@@ -704,6 +814,13 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(_format_pet_lines(tenant_pets, pet_policy))
+
+    if access_credentials or active_guest_passes or intercom_entry:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_access_control_lines(access_credentials, active_guest_passes, intercom_entry)
+        )
 
     return "\n".join(lines)
 
@@ -947,5 +1064,23 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         t_pets = pets.list_resident_pets(unit_id=resolved_unit_id)
     default_policy = pets.get_pet_policy("policy_default")
     variables.update(_extract_pet_vars(t_pets, default_policy))
+
+    t_creds: list[dict[str, Any]] = []
+    t_passes: list[dict[str, Any]] = []
+    t_intercom: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        t_creds = access_control.list_access_credentials(tenant_id=resolved_tenant_id)
+        t_passes = access_control.list_guest_passes(tenant_id=resolved_tenant_id, status="active")
+        ic_list = access_control.list_intercom_entries(tenant_id=resolved_tenant_id)
+        if ic_list:
+            t_intercom = ic_list[0]
+    elif resolved_unit_id:
+        t_creds = access_control.list_access_credentials(unit_id=resolved_unit_id)
+        t_passes = access_control.list_guest_passes(unit_id=resolved_unit_id, status="active")
+        ic_list = access_control.list_intercom_entries(unit_id=resolved_unit_id)
+        if ic_list:
+            t_intercom = ic_list[0]
+
+    variables.update(_extract_access_control_vars(t_creds, t_passes, t_intercom))
 
     return variables

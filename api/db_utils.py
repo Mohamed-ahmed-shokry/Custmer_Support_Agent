@@ -311,6 +311,10 @@ VALID_WEBHOOK_EVENTS = {
     "pet_vaccination.expiring",
     "pet_incident.logged",
     "pet_policy.updated",
+    "access.credential_issued",
+    "access.credential_deactivated",
+    "access.guest_pass_generated",
+    "access.fob_reported_lost",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
