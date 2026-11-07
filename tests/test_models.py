@@ -29,6 +29,11 @@ from api.pydantic_models import (
     CollectionAnalyticsResponse,
     CollectionRechunkRequest,
     CollectionRechunkResponse,
+    CommunityIncidentCreateRequest,
+    CommunityIncidentItem,
+    CommunityIncidentListResponse,
+    CommunityIncidentResponse,
+    CommunityIncidentUpdateRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
     DocumentDetailResponse,
@@ -41,6 +46,7 @@ from api.pydantic_models import (
     GuestPassListResponse,
     GuestPassResponse,
     GuestPassUpdateRequest,
+    IncidentMetricsResponse,
     InspectionCompleteRequest,
     InspectionCreateRequest,
     InspectionDocumentPublishRequest,
@@ -140,10 +146,12 @@ from api.pydantic_models import (
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
+    SessionIssueViolationNoticeRequest,
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
     SessionSLAStatusResponse,
+    SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
     SessionTenantContextResponse,
@@ -183,6 +191,16 @@ from api.pydantic_models import (
     VehicleRegisterRequest,
     VehicleResponse,
     VehicleUpdateRequest,
+    ViolationAppealCreateRequest,
+    ViolationAppealItem,
+    ViolationAppealListResponse,
+    ViolationAppealResponse,
+    ViolationAppealUpdateRequest,
+    ViolationNoticeCreateRequest,
+    ViolationNoticeItem,
+    ViolationNoticeListResponse,
+    ViolationNoticeResponse,
+    ViolationNoticeUpdateRequest,
     VisitorPassCreateRequest,
     VisitorPassItem,
     VisitorPassListResponse,
@@ -2663,3 +2681,144 @@ def test_access_control_models_validation():
         lost_credentials=4,
     )
     assert metrics.total_credentials == expected_total_creds
+
+
+
+def test_incident_models_validation():
+    """Verify validation and serialization for incident, notice, and appeal schemas."""
+    expected_cure_days = 7
+    expected_fine = 25.0
+    expected_incidents = 10
+    expected_fines_total = 150.0
+
+    # 1. Incident schemas
+    inc_req = CommunityIncidentCreateRequest(
+        incident_type="noise_complaint",
+        description="Loud bass vibrating floor after midnight.",
+        severity="medium",
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        reported_by="resident",
+        location="Unit 101 Living Room",
+    )
+    assert inc_req.description == "Loud bass vibrating floor after midnight."
+
+    inc_item = CommunityIncidentItem(
+        id="inc_01",
+        incident_number="INC-2026-101",
+        incident_type="noise_complaint",
+        severity="medium",
+        status="reported",
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        reported_by="resident",
+        incident_date="2026-11-04T23:15:00Z",
+        description="Loud bass vibrating floor after midnight.",
+        created_at="2026-11-04T23:20:00Z",
+        updated_at="2026-11-04T23:20:00Z",
+    )
+    inc_resp = CommunityIncidentResponse(incident=inc_item)
+    assert inc_resp.incident.incident_number == "INC-2026-101"
+
+    inc_list = CommunityIncidentListResponse(items=[inc_item], total=1)
+    assert len(inc_list.items) == 1
+
+    inc_up = CommunityIncidentUpdateRequest(
+        status="resolved",
+        resolution_notes="Resident complied.",
+    )
+    assert inc_up.status == "resolved"
+
+    # 2. Notice schemas
+    notice_req = ViolationNoticeCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        violation_type="noise_complaint",
+        notice_type="courtesy_warning",
+        remedy_instructions="Keep music below 55 dB after 10 PM quiet hours.",
+        cure_days=expected_cure_days,
+        fine_amount=0.0,
+    )
+    assert notice_req.cure_days == expected_cure_days
+
+    notice_item = ViolationNoticeItem(
+        id="viol_01",
+        notice_number="VN-2026-089",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        violation_type="noise_complaint",
+        notice_type="courtesy_warning",
+        status="issued",
+        issued_at="2026-11-05T09:00:00Z",
+        remedy_instructions="Keep music below 55 dB after 10 PM quiet hours.",
+        created_at="2026-11-05T09:00:00Z",
+        updated_at="2026-11-05T09:00:00Z",
+    )
+    notice_resp = ViolationNoticeResponse(notice=notice_item)
+    assert notice_resp.notice.notice_number == "VN-2026-089"
+
+    notice_list = ViolationNoticeListResponse(items=[notice_item], total=1)
+    assert len(notice_list.items) == 1
+
+    notice_up = ViolationNoticeUpdateRequest(status="cured", fine_amount=expected_fine)
+    assert notice_up.status == "cured"
+    assert notice_up.fine_amount == expected_fine
+
+    # 3. Appeal schemas
+    appeal_req = ViolationAppealCreateRequest(
+        notice_id="viol_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        reason="Music was from neighboring apartment on adjacent terrace.",
+    )
+    assert appeal_req.notice_id == "viol_01"
+
+    appeal_item = ViolationAppealItem(
+        id="appeal_01",
+        appeal_number="APL-2026-042",
+        notice_id="viol_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        status="submitted",
+        reason="Music was from neighboring apartment on adjacent terrace.",
+        submitted_at="2026-11-05T14:30:00Z",
+        created_at="2026-11-05T14:30:00Z",
+        updated_at="2026-11-05T14:30:00Z",
+    )
+    appeal_resp = ViolationAppealResponse(appeal=appeal_item)
+    assert appeal_resp.appeal.appeal_number == "APL-2026-042"
+
+    appeal_list = ViolationAppealListResponse(items=[appeal_item], total=1)
+    assert len(appeal_list.items) == 1
+
+    appeal_up = ViolationAppealUpdateRequest(
+        status="waived",
+        reviewed_by="Manager Sarah",
+        decision_notes="Confirmed sound came from unit 102.",
+    )
+    assert appeal_up.status == "waived"
+
+    # 4. Session actions
+    sess_notice = SessionIssueViolationNoticeRequest(
+        violation_type="trash_disposal",
+        notice_type="courtesy_warning",
+        remedy_instructions="Place all recycling in designated bins.",
+    )
+    assert sess_notice.violation_type == "trash_disposal"
+
+    sess_appeal = SessionSubmitViolationAppealRequest(
+        notice_id="viol_01",
+        reason="Boxes were left by delivery carrier, not resident.",
+    )
+    assert sess_appeal.notice_id == "viol_01"
+
+    # 5. Metrics response
+    metrics = IncidentMetricsResponse(
+        total_incidents=expected_incidents,
+        active_incidents=2,
+        total_violations=5,
+        open_violations=3,
+        total_fines_assessed=expected_fines_total,
+    )
+    assert metrics.total_incidents == expected_incidents
+    assert metrics.total_fines_assessed == expected_fines_total
