@@ -17,6 +17,7 @@ from app.api_utils import (
     create_access_credential_api,
     create_billing_transaction,
     create_guest_pass_api,
+    create_incident_api,
     create_inspection,
     create_intercom_entry_api,
     create_lease_renewal,
@@ -33,6 +34,7 @@ from app.api_utils import (
     create_tenant,
     create_unit,
     create_vendor,
+    create_violation_notice_api,
     create_webhook,
     create_work_order,
     create_work_order_from_session,
@@ -69,6 +71,7 @@ from app.api_utils import (
     get_document_details,
     get_feedback_analytics,
     get_health,
+    get_incident_metrics_api,
     get_inspection_metrics,
     get_knowledge_analytics,
     get_lease_renewal_metrics,
@@ -102,6 +105,7 @@ from app.api_utils import (
     list_feedback,
     list_feedback_review_queue,
     list_guest_passes_api,
+    list_incidents_api,
     list_inspections,
     list_intercom_entries_api,
     list_knowledge_articles,
@@ -125,10 +129,13 @@ from app.api_utils import (
     list_tenant_pets_api,
     list_tenant_reservations_api,
     list_tenant_vehicles_api,
+    list_tenant_violation_notices_api,
     list_tenants,
     list_units,
     list_vehicles_api,
     list_vendors,
+    list_violation_appeals_api,
+    list_violation_notices_api,
     list_visitor_passes_api,
     list_webhook_deliveries,
     list_webhooks,
@@ -154,9 +161,11 @@ from app.api_utils import (
     session_create_reservation_api,
     session_generate_guest_pass_api,
     session_intake_package_api,
+    session_issue_violation_notice_api,
     session_issue_visitor_pass_api,
     session_register_pet_api,
     session_report_lost_fob_api,
+    session_submit_violation_appeal_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
@@ -168,6 +177,7 @@ from app.api_utils import (
     update_session,
     update_support_agent,
     update_vendor,
+    update_violation_appeal_api,
     update_webhook,
     update_work_order,
     upload_document,
@@ -1114,6 +1124,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_parking_widget(selected, tenant)
     _render_session_pet_widget(selected, tenant)
     _render_session_access_widget(selected, tenant)
+    _render_session_incident_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -2420,6 +2431,375 @@ def _render_knowledge_articles_publisher():
                         st.success(f"Article #{aid} published to '{target_col}'!")
                         st.rerun()
         st.markdown("---")
+
+
+def _render_session_incident_widget(selected: str, tenant: dict):  # noqa: PLR0912, PLR0915
+    """Render 1-click violation notices and resident appeal actions for active session resident."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        notices_resp = list_tenant_violation_notices_api(tenant_id)
+        notices = notices_resp.get("items", []) if notices_resp else []
+        active_notices = [
+            n for n in notices if n.get("status") in ("issued", "escalated", "appealed")
+        ]
+
+        if active_notices:
+            st.sidebar.markdown("**🚨 Community Violations:**")
+            for n in active_notices[:2]:
+                ntype = str(n.get("notice_type", "warning")).replace("_", " ").title()
+                vtype = str(n.get("violation_type", "violation")).replace("_", " ").title()
+                deadline = str(n.get("cure_deadline", ""))[:10]
+                stat = str(n.get("status", "issued")).upper()
+                st.sidebar.warning(
+                    f"**{ntype}:** {vtype} | Cure by: `{deadline}` | Status: **{stat}**"
+                )
+
+        with st.sidebar.expander("🚨 Violation Notice & Appeal Actions"):
+            st.markdown("##### 📝 Issue Violation Notice")
+            v_type = st.selectbox(
+                "Violation Type",
+                [
+                    "noise_complaint",
+                    "smoking_prohibited",
+                    "pet_waste_violation",
+                    "trash_disposal",
+                    "unauthorized_occupant",
+                    "common_area_damage",
+                    "alteration_unapproved",
+                    "parking_improper",
+                    "safety_hazard",
+                    "other",
+                ],
+                key=f"sess_vn_type_{selected}",
+            )
+            n_type = st.selectbox(
+                "Notice Type",
+                [
+                    "courtesy_warning",
+                    "first_notice_to_cure",
+                    "second_notice_to_cure",
+                    "fine_assessment",
+                    "final_notice_to_vacate",
+                ],
+                key=f"sess_vn_noticetype_{selected}",
+            )
+            v_remedy = st.text_area(
+                "Required Remedy Instructions*",
+                placeholder="e.g. Keep volume below 55 dB during 10 PM quiet hours",
+                key=f"sess_vn_remedy_{selected}",
+            )
+            v_days = st.number_input(
+                "Cure Window (Days)",
+                min_value=0,
+                max_value=90,
+                value=7,
+                step=1,
+                key=f"sess_vn_days_{selected}",
+            )
+            v_fine = st.number_input(
+                "Fine Amount ($)",
+                min_value=0.0,
+                value=0.0,
+                step=25.0,
+                key=f"sess_vn_fine_{selected}",
+            )
+
+            if st.button("Issue Violation Notice", key=f"btn_sess_issue_vn_{selected}"):
+                if not v_remedy.strip():
+                    st.error("Remedy instructions are required.")
+                else:
+                    payload = {
+                        "violation_type": v_type,
+                        "notice_type": n_type,
+                        "remedy_instructions": v_remedy.strip(),
+                        "cure_days": int(v_days),
+                        "fine_amount": float(v_fine),
+                        "charge_to_ledger": float(v_fine) > 0,
+                    }
+                    res = session_issue_violation_notice_api(selected, payload)
+                    if res and res.get("notice"):
+                        num = res["notice"].get("notice_number")
+                        st.success(f"Violation notice issued! Number: **{num}**")
+
+            st.markdown("---")
+            st.markdown("##### ⚖️ Submit Violation Appeal")
+            if active_notices:
+                notice_opts = {
+                    n["id"]: f"{n.get('notice_number')} ({n.get('violation_type')})"
+                    for n in active_notices
+                }
+                chosen_notice = st.selectbox(
+                    "Select Notice to Appeal",
+                    list(notice_opts.keys()),
+                    format_func=lambda x: notice_opts[x],
+                    key=f"sess_appeal_select_{selected}",
+                )
+                appeal_reason = st.text_area(
+                    "Appeal Statement / Reason*",
+                    placeholder="Explain why this notice should be reconsidered or waived",
+                    key=f"sess_appeal_reason_{selected}",
+                )
+                if st.button("Submit Appeal", key=f"btn_sess_sub_appeal_{selected}"):
+                    if not appeal_reason.strip():
+                        st.error("Appeal reason is required.")
+                    else:
+                        apl_res = session_submit_violation_appeal_api(
+                            selected,
+                            {
+                                "notice_id": chosen_notice,
+                                "reason": appeal_reason.strip(),
+                            },
+                        )
+                        if apl_res and apl_res.get("appeal"):
+                            anum = apl_res["appeal"].get("appeal_number")
+                            st.info(f"Appeal submitted! Tracking: **{anum}**")
+            else:
+                st.caption("No open violation notices on record.")
+    except Exception as e:
+        st.sidebar.caption(f"Incident actions temporarily unavailable: {e}")
+
+
+def _render_incidents_directory_tab():
+    """Render community incident reports log and intake form."""
+    inc_resp = list_incidents_api()
+    items = inc_resp.get("items", []) if inc_resp else []
+    total = inc_resp.get("total", len(items)) if inc_resp else 0
+
+    max_desc_len = 50
+    st.caption(f"Showing **{len(items)}** of **{total}** community incident reports.")
+    for inc in items[:6]:
+        num = inc.get("incident_number")
+        itype = str(inc.get("incident_type")).replace("_", " ").title()
+        sev = str(inc.get("severity")).title()
+        stat = str(inc.get("status")).upper()
+        raw_desc = str(inc.get("description", ""))
+        desc = (raw_desc[:47] + "...") if len(raw_desc) > max_desc_len else raw_desc
+        st.markdown(f"- **{num}** ({itype} - {sev}) | Status: **{stat}** | `{desc}`")
+
+    with st.expander("➕ Log Community Incident"):
+        i_type = st.selectbox(
+            "Incident Type",
+            [
+                "noise_complaint",
+                "smoking_prohibited",
+                "pet_waste_violation",
+                "trash_disposal",
+                "unauthorized_occupant",
+                "common_area_damage",
+                "alteration_unapproved",
+                "parking_improper",
+                "safety_hazard",
+                "other",
+            ],
+            key="new_inc_type",
+        )
+        i_sev = st.selectbox(
+            "Severity", ["low", "medium", "high", "critical"], key="new_inc_sev"
+        )
+        i_unit = st.text_input(
+            "Unit ID (Optional)", placeholder="e.g. unit_101", key="new_inc_unit"
+        )
+        i_tenant = st.text_input(
+            "Tenant ID (Optional)", placeholder="e.g. tenant_1", key="new_inc_tenant"
+        )
+        i_loc = st.text_input(
+            "Location", placeholder="e.g. 2nd Floor Courtyard", key="new_inc_loc"
+        )
+        i_desc = st.text_area(
+            "Incident Description*", placeholder="Describe what occurred", key="new_inc_desc"
+        )
+
+        if st.button("Submit Incident Report", key="btn_create_incident"):
+            if not i_desc.strip():
+                st.error("Incident description is required.")
+            else:
+                payload = {
+                    "incident_type": i_type,
+                    "severity": i_sev,
+                    "unit_id": i_unit.strip() if i_unit.strip() else None,
+                    "tenant_id": i_tenant.strip() if i_tenant.strip() else None,
+                    "location": i_loc.strip() if i_loc.strip() else None,
+                    "description": i_desc.strip(),
+                }
+                res = create_incident_api(payload)
+                if res and res.get("incident"):
+                    inc_num = res["incident"].get("incident_number")
+                    st.success(f"Incident logged! Reference: **{inc_num}**")
+
+
+def _render_violation_notices_tab():
+    """Render formal violation notices and new notice form."""
+    notices_resp = list_violation_notices_api()
+    items = notices_resp.get("items", []) if notices_resp else []
+    total = notices_resp.get("total", len(items)) if notices_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** violation notices.")
+    for vn in items[:6]:
+        num = vn.get("notice_number")
+        vtype = str(vn.get("violation_type")).replace("_", " ").title()
+        stat = str(vn.get("status")).upper()
+        deadline = str(vn.get("cure_deadline", ""))[:10]
+        fine = f"${vn.get('fine_amount', 0.0):,.2f}"
+        st.markdown(
+            f"- **{num}** ({vtype}) | Fine: `{fine}` | Deadline: `{deadline}` | Status: **{stat}**"
+        )
+
+    with st.expander("➕ Issue Formal Violation Notice"):
+        vn_tenant = st.text_input("Tenant ID*", placeholder="e.g. tenant_1", key="man_vn_tenant")
+        vn_unit = st.text_input("Unit ID*", placeholder="e.g. unit_101", key="man_vn_unit")
+        vn_type = st.selectbox(
+            "Violation Type",
+            [
+                "noise_complaint",
+                "smoking_prohibited",
+                "pet_waste_violation",
+                "trash_disposal",
+                "unauthorized_occupant",
+                "common_area_damage",
+                "alteration_unapproved",
+                "parking_improper",
+                "safety_hazard",
+            ],
+            key="man_vn_type",
+        )
+        vn_notice = st.selectbox(
+            "Notice Type",
+            [
+                "courtesy_warning",
+                "first_notice_to_cure",
+                "second_notice_to_cure",
+                "fine_assessment",
+                "final_notice_to_vacate",
+            ],
+            key="man_vn_noticetype",
+        )
+        vn_remedy = st.text_area(
+            "Remedy Instructions*", placeholder="Actions required to cure", key="man_vn_remedy"
+        )
+        vn_days = st.number_input(
+            "Cure Window (Days)", min_value=0, max_value=90, value=7, step=1, key="man_vn_days"
+        )
+        vn_fine = st.number_input(
+            "Fine Amount ($)", min_value=0.0, value=0.0, step=25.0, key="man_vn_fine"
+        )
+
+        if st.button("Issue Notice", key="btn_man_issue_vn"):
+            if not vn_tenant.strip() or not vn_unit.strip() or not vn_remedy.strip():
+                st.error("Tenant ID, Unit ID, and Remedy Instructions are required.")
+            else:
+                payload = {
+                    "tenant_id": vn_tenant.strip(),
+                    "unit_id": vn_unit.strip(),
+                    "violation_type": vn_type,
+                    "notice_type": vn_notice,
+                    "remedy_instructions": vn_remedy.strip(),
+                    "cure_days": int(vn_days),
+                    "fine_amount": float(vn_fine),
+                    "charge_to_ledger": float(vn_fine) > 0,
+                }
+                res = create_violation_notice_api(payload)
+                if res and res.get("notice"):
+                    vn_num = res["notice"].get("notice_number")
+                    st.success(f"Violation notice issued! Number: **{vn_num}**")
+
+
+def _render_violation_appeals_tab():
+    """Render resident appeals and manager adjudication decisions."""
+    appeals_resp = list_violation_appeals_api()
+    items = appeals_resp.get("items", []) if appeals_resp else []
+    total = appeals_resp.get("total", len(items)) if appeals_resp else 0
+
+    max_reason_len = 60
+    st.caption(f"Showing **{len(items)}** of **{total}** resident violation appeals.")
+    for a in items[:6]:
+        num = a.get("appeal_number")
+        stat = str(a.get("status")).upper()
+        raw_reason = str(a.get("reason", ""))
+        reason = (raw_reason[:57] + "...") if len(raw_reason) > max_reason_len else raw_reason
+        nid = a.get("notice_id")
+        st.markdown(f"- **{num}** (Notice: `{nid}`) | Status: **{stat}** | `{reason}`")
+
+    with st.expander("⚖️ Adjudicate Violation Appeal"):
+        a_id = st.text_input(
+            "Appeal ID / Tracking Number*", placeholder="e.g. appeal_1", key="adj_appeal_id"
+        )
+        a_decision = st.selectbox(
+            "Decision Outcome",
+            ["under_review", "waived", "upheld", "reduced"],
+            key="adj_decision",
+        )
+        a_reviewer = st.text_input("Reviewer Name", value="Property Manager", key="adj_reviewer")
+        a_adj_fine = st.number_input(
+            "Adjusted Fine ($)", min_value=0.0, value=0.0, step=25.0, key="adj_fine"
+        )
+        a_notes = st.text_area(
+            "Decision Notes", placeholder="Explanation of appeal ruling", key="adj_notes"
+        )
+
+        if st.button("Save Appeal Decision", key="btn_save_appeal_decision"):
+            if not a_id.strip():
+                st.error("Appeal ID is required.")
+            else:
+                payload = {
+                    "status": a_decision,
+                    "reviewed_by": a_reviewer.strip() if a_reviewer.strip() else None,
+                    "decision_notes": a_notes.strip() if a_notes.strip() else None,
+                    "adjusted_fine_amount": float(a_adj_fine) if a_decision == "reduced" else None,
+                }
+                res = update_violation_appeal_api(a_id.strip(), payload)
+                if res and res.get("appeal"):
+                    st.success("Appeal decision recorded successfully!")
+
+
+def _render_incident_kpis_tab():
+    """Render portfolio compliance and community incident KPIs."""
+    metrics = get_incident_metrics_api()
+    if not metrics:
+        st.info("No incident compliance metrics available.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Incidents", metrics.get("total_incidents", 0))
+        st.metric("Active Incidents", metrics.get("active_incidents", 0))
+        st.metric("Total Violations", metrics.get("total_violations", 0))
+        st.metric("Open Violations", metrics.get("open_violations", 0))
+    with col2:
+        st.metric("Cured Violations", metrics.get("cured_violations", 0))
+        st.metric("Total Fines", f"${metrics.get('total_fines_assessed', 0.0):,.2f}")
+        st.metric("Total Appeals", metrics.get("total_appeals", 0))
+        st.metric("Pending Appeals", metrics.get("pending_appeals", 0))
+
+
+def _render_incidents_violations_board():
+    """Render resident incidents, community violations, and appeals expander in sidebar."""
+    with st.sidebar.expander("🚨 Incidents and Community Violations"):
+        try:
+            views = [
+                "Incidents Directory",
+                "Violation Notices",
+                "Resident Appeals",
+                "Compliance KPIs",
+            ]
+            v_tab = st.radio(
+                "Compliance View",
+                views,
+                horizontal=True,
+                key="incidents_board_tab_radio",
+            )
+            if v_tab == "Incidents Directory":
+                _render_incidents_directory_tab()
+            elif v_tab == "Violation Notices":
+                _render_violation_notices_tab()
+            elif v_tab == "Resident Appeals":
+                _render_violation_appeals_tab()
+            else:
+                _render_incident_kpis_tab()
+        except Exception as e:
+            st.caption(f"Incidents panel temporarily unavailable: {e}")
 
 
 def _render_knowledge_studio():
@@ -5267,6 +5647,7 @@ def display_sidebar():
     _render_parking_management_board()
     _render_pet_registry_board()
     _render_access_control_board()
+    _render_incidents_violations_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 

@@ -4569,3 +4569,192 @@ def test_render_session_access_widget(monkeypatch):
     assert lost_fobs[0][0] == "sess_99"
     assert lost_fobs[0][1]["credential_id"] == "cred_active_1"
     assert lost_fobs[0][1]["charge_replacement_fee"] is True
+
+
+
+def test_render_incidents_violations_board(monkeypatch):
+    """Test _render_incidents_violations_board across all tabs."""
+    st = FakeStreamlit(
+        values={
+            "new_inc_type": "noise_complaint",
+            "new_inc_sev": "medium",
+            "new_inc_unit": "unit_101",
+            "new_inc_tenant": "tenant_1",
+            "new_inc_loc": "Courtyard",
+            "new_inc_desc": "Loud music after hours",
+            "man_vn_tenant": "tenant_1",
+            "man_vn_unit": "unit_101",
+            "man_vn_type": "noise_complaint",
+            "man_vn_noticetype": "first_notice_to_cure",
+            "man_vn_remedy": "Cease loud noise past 10 PM",
+            "man_vn_days": 7,
+            "man_vn_fine": 50.0,
+            "adj_appeal_id": "appeal_1",
+            "adj_decision": "waived",
+            "adj_reviewer": "Lead Manager",
+            "adj_fine": 0.0,
+            "adj_notes": "First time offense",
+        },
+        buttons={
+            "btn_create_incident": True,
+            "btn_man_issue_vn": True,
+            "btn_save_appeal_decision": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # 1. Incidents mock
+    sample_incidents = {
+        "items": [
+            {
+                "id": "inc_1",
+                "incident_number": "INC-2026-001",
+                "incident_type": "noise_complaint",
+                "severity": "medium",
+                "status": "investigating",
+                "description": "Loud music reported",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_incidents_api", lambda **kwargs: sample_incidents)
+    monkeypatch.setattr(
+        sidebar,
+        "create_incident_api",
+        lambda payload: {"incident": {"id": "inc_new", "incident_number": "INC-2026-099"}},
+    )
+
+    # 2. Violation notices mock
+    sample_notices = {
+        "items": [
+            {
+                "id": "vn_1",
+                "notice_number": "VN-2026-001",
+                "violation_type": "noise_complaint",
+                "notice_type": "first_notice_to_cure",
+                "fine_amount": 50.0,
+                "cure_deadline": "2026-11-20T00:00:00",
+                "status": "issued",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_violation_notices_api", lambda **kwargs: sample_notices)
+    monkeypatch.setattr(
+        sidebar,
+        "create_violation_notice_api",
+        lambda payload: {"notice": {"id": "vn_new", "notice_number": "VN-2026-099"}},
+    )
+
+    # 3. Violation appeals mock
+    sample_appeals = {
+        "items": [
+            {
+                "id": "appeal_1",
+                "appeal_number": "APL-2026-001",
+                "notice_id": "vn_1",
+                "status": "submitted",
+                "reason": "Was not in town when noise occurred",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_violation_appeals_api", lambda **kwargs: sample_appeals)
+    monkeypatch.setattr(
+        sidebar,
+        "update_violation_appeal_api",
+        lambda aid, payload: {"appeal": {"id": aid, "status": payload.get("status")}},
+    )
+
+    # 4. Metrics mock
+    sample_metrics = {
+        "total_incidents": 5,
+        "active_incidents": 2,
+        "total_violations": 8,
+        "open_violations": 3,
+        "cured_violations": 4,
+        "total_fines_assessed": 250.0,
+        "total_appeals": 2,
+        "pending_appeals": 1,
+    }
+    monkeypatch.setattr(sidebar, "get_incident_metrics_api", lambda: sample_metrics)
+
+    # Tab 1: Incidents Directory
+    st.values["incidents_board_tab_radio"] = "Incidents Directory"
+    sidebar._render_incidents_violations_board()
+
+    # Tab 2: Violation Notices
+    st.values["incidents_board_tab_radio"] = "Violation Notices"
+    sidebar._render_incidents_violations_board()
+
+    # Tab 3: Resident Appeals
+    st.values["incidents_board_tab_radio"] = "Resident Appeals"
+    sidebar._render_incidents_violations_board()
+
+    # Tab 4: Compliance KPIs
+    st.values["incidents_board_tab_radio"] = "Compliance KPIs"
+    sidebar._render_incidents_violations_board()
+
+
+def test_render_session_incident_widget(monkeypatch):
+    """Test _render_session_incident_widget 1-click violation notice & appeal submission."""
+    issued_notices = []
+    submitted_appeals = []
+
+    st = FakeStreamlit(
+        values={
+            "sess_vn_type_sess_42": "noise_complaint",
+            "sess_vn_noticetype_sess_42": "courtesy_warning",
+            "sess_vn_remedy_sess_42": "Keep volume down during quiet hours",
+            "sess_vn_days_sess_42": 3,
+            "sess_vn_fine_sess_42": 0.0,
+            "sess_appeal_select_sess_42": "vn_existing_1",
+            "sess_appeal_reason_sess_42": "Was attending building association meeting",
+        },
+        buttons={
+            "btn_sess_issue_vn_sess_42": True,
+            "btn_sess_sub_appeal_sess_42": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_violation_notices_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "vn_existing_1",
+                    "notice_number": "VN-2026-088",
+                    "notice_type": "courtesy_warning",
+                    "violation_type": "noise_complaint",
+                    "cure_deadline": "2026-11-15T00:00:00",
+                    "status": "issued",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_issue_violation_notice_api",
+        lambda sid, payload: issued_notices.append((sid, payload))
+        or {"notice": {"id": "vn_new_1", "notice_number": "VN-2026-099"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_submit_violation_appeal_api",
+        lambda sid, payload: submitted_appeals.append((sid, payload))
+        or {"appeal": {"id": "apl_new_1", "appeal_number": "APL-2026-099"}},
+    )
+
+    tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
+    sidebar._render_session_incident_widget("sess_42", tenant)
+
+    expected_count = 1
+    assert len(issued_notices) == expected_count
+    assert issued_notices[0][0] == "sess_42"
+    assert issued_notices[0][1]["violation_type"] == "noise_complaint"
+
+    assert len(submitted_appeals) == expected_count
+    assert submitted_appeals[0][0] == "sess_42"
+    assert submitted_appeals[0][1]["notice_id"] == "vn_existing_1"
