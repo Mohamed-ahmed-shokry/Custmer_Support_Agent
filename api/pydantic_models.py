@@ -3723,3 +3723,162 @@ class IncidentMetricsResponse(BaseModel):
     total_appeals: int = 0
     pending_appeals: int = 0
     appeals_waived: int = 0
+
+
+
+# ==============================================================================
+# Community Announcements, Emergency Alerts & Concierge Models (v0.48.0)
+# ==============================================================================
+
+
+class CommunityAnnouncementItem(BaseModel):
+    id: str
+    announcement_number: str
+    title: str
+    content: str
+    category: str
+    priority: str
+    scope: str = "portfolio_wide"
+    target_building: str | None = None
+    target_floor: str | None = None
+    target_unit_id: str | None = None
+    author_name: str = "Property Management"
+    is_pinned: bool = False
+    require_acknowledgment: bool = False
+    status: str = "published"
+    published_at: str
+    expires_at: str | None = None
+    created_at: str
+    updated_at: str
+    is_acknowledged: bool | None = None
+    acknowledged_at: str | None = None
+
+
+class CommunityAnnouncementCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1, max_length=5000)
+    category: str = Field(default="general_notice")
+    priority: str = Field(default="normal")
+    scope: str = Field(default="portfolio_wide")
+    target_building: str | None = Field(default=None, max_length=100)
+    target_floor: str | None = Field(default=None, max_length=50)
+    target_unit_id: str | None = Field(default=None, max_length=64)
+    author_name: str = Field(default="Property Management", max_length=100)
+    is_pinned: bool = False
+    require_acknowledgment: bool = False
+    expires_at: str | None = None
+
+
+class CommunityAnnouncementUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = Field(default=None, min_length=1, max_length=5000)
+    category: str | None = None
+    priority: str | None = None
+    scope: str | None = None
+    status: str | None = None
+    is_pinned: bool | None = None
+    expires_at: str | None = None
+
+
+class CommunityAnnouncementResponse(BaseModel):
+    announcement: CommunityAnnouncementItem
+
+
+class CommunityAnnouncementListResponse(BaseModel):
+    items: list[CommunityAnnouncementItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class AnnouncementAcknowledgmentItem(BaseModel):
+    id: str
+    announcement_id: str
+    tenant_id: str
+    unit_id: str | None = None
+    channel: str = "chat_session"
+    acknowledged_at: str
+    notes: str | None = None
+
+
+class AnnouncementAcknowledgeRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str | None = None
+    channel: str = Field(default="chat_session")
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class AnnouncementAcknowledgmentResponse(BaseModel):
+    acknowledgment: AnnouncementAcknowledgmentItem
+
+
+class AnnouncementAcknowledgmentListResponse(BaseModel):
+    items: list[AnnouncementAcknowledgmentItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class ConciergeRequestItem(BaseModel):
+    id: str
+    request_number: str
+    tenant_id: str
+    unit_id: str
+    request_type: str
+    priority: str = "normal"
+    instructions: str
+    preferred_date: str | None = None
+    status: str = "submitted"
+    assigned_staff: str | None = None
+    fulfillment_notes: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ConciergeRequestCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    request_type: str = Field(default="other")
+    priority: str = Field(default="normal")
+    instructions: str = Field(..., min_length=1, max_length=2000)
+    preferred_date: str | None = None
+    assigned_staff: str | None = Field(default=None, max_length=100)
+
+
+class ConciergeRequestUpdateRequest(BaseModel):
+    status: str | None = None
+    assigned_staff: str | None = Field(default=None, max_length=100)
+    fulfillment_notes: str | None = Field(default=None, max_length=2000)
+    instructions: str | None = Field(default=None, max_length=2000)
+    priority: str | None = None
+
+
+class ConciergeRequestResponse(BaseModel):
+    concierge_request: ConciergeRequestItem
+
+
+class ConciergeRequestListResponse(BaseModel):
+    items: list[ConciergeRequestItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class SessionAcknowledgeAlertRequest(BaseModel):
+    announcement_id: str = Field(..., min_length=1)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class SessionCreateConciergeRequest(BaseModel):
+    request_type: str = Field(default="other")
+    priority: str = Field(default="normal")
+    instructions: str = Field(..., min_length=1, max_length=2000)
+    preferred_date: str | None = None
+
+
+class AnnouncementsMetricsResponse(BaseModel):
+    total_announcements: int = 0
+    published_announcements: int = 0
+    active_emergency_alerts: int = 0
+    total_acknowledgments: int = 0
+    total_concierge_requests: int = 0
+    pending_concierge_requests: int = 0
+    fulfilled_concierge_requests: int = 0

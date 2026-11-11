@@ -319,6 +319,11 @@ VALID_WEBHOOK_EVENTS = {
     "violation.notice_issued",
     "violation.fine_assessed",
     "violation.appeal_resolved",
+    "announcement.published",
+    "emergency_alert.broadcast",
+    "announcement.acknowledged",
+    "concierge.requested",
+    "concierge.fulfilled",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

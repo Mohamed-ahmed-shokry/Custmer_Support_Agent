@@ -17,6 +17,11 @@ from api.pydantic_models import (
     AmenityItem,
     AmenityMetricsResponse,
     AmenityResponse,
+    AnnouncementAcknowledgeRequest,
+    AnnouncementAcknowledgmentItem,
+    AnnouncementAcknowledgmentListResponse,
+    AnnouncementAcknowledgmentResponse,
+    AnnouncementsMetricsResponse,
     AutoAssignRequest,
     BillingMetricsResponse,
     BillingTransactionCreateRequest,
@@ -29,11 +34,20 @@ from api.pydantic_models import (
     CollectionAnalyticsResponse,
     CollectionRechunkRequest,
     CollectionRechunkResponse,
+    CommunityAnnouncementCreateRequest,
+    CommunityAnnouncementItem,
+    CommunityAnnouncementListResponse,
+    CommunityAnnouncementResponse,
+    CommunityAnnouncementUpdateRequest,
     CommunityIncidentCreateRequest,
     CommunityIncidentItem,
     CommunityIncidentListResponse,
     CommunityIncidentResponse,
     CommunityIncidentUpdateRequest,
+    ConciergeRequestCreateRequest,
+    ConciergeRequestItem,
+    ConciergeRequestResponse,
+    ConciergeRequestUpdateRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
     DocumentDetailResponse,
@@ -138,9 +152,11 @@ from api.pydantic_models import (
     ReservationCreateRequest,
     ReservationItem,
     ReservationResponse,
+    SessionAcknowledgeAlertRequest,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
+    SessionCreateConciergeRequest,
     SessionDraftArticleRequest,
     SessionGenerateGuestPassRequest,
     SessionInfo,
@@ -2822,3 +2838,127 @@ def test_incident_models_validation():
     )
     assert metrics.total_incidents == expected_incidents
     assert metrics.total_fines_assessed == expected_fines_total
+
+
+
+def test_announcement_models_validation():
+    """Verify validation and serialization of announcement and concierge Pydantic models."""
+    expected_announcements = 3
+    expected_alerts = 1
+
+    # 1. Announcement create & item
+    create_req = CommunityAnnouncementCreateRequest(
+        title="Main Boiler Maintenance",
+        content="Hot water will be suspended between 9 AM and 1 PM tomorrow.",
+        category="maintenance_advisory",
+        priority="urgent",
+        scope="building",
+        target_building="North Tower",
+        require_acknowledgment=True,
+    )
+    assert create_req.title == "Main Boiler Maintenance"
+    assert create_req.require_acknowledgment is True
+
+    ann_item = CommunityAnnouncementItem(
+        id="ann_test_01",
+        announcement_number="ANN-2026-999",
+        title=create_req.title,
+        content=create_req.content,
+        category=create_req.category,
+        priority=create_req.priority,
+        scope=create_req.scope,
+        target_building=create_req.target_building,
+        require_acknowledgment=True,
+        published_at="2026-11-20T10:00:00Z",
+        created_at="2026-11-20T10:00:00Z",
+        updated_at="2026-11-20T10:00:00Z",
+    )
+    ann_resp = CommunityAnnouncementResponse(announcement=ann_item)
+    assert ann_resp.announcement.announcement_number == "ANN-2026-999"
+
+    ann_list = CommunityAnnouncementListResponse(items=[ann_item], total=1)
+    assert ann_list.total == 1
+
+    ann_update = CommunityAnnouncementUpdateRequest(
+        title="Main Boiler Maintenance (Completed)",
+        status="archived",
+    )
+    assert ann_update.status == "archived"
+
+    # 2. Acknowledgment models
+    ack_req = AnnouncementAcknowledgeRequest(
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        channel="chat_session",
+        notes="Confirmed",
+    )
+    assert ack_req.tenant_id == "tenant_3"
+
+    ack_item = AnnouncementAcknowledgmentItem(
+        id="ack_test_01",
+        announcement_id="ann_test_01",
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        acknowledged_at="2026-11-20T11:00:00Z",
+    )
+    ack_resp = AnnouncementAcknowledgmentResponse(acknowledgment=ack_item)
+    assert ack_resp.acknowledgment.announcement_id == "ann_test_01"
+
+    ack_list = AnnouncementAcknowledgmentListResponse(items=[ack_item], total=1)
+    assert ack_list.total == 1
+
+    # 3. Concierge request models
+    con_req = ConciergeRequestCreateRequest(
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        request_type="dry_cleaning",
+        priority="normal",
+        instructions="Pickup garment bag from door hook at 10 AM.",
+        preferred_date="2026-11-21",
+    )
+    assert con_req.request_type == "dry_cleaning"
+
+    con_item = ConciergeRequestItem(
+        id="con_test_01",
+        request_number="CON-2026-088",
+        tenant_id=con_req.tenant_id,
+        unit_id=con_req.unit_id,
+        request_type=con_req.request_type,
+        instructions=con_req.instructions,
+        status="submitted",
+        created_at="2026-11-20T10:00:00Z",
+        updated_at="2026-11-20T10:00:00Z",
+    )
+    con_resp = ConciergeRequestResponse(concierge_request=con_item)
+    assert con_resp.concierge_request.request_number == "CON-2026-088"
+
+    con_update = ConciergeRequestUpdateRequest(
+        status="fulfilled",
+        assigned_staff="Concierge James",
+        fulfillment_notes="Garments delivered back to unit closet.",
+    )
+    assert con_update.status == "fulfilled"
+
+    # 4. Session actions
+    sess_ack = SessionAcknowledgeAlertRequest(
+        announcement_id="ann_test_01",
+        notes="Awaiting update",
+    )
+    assert sess_ack.announcement_id == "ann_test_01"
+
+    sess_con = SessionCreateConciergeRequest(
+        request_type="package_hold",
+        instructions="Hold parcel in storage until Friday evening.",
+    )
+    assert sess_con.request_type == "package_hold"
+
+    # 5. Metrics response
+    metrics = AnnouncementsMetricsResponse(
+        total_announcements=expected_announcements,
+        published_announcements=2,
+        active_emergency_alerts=expected_alerts,
+        total_acknowledgments=1,
+        total_concierge_requests=1,
+    )
+    assert metrics.total_announcements == expected_announcements
+    assert metrics.active_emergency_alerts == expected_alerts
