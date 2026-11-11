@@ -9,7 +9,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import access_control, amenities, incidents, packages, parking, pets, vendors
+from api import (
+    access_control,
+    amenities,
+    announcements,
+    incidents,
+    packages,
+    parking,
+    pets,
+    vendors,
+)
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -798,6 +807,122 @@ def _extract_incident_vars(
     }
 
 
+def _format_announcements_lines(
+    announcements_list: list[dict[str, Any]],
+    concierge_requests: list[dict[str, Any]],
+) -> list[str]:
+    """Format community announcements, alerts, and concierge requests for prompt context."""
+    if not announcements_list and not concierge_requests:
+        return []
+
+    lines = ["[COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]"]
+
+    if announcements_list:
+        emergency_alerts = [
+            a
+            for a in announcements_list
+            if a.get("priority") in ("urgent", "critical_emergency")
+            or a.get("category") == "emergency_alert"
+        ]
+        lines.append(
+            f"- Active Announcements & Alerts: {len(announcements_list)} "
+            f"(Emergency/Urgent: {len(emergency_alerts)})"
+        )
+        for a in announcements_list[:3]:
+            anum = a.get("announcement_number", "ANN")
+            title = a.get("title", "Notice")
+            prio = str(a.get("priority", "normal")).upper()
+            cat = str(a.get("category", "general_notice")).replace("_", " ").title()
+            is_ack = a.get("is_acknowledged")
+            ack_str = (
+                " | ACKNOWLEDGED"
+                if is_ack
+                else (" | ACKNOWLEDGMENT REQUIRED" if a.get("require_acknowledgment") else "")
+            )
+            lines.append(f"  - #{anum} [{prio}] {title} ({cat}){ack_str}")
+            content = str(a.get("content", ""))
+            if content:
+                max_summary_len = 100
+                summary = (content[:97] + "...") if len(content) > max_summary_len else content
+                lines.append(f"    Summary: {summary}")
+    else:
+        lines.append("- Active Announcements & Alerts: None")
+
+    if concierge_requests:
+        open_requests = [
+            c for c in concierge_requests if c.get("status") in ("submitted", "in_progress")
+        ]
+        lines.append(
+            f"- Resident Concierge Requests: {len(concierge_requests)} "
+            f"(Open: {len(open_requests)})"
+        )
+        for c in concierge_requests[:2]:
+            cnum = c.get("request_number", "CON")
+            ctype = str(c.get("request_type", "other")).replace("_", " ").title()
+            cstat = str(c.get("status", "submitted")).upper()
+            staff = c.get("assigned_staff") or "Concierge Desk"
+            lines.append(f"  - Request #{cnum}: {ctype} | Status: {cstat} | Staff: {staff}")
+            instructions = c.get("instructions")
+            if instructions:
+                max_instr_len = 100
+                instr_summary = (
+                    (instructions[:97] + "...")
+                    if len(instructions) > max_instr_len
+                    else instructions
+                )
+                lines.append(f"    Instructions: {instr_summary}")
+    else:
+        lines.append("- Resident Concierge Requests: None")
+
+    lines.append("[END ANNOUNCEMENTS & ALERTS]")
+    return lines
+
+
+def _extract_announcement_vars(
+    announcements_list: list[dict[str, Any]],
+    concierge_requests: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Extract macro template replacement variables for announcements and concierge."""
+    emergency_alerts = [
+        a
+        for a in announcements_list
+        if a.get("priority") in ("urgent", "critical_emergency")
+        or a.get("category") == "emergency_alert"
+    ]
+    latest_alert = (
+        emergency_alerts[0]
+        if emergency_alerts
+        else (announcements_list[0] if announcements_list else None)
+    )
+
+    alert_headline = (
+        latest_alert.get("title", "No active emergency alerts")
+        if latest_alert
+        else "No active emergency alerts"
+    )
+    alert_priority = (
+        str(latest_alert.get("priority", "none")).upper() if latest_alert else "NONE"
+    )
+    alert_ack_status = (
+        "acknowledged"
+        if (latest_alert and latest_alert.get("is_acknowledged"))
+        else "pending_acknowledgment"
+    )
+
+    open_concierge = [
+        c for c in concierge_requests if c.get("status") in ("submitted", "in_progress")
+    ]
+
+    return {
+        "active_announcements_count": str(len(announcements_list)),
+        "active_emergency_alerts_count": str(len(emergency_alerts)),
+        "latest_alert_headline": alert_headline,
+        "latest_alert_priority": alert_priority,
+        "alert_acknowledgment_status": alert_ack_status,
+        "concierge_requests_count": str(len(open_concierge)),
+    }
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -875,6 +1000,21 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         violation_notices = vn_res.get("items", [])
         ap_res = incidents.list_violation_appeals(tenant_id=resolved_unit_id)
         violation_appeals = ap_res.get("items", [])
+
+    announcements_list: list[dict[str, Any]] = []
+    concierge_requests: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        ann_res = announcements.list_tenant_announcements(
+            tenant_id=resolved_tenant_id, unit_id=resolved_unit_id
+        )
+        announcements_list = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_tenant_concierge_requests(tenant_id=resolved_tenant_id)
+        concierge_requests = con_res.get("items", []) if con_res else []
+    elif resolved_unit_id:
+        ann_res = announcements.list_announcements(target_unit_id=resolved_unit_id)
+        announcements_list = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_concierge_requests(unit_id=resolved_unit_id)
+        concierge_requests = con_res.get("items", []) if con_res else []
 
     access_credentials: list[dict[str, Any]] = []
     active_guest_passes: list[dict[str, Any]] = []
@@ -975,11 +1115,20 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         lines.extend(
             _format_access_control_lines(access_credentials, active_guest_passes, intercom_entry)
         )
-        if community_incidents or violation_notices or violation_appeals:
+
+    if community_incidents or violation_notices or violation_appeals:
+        if lines:
             lines.append("")
-            lines.extend(
-                _format_incident_lines(community_incidents, violation_notices, violation_appeals)
-            )
+        lines.extend(
+            _format_incident_lines(community_incidents, violation_notices, violation_appeals)
+        )
+
+    if announcements_list or concierge_requests:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_announcements_lines(announcements_list, concierge_requests)
+        )
 
     return "\n".join(lines)
 
@@ -1237,6 +1386,23 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         t_appeals = incidents.list_violation_appeals(unit_id=resolved_unit_id).get("items", [])
 
     variables.update(_extract_incident_vars(t_incidents, t_notices, t_appeals))
+
+    t_announcements: list[dict[str, Any]] = []
+    t_concierge: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        ann_res = announcements.list_tenant_announcements(
+            tenant_id=resolved_tenant_id, unit_id=resolved_unit_id
+        )
+        t_announcements = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_tenant_concierge_requests(tenant_id=resolved_tenant_id)
+        t_concierge = con_res.get("items", []) if con_res else []
+    elif resolved_unit_id:
+        ann_res = announcements.list_announcements(target_unit_id=resolved_unit_id)
+        t_announcements = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_concierge_requests(unit_id=resolved_unit_id)
+        t_concierge = con_res.get("items", []) if con_res else []
+
+    variables.update(_extract_announcement_vars(t_announcements, t_concierge))
 
     t_creds: list[dict[str, Any]] = []
     t_passes: list[dict[str, Any]] = []

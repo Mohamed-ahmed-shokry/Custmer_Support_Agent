@@ -7,7 +7,17 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
-from api import access_control, amenities, db_utils, incidents, packages, parking, pets, vendors
+from api import (
+    access_control,
+    amenities,
+    announcements,
+    db_utils,
+    incidents,
+    packages,
+    parking,
+    pets,
+    vendors,
+)
 from api.macros import render_template
 from api.tenant_context import (
     build_tenant_rag_context,
@@ -37,6 +47,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     pets.init_pets_db()
     access_control.init_access_control_db()
     incidents.init_incidents_db()
+    announcements.init_announcements_db()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -767,3 +778,53 @@ def test_render_template_with_incident_variables():
     assert "Courtesy Warning" in rendered
     assert "Noise Complaint" in rendered
     assert "cure deadline 2026-11-12" in rendered
+
+
+
+def test_build_tenant_rag_context_with_announcements():
+    """Verify announcements and concierge requests in RAG context block."""
+    sid = "sess-ann-rag-test"
+    db_utils.insert_application_logs(sid, "Weather query", "Checking freeze notice", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    block = build_tenant_rag_context(session_id=sid)
+    assert "[COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]" in block
+    assert "Active Announcements & Alerts:" in block
+    assert "Severe Cold Weather & Pipe Freeze Advisory" in block
+    assert "ACKNOWLEDGED" in block
+    assert "Resident Concierge Requests:" in block
+    assert "Eco Cleaners garment bag" in block
+
+
+def test_extract_tenant_macro_variables_with_announcements():
+    """Verify macro variable extraction for announcements and concierge requests."""
+    sid = "sess-ann-macro-test"
+    db_utils.insert_application_logs(sid, "Alert check", "Checking active notices", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    expected_min_ann = 2
+    assert int(variables["active_announcements_count"]) >= expected_min_ann
+    assert variables["active_emergency_alerts_count"] == "1"
+    assert "Severe Cold Weather" in variables["latest_alert_headline"]
+    assert variables["latest_alert_priority"] == "URGENT"
+    assert variables["alert_acknowledgment_status"] == "acknowledged"
+    assert variables["concierge_requests_count"] == "1"
+
+
+def test_render_template_with_announcement_variables():
+    """Verify macro template rendering with announcement and alert variables."""
+    sid = "sess-ann-render"
+    db_utils.insert_application_logs(sid, "Notice check", "Providing building bulletin", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+
+    template = (
+        "Dear {customer_name}, please note active alert: {latest_alert_headline} "
+        "(Priority: {latest_alert_priority}, Status: {alert_acknowledgment_status})."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Elena Rostova" in rendered
+    assert "Severe Cold Weather & Pipe Freeze Advisory" in rendered
+    assert "URGENT" in rendered
+    assert "acknowledged" in rendered
