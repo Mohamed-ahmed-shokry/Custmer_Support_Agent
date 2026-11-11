@@ -1840,6 +1840,61 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.48.0 plan — Community Announcements, Emergency Broadcast Alerts & Resident Concierge Requests Engine (IN PROGRESS)
+
+Provide property managers and residents with a full-lifecycle community announcements, emergency building broadcast alerts, resident acknowledgment tracking, and concierge service request management engine. Operators publish building notices (emergency repairs, elevator maintenance, severe weather, social events, policy reminders), broadcast urgent alerts requiring resident acknowledgment, monitor read/acknowledgment rates, and fulfill resident concierge requests (dry cleaning, package holds, contractor entry permissions, special assistance). Active resident chat conversations automatically ground open announcements, emergency alerts, and concierge requests into prompt context (`[COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]`) and resolve canned response macros (`{active_announcements_count}`, `{active_emergency_alerts_count}`, `{latest_alert_headline}`, `{latest_alert_priority}`, `{alert_acknowledgment_status}`, `{concierge_requests_count}`). Real-time webhook events (`announcement.published`, `emergency_alert.broadcast`, `announcement.acknowledged`, `concierge.requested`, `concierge.fulfilled`) keep on-site staff, concierge, and residents continuously aligned.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers and residents can:
+1. Publish, filter, and manage community announcements and emergency alerts with classifications, priority levels, visibility windows, and target audience scopes (portfolio-wide, building-wide, or unit-specific).
+2. Broadcast urgent/emergency building notices that track individual resident acknowledgment timestamps.
+3. Submit and fulfill resident concierge service requests (package holding, dry cleaning, service vendor entry permits, key checkouts) with tracking numbers (`CON-2026-XXXX`).
+4. Ground active resident chat sessions with active building notices and resolve `{announcement_*}` and `{alert_*}` template macros.
+5. Track portfolio broadcast compliance and concierge operational metrics (active alerts, acknowledgment rates, pending concierge tasks).
+
+### Scope
+- `api/announcements.py`:
+  - SQLite tables `community_announcements`, `announcement_acknowledgments`, and `concierge_requests` with indexes, foreign keys, and seed records.
+  - Enums: `AnnouncementCategory`, `AnnouncementPriority`, `AnnouncementScope`, `AnnouncementStatus`, `ConciergeType`, `ConciergeStatus`.
+  - CRUD operations and metrics aggregator `get_announcements_metrics_summary()`.
+  - Seed records for Elena Rostova (`tenant_3`, `unit_PH1`).
+- `api/pydantic_models.py`:
+  - Pydantic models for announcements, acknowledgments, concierge requests, session actions, and metrics.
+- `api/db_utils.py`:
+  - Webhook event types for announcement and concierge lifecycle.
+- `api/main.py`:
+  - REST endpoints for `/announcements`, `/announcements/{id}/acknowledge`, `/concierge`, `/announcements/metrics`, and session 1-click actions `POST /sessions/{id}/acknowledge-alert` and `POST /sessions/{id}/request-concierge`.
+- `api/tenant_context.py`:
+  - RAG prompt grounding block `[COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]` and macro variables.
+- `app/api_utils.py`:
+  - Typed client API wrappers for announcement and concierge endpoints.
+- `app/sidebar.py`:
+  - Streamlit `📢 Announcements & Emergency Alerts` sidebar management panel (Active Notices, Publish Notice, Concierge Desk, Broadcast KPIs) and 1-click resident profile alert acknowledgment & concierge actions.
+- Tests:
+  - Unit tests for engine, models, tenant context, routes, app client, and UI.
+
+### Acceptance Criteria
+- [ ] AC1: Core SQLite database schema & migrations in `api/announcements.py` with foreign keys to `tenants` and `units` and seeds.
+- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [ ] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click alert acknowledgment and concierge request actions.
+- [ ] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [ ] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [ ] AC6: Streamlit UI components in `app/sidebar.py` (announcements board & session resident widget).
+- [ ] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [ ] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [ ] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Breakdown
+- [ ] Task 1: Document v0.48.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [ ] Task 2: Implement `api/announcements.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_announcements.py`.
+- [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_announcement_routes.py`.
+- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [ ] Task 7: Implement Streamlit UI announcements board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [ ] Task 8: Version bump to `0.48.0` and documentation updates in `docs/API.md` and `README.md`.
+- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+
 ## v0.47.0 plan — Resident Incident Reports, Community Violations, Security Patrols & Notice-to-Cure Engine ✅ COMPLETED
 
 Give property managers, leasing staff, and residents an automated incident reporting, community violation notice, notice-to-cure, fine assessment, appeal review, and security patrol log engine. Operators log community incidents (noise complaints, common area damage, smoking infractions, pet waste, unauthorized alterations), issue formal notices to cure with statutory deadlines (e.g. 3-day notice, 7-day cure window), assess standard violation fines to the resident billing ledger, review appeals submitted by residents, and monitor compliance KPIs. Active resident chat conversations automatically ground open incidents, violation notices, and appeal statuses into prompt context (`[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]`) and resolve canned response macros (`{active_violations_count}`, `{primary_violation_type}`, `{notice_type}`, `{cure_deadline}`, `{fine_amount}`, `{appeal_status}`). Real-time webhook events (`incident.reported`, `violation.notice_issued`, `violation.fine_assessed`, `violation.appeal_resolved`) keep property operations, security, and legal teams synchronized.
