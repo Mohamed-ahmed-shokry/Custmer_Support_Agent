@@ -55,7 +55,9 @@ def test_render_feedback_widget_no_selection_does_not_submit(monkeypatch):
     st = _session_state(messages=[{"role": "human", "content": "q"}])
     monkeypatch.setattr(chat_interface, "st", st)
     called = []
-    monkeypatch.setattr(chat_interface, "submit_feedback", lambda sid, rating: called.append(rating))  # noqa: E501
+    monkeypatch.setattr(
+        chat_interface, "submit_feedback", lambda sid, rating: called.append(rating)
+    )  # noqa: E501
 
     chat_interface._render_feedback_widget("s1")
 
@@ -534,9 +536,7 @@ def test_render_session_history_refresh_and_actions(monkeypatch):
     monkeypatch.setattr(sidebar, "st", st)
     called = []
     sessions_data = [{"session_id": "s1", "label": "First", "message_count": 2}]
-    monkeypatch.setattr(
-        sidebar, "list_sessions", lambda: (called.append("list"), sessions_data)[1]
-    )
+    monkeypatch.setattr(sidebar, "list_sessions", lambda: (called.append("list"), sessions_data)[1])
 
     sidebar._render_session_history()
     assert "list" in called
@@ -620,9 +620,7 @@ def test_render_collection_picker_rename_and_delete(monkeypatch):
     st.values["rename_collection"] = "clients-new"
     st.buttons["Rename"] = True
     monkeypatch.setattr(sidebar, "st", st)
-    monkeypatch.setattr(
-        sidebar, "rename_collection", lambda old, new: {"collection": new}
-    )
+    monkeypatch.setattr(sidebar, "rename_collection", lambda old, new: {"collection": new})
     monkeypatch.setattr(sidebar, "list_collections", lambda: ["default", "clients-new"])
     monkeypatch.setattr(sidebar, "list_documents", lambda c: [])
 
@@ -887,7 +885,6 @@ def test_render_document_inspector_rechunk_action(monkeypatch):
     assert any("re-chunked successfully" in s for s in st.successes)
 
 
-
 def test_render_document_list_bulk_delete(monkeypatch):
     st = FakeStreamlit()
     doc_ids = [10, 11]
@@ -930,9 +927,7 @@ def test_streamlit_app_initializes_state(monkeypatch):
     sidebar_called = []
     chat_called = []
     monkeypatch.setattr(sidebar, "display_sidebar", lambda: sidebar_called.append(True))
-    monkeypatch.setattr(
-        chat_interface, "display_chat_interface", lambda: chat_called.append(True)
-    )
+    monkeypatch.setattr(chat_interface, "display_chat_interface", lambda: chat_called.append(True))
 
     if "app.streamlit_app" in sys.modules:
         importlib.reload(sys.modules["app.streamlit_app"])
@@ -998,10 +993,7 @@ def test_render_model_selector_uses_config(monkeypatch):
 
 def test_render_upload_document_enforces_max_bulk_limit(monkeypatch):
     st = FakeStreamlit(
-        uploads=[
-            type("F", (), {"name": f"f{i}.txt", "read": lambda: b"x"})()
-            for i in range(5)
-        ],
+        uploads=[type("F", (), {"name": f"f{i}.txt", "read": lambda: b"x"})() for i in range(5)],
         buttons={"Upload": True},
     )
     st.session_state.config = {
@@ -1372,7 +1364,8 @@ def test_render_session_metadata_auto_summarize_success(monkeypatch):
         sidebar,
         "summarize_session",
         lambda sid, save_summary=True: (
-            called.append((sid, save_summary)) or {
+            called.append((sid, save_summary))
+            or {
                 "summary": "Auto generated summary",
                 "sentiment": "positive",
             }
@@ -2009,9 +2002,7 @@ def test_render_sla_policy_list_and_delete(monkeypatch):
     ]
     deleted_ids: list[int] = []
     monkeypatch.setattr(sidebar, "list_sla_policies", lambda: fake_policies)
-    monkeypatch.setattr(
-        sidebar, "delete_sla_policy", lambda pid: deleted_ids.append(pid) or True
-    )
+    monkeypatch.setattr(sidebar, "delete_sla_policy", lambda pid: deleted_ids.append(pid) or True)
 
     sidebar._render_sla_policy_list()
 
@@ -2210,9 +2201,7 @@ def test_render_session_assignment_history(monkeypatch):
             "assigned_at": "2026-10-12T10:00:00",
         }
     ]
-    monkeypatch.setattr(
-        sidebar, "get_session_assignment_history", lambda sid: fake_history
-    )
+    monkeypatch.setattr(sidebar, "get_session_assignment_history", lambda sid: fake_history)
 
     sidebar._render_session_assignment_history("s1")
     assert any("agent_sarah" in str(c.args) for c in st.calls)
@@ -2237,9 +2226,7 @@ def test_render_support_agents_and_workload_panel(monkeypatch):
         "total_available_capacity": 10,
         "tier_distribution": {"tier_1": 2, "tier_2": 1, "tier_3": 0},
     }
-    monkeypatch.setattr(
-        sidebar, "get_agent_workload_analytics", lambda: workload_payload
-    )
+    monkeypatch.setattr(sidebar, "get_agent_workload_analytics", lambda: workload_payload)
 
     fake_agents = [
         {
@@ -2618,9 +2605,7 @@ def test_render_tenant_and_property_directory_tabs(monkeypatch):
             "total": 1,
         },
     )
-    monkeypatch.setattr(
-        sidebar, "delete_tenant", lambda tid: deleted_tenants.append(tid) or True
-    )
+    monkeypatch.setattr(sidebar, "delete_tenant", lambda tid: deleted_tenants.append(tid) or True)
 
     sidebar._render_tenants_tab()
     expected_del_t = 1
@@ -2650,9 +2635,7 @@ def test_render_tenant_and_property_directory_tabs(monkeypatch):
             "total": 1,
         },
     )
-    monkeypatch.setattr(
-        sidebar, "delete_unit", lambda uid: deleted_units.append(uid) or True
-    )
+    monkeypatch.setattr(sidebar, "delete_unit", lambda uid: deleted_units.append(uid) or True)
 
     sidebar._render_units_tab()
     expected_del_u = 1
@@ -2811,15 +2794,14 @@ def test_render_work_orders_board_tab_inline_dispatch(monkeypatch):
     dispatched_calls = []
 
     monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
-    monkeypatch.setattr(
-        sidebar, "list_work_order_dispatches", lambda woid: {"items": []}
-    )
+    monkeypatch.setattr(sidebar, "list_work_order_dispatches", lambda woid: {"items": []})
     monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: mock_vendors)
     monkeypatch.setattr(
         sidebar,
         "dispatch_vendor_to_work_order",
-        lambda woid, payload: dispatched_calls.append((woid, payload))
-        or {"dispatch": {"id": "vdp_1"}},
+        lambda woid, payload: (
+            dispatched_calls.append((woid, payload)) or {"dispatch": {"id": "vdp_1"}}
+        ),
     )
 
     sidebar._render_work_orders_board_tab()
@@ -2880,14 +2862,11 @@ def test_render_work_orders_board_tab_complete_dispatch(monkeypatch):
     completed_calls = []
 
     monkeypatch.setattr(sidebar, "list_work_orders", lambda **kwargs: mock_wos)
-    monkeypatch.setattr(
-        sidebar, "list_work_order_dispatches", lambda woid: mock_dispatches
-    )
+    monkeypatch.setattr(sidebar, "list_work_order_dispatches", lambda woid: mock_dispatches)
     monkeypatch.setattr(
         sidebar,
         "complete_vendor_dispatch",
-        lambda did, payload: completed_calls.append((did, payload))
-        or {"dispatch": {"id": did}},
+        lambda did, payload: completed_calls.append((did, payload)) or {"dispatch": {"id": did}},
     )
 
     sidebar._render_work_orders_board_tab()
@@ -2928,8 +2907,7 @@ def test_render_create_work_order_tab(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "create_work_order",
-        lambda payload: created_wos.append(payload)
-        or {"work_order": {"id": "wo_new_42"}},
+        lambda payload: created_wos.append(payload) or {"work_order": {"id": "wo_new_42"}},
     )
 
     sidebar._render_create_work_order_tab()
@@ -2986,9 +2964,7 @@ def test_render_maintenance_board_vendor_navigation(monkeypatch):
     monkeypatch.setattr(sidebar, "list_vendors", lambda **kwargs: {"items": [], "total": 0})
     sidebar._render_maintenance_board()
     assert any(
-        "Maintenance Vendor Directory" in str(c.args[0])
-        for c in st_v.calls
-        if c.fn == "markdown"
+        "Maintenance Vendor Directory" in str(c.args[0]) for c in st_v.calls if c.fn == "markdown"
     )
 
     # Test Register Vendor tab
@@ -2996,9 +2972,7 @@ def test_render_maintenance_board_vendor_navigation(monkeypatch):
     monkeypatch.setattr(sidebar, "st", st_reg)
     sidebar._render_maintenance_board()
     assert any(
-        "Register New Contractor" in str(c.args[0])
-        for c in st_reg.calls
-        if c.fn == "markdown"
+        "Register New Contractor" in str(c.args[0]) for c in st_reg.calls if c.fn == "markdown"
     )
 
     # Test Vendor KPIs tab
@@ -3011,9 +2985,7 @@ def test_render_maintenance_board_vendor_navigation(monkeypatch):
     )
     sidebar._render_maintenance_board()
     assert any(
-        "Vendor Performance & Spend" in str(c.args[0])
-        for c in st_kpi.calls
-        if c.fn == "markdown"
+        "Vendor Performance & Spend" in str(c.args[0]) for c in st_kpi.calls if c.fn == "markdown"
     )
 
 
@@ -3169,8 +3141,7 @@ def test_render_session_billing_widget(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "record_session_payment",
-        lambda sid, payload: recorded_payments.append((sid, payload))
-        or {"new_balance": 0.0},
+        lambda sid, payload: recorded_payments.append((sid, payload)) or {"new_balance": 0.0},
     )
 
     tenant_data = {
@@ -3300,14 +3271,14 @@ def test_render_session_lease_renewal_widget_create_and_sign(monkeypatch):  # no
     monkeypatch.setattr(
         sidebar,
         "create_session_lease_renewal",
-        lambda s, payload: created_renewals.append((s, payload))
-        or {"renewal": {"id": "lr_new"}},
+        lambda s, payload: created_renewals.append((s, payload)) or {"renewal": {"id": "lr_new"}},
     )
     monkeypatch.setattr(
         sidebar,
         "sign_lease_renewal",
-        lambda lr_id, payload: signed_renewals.append((lr_id, payload))
-        or {"renewal": {"id": lr_id}},
+        lambda lr_id, payload: (
+            signed_renewals.append((lr_id, payload)) or {"renewal": {"id": lr_id}}
+        ),
     )
 
     sidebar._render_session_lease_renewal_widget(sid, mock_tenant)
@@ -3479,9 +3450,7 @@ def test_render_session_inspection_widget(monkeypatch):
         buttons={"btn_create_insp_sess_1": True},
     )
     monkeypatch.setattr(sidebar, "st", st)
-    monkeypatch.setattr(
-        sidebar, "get_tenant_inspections", lambda tid: {"items": [mock_insp]}
-    )
+    monkeypatch.setattr(sidebar, "get_tenant_inspections", lambda tid: {"items": [mock_insp]})
     created = []
     monkeypatch.setattr(
         sidebar,
@@ -3489,9 +3458,7 @@ def test_render_session_inspection_widget(monkeypatch):
         lambda sid, payload: created.append((sid, payload)) or {"inspection": mock_insp},
     )
 
-    sidebar._render_session_inspection_widget(
-        "sess_1", {"id": "tenant_1", "unit_id": "unit_101"}
-    )
+    sidebar._render_session_inspection_widget("sess_1", {"id": "tenant_1", "unit_id": "unit_101"})
 
     expected_action_count = 1
     assert len(created) == expected_action_count
@@ -3561,9 +3528,7 @@ def test_render_inspections_board_records_tab(monkeypatch):
         "convert_inspection_item_to_work_order",
         lambda iid, p: wo_converted.append((iid, p)) or {"work_order": {}},
     )
-    monkeypatch.setattr(
-        sidebar, "delete_inspection", lambda iid: deleted.append(iid) or True
-    )
+    monkeypatch.setattr(sidebar, "delete_inspection", lambda iid: deleted.append(iid) or True)
 
     sidebar._render_inspections_board()
 
@@ -3647,7 +3612,6 @@ def test_render_inspections_board_metrics_tab(monkeypatch):
 
     metrics_calls = [c for c in st.calls if c.fn == "metric"]
     assert len(metrics_calls) >= 3  # noqa: PLR2004
-
 
 
 def test_render_packages_board_deliveries_tab(monkeypatch):
@@ -3834,8 +3798,9 @@ def test_render_session_package_intake_widget(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "session_intake_package_api",
-        lambda sid, payload: created_session_pkgs.append((sid, payload))
-        or {"package": {"id": "pkg_sess"}},
+        lambda sid, payload: (
+            created_session_pkgs.append((sid, payload)) or {"package": {"id": "pkg_sess"}}
+        ),
     )
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
@@ -3847,9 +3812,6 @@ def test_render_session_package_intake_widget(monkeypatch):
     assert created_session_pkgs[0][1]["carrier"] == "DHL"
     assert created_session_pkgs[0][1]["tracking_number"] == "DHL-123456"
     assert st.reruns == 1
-
-
-
 
 
 def test_render_amenity_reservations_board_ui(monkeypatch):
@@ -3993,8 +3955,9 @@ def test_render_session_amenity_widget(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "session_create_reservation_api",
-        lambda sid, payload: booked_reservations.append((sid, payload))
-        or {"reservation": {"id": "res_new"}},
+        lambda sid, payload: (
+            booked_reservations.append((sid, payload)) or {"reservation": {"id": "res_new"}}
+        ),
     )
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
@@ -4006,7 +3969,6 @@ def test_render_session_amenity_widget(monkeypatch):
     assert booked_reservations[0][0] == "sess_99"
     assert booked_reservations[0][1]["amenity_id"] == "am_001"
     assert booked_reservations[0][1]["attendees_count"] == expected_attendees
-
 
 
 def test_render_parking_management_board_ui(monkeypatch):
@@ -4180,8 +4142,10 @@ def test_render_session_parking_widget(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "session_issue_visitor_pass_api",
-        lambda sid, payload: issued_passes.append((sid, payload))
-        or {"visitor_pass": {"id": "vp_new", "pass_code": "VP-77777"}},
+        lambda sid, payload: (
+            issued_passes.append((sid, payload))
+            or {"visitor_pass": {"id": "vp_new", "pass_code": "VP-77777"}}
+        ),
     )
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
@@ -4248,9 +4212,7 @@ def test_render_pet_registry_board_ui(monkeypatch):
         "total": 1,
     }
     monkeypatch.setattr(sidebar, "list_pets_api", lambda **kwargs: sample_pets)
-    monkeypatch.setattr(
-        sidebar, "create_pet_api", lambda payload: {"pet": {"id": "pet_new"}}
-    )
+    monkeypatch.setattr(sidebar, "create_pet_api", lambda payload: {"pet": {"id": "pet_new"}})
 
     # Policies mock
     sample_policies = {
@@ -4354,8 +4316,9 @@ def test_render_session_pet_widget(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "session_register_pet_api",
-        lambda sid, payload: registered_pets.append((sid, payload))
-        or {"pet": {"id": "pet_new", "name": "Charlie"}},
+        lambda sid, payload: (
+            registered_pets.append((sid, payload)) or {"pet": {"id": "pet_new", "name": "Charlie"}}
+        ),
     )
 
     tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
@@ -4366,7 +4329,6 @@ def test_render_session_pet_widget(monkeypatch):
     assert registered_pets[0][0] == "sess_88"
     assert registered_pets[0][1]["name"] == "Charlie"
     assert registered_pets[0][1]["breed"] == "Beagle"
-
 
 
 def test_render_access_control_board(monkeypatch):
@@ -4547,14 +4509,18 @@ def test_render_session_access_widget(monkeypatch):
     monkeypatch.setattr(
         sidebar,
         "session_generate_guest_pass_api",
-        lambda sid, payload: gen_passes.append((sid, payload))
-        or {"guest_pass": {"id": "pass_new_2", "access_code": "771122"}},
+        lambda sid, payload: (
+            gen_passes.append((sid, payload))
+            or {"guest_pass": {"id": "pass_new_2", "access_code": "771122"}}
+        ),
     )
     monkeypatch.setattr(
         sidebar,
         "session_report_lost_fob_api",
-        lambda sid, payload: lost_fobs.append((sid, payload))
-        or {"credential": {"id": "cred_active_1", "status": "lost"}},
+        lambda sid, payload: (
+            lost_fobs.append((sid, payload))
+            or {"credential": {"id": "cred_active_1", "status": "lost"}}
+        ),
     )
 
     tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
@@ -4569,3 +4535,405 @@ def test_render_session_access_widget(monkeypatch):
     assert lost_fobs[0][0] == "sess_99"
     assert lost_fobs[0][1]["credential_id"] == "cred_active_1"
     assert lost_fobs[0][1]["charge_replacement_fee"] is True
+
+
+def test_render_incidents_violations_board(monkeypatch):
+    """Test _render_incidents_violations_board across all tabs."""
+    st = FakeStreamlit(
+        values={
+            "new_inc_type": "noise_complaint",
+            "new_inc_sev": "medium",
+            "new_inc_unit": "unit_101",
+            "new_inc_tenant": "tenant_1",
+            "new_inc_loc": "Courtyard",
+            "new_inc_desc": "Loud music after hours",
+            "man_vn_tenant": "tenant_1",
+            "man_vn_unit": "unit_101",
+            "man_vn_type": "noise_complaint",
+            "man_vn_noticetype": "first_notice_to_cure",
+            "man_vn_remedy": "Cease loud noise past 10 PM",
+            "man_vn_days": 7,
+            "man_vn_fine": 50.0,
+            "adj_appeal_id": "appeal_1",
+            "adj_decision": "waived",
+            "adj_reviewer": "Lead Manager",
+            "adj_fine": 0.0,
+            "adj_notes": "First time offense",
+        },
+        buttons={
+            "btn_create_incident": True,
+            "btn_man_issue_vn": True,
+            "btn_save_appeal_decision": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # 1. Incidents mock
+    sample_incidents = {
+        "items": [
+            {
+                "id": "inc_1",
+                "incident_number": "INC-2026-001",
+                "incident_type": "noise_complaint",
+                "severity": "medium",
+                "status": "investigating",
+                "description": "Loud music reported",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_incidents_api", lambda **kwargs: sample_incidents)
+    monkeypatch.setattr(
+        sidebar,
+        "create_incident_api",
+        lambda payload: {"incident": {"id": "inc_new", "incident_number": "INC-2026-099"}},
+    )
+
+    # 2. Violation notices mock
+    sample_notices = {
+        "items": [
+            {
+                "id": "vn_1",
+                "notice_number": "VN-2026-001",
+                "violation_type": "noise_complaint",
+                "notice_type": "first_notice_to_cure",
+                "fine_amount": 50.0,
+                "cure_deadline": "2026-11-20T00:00:00",
+                "status": "issued",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_violation_notices_api", lambda **kwargs: sample_notices)
+    monkeypatch.setattr(
+        sidebar,
+        "create_violation_notice_api",
+        lambda payload: {"notice": {"id": "vn_new", "notice_number": "VN-2026-099"}},
+    )
+
+    # 3. Violation appeals mock
+    sample_appeals = {
+        "items": [
+            {
+                "id": "appeal_1",
+                "appeal_number": "APL-2026-001",
+                "notice_id": "vn_1",
+                "status": "submitted",
+                "reason": "Was not in town when noise occurred",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_violation_appeals_api", lambda **kwargs: sample_appeals)
+    monkeypatch.setattr(
+        sidebar,
+        "update_violation_appeal_api",
+        lambda aid, payload: {"appeal": {"id": aid, "status": payload.get("status")}},
+    )
+
+    # 4. Metrics mock
+    sample_metrics = {
+        "total_incidents": 5,
+        "active_incidents": 2,
+        "total_violations": 8,
+        "open_violations": 3,
+        "cured_violations": 4,
+        "total_fines_assessed": 250.0,
+        "total_appeals": 2,
+        "pending_appeals": 1,
+    }
+    monkeypatch.setattr(sidebar, "get_incident_metrics_api", lambda: sample_metrics)
+
+    # Tab 1: Incidents Directory
+    st.values["incidents_board_tab_radio"] = "Incidents Directory"
+    sidebar._render_incidents_violations_board()
+
+    # Tab 2: Violation Notices
+    st.values["incidents_board_tab_radio"] = "Violation Notices"
+    sidebar._render_incidents_violations_board()
+
+    # Tab 3: Resident Appeals
+    st.values["incidents_board_tab_radio"] = "Resident Appeals"
+    sidebar._render_incidents_violations_board()
+
+    # Tab 4: Compliance KPIs
+    st.values["incidents_board_tab_radio"] = "Compliance KPIs"
+    sidebar._render_incidents_violations_board()
+
+
+def test_render_session_incident_widget(monkeypatch):
+    """Test _render_session_incident_widget 1-click violation notice & appeal submission."""
+    issued_notices = []
+    submitted_appeals = []
+
+    st = FakeStreamlit(
+        values={
+            "sess_vn_type_sess_42": "noise_complaint",
+            "sess_vn_noticetype_sess_42": "courtesy_warning",
+            "sess_vn_remedy_sess_42": "Keep volume down during quiet hours",
+            "sess_vn_days_sess_42": 3,
+            "sess_vn_fine_sess_42": 0.0,
+            "sess_appeal_select_sess_42": "vn_existing_1",
+            "sess_appeal_reason_sess_42": "Was attending building association meeting",
+        },
+        buttons={
+            "btn_sess_issue_vn_sess_42": True,
+            "btn_sess_sub_appeal_sess_42": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_violation_notices_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "vn_existing_1",
+                    "notice_number": "VN-2026-088",
+                    "notice_type": "courtesy_warning",
+                    "violation_type": "noise_complaint",
+                    "cure_deadline": "2026-11-15T00:00:00",
+                    "status": "issued",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_issue_violation_notice_api",
+        lambda sid, payload: (
+            issued_notices.append((sid, payload))
+            or {"notice": {"id": "vn_new_1", "notice_number": "VN-2026-099"}}
+        ),
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_submit_violation_appeal_api",
+        lambda sid, payload: (
+            submitted_appeals.append((sid, payload))
+            or {"appeal": {"id": "apl_new_1", "appeal_number": "APL-2026-099"}}
+        ),
+    )
+
+    tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
+    sidebar._render_session_incident_widget("sess_42", tenant)
+
+    expected_count = 1
+    assert len(issued_notices) == expected_count
+    assert issued_notices[0][0] == "sess_42"
+    assert issued_notices[0][1]["violation_type"] == "noise_complaint"
+
+    assert len(submitted_appeals) == expected_count
+    assert submitted_appeals[0][0] == "sess_42"
+    assert submitted_appeals[0][1]["notice_id"] == "vn_existing_1"
+
+
+def test_render_announcements_board(monkeypatch):
+    """Test _render_announcements_board across all tabs (Notices, Publish, Concierge, KPIs)."""
+    created_announcements = []
+    updated_announcements = []
+    deleted_announcements = []
+    updated_concierge = []
+    deleted_concierge = []
+
+    st = FakeStreamlit(
+        values={
+            "ann_pub_title": "Annual Fire Alarm Testing",
+            "ann_pub_cat": "maintenance_advisory",
+            "ann_pub_prio": "standard",
+            "ann_pub_scope": "portfolio_wide",
+            "ann_pub_building": "Sunset Heights",
+            "ann_pub_floor": "5",
+            "ann_pub_unit": "",
+            "ann_pub_req_ack": False,
+            "ann_pub_content": "Testing alarms from 10am to 12pm.",
+            "ann_pub_instr": "No action needed.",
+        },
+        buttons={
+            "btn_broadcast_announcement": True,
+            "btn_arch_ann_ann_1": True,
+            "btn_del_ann_ann_1": True,
+            "btn_done_concierge_con_1": True,
+            "btn_cancel_concierge_con_1": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    # Mock announcements
+    sample_announcements = {
+        "items": [
+            {
+                "id": "ann_1",
+                "title": "Annual Fire Alarm Testing",
+                "category": "maintenance_advisory",
+                "priority": "standard",
+                "target_scope": "portfolio_wide",
+                "status": "published",
+                "content": "Testing alarms from 10am to 12pm.",
+                "action_instructions": "No action needed.",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_announcements_api", lambda **kwargs: sample_announcements)
+    monkeypatch.setattr(
+        sidebar,
+        "create_announcement_api",
+        lambda payload: (
+            created_announcements.append(payload)
+            or {"announcement": {"id": "ann_new", "title": payload.get("title")}}
+        ),
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "update_announcement_api",
+        lambda aid, payload: (
+            updated_announcements.append((aid, payload))
+            or {"announcement": {"id": aid, "status": payload.get("status")}}
+        ),
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "delete_announcement_api",
+        lambda aid: deleted_announcements.append(aid) or True,
+    )
+
+    # Mock concierge
+    sample_concierge = {
+        "items": [
+            {
+                "id": "con_1",
+                "request_type": "dry_cleaning",
+                "priority": "standard",
+                "status": "pending",
+                "description": "Drop off suit at concierge desk",
+                "instructions": "Leave on rack",
+                "tenant_id": "tenant_1",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(sidebar, "list_concierge_requests_api", lambda **kwargs: sample_concierge)
+    monkeypatch.setattr(
+        sidebar,
+        "update_concierge_request_api",
+        lambda cid, payload: (
+            updated_concierge.append((cid, payload))
+            or {"concierge_request": {"id": cid, "status": payload.get("status")}}
+        ),
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "delete_concierge_request_api",
+        lambda cid: deleted_concierge.append(cid) or True,
+    )
+
+    # Mock metrics
+    sample_metrics = {
+        "metrics": {
+            "total_announcements": 10,
+            "active_announcements": 4,
+            "active_emergency_alerts": 1,
+            "total_acknowledgments": 15,
+            "total_concierge_requests": 8,
+            "pending_concierge_requests": 2,
+        }
+    }
+    monkeypatch.setattr(sidebar, "get_announcements_metrics_api", lambda: sample_metrics)
+
+    # Tab 1: Active Notices
+    st.values["announcements_board_tab_radio"] = "Active Notices"
+    sidebar._render_announcements_board()
+
+    # Tab 2: Publish Announcement
+    st.values["announcements_board_tab_radio"] = "Publish Announcement"
+    sidebar._render_announcements_board()
+
+    # Tab 3: Concierge Desk
+    st.values["announcements_board_tab_radio"] = "Concierge Desk"
+    sidebar._render_announcements_board()
+
+    # Tab 4: Broadcast KPIs
+    st.values["announcements_board_tab_radio"] = "Broadcast KPIs"
+    sidebar._render_announcements_board()
+
+    assert len(created_announcements) == 1
+    assert created_announcements[0]["title"] == "Annual Fire Alarm Testing"
+    assert len(updated_announcements) == 1
+    assert updated_announcements[0][0] == "ann_1"
+    assert len(deleted_announcements) == 1
+    assert len(updated_concierge) == 1
+    assert updated_concierge[0][0] == "con_1"
+    assert len(deleted_concierge) == 1
+
+
+def test_render_session_announcement_widget(monkeypatch):
+    """Test _render_session_announcement_widget 1-click alert acknowledgment & concierge request."""
+    acked_alerts = []
+    created_concierge = []
+
+    st = FakeStreamlit(
+        values={
+            "c_type_sel_sess_42": "package_hold",
+            "c_prio_sel_sess_42": "urgent",
+            "c_desc_sess_42": "Hold oversized package arriving via FedEx",
+            "c_instr_sess_42": "Keep behind front desk",
+            "c_sched_sess_42": "2026-11-20",
+        },
+        buttons={
+            "ack_alert_sess_42_emg_1": True,
+            "btn_sub_concierge_sess_42": True,
+        },
+    )
+    monkeypatch.setattr(sidebar, "st", st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_tenant_announcements_api",
+        lambda tid: {
+            "items": [
+                {
+                    "id": "emg_1",
+                    "title": "Severe Freeze Warning",
+                    "category": "emergency_alert",
+                    "priority": "emergency",
+                    "require_acknowledgment": True,
+                    "status": "published",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_acknowledge_alert_api",
+        lambda sid, payload: (
+            acked_alerts.append((sid, payload))
+            or {
+                "acknowledgment": {
+                    "id": "ack_new",
+                    "announcement_id": payload.get("announcement_id"),
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_request_concierge_api",
+        lambda sid, payload: (
+            created_concierge.append((sid, payload))
+            or {"concierge_request": {"id": "con_new", "request_type": payload.get("request_type")}}
+        ),
+    )
+
+    tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
+    sidebar._render_session_announcement_widget("sess_42", tenant)
+
+    expected_count = 1
+    assert len(acked_alerts) == expected_count
+    assert acked_alerts[0][0] == "sess_42"
+    assert acked_alerts[0][1]["announcement_id"] == "emg_1"
+
+    assert len(created_concierge) == expected_count
+    assert created_concierge[0][0] == "sess_42"
+    assert created_concierge[0][1]["request_type"] == "package_hold"

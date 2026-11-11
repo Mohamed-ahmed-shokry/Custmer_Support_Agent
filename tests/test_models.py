@@ -17,6 +17,11 @@ from api.pydantic_models import (
     AmenityItem,
     AmenityMetricsResponse,
     AmenityResponse,
+    AnnouncementAcknowledgeRequest,
+    AnnouncementAcknowledgmentItem,
+    AnnouncementAcknowledgmentListResponse,
+    AnnouncementAcknowledgmentResponse,
+    AnnouncementsMetricsResponse,
     AutoAssignRequest,
     BillingMetricsResponse,
     BillingTransactionCreateRequest,
@@ -29,6 +34,20 @@ from api.pydantic_models import (
     CollectionAnalyticsResponse,
     CollectionRechunkRequest,
     CollectionRechunkResponse,
+    CommunityAnnouncementCreateRequest,
+    CommunityAnnouncementItem,
+    CommunityAnnouncementListResponse,
+    CommunityAnnouncementResponse,
+    CommunityAnnouncementUpdateRequest,
+    CommunityIncidentCreateRequest,
+    CommunityIncidentItem,
+    CommunityIncidentListResponse,
+    CommunityIncidentResponse,
+    CommunityIncidentUpdateRequest,
+    ConciergeRequestCreateRequest,
+    ConciergeRequestItem,
+    ConciergeRequestResponse,
+    ConciergeRequestUpdateRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
     DocumentDetailResponse,
@@ -41,6 +60,7 @@ from api.pydantic_models import (
     GuestPassListResponse,
     GuestPassResponse,
     GuestPassUpdateRequest,
+    IncidentMetricsResponse,
     InspectionCompleteRequest,
     InspectionCreateRequest,
     InspectionDocumentPublishRequest,
@@ -132,18 +152,22 @@ from api.pydantic_models import (
     ReservationCreateRequest,
     ReservationItem,
     ReservationResponse,
+    SessionAcknowledgeAlertRequest,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
+    SessionCreateConciergeRequest,
     SessionDraftArticleRequest,
     SessionGenerateGuestPassRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
+    SessionIssueViolationNoticeRequest,
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
     SessionSLAStatusResponse,
+    SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
     SessionTenantContextResponse,
@@ -183,6 +207,16 @@ from api.pydantic_models import (
     VehicleRegisterRequest,
     VehicleResponse,
     VehicleUpdateRequest,
+    ViolationAppealCreateRequest,
+    ViolationAppealItem,
+    ViolationAppealListResponse,
+    ViolationAppealResponse,
+    ViolationAppealUpdateRequest,
+    ViolationNoticeCreateRequest,
+    ViolationNoticeItem,
+    ViolationNoticeListResponse,
+    ViolationNoticeResponse,
+    ViolationNoticeUpdateRequest,
     VisitorPassCreateRequest,
     VisitorPassItem,
     VisitorPassListResponse,
@@ -2663,3 +2697,268 @@ def test_access_control_models_validation():
         lost_credentials=4,
     )
     assert metrics.total_credentials == expected_total_creds
+
+
+
+def test_incident_models_validation():
+    """Verify validation and serialization for incident, notice, and appeal schemas."""
+    expected_cure_days = 7
+    expected_fine = 25.0
+    expected_incidents = 10
+    expected_fines_total = 150.0
+
+    # 1. Incident schemas
+    inc_req = CommunityIncidentCreateRequest(
+        incident_type="noise_complaint",
+        description="Loud bass vibrating floor after midnight.",
+        severity="medium",
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        reported_by="resident",
+        location="Unit 101 Living Room",
+    )
+    assert inc_req.description == "Loud bass vibrating floor after midnight."
+
+    inc_item = CommunityIncidentItem(
+        id="inc_01",
+        incident_number="INC-2026-101",
+        incident_type="noise_complaint",
+        severity="medium",
+        status="reported",
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        reported_by="resident",
+        incident_date="2026-11-04T23:15:00Z",
+        description="Loud bass vibrating floor after midnight.",
+        created_at="2026-11-04T23:20:00Z",
+        updated_at="2026-11-04T23:20:00Z",
+    )
+    inc_resp = CommunityIncidentResponse(incident=inc_item)
+    assert inc_resp.incident.incident_number == "INC-2026-101"
+
+    inc_list = CommunityIncidentListResponse(items=[inc_item], total=1)
+    assert len(inc_list.items) == 1
+
+    inc_up = CommunityIncidentUpdateRequest(
+        status="resolved",
+        resolution_notes="Resident complied.",
+    )
+    assert inc_up.status == "resolved"
+
+    # 2. Notice schemas
+    notice_req = ViolationNoticeCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        violation_type="noise_complaint",
+        notice_type="courtesy_warning",
+        remedy_instructions="Keep music below 55 dB after 10 PM quiet hours.",
+        cure_days=expected_cure_days,
+        fine_amount=0.0,
+    )
+    assert notice_req.cure_days == expected_cure_days
+
+    notice_item = ViolationNoticeItem(
+        id="viol_01",
+        notice_number="VN-2026-089",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        violation_type="noise_complaint",
+        notice_type="courtesy_warning",
+        status="issued",
+        issued_at="2026-11-05T09:00:00Z",
+        remedy_instructions="Keep music below 55 dB after 10 PM quiet hours.",
+        created_at="2026-11-05T09:00:00Z",
+        updated_at="2026-11-05T09:00:00Z",
+    )
+    notice_resp = ViolationNoticeResponse(notice=notice_item)
+    assert notice_resp.notice.notice_number == "VN-2026-089"
+
+    notice_list = ViolationNoticeListResponse(items=[notice_item], total=1)
+    assert len(notice_list.items) == 1
+
+    notice_up = ViolationNoticeUpdateRequest(status="cured", fine_amount=expected_fine)
+    assert notice_up.status == "cured"
+    assert notice_up.fine_amount == expected_fine
+
+    # 3. Appeal schemas
+    appeal_req = ViolationAppealCreateRequest(
+        notice_id="viol_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        reason="Music was from neighboring apartment on adjacent terrace.",
+    )
+    assert appeal_req.notice_id == "viol_01"
+
+    appeal_item = ViolationAppealItem(
+        id="appeal_01",
+        appeal_number="APL-2026-042",
+        notice_id="viol_01",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        status="submitted",
+        reason="Music was from neighboring apartment on adjacent terrace.",
+        submitted_at="2026-11-05T14:30:00Z",
+        created_at="2026-11-05T14:30:00Z",
+        updated_at="2026-11-05T14:30:00Z",
+    )
+    appeal_resp = ViolationAppealResponse(appeal=appeal_item)
+    assert appeal_resp.appeal.appeal_number == "APL-2026-042"
+
+    appeal_list = ViolationAppealListResponse(items=[appeal_item], total=1)
+    assert len(appeal_list.items) == 1
+
+    appeal_up = ViolationAppealUpdateRequest(
+        status="waived",
+        reviewed_by="Manager Sarah",
+        decision_notes="Confirmed sound came from unit 102.",
+    )
+    assert appeal_up.status == "waived"
+
+    # 4. Session actions
+    sess_notice = SessionIssueViolationNoticeRequest(
+        violation_type="trash_disposal",
+        notice_type="courtesy_warning",
+        remedy_instructions="Place all recycling in designated bins.",
+    )
+    assert sess_notice.violation_type == "trash_disposal"
+
+    sess_appeal = SessionSubmitViolationAppealRequest(
+        notice_id="viol_01",
+        reason="Boxes were left by delivery carrier, not resident.",
+    )
+    assert sess_appeal.notice_id == "viol_01"
+
+    # 5. Metrics response
+    metrics = IncidentMetricsResponse(
+        total_incidents=expected_incidents,
+        active_incidents=2,
+        total_violations=5,
+        open_violations=3,
+        total_fines_assessed=expected_fines_total,
+    )
+    assert metrics.total_incidents == expected_incidents
+    assert metrics.total_fines_assessed == expected_fines_total
+
+
+
+def test_announcement_models_validation():
+    """Verify validation and serialization of announcement and concierge Pydantic models."""
+    expected_announcements = 3
+    expected_alerts = 1
+
+    # 1. Announcement create & item
+    create_req = CommunityAnnouncementCreateRequest(
+        title="Main Boiler Maintenance",
+        content="Hot water will be suspended between 9 AM and 1 PM tomorrow.",
+        category="maintenance_advisory",
+        priority="urgent",
+        scope="building",
+        target_building="North Tower",
+        require_acknowledgment=True,
+    )
+    assert create_req.title == "Main Boiler Maintenance"
+    assert create_req.require_acknowledgment is True
+
+    ann_item = CommunityAnnouncementItem(
+        id="ann_test_01",
+        announcement_number="ANN-2026-999",
+        title=create_req.title,
+        content=create_req.content,
+        category=create_req.category,
+        priority=create_req.priority,
+        scope=create_req.scope,
+        target_building=create_req.target_building,
+        require_acknowledgment=True,
+        published_at="2026-11-20T10:00:00Z",
+        created_at="2026-11-20T10:00:00Z",
+        updated_at="2026-11-20T10:00:00Z",
+    )
+    ann_resp = CommunityAnnouncementResponse(announcement=ann_item)
+    assert ann_resp.announcement.announcement_number == "ANN-2026-999"
+
+    ann_list = CommunityAnnouncementListResponse(items=[ann_item], total=1)
+    assert ann_list.total == 1
+
+    ann_update = CommunityAnnouncementUpdateRequest(
+        title="Main Boiler Maintenance (Completed)",
+        status="archived",
+    )
+    assert ann_update.status == "archived"
+
+    # 2. Acknowledgment models
+    ack_req = AnnouncementAcknowledgeRequest(
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        channel="chat_session",
+        notes="Confirmed",
+    )
+    assert ack_req.tenant_id == "tenant_3"
+
+    ack_item = AnnouncementAcknowledgmentItem(
+        id="ack_test_01",
+        announcement_id="ann_test_01",
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        acknowledged_at="2026-11-20T11:00:00Z",
+    )
+    ack_resp = AnnouncementAcknowledgmentResponse(acknowledgment=ack_item)
+    assert ack_resp.acknowledgment.announcement_id == "ann_test_01"
+
+    ack_list = AnnouncementAcknowledgmentListResponse(items=[ack_item], total=1)
+    assert ack_list.total == 1
+
+    # 3. Concierge request models
+    con_req = ConciergeRequestCreateRequest(
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        request_type="dry_cleaning",
+        priority="normal",
+        instructions="Pickup garment bag from door hook at 10 AM.",
+        preferred_date="2026-11-21",
+    )
+    assert con_req.request_type == "dry_cleaning"
+
+    con_item = ConciergeRequestItem(
+        id="con_test_01",
+        request_number="CON-2026-088",
+        tenant_id=con_req.tenant_id,
+        unit_id=con_req.unit_id,
+        request_type=con_req.request_type,
+        instructions=con_req.instructions,
+        status="submitted",
+        created_at="2026-11-20T10:00:00Z",
+        updated_at="2026-11-20T10:00:00Z",
+    )
+    con_resp = ConciergeRequestResponse(concierge_request=con_item)
+    assert con_resp.concierge_request.request_number == "CON-2026-088"
+
+    con_update = ConciergeRequestUpdateRequest(
+        status="fulfilled",
+        assigned_staff="Concierge James",
+        fulfillment_notes="Garments delivered back to unit closet.",
+    )
+    assert con_update.status == "fulfilled"
+
+    # 4. Session actions
+    sess_ack = SessionAcknowledgeAlertRequest(
+        announcement_id="ann_test_01",
+        notes="Awaiting update",
+    )
+    assert sess_ack.announcement_id == "ann_test_01"
+
+    sess_con = SessionCreateConciergeRequest(
+        request_type="package_hold",
+        instructions="Hold parcel in storage until Friday evening.",
+    )
+    assert sess_con.request_type == "package_hold"
+
+    # 5. Metrics response
+    metrics = AnnouncementsMetricsResponse(
+        total_announcements=expected_announcements,
+        published_announcements=2,
+        active_emergency_alerts=expected_alerts,
+        total_acknowledgments=1,
+        total_concierge_requests=1,
+    )
+    assert metrics.total_announcements == expected_announcements
+    assert metrics.active_emergency_alerts == expected_alerts

@@ -15,8 +15,10 @@ from app.api_utils import (
     complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
     create_access_credential_api,
+    create_announcement_api,
     create_billing_transaction,
     create_guest_pass_api,
+    create_incident_api,
     create_inspection,
     create_intercom_entry_api,
     create_lease_renewal,
@@ -33,11 +35,14 @@ from app.api_utils import (
     create_tenant,
     create_unit,
     create_vendor,
+    create_violation_notice_api,
     create_webhook,
     create_work_order,
     create_work_order_from_session,
+    delete_announcement_api,
     delete_billing_transaction,
     delete_collection,
+    delete_concierge_request_api,
     delete_document,
     delete_documents,
     delete_inspection,
@@ -60,6 +65,7 @@ from app.api_utils import (
     get_agent_scorecards,
     get_agent_workload_analytics,
     get_amenity_metrics_api,
+    get_announcements_metrics_api,
     get_billing_metrics,
     get_business_hours_status,
     get_collection_analytics,
@@ -69,6 +75,7 @@ from app.api_utils import (
     get_document_details,
     get_feedback_analytics,
     get_health,
+    get_incident_metrics_api,
     get_inspection_metrics,
     get_knowledge_analytics,
     get_lease_renewal_metrics,
@@ -96,12 +103,15 @@ from app.api_utils import (
     link_session_tenant,
     list_access_credentials_api,
     list_amenities_api,
+    list_announcements_api,
     list_billing_transactions,
     list_collections,
+    list_concierge_requests_api,
     list_documents,
     list_feedback,
     list_feedback_review_queue,
     list_guest_passes_api,
+    list_incidents_api,
     list_inspections,
     list_intercom_entries_api,
     list_knowledge_articles,
@@ -119,16 +129,20 @@ from app.api_utils import (
     list_sessions,
     list_sla_policies,
     list_support_agents,
+    list_tenant_announcements_api,
     list_tenant_credentials_api,
     list_tenant_guest_passes_api,
     list_tenant_packages_api,
     list_tenant_pets_api,
     list_tenant_reservations_api,
     list_tenant_vehicles_api,
+    list_tenant_violation_notices_api,
     list_tenants,
     list_units,
     list_vehicles_api,
     list_vendors,
+    list_violation_appeals_api,
+    list_violation_notices_api,
     list_visitor_passes_api,
     list_webhook_deliveries,
     list_webhooks,
@@ -151,16 +165,22 @@ from app.api_utils import (
     render_macro,
     scan_knowledge_gaps,
     search_sessions,
+    session_acknowledge_alert_api,
     session_create_reservation_api,
     session_generate_guest_pass_api,
     session_intake_package_api,
+    session_issue_violation_notice_api,
     session_issue_visitor_pass_api,
     session_register_pet_api,
     session_report_lost_fob_api,
+    session_request_concierge_api,
+    session_submit_violation_appeal_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
+    update_announcement_api,
     update_billing_transaction,
+    update_concierge_request_api,
     update_feedback_review,
     update_inspection,
     update_knowledge_gap,
@@ -168,6 +188,7 @@ from app.api_utils import (
     update_session,
     update_support_agent,
     update_vendor,
+    update_violation_appeal_api,
     update_webhook,
     update_work_order,
     upload_document,
@@ -245,15 +266,11 @@ def _render_health_status():
     biz_status = get_business_hours_status()
     if biz_status:
         if biz_status.get("is_open"):
-            st.sidebar.markdown(
-                "🟢 **Support Hours:** Open (Mon-Fri 09:00 - 18:00 UTC)"
-            )
+            st.sidebar.markdown("🟢 **Support Hours:** Open (Mon-Fri 09:00 - 18:00 UTC)")
         else:
             next_open = biz_status.get("next_open_at")
             next_txt = f" (Opens: {next_open[:16].replace('T', ' ')})" if next_open else ""
-            st.sidebar.markdown(
-                f"🌙 **Support Hours:** Closed / After-Hours{next_txt}"
-            )
+            st.sidebar.markdown(f"🌙 **Support Hours:** Closed / After-Hours{next_txt}")
 
 
 def _render_reset_chat():
@@ -272,9 +289,7 @@ def _filter_sessions(sessions):
     if queue_filter == "Unassigned only":
         sessions = [s for s in sessions if not s.get("assigned_agent")]
     elif queue_filter == "Escalated only (Tier 2/3)":
-        sessions = [
-            s for s in sessions if s.get("escalation_tier") in ("tier_2", "tier_3")
-        ]
+        sessions = [s for s in sessions if s.get("escalation_tier") in ("tier_2", "tier_3")]
 
     status_filter = st.sidebar.selectbox(
         "Filter by status",
@@ -434,9 +449,7 @@ def _render_session_assignment_controls(selected, current):
         key=f"assign_agent_select_{selected}",
     )
 
-    tier_idx = (
-        AGENT_TIER_OPTIONS.index(curr_tier) if curr_tier in AGENT_TIER_OPTIONS else 0
-    )
+    tier_idx = AGENT_TIER_OPTIONS.index(curr_tier) if curr_tier in AGENT_TIER_OPTIONS else 0
     selected_tier = st.sidebar.selectbox(
         "Escalation Tier",
         options=AGENT_TIER_OPTIONS,
@@ -507,9 +520,7 @@ def _render_session_metadata(selected, sessions):
     current = next((s for s in sessions if s.get("session_id") == selected), None)
     curr_status = (current.get("status") or "active") if current else "active"
     status_idx = (
-        SESSION_STATUS_OPTIONS.index(curr_status)
-        if curr_status in SESSION_STATUS_OPTIONS
-        else 0
+        SESSION_STATUS_OPTIONS.index(curr_status) if curr_status in SESSION_STATUS_OPTIONS else 0
     )
     new_status = st.sidebar.selectbox(
         "Session status",
@@ -520,9 +531,7 @@ def _render_session_metadata(selected, sessions):
 
     curr_prio = (current.get("priority") or "medium") if current else "medium"
     prio_idx = (
-        SESSION_PRIORITY_OPTIONS.index(curr_prio)
-        if curr_prio in SESSION_PRIORITY_OPTIONS
-        else 2
+        SESSION_PRIORITY_OPTIONS.index(curr_prio) if curr_prio in SESSION_PRIORITY_OPTIONS else 2
     )
     new_priority = st.sidebar.selectbox(
         "Session priority",
@@ -571,9 +580,7 @@ def _render_session_metadata(selected, sessions):
         placeholder="Add resolution or follow-up notes...",
     )
 
-    _render_session_metadata_actions(
-        selected, new_status, new_priority, new_tags_str, new_notes
-    )
+    _render_session_metadata_actions(selected, new_status, new_priority, new_tags_str, new_notes)
     _render_session_assignment_controls(selected, current)
     _render_session_sla_card(selected)
     _render_session_tenant_card(selected)
@@ -710,9 +717,7 @@ def _render_session_work_order_dispatch(selected: str):
                 }
                 res = create_work_order_from_session(selected, wo_payload)
                 if res:
-                    st.success(
-                        f"Work order created! ID: {res.get('work_order', {}).get('id', '')}"
-                    )
+                    st.success(f"Work order created! ID: {res.get('work_order', {}).get('id', '')}")
                     st.rerun()
                 else:
                     st.error("Failed to create work order.")
@@ -802,9 +807,7 @@ def _render_session_lease_renewal_widget(selected: str, tenant: dict):  # noqa: 
 
     renewals_resp = get_tenant_lease_renewals(tenant_id)
     renewals = renewals_resp.get("items", []) if renewals_resp else []
-    active_renewals = [
-        r for r in renewals if r.get("status") in ("draft", "offered", "accepted")
-    ]
+    active_renewals = [r for r in renewals if r.get("status") in ("draft", "offered", "accepted")]
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📝 Lease Renewal & Agreements")
@@ -996,10 +999,9 @@ def _render_session_inspection_widget(selected: str, tenant: dict):
                     }
                     res = create_session_inspection(selected, insp_payload)
                     if res:
-                        new_insp_id = (
-                            res.get("inspection", {}).get("id")
-                            or res.get("inspection", {}).get("inspection_id", "")
-                        )
+                        new_insp_id = res.get("inspection", {}).get("id") or res.get(
+                            "inspection", {}
+                        ).get("inspection_id", "")
                         st.success(f"Inspection scheduled! ID: {new_insp_id}")
                         st.rerun()
                     else:
@@ -1078,9 +1080,7 @@ def _render_session_package_intake_widget(selected: str, tenant: dict):
 def _render_linked_tenant_details(selected, tenant, unit):
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
     st.sidebar.markdown(f"**Resident:** {t_name}")
-    st.sidebar.caption(
-        f"📧 {tenant.get('email', 'N/A')} | 📞 {tenant.get('phone', 'N/A')}"
-    )
+    st.sidebar.caption(f"📧 {tenant.get('email', 'N/A')} | 📞 {tenant.get('phone', 'N/A')}")
     if unit:
         u_info = f"Unit {unit.get('unit_number')} - {unit.get('property_name')}"
         st.sidebar.markdown(f"**Unit:** {u_info}")
@@ -1114,6 +1114,8 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_parking_widget(selected, tenant)
     _render_session_pet_widget(selected, tenant)
     _render_session_access_widget(selected, tenant)
+    _render_session_incident_widget(selected, tenant)
+    _render_session_announcement_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -1225,9 +1227,7 @@ def _render_model_selector():
     config = st.session_state.get("config")
     options = get_model_options(config)
     default_idx = get_default_model_index(options, config)
-    st.sidebar.selectbox(
-        "Select Model", options=options, index=default_idx, key="model"
-    )
+    st.sidebar.selectbox("Select Model", options=options, index=default_idx, key="model")
 
 
 ALL_COLLECTIONS = "All collections"
@@ -1303,9 +1303,7 @@ def _render_collection_insights(active_collection):
 
                 strategies = analytics.get("strategy_distribution", {})
                 if strategies:
-                    strat_pills = " · ".join(
-                        f"{k}: {v}" for k, v in sorted(strategies.items())
-                    )
+                    strat_pills = " · ".join(f"{k}: {v}" for k, v in sorted(strategies.items()))
                     st.caption(f"Strategies: {strat_pills}")
 
                 histogram = analytics.get("length_histogram", {})
@@ -1494,9 +1492,7 @@ def _render_document_list():
             f"`{doc.get('collection', 'default')}`  \nUploaded: `{doc['upload_timestamp']}`"
         )
 
-    bulk_delete = st.sidebar.checkbox(
-        "Bulk delete mode", value=False, key="bulk_delete_mode"
-    )
+    bulk_delete = st.sidebar.checkbox("Bulk delete mode", value=False, key="bulk_delete_mode")
     if bulk_delete:
         to_delete = st.sidebar.multiselect(
             "Select documents to delete",
@@ -1625,8 +1621,8 @@ def _render_retrieval_filters():
         st.sidebar.caption("No documents in the active collection.")
         st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
         st.sidebar.checkbox(
-    "Cross-encoder rerank (semantic)", value=False, key="use_cross_encoder_rerank"
-)
+            "Cross-encoder rerank (semantic)", value=False, key="use_cross_encoder_rerank"
+        )
         return
     st.sidebar.multiselect(
         "Restrict to document(s)",
@@ -1639,8 +1635,8 @@ def _render_retrieval_filters():
     )
     st.sidebar.checkbox("Hybrid search (BM25 + vector)", value=False, key="use_hybrid")
     st.sidebar.checkbox(
-    "Cross-encoder rerank (semantic)", value=False, key="use_cross_encoder_rerank"
-)
+        "Cross-encoder rerank (semantic)", value=False, key="use_cross_encoder_rerank"
+    )
 
 
 def _render_feedback_analytics():
@@ -1668,7 +1664,7 @@ def _render_feedback_analytics():
                     sid = item.get("session_id", "")[:8]
                     comment = item.get("comment")
                     if comment:
-                        st.markdown(f"{icon} `{sid}`: \"{comment[:50]}...\"")
+                        st.markdown(f'{icon} `{sid}`: "{comment[:50]}..."')
         except Exception as e:
             st.caption(f"Error loading analytics: {e}")
 
@@ -1773,10 +1769,7 @@ def _render_webhook_subscriptions():
         events_pill = wh.get("events", "*")
         failures = wh.get("failure_count", 0)
         fail_badge = f" · ⚠️ {failures} fails" if failures > 0 else ""
-        st.markdown(
-            f"**#{wid}** {active_icon} `{events_pill}`{fail_badge}  \n"
-            f"`{wh['url']}`"
-        )
+        st.markdown(f"**#{wid}** {active_icon} `{events_pill}`{fail_badge}  \n`{wh['url']}`")
 
         col1, col2, col3 = st.columns(3)
         if col1.button("Ping", key=f"ping_wh_{wid}"):
@@ -1844,10 +1837,7 @@ def _render_webhook_audit_log():
     for log in items:
         status_icon = "✅" if log.get("success") else "❌"
         code = log.get("status_code") or "ERR"
-        st.markdown(
-            f"{status_icon} **{log.get('event')}** (HTTP {code})  \n"
-            f"`{log.get('url')}`"
-        )
+        st.markdown(f"{status_icon} **{log.get('event')}** (HTTP {code})  \n`{log.get('url')}`")
         if log.get("error_message"):
             st.caption(f"Error: {log['error_message']}")
 
@@ -1962,9 +1952,7 @@ def _render_macro_creator():
     new_title = st.text_input(
         "Title", key="new_macro_title", placeholder="E.g., Move-in Instructions"
     )
-    new_shortcut = st.text_input(
-        "Shortcut", key="new_macro_shortcut", placeholder="E.g., /move-in"
-    )
+    new_shortcut = st.text_input("Shortcut", key="new_macro_shortcut", placeholder="E.g., /move-in")
     new_cat = st.text_input("Category", key="new_macro_category", value="General")
     new_action = st.selectbox(
         "Status Action",
@@ -2114,9 +2102,7 @@ def _render_sla_alerts_trigger():
             if alert_res:
                 n_alerts = alert_res.get("alerts_triggered", 0)
                 if n_alerts > 0:
-                    st.warning(
-                        f"Triggered {n_alerts} escalation alerts across active sessions!"
-                    )
+                    st.warning(f"Triggered {n_alerts} escalation alerts across active sessions!")
                 else:
                     st.success("All active sessions within SLA limits. Zero alerts triggered.")
             else:
@@ -2249,9 +2235,7 @@ def _render_support_agents_and_workload():
             format_func=lambda t: AGENT_TIER_LABELS.get(t, t),
             key="new_agent_tier",
         )
-        new_ag_dept = st.text_input(
-            "Department", value="Customer Care", key="new_agent_dept"
-        )
+        new_ag_dept = st.text_input("Department", value="Customer Care", key="new_agent_dept")
 
         if st.button("Add Support Agent", key="btn_create_support_agent"):
             if not new_ag_id.strip() or not new_ag_name.strip() or not new_ag_email.strip():
@@ -2420,6 +2404,371 @@ def _render_knowledge_articles_publisher():
                         st.success(f"Article #{aid} published to '{target_col}'!")
                         st.rerun()
         st.markdown("---")
+
+
+def _render_session_incident_widget(selected: str, tenant: dict):  # noqa: PLR0912, PLR0915
+    """Render 1-click violation notices and resident appeal actions for active session resident."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        notices_resp = list_tenant_violation_notices_api(tenant_id)
+        notices = notices_resp.get("items", []) if notices_resp else []
+        active_notices = [
+            n for n in notices if n.get("status") in ("issued", "escalated", "appealed")
+        ]
+
+        if active_notices:
+            st.sidebar.markdown("**🚨 Community Violations:**")
+            for n in active_notices[:2]:
+                ntype = str(n.get("notice_type", "warning")).replace("_", " ").title()
+                vtype = str(n.get("violation_type", "violation")).replace("_", " ").title()
+                deadline = str(n.get("cure_deadline", ""))[:10]
+                stat = str(n.get("status", "issued")).upper()
+                st.sidebar.warning(
+                    f"**{ntype}:** {vtype} | Cure by: `{deadline}` | Status: **{stat}**"
+                )
+
+        with st.sidebar.expander("🚨 Violation Notice & Appeal Actions"):
+            st.markdown("##### 📝 Issue Violation Notice")
+            v_type = st.selectbox(
+                "Violation Type",
+                [
+                    "noise_complaint",
+                    "smoking_prohibited",
+                    "pet_waste_violation",
+                    "trash_disposal",
+                    "unauthorized_occupant",
+                    "common_area_damage",
+                    "alteration_unapproved",
+                    "parking_improper",
+                    "safety_hazard",
+                    "other",
+                ],
+                key=f"sess_vn_type_{selected}",
+            )
+            n_type = st.selectbox(
+                "Notice Type",
+                [
+                    "courtesy_warning",
+                    "first_notice_to_cure",
+                    "second_notice_to_cure",
+                    "fine_assessment",
+                    "final_notice_to_vacate",
+                ],
+                key=f"sess_vn_noticetype_{selected}",
+            )
+            v_remedy = st.text_area(
+                "Required Remedy Instructions*",
+                placeholder="e.g. Keep volume below 55 dB during 10 PM quiet hours",
+                key=f"sess_vn_remedy_{selected}",
+            )
+            v_days = st.number_input(
+                "Cure Window (Days)",
+                min_value=0,
+                max_value=90,
+                value=7,
+                step=1,
+                key=f"sess_vn_days_{selected}",
+            )
+            v_fine = st.number_input(
+                "Fine Amount ($)",
+                min_value=0.0,
+                value=0.0,
+                step=25.0,
+                key=f"sess_vn_fine_{selected}",
+            )
+
+            if st.button("Issue Violation Notice", key=f"btn_sess_issue_vn_{selected}"):
+                if not v_remedy.strip():
+                    st.error("Remedy instructions are required.")
+                else:
+                    payload = {
+                        "violation_type": v_type,
+                        "notice_type": n_type,
+                        "remedy_instructions": v_remedy.strip(),
+                        "cure_days": int(v_days),
+                        "fine_amount": float(v_fine),
+                        "charge_to_ledger": float(v_fine) > 0,
+                    }
+                    res = session_issue_violation_notice_api(selected, payload)
+                    if res and res.get("notice"):
+                        num = res["notice"].get("notice_number")
+                        st.success(f"Violation notice issued! Number: **{num}**")
+
+            st.markdown("---")
+            st.markdown("##### ⚖️ Submit Violation Appeal")
+            if active_notices:
+                notice_opts = {
+                    n["id"]: f"{n.get('notice_number')} ({n.get('violation_type')})"
+                    for n in active_notices
+                }
+                chosen_notice = st.selectbox(
+                    "Select Notice to Appeal",
+                    list(notice_opts.keys()),
+                    format_func=lambda x: notice_opts[x],
+                    key=f"sess_appeal_select_{selected}",
+                )
+                appeal_reason = st.text_area(
+                    "Appeal Statement / Reason*",
+                    placeholder="Explain why this notice should be reconsidered or waived",
+                    key=f"sess_appeal_reason_{selected}",
+                )
+                if st.button("Submit Appeal", key=f"btn_sess_sub_appeal_{selected}"):
+                    if not appeal_reason.strip():
+                        st.error("Appeal reason is required.")
+                    else:
+                        apl_res = session_submit_violation_appeal_api(
+                            selected,
+                            {
+                                "notice_id": chosen_notice,
+                                "reason": appeal_reason.strip(),
+                            },
+                        )
+                        if apl_res and apl_res.get("appeal"):
+                            anum = apl_res["appeal"].get("appeal_number")
+                            st.info(f"Appeal submitted! Tracking: **{anum}**")
+            else:
+                st.caption("No open violation notices on record.")
+    except Exception as e:
+        st.sidebar.caption(f"Incident actions temporarily unavailable: {e}")
+
+
+def _render_incidents_directory_tab():
+    """Render community incident reports log and intake form."""
+    inc_resp = list_incidents_api()
+    items = inc_resp.get("items", []) if inc_resp else []
+    total = inc_resp.get("total", len(items)) if inc_resp else 0
+
+    max_desc_len = 50
+    st.caption(f"Showing **{len(items)}** of **{total}** community incident reports.")
+    for inc in items[:6]:
+        num = inc.get("incident_number")
+        itype = str(inc.get("incident_type")).replace("_", " ").title()
+        sev = str(inc.get("severity")).title()
+        stat = str(inc.get("status")).upper()
+        raw_desc = str(inc.get("description", ""))
+        desc = (raw_desc[:47] + "...") if len(raw_desc) > max_desc_len else raw_desc
+        st.markdown(f"- **{num}** ({itype} - {sev}) | Status: **{stat}** | `{desc}`")
+
+    with st.expander("➕ Log Community Incident"):
+        i_type = st.selectbox(
+            "Incident Type",
+            [
+                "noise_complaint",
+                "smoking_prohibited",
+                "pet_waste_violation",
+                "trash_disposal",
+                "unauthorized_occupant",
+                "common_area_damage",
+                "alteration_unapproved",
+                "parking_improper",
+                "safety_hazard",
+                "other",
+            ],
+            key="new_inc_type",
+        )
+        i_sev = st.selectbox("Severity", ["low", "medium", "high", "critical"], key="new_inc_sev")
+        i_unit = st.text_input(
+            "Unit ID (Optional)", placeholder="e.g. unit_101", key="new_inc_unit"
+        )
+        i_tenant = st.text_input(
+            "Tenant ID (Optional)", placeholder="e.g. tenant_1", key="new_inc_tenant"
+        )
+        i_loc = st.text_input("Location", placeholder="e.g. 2nd Floor Courtyard", key="new_inc_loc")
+        i_desc = st.text_area(
+            "Incident Description*", placeholder="Describe what occurred", key="new_inc_desc"
+        )
+
+        if st.button("Submit Incident Report", key="btn_create_incident"):
+            if not i_desc.strip():
+                st.error("Incident description is required.")
+            else:
+                payload = {
+                    "incident_type": i_type,
+                    "severity": i_sev,
+                    "unit_id": i_unit.strip() if i_unit.strip() else None,
+                    "tenant_id": i_tenant.strip() if i_tenant.strip() else None,
+                    "location": i_loc.strip() if i_loc.strip() else None,
+                    "description": i_desc.strip(),
+                }
+                res = create_incident_api(payload)
+                if res and res.get("incident"):
+                    inc_num = res["incident"].get("incident_number")
+                    st.success(f"Incident logged! Reference: **{inc_num}**")
+
+
+def _render_violation_notices_tab():
+    """Render formal violation notices and new notice form."""
+    notices_resp = list_violation_notices_api()
+    items = notices_resp.get("items", []) if notices_resp else []
+    total = notices_resp.get("total", len(items)) if notices_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** violation notices.")
+    for vn in items[:6]:
+        num = vn.get("notice_number")
+        vtype = str(vn.get("violation_type")).replace("_", " ").title()
+        stat = str(vn.get("status")).upper()
+        deadline = str(vn.get("cure_deadline", ""))[:10]
+        fine = f"${vn.get('fine_amount', 0.0):,.2f}"
+        st.markdown(
+            f"- **{num}** ({vtype}) | Fine: `{fine}` | Deadline: `{deadline}` | Status: **{stat}**"
+        )
+
+    with st.expander("➕ Issue Formal Violation Notice"):
+        vn_tenant = st.text_input("Tenant ID*", placeholder="e.g. tenant_1", key="man_vn_tenant")
+        vn_unit = st.text_input("Unit ID*", placeholder="e.g. unit_101", key="man_vn_unit")
+        vn_type = st.selectbox(
+            "Violation Type",
+            [
+                "noise_complaint",
+                "smoking_prohibited",
+                "pet_waste_violation",
+                "trash_disposal",
+                "unauthorized_occupant",
+                "common_area_damage",
+                "alteration_unapproved",
+                "parking_improper",
+                "safety_hazard",
+            ],
+            key="man_vn_type",
+        )
+        vn_notice = st.selectbox(
+            "Notice Type",
+            [
+                "courtesy_warning",
+                "first_notice_to_cure",
+                "second_notice_to_cure",
+                "fine_assessment",
+                "final_notice_to_vacate",
+            ],
+            key="man_vn_noticetype",
+        )
+        vn_remedy = st.text_area(
+            "Remedy Instructions*", placeholder="Actions required to cure", key="man_vn_remedy"
+        )
+        vn_days = st.number_input(
+            "Cure Window (Days)", min_value=0, max_value=90, value=7, step=1, key="man_vn_days"
+        )
+        vn_fine = st.number_input(
+            "Fine Amount ($)", min_value=0.0, value=0.0, step=25.0, key="man_vn_fine"
+        )
+
+        if st.button("Issue Notice", key="btn_man_issue_vn"):
+            if not vn_tenant.strip() or not vn_unit.strip() or not vn_remedy.strip():
+                st.error("Tenant ID, Unit ID, and Remedy Instructions are required.")
+            else:
+                payload = {
+                    "tenant_id": vn_tenant.strip(),
+                    "unit_id": vn_unit.strip(),
+                    "violation_type": vn_type,
+                    "notice_type": vn_notice,
+                    "remedy_instructions": vn_remedy.strip(),
+                    "cure_days": int(vn_days),
+                    "fine_amount": float(vn_fine),
+                    "charge_to_ledger": float(vn_fine) > 0,
+                }
+                res = create_violation_notice_api(payload)
+                if res and res.get("notice"):
+                    vn_num = res["notice"].get("notice_number")
+                    st.success(f"Violation notice issued! Number: **{vn_num}**")
+
+
+def _render_violation_appeals_tab():
+    """Render resident appeals and manager adjudication decisions."""
+    appeals_resp = list_violation_appeals_api()
+    items = appeals_resp.get("items", []) if appeals_resp else []
+    total = appeals_resp.get("total", len(items)) if appeals_resp else 0
+
+    max_reason_len = 60
+    st.caption(f"Showing **{len(items)}** of **{total}** resident violation appeals.")
+    for a in items[:6]:
+        num = a.get("appeal_number")
+        stat = str(a.get("status")).upper()
+        raw_reason = str(a.get("reason", ""))
+        reason = (raw_reason[:57] + "...") if len(raw_reason) > max_reason_len else raw_reason
+        nid = a.get("notice_id")
+        st.markdown(f"- **{num}** (Notice: `{nid}`) | Status: **{stat}** | `{reason}`")
+
+    with st.expander("⚖️ Adjudicate Violation Appeal"):
+        a_id = st.text_input(
+            "Appeal ID / Tracking Number*", placeholder="e.g. appeal_1", key="adj_appeal_id"
+        )
+        a_decision = st.selectbox(
+            "Decision Outcome",
+            ["under_review", "waived", "upheld", "reduced"],
+            key="adj_decision",
+        )
+        a_reviewer = st.text_input("Reviewer Name", value="Property Manager", key="adj_reviewer")
+        a_adj_fine = st.number_input(
+            "Adjusted Fine ($)", min_value=0.0, value=0.0, step=25.0, key="adj_fine"
+        )
+        a_notes = st.text_area(
+            "Decision Notes", placeholder="Explanation of appeal ruling", key="adj_notes"
+        )
+
+        if st.button("Save Appeal Decision", key="btn_save_appeal_decision"):
+            if not a_id.strip():
+                st.error("Appeal ID is required.")
+            else:
+                payload = {
+                    "status": a_decision,
+                    "reviewed_by": a_reviewer.strip() if a_reviewer.strip() else None,
+                    "decision_notes": a_notes.strip() if a_notes.strip() else None,
+                    "adjusted_fine_amount": float(a_adj_fine) if a_decision == "reduced" else None,
+                }
+                res = update_violation_appeal_api(a_id.strip(), payload)
+                if res and res.get("appeal"):
+                    st.success("Appeal decision recorded successfully!")
+
+
+def _render_incident_kpis_tab():
+    """Render portfolio compliance and community incident KPIs."""
+    metrics = get_incident_metrics_api()
+    if not metrics:
+        st.info("No incident compliance metrics available.")
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Incidents", metrics.get("total_incidents", 0))
+        st.metric("Active Incidents", metrics.get("active_incidents", 0))
+        st.metric("Total Violations", metrics.get("total_violations", 0))
+        st.metric("Open Violations", metrics.get("open_violations", 0))
+    with col2:
+        st.metric("Cured Violations", metrics.get("cured_violations", 0))
+        st.metric("Total Fines", f"${metrics.get('total_fines_assessed', 0.0):,.2f}")
+        st.metric("Total Appeals", metrics.get("total_appeals", 0))
+        st.metric("Pending Appeals", metrics.get("pending_appeals", 0))
+
+
+def _render_incidents_violations_board():
+    """Render resident incidents, community violations, and appeals expander in sidebar."""
+    with st.sidebar.expander("🚨 Incidents and Community Violations"):
+        try:
+            views = [
+                "Incidents Directory",
+                "Violation Notices",
+                "Resident Appeals",
+                "Compliance KPIs",
+            ]
+            v_tab = st.radio(
+                "Compliance View",
+                views,
+                horizontal=True,
+                key="incidents_board_tab_radio",
+            )
+            if v_tab == "Incidents Directory":
+                _render_incidents_directory_tab()
+            elif v_tab == "Violation Notices":
+                _render_violation_notices_tab()
+            elif v_tab == "Resident Appeals":
+                _render_violation_appeals_tab()
+            else:
+                _render_incident_kpis_tab()
+        except Exception as e:
+            st.caption(f"Incidents panel temporarily unavailable: {e}")
 
 
 def _render_knowledge_studio():
@@ -2625,9 +2974,7 @@ def _render_work_order_dispatch_section(wo: dict, wo_id: str) -> None:
     """Render inline vendor dispatch or completion controls for a work order."""
     dispatches_resp = list_work_order_dispatches(wo_id)
     dispatches = dispatches_resp.get("items", []) if dispatches_resp else []
-    active_dispatch = next(
-        (d for d in dispatches if d.get("status") == "dispatched"), None
-    )
+    active_dispatch = next((d for d in dispatches if d.get("status") == "dispatched"), None)
 
     if active_dispatch:
         assigned_label = wo.get("assigned_to") or "Vendor"
@@ -2737,11 +3084,7 @@ def _render_work_orders_board_tab():
     for wo in items:
         wo_id = wo["id"]
         prio_badge = (
-            "🚨"
-            if wo["priority"] == "emergency"
-            else "⚡"
-            if wo["priority"] == "high"
-            else "🔧"
+            "🚨" if wo["priority"] == "emergency" else "⚡" if wo["priority"] == "high" else "🔧"
         )
         st.markdown(f"**{prio_badge} {wo['title']}** (`{wo_id}`)")
         st.caption(
@@ -2759,14 +3102,10 @@ def _render_work_orders_board_tab():
         ):
             update_work_order(wo_id, {"status": "in_progress"})
             st.rerun()
-        if wo["status"] != "completed" and b_col2.button(
-            "✅ Done", key=f"btn_done_wo_{wo_id}"
-        ):
+        if wo["status"] != "completed" and b_col2.button("✅ Done", key=f"btn_done_wo_{wo_id}"):
             update_work_order(wo_id, {"status": "completed"})
             st.rerun()
-        if b_col3.button("🗑️ Del", key=f"btn_del_wo_{wo_id}") and delete_work_order(
-            wo_id
-        ):
+        if b_col3.button("🗑️ Del", key=f"btn_del_wo_{wo_id}") and delete_work_order(wo_id):
             st.success(f"Deleted {wo_id}")
             st.rerun()
         st.markdown("---")
@@ -2779,9 +3118,7 @@ def _render_create_work_order_tab():
     unit_opts = [u["id"] for u in unit_list] if unit_list else ["unit_101"]
 
     new_unit = st.selectbox("Property Unit", options=unit_opts, key="new_wo_unit")
-    new_title = st.text_input(
-        "Title", key="new_wo_title", placeholder="e.g. AC unit buzzing"
-    )
+    new_title = st.text_input("Title", key="new_wo_title", placeholder="e.g. AC unit buzzing")
     new_desc = st.text_area("Description", key="new_wo_desc")
     new_cat = st.selectbox(
         "Category",
@@ -2834,9 +3171,7 @@ def _render_create_work_order_tab():
             }
             res = create_work_order(payload)
             if res:
-                st.success(
-                    f"Work order created with ID: {res.get('work_order', {}).get('id', '')}"
-                )
+                st.success(f"Work order created with ID: {res.get('work_order', {}).get('id', '')}")
                 st.rerun()
             else:
                 st.error("Failed to create work order.")
@@ -2918,11 +3253,7 @@ def _render_vendors_directory_tab():
         status = v.get("status", "active")
         icon = trade_icons.get(trade, "🛠️")
         s_icon = status_icons.get(status, "⚪")
-        rate_str = (
-            f"${v['hourly_rate']:.2f}/hr"
-            if v.get("hourly_rate") is not None
-            else "Rate N/A"
-        )
+        rate_str = f"${v['hourly_rate']:.2f}/hr" if v.get("hourly_rate") is not None else "Rate N/A"
 
         st.markdown(f"**{icon} {vname}** (`{vid}`) {s_icon}")
         st.caption(
@@ -2975,13 +3306,9 @@ def _render_register_vendor_tab():
     v_contact = col1.text_input(
         "Contact Person", key="new_vnd_contact", placeholder="e.g. John Doe"
     )
-    v_phone = col2.text_input(
-        "Phone Number", key="new_vnd_phone", placeholder="e.g. 555-0199"
-    )
+    v_phone = col2.text_input("Phone Number", key="new_vnd_phone", placeholder="e.g. 555-0199")
     col3, col4 = st.columns(2)
-    v_email = col3.text_input(
-        "Email", key="new_vnd_email", placeholder="e.g. service@acme.com"
-    )
+    v_email = col3.text_input("Email", key="new_vnd_email", placeholder="e.g. service@acme.com")
     v_rate = col4.number_input(
         "Hourly Rate ($)", min_value=0.0, step=5.0, value=75.0, key="new_vnd_rate"
     )
@@ -3036,9 +3363,7 @@ def _render_vendor_performance_tab(metrics: dict | None = None):
         st.markdown("**Contractor Scorecards:**")
         for vp in vendors_perf:
             v_rate = (
-                f"{vp['average_rating']:.1f}⭐"
-                if vp.get("average_rating") is not None
-                else "N/A"
+                f"{vp['average_rating']:.1f}⭐" if vp.get("average_rating") is not None else "N/A"
             )
             v_spend = vp.get("total_spend", 0.0)
             st.markdown(
@@ -3228,9 +3553,7 @@ def _render_record_payment_tab():
     pay_ref = st.text_input(
         "Reference Number / Check #", placeholder="e.g. ACH-44122", key="pay_board_ref"
     )
-    pay_memo = st.text_input(
-        "Payment Memo", value="Monthly Rent Payment", key="pay_board_memo"
-    )
+    pay_memo = st.text_input("Payment Memo", value="Monthly Rent Payment", key="pay_board_memo")
 
     if st.button("Process Payment", key="btn_board_process_payment"):
         with st.spinner("Recording payment..."):
@@ -3243,9 +3566,7 @@ def _render_record_payment_tab():
             res = record_tenant_payment(chosen_tid, payload)
             if res:
                 new_bal = res.get("new_balance", 0.0)
-                st.success(
-                    f"Payment of ${pay_amt:,.2f} recorded! New balance: ${new_bal:,.2f}"
-                )
+                st.success(f"Payment of ${pay_amt:,.2f} recorded! New balance: ${new_bal:,.2f}")
                 st.rerun()
             else:
                 st.error("Failed to process payment.")
@@ -3294,9 +3615,7 @@ def _render_post_charge_tab():
         placeholder="e.g. Utility Assessment - Water & Sewer",
         key="charge_board_desc",
     )
-    chg_due = st.text_input(
-        "Due Date (YYYY-MM-DD)", value="2026-11-01", key="charge_board_due"
-    )
+    chg_due = st.text_input("Due Date (YYYY-MM-DD)", value="2026-11-01", key="charge_board_due")
 
     if st.button("Post Charge to Ledger", key="btn_board_post_charge"):
         if not chg_desc.strip():
@@ -3314,9 +3633,7 @@ def _render_post_charge_tab():
                 }
                 res = create_billing_transaction(payload)
                 if res:
-                    st.success(
-                        f"Charge of ${chg_amt:,.2f} posted to tenant {chosen_tid}!"
-                    )
+                    st.success(f"Charge of ${chg_amt:,.2f} posted to tenant {chosen_tid}!")
                     st.rerun()
                 else:
                     st.error("Failed to post charge.")
@@ -3410,9 +3727,8 @@ def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
                                     st.error("Failed to index.")
 
                         # E-Sign if offered or accepted
-                        if (
-                            status in ("offered", "accepted")
-                            and action_c2.button("✍️ E-Sign", key=f"btn_sign_table_{r.get('id')}")
+                        if status in ("offered", "accepted") and action_c2.button(
+                            "✍️ E-Sign", key=f"btn_sign_table_{r.get('id')}"
                         ):
                             sign_res = sign_lease_renewal(
                                 r["id"],
@@ -3473,9 +3789,7 @@ def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
                 with st.spinner("Dispatching offer..."):
                     t_obj = next((t for t in t_items if t["id"] == sel_t), None)
                     unit_val = t_obj.get("unit_id") if t_obj else None
-                    curr_val = (
-                        float(t_obj.get("monthly_rent", 1000.0)) if t_obj else 1000.0
-                    )
+                    curr_val = float(t_obj.get("monthly_rent", 1000.0)) if t_obj else 1000.0
                     create_res = create_lease_renewal(
                         {
                             "tenant_id": sel_t,
@@ -3505,9 +3819,7 @@ def _render_lease_renewals_board():  # noqa: PLR0912, PLR0915
                 mc2.metric("Executed", m.get("signed_renewals", 0))
                 mc3.metric("Renewal Rate", f"{m.get('renewal_rate', 0.0):.1f}%")
 
-                st.caption(
-                    f"**Average Rent Increase:** {m.get('avg_rent_increase_pct', 0.0):.2f}%"
-                )
+                st.caption(f"**Average Rent Increase:** {m.get('avg_rent_increase_pct', 0.0):.2f}%")
 
                 st.markdown("**Status Distribution:**")
                 for st_name, count in (m.get("by_status") or {}).items():
@@ -3542,9 +3854,7 @@ def _render_punchlist_deficiencies(insp_id: str, items: list):
         col_d1.caption(f"• **[{d_room}] {d_name}** (${d_cost:,.2f})")
         if col_d2.button("🛠️ WO", key=f"btn_wo_{insp_id}_{d_id}"):
             with st.spinner("Dispatching punchlist work order..."):
-                wo_res = convert_inspection_item_to_work_order(
-                    insp_id, {"item_id": d_id}
-                )
+                wo_res = convert_inspection_item_to_work_order(insp_id, {"item_id": d_id})
                 if wo_res:
                     st.success("Work order dispatched!")
                     st.rerun()
@@ -3554,9 +3864,7 @@ def _render_punchlist_deficiencies(insp_id: str, items: list):
 
 def _render_inspection_actions(insp_id: str, istatus: str):
     act_c1, act_c2, act_c3 = st.columns(3)
-    if istatus == "scheduled" and act_c1.button(
-        "▶️ Start", key=f"btn_start_insp_{insp_id}"
-    ):
+    if istatus == "scheduled" and act_c1.button("▶️ Start", key=f"btn_start_insp_{insp_id}"):
         with st.spinner("Starting inspection..."):
             if update_inspection(insp_id, {"status": "in_progress"}):
                 st.success("Inspection in progress.")
@@ -3702,9 +4010,7 @@ def _render_schedule_inspection_tab():
         format_func=lambda x: x.replace("_", " ").title(),
         key="manual_insp_type",
     )
-    manual_date = col_t2.text_input(
-        "Date (YYYY-MM-DD)", value="2026-10-25", key="manual_insp_date"
-    )
+    manual_date = col_t2.text_input("Date (YYYY-MM-DD)", value="2026-10-25", key="manual_insp_date")
 
     col_i1, col_i2 = st.columns(2)
     manual_inspector = col_i1.text_input(
@@ -3738,10 +4044,9 @@ def _render_schedule_inspection_tab():
                 }
             )
             if create_res:
-                new_id = (
-                    create_res.get("inspection", {}).get("id")
-                    or create_res.get("inspection", {}).get("inspection_id", "")
-                )
+                new_id = create_res.get("inspection", {}).get("id") or create_res.get(
+                    "inspection", {}
+                ).get("inspection_id", "")
                 st.success(f"Inspection scheduled! ID: {new_id}")
                 st.rerun()
             else:
@@ -3758,12 +4063,8 @@ def _render_inspection_metrics_tab():
     mc1, mc2, mc3 = st.columns(3)
     mc1.metric("Total Inspections", m.get("total_inspections", 0))
     dep_summary = m.get("deposit_accounting_summary") or {}
-    mc2.metric(
-        "Total Deductions", f"${dep_summary.get('total_estimated_deductions', 0.0):,.2f}"
-    )
-    mc3.metric(
-        "Total Refunds", f"${dep_summary.get('total_refund_amounts', 0.0):,.2f}"
-    )
+    mc2.metric("Total Deductions", f"${dep_summary.get('total_estimated_deductions', 0.0):,.2f}")
+    mc3.metric("Total Refunds", f"${dep_summary.get('total_refund_amounts', 0.0):,.2f}")
 
     punch_summary = m.get("turnover_punchlist_summary") or {}
     st.caption(
@@ -4096,17 +4397,15 @@ def _render_reservations_board_tab():
             )
             col1, col2 = st.columns(2)
             with col1:
-                cancel_clicked = (
-                    r.get("status") != "cancelled"
-                    and st.button("❌ Cancel", key=f"btn_cancel_res_{r.get('id')}")
+                cancel_clicked = r.get("status") != "cancelled" and st.button(
+                    "❌ Cancel", key=f"btn_cancel_res_{r.get('id')}"
                 )
                 if cancel_clicked and update_reservation_api(r.get("id"), {"status": "cancelled"}):
                     st.success("Reservation cancelled.")
             with col2:
-                if (
-                    st.button("🗑️ Delete", key=f"btn_del_res_{r.get('id')}")
-                    and delete_reservation_api(r.get("id"))
-                ):
+                if st.button(
+                    "🗑️ Delete", key=f"btn_del_res_{r.get('id')}"
+                ) and delete_reservation_api(r.get("id")):
                     st.success("Reservation deleted.")
             st.divider()
 
@@ -4241,9 +4540,6 @@ def _render_amenity_reservations_board():
             st.caption(f"Amenity reservations panel temporarily unavailable: {e}")
 
 
-
-
-
 # --- Parking Management & Vehicle Directory UI (v0.44.0) ---
 
 
@@ -4343,11 +4639,13 @@ def _render_parking_spots_tab():
             if not s_num.strip():
                 st.error("Spot number is required.")
             else:
-                res = create_parking_spot_api({
-                    "spot_number": s_num.strip().upper(),
-                    "zone": s_zone.strip(),
-                    "spot_type": s_type,
-                })
+                res = create_parking_spot_api(
+                    {
+                        "spot_number": s_num.strip().upper(),
+                        "zone": s_zone.strip(),
+                        "spot_type": s_type,
+                    }
+                )
                 if res:
                     st.success("Parking spot created!")
 
@@ -4384,15 +4682,17 @@ def _render_registered_vehicles_tab():
             if not v_plate.strip():
                 st.error("License plate is required.")
             else:
-                res = register_vehicle_api({
-                    "tenant_id": v_tid.strip(),
-                    "unit_id": v_uid.strip() if v_uid.strip() else None,
-                    "license_plate": v_plate.strip().upper(),
-                    "make": v_make.strip(),
-                    "model": v_model.strip(),
-                    "color": v_color.strip(),
-                    "permit_number": v_permit.strip() if v_permit.strip() else None,
-                })
+                res = register_vehicle_api(
+                    {
+                        "tenant_id": v_tid.strip(),
+                        "unit_id": v_uid.strip() if v_uid.strip() else None,
+                        "license_plate": v_plate.strip().upper(),
+                        "make": v_make.strip(),
+                        "model": v_model.strip(),
+                        "color": v_color.strip(),
+                        "permit_number": v_permit.strip() if v_permit.strip() else None,
+                    }
+                )
                 if res:
                     st.success("Vehicle registered successfully!")
 
@@ -4418,22 +4718,22 @@ def _render_visitor_passes_tab():
         vp_start = st.text_input(
             "Start Time (ISO)", value="2026-11-02T12:00:00Z", key="new_vp_start"
         )
-        vp_end = st.text_input(
-            "End Time (ISO)", value="2026-11-03T12:00:00Z", key="new_vp_end"
-        )
+        vp_end = st.text_input("End Time (ISO)", value="2026-11-03T12:00:00Z", key="new_vp_end")
 
         if st.button("Issue Pass", key="btn_issue_new_vp"):
             if not vp_name.strip() or not vp_plate.strip():
                 st.error("Visitor name and vehicle plate are required.")
             else:
-                res = issue_visitor_pass_api({
-                    "unit_id": vp_uid.strip(),
-                    "tenant_id": vp_tid.strip(),
-                    "visitor_name": vp_name.strip(),
-                    "vehicle_plate": vp_plate.strip().upper(),
-                    "start_time": vp_start.strip(),
-                    "end_time": vp_end.strip(),
-                })
+                res = issue_visitor_pass_api(
+                    {
+                        "unit_id": vp_uid.strip(),
+                        "tenant_id": vp_tid.strip(),
+                        "visitor_name": vp_name.strip(),
+                        "vehicle_plate": vp_plate.strip().upper(),
+                        "start_time": vp_start.strip(),
+                        "end_time": vp_end.strip(),
+                    }
+                )
                 if res:
                     st.success("Visitor pass issued!")
 
@@ -4479,12 +4779,14 @@ def _render_parking_violations_tab():
             if not viol_plate.strip():
                 st.error("License plate is required.")
             else:
-                res = record_parking_violation_api({
-                    "license_plate": viol_plate.strip().upper(),
-                    "violation_type": viol_type,
-                    "fine_amount": float(viol_fine),
-                    "notes": viol_notes.strip(),
-                })
+                res = record_parking_violation_api(
+                    {
+                        "license_plate": viol_plate.strip().upper(),
+                        "violation_type": viol_type,
+                        "fine_amount": float(viol_fine),
+                        "notes": viol_notes.strip(),
+                    }
+                )
                 if res:
                     st.success("Violation logged!")
 
@@ -4676,9 +4978,7 @@ def _render_pets_directory_tab():
             pet_service = st.checkbox("Service Animal", key="new_pet_is_service")
         with c2:
             pet_esa = st.checkbox("Emotional Support Animal (ESA)", key="new_pet_is_esa")
-        pet_tag = st.text_input(
-            "Rabies Tag #", placeholder="e.g. RAB-2026-8800", key="new_pet_tag"
-        )
+        pet_tag = st.text_input("Rabies Tag #", placeholder="e.g. RAB-2026-8800", key="new_pet_tag")
         pet_exp = st.text_input(
             "Vaccination Expiry (YYYY-MM-DD)", placeholder="2027-01-01", key="new_pet_exp"
         )
@@ -4690,19 +4990,21 @@ def _render_pets_directory_tab():
             if not pet_name.strip() or not pet_tenant.strip() or not pet_unit.strip():
                 st.error("Pet name, Tenant ID, and Unit ID are required.")
             else:
-                res = create_pet_api({
-                    "name": pet_name.strip(),
-                    "tenant_id": pet_tenant.strip(),
-                    "unit_id": pet_unit.strip(),
-                    "pet_type": pet_type,
-                    "breed": pet_breed.strip() if pet_breed.strip() else None,
-                    "weight_lbs": float(pet_weight),
-                    "is_service_animal": pet_service,
-                    "is_esa": pet_esa,
-                    "rabies_tag": pet_tag.strip() if pet_tag.strip() else None,
-                    "vaccination_expires": pet_exp.strip() if pet_exp.strip() else None,
-                    "notes": pet_notes.strip() if pet_notes.strip() else None,
-                })
+                res = create_pet_api(
+                    {
+                        "name": pet_name.strip(),
+                        "tenant_id": pet_tenant.strip(),
+                        "unit_id": pet_unit.strip(),
+                        "pet_type": pet_type,
+                        "breed": pet_breed.strip() if pet_breed.strip() else None,
+                        "weight_lbs": float(pet_weight),
+                        "is_service_animal": pet_service,
+                        "is_esa": pet_esa,
+                        "rabies_tag": pet_tag.strip() if pet_tag.strip() else None,
+                        "vaccination_expires": pet_exp.strip() if pet_exp.strip() else None,
+                        "notes": pet_notes.strip() if pet_notes.strip() else None,
+                    }
+                )
                 if res:
                     st.success("Resident pet registered!")
                     st.rerun()
@@ -4787,7 +5089,9 @@ def _render_pet_incidents_tab():
         badge = (
             "🔴"
             if st_i in ("reported", "fine_assessed")
-            else "🟡" if st_i == "warning_issued" else "🟢"
+            else "🟡"
+            if st_i == "warning_issued"
+            else "🟢"
         )
         fine = inc.get("fine_amount", 0.0)
         st.markdown(
@@ -4823,9 +5127,7 @@ def _render_pet_incidents_tab():
             inc_tenant_id = st.text_input(
                 "Tenant ID (Optional)", placeholder="e.g. tenant_3", key="new_inc_tenant"
             )
-        inc_fine = st.number_input(
-            "Fine Amount ($)", value=50.0, step=10.0, key="new_inc_fine"
-        )
+        inc_fine = st.number_input("Fine Amount ($)", value=50.0, step=10.0, key="new_inc_fine")
         inc_status = st.selectbox(
             "Status",
             ["reported", "warning_issued", "fine_assessed", "resolved"],
@@ -4872,11 +5174,7 @@ def _render_pet_metrics_tab():
     with col2:
         st.metric("Service / ESA Animals", metrics.get("total_service_animals", 0))
         st.metric("Active Incidents", metrics.get("active_incidents", 0))
-        st.metric(
-            "Monthly Pet Rent", f"${metrics.get('monthly_pet_revenue', 0.0):,.2f}"
-        )
-
-
+        st.metric("Monthly Pet Rent", f"${metrics.get('monthly_pet_revenue', 0.0):,.2f}")
 
 
 def _render_session_access_widget(selected: str, tenant: dict):  # noqa: PLR0912, PLR0915
@@ -4949,9 +5247,7 @@ def _render_session_access_widget(selected: str, tenant: dict):  # noqa: PLR0912
                     if res and res.get("guest_pass"):
                         gp = res["guest_pass"]
                         code = gp.get("access_code")
-                        st.success(
-                            f"Guest pass generated! Code: **{code}** (Valid for {g_hours}h)"
-                        )
+                        st.success(f"Guest pass generated! Code: **{code}** (Valid for {g_hours}h)")
 
             st.markdown("---")
             st.markdown("##### 🚨 Report Lost / Stolen Key Fob")
@@ -5234,6 +5530,303 @@ def _render_pet_registry_board():
             st.caption(f"Pet panel temporarily unavailable: {e}")
 
 
+def _render_session_announcement_widget(selected: str, tenant: dict):  # noqa: PLR0912, PLR0915
+    """Render active notices, alert acknowledgments, and resident concierge requests."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        ann_resp = list_tenant_announcements_api(tenant_id)
+        items = ann_resp.get("items", []) if ann_resp else []
+        active_items = [
+            a for a in items if a.get("status") in ("published", "active", "broadcasting")
+        ]
+
+        if active_items:
+            st.sidebar.markdown("**📢 Active Notices & Alerts:**")
+            for a in active_items[:2]:
+                prio = str(a.get("priority", "standard")).upper()
+                title = a.get("title", "Advisory")
+                req_ack = a.get("require_acknowledgment", False)
+                stat_badge = "🚨" if prio in ("EMERGENCY", "URGENT") else "ℹ️"
+                st.sidebar.warning(f"**{stat_badge} [{prio}]** {title}")
+                if req_ack:
+                    ack_btn_key = f"ack_alert_{selected}_{a.get('id')}"
+                    if st.sidebar.button(f"✅ Acknowledge ({a.get('id')})", key=ack_btn_key):
+                        with st.spinner("Submitting safety acknowledgment..."):
+                            ack_res = session_acknowledge_alert_api(
+                                selected,
+                                {
+                                    "announcement_id": a.get("id"),
+                                    "notes": "Acknowledged via resident session",
+                                },
+                            )
+                            if ack_res:
+                                st.sidebar.success("Advisory acknowledged!")
+                                st.rerun()
+                            else:
+                                st.sidebar.error("Failed to record acknowledgment.")
+
+        with st.sidebar.expander("🛎️ Resident Concierge Desk"):
+            st.markdown("##### 🛎️ Request Resident Concierge Service")
+            c_type = st.selectbox(
+                "Service Category",
+                [
+                    "dry_cleaning",
+                    "package_hold",
+                    "key_holding",
+                    "guest_greeting",
+                    "transportation",
+                    "housekeeping",
+                    "pet_sitting",
+                    "plant_watering",
+                    "custom",
+                ],
+                key=f"c_type_sel_{selected}",
+            )
+            c_prio = st.selectbox(
+                "Priority",
+                ["standard", "urgent", "low", "high"],
+                index=0,
+                key=f"c_prio_sel_{selected}",
+            )
+            c_desc = st.text_input("Service Details / Task Description", key=f"c_desc_{selected}")
+            c_instr = st.text_area("Special Instructions", key=f"c_instr_{selected}")
+            c_sched = st.text_input(
+                "Preferred Date/Time (YYYY-MM-DD)",
+                value=datetime.date.today().strftime("%Y-%m-%d"),
+                key=f"c_sched_{selected}",
+            )
+
+            if st.button("Submit Concierge Request", key=f"btn_sub_concierge_{selected}"):
+                if not c_desc.strip():
+                    st.error("Please enter a description for the concierge request.")
+                else:
+                    with st.spinner("Submitting concierge request..."):
+                        c_payload = {
+                            "request_type": c_type,
+                            "priority": c_prio,
+                            "description": c_desc.strip(),
+                            "instructions": c_instr.strip() or None,
+                            "scheduled_time": c_sched.strip() or None,
+                        }
+                        c_res = session_request_concierge_api(selected, c_payload)
+                        if c_res:
+                            st.success("Concierge service ticket created!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to submit concierge request.")
+    except Exception as e:
+        st.sidebar.caption(f"Announcements/concierge session widget unavailable: {e}")
+
+
+def _render_announcements_active_notices_tab():
+    """Render active announcements and emergency alerts list."""
+    st.markdown("#### 📢 Active Building Advisories & Broadcast Alerts")
+    filter_cat = st.selectbox(
+        "Filter Category",
+        [
+            "all",
+            "emergency_alert",
+            "maintenance_advisory",
+            "policy_update",
+            "community_event",
+            "general_notice",
+        ],
+        key="ann_filter_cat_select",
+    )
+    cat_param = None if filter_cat == "all" else filter_cat
+    data = list_announcements_api(category=cat_param)
+    items = data.get("items", []) if data else []
+
+    if not items:
+        st.info("No active announcements matching the criteria.")
+        return
+
+    for item in items:
+        ann_id = item.get("id")
+        title = item.get("title", "Notice")
+        prio = str(item.get("priority", "standard")).upper()
+        scope = item.get("target_scope", "portfolio_wide")
+        cat = str(item.get("category", "general_notice")).replace("_", " ").title()
+        status = item.get("status", "published")
+        badge = "🚨" if prio in ("EMERGENCY", "URGENT") else "ℹ️"
+
+        with st.expander(f"{badge} [{prio}] {title} ({ann_id})"):
+            st.markdown(f"**Category:** {cat} | **Scope:** `{scope}` | **Status:** `{status}`")
+            if item.get("target_unit_id"):
+                st.caption(f"Target Unit: `{item.get('target_unit_id')}`")
+            if item.get("target_floor"):
+                st.caption(f"Target Floor: `{item.get('target_floor')}`")
+            st.markdown(f"> {item.get('content')}")
+            if item.get("action_instructions"):
+                st.info(f"**Instructions:** {item.get('action_instructions')}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if status != "archived" and st.button(
+                    "Archive Notice", key=f"btn_arch_ann_{ann_id}"
+                ):
+                    update_announcement_api(ann_id, {"status": "archived"})
+                    st.success("Notice archived.")
+                    st.rerun()
+            with c2:
+                if st.button("Delete Notice", key=f"btn_del_ann_{ann_id}"):
+                    delete_announcement_api(ann_id)
+                    st.success("Notice deleted.")
+                    st.rerun()
+
+
+def _render_announcements_publish_tab():
+    """Render publish announcement form."""
+    st.markdown("#### 📝 Compose & Broadcast Announcement")
+    title = st.text_input("Announcement Title / Headline", key="ann_pub_title")
+    cat = st.selectbox(
+        "Category",
+        [
+            "maintenance_advisory",
+            "emergency_alert",
+            "policy_update",
+            "community_event",
+            "general_notice",
+        ],
+        key="ann_pub_cat",
+    )
+    prio = st.selectbox(
+        "Priority",
+        ["standard", "emergency", "urgent", "low"],
+        index=0,
+        key="ann_pub_prio",
+    )
+    scope = st.selectbox(
+        "Target Audience Scope",
+        ["portfolio_wide", "building", "floor", "unit_specific"],
+        key="ann_pub_scope",
+    )
+    b_name = st.text_input("Building / Property Name (Optional)", key="ann_pub_building")
+    t_floor = st.text_input("Target Floor (Optional)", key="ann_pub_floor")
+    t_unit = st.text_input("Target Unit ID (Optional)", key="ann_pub_unit")
+    req_ack = st.checkbox("Require Resident Safety Acknowledgment", key="ann_pub_req_ack")
+    content_text = st.text_area("Announcement Notice Content", key="ann_pub_content")
+    instructions = st.text_area("Resident Action Instructions (Optional)", key="ann_pub_instr")
+
+    if st.button("Broadcast Notice", key="btn_broadcast_announcement"):
+        if not title.strip() or not content_text.strip():
+            st.error("Title and notice content are required.")
+        else:
+            payload = {
+                "title": title.strip(),
+                "content": content_text.strip(),
+                "category": cat,
+                "priority": prio,
+                "target_scope": scope,
+                "target_building": b_name.strip() or None,
+                "target_floor": int(t_floor.strip()) if t_floor.strip().isdigit() else None,
+                "target_unit_id": t_unit.strip() or None,
+                "require_acknowledgment": req_ack,
+                "action_instructions": instructions.strip() or None,
+                "author_id": "mgmt_desk_01",
+            }
+            res = create_announcement_api(payload)
+            if res:
+                st.success("Notice broadcast successfully!")
+                st.rerun()
+            else:
+                st.error("Failed to broadcast announcement.")
+
+
+def _render_announcements_concierge_tab():
+    """Render concierge requests desk."""
+    st.markdown("#### 🛎️ Resident Concierge Task Management")
+    c_status = st.selectbox(
+        "Status Filter",
+        ["all", "pending", "in_progress", "completed", "cancelled"],
+        key="concierge_desk_status_filter",
+    )
+    stat_param = None if c_status == "all" else c_status
+    data = list_concierge_requests_api(status=stat_param)
+    items = data.get("items", []) if data else []
+
+    if not items:
+        st.info("No concierge tickets found.")
+        return
+
+    for c in items:
+        cid = c.get("id")
+        ctype = str(c.get("request_type", "custom")).replace("_", " ").title()
+        prio = str(c.get("priority", "standard")).upper()
+        cstat = c.get("status", "pending")
+        desc = c.get("description", "")
+        tid = c.get("tenant_id") or "Resident"
+
+        with st.expander(f"🛎️ [{prio}] {ctype} - {desc[:30]}... ({cid})"):
+            st.markdown(f"**Resident:** `{tid}` | **Status:** `{cstat}`")
+            if c.get("instructions"):
+                st.caption(f"Instructions: {c.get('instructions')}")
+            if c.get("scheduled_time"):
+                st.caption(f"Scheduled: {c.get('scheduled_time')}")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if cstat != "completed" and st.button(
+                    "Mark Fulfilled", key=f"btn_done_concierge_{cid}"
+                ):
+                    update_concierge_request_api(cid, {"status": "completed"})
+                    st.success("Concierge request completed.")
+                    st.rerun()
+            with col2:
+                if st.button("Cancel Request", key=f"btn_cancel_concierge_{cid}"):
+                    delete_concierge_request_api(cid)
+                    st.success("Concierge request cancelled.")
+                    st.rerun()
+
+
+def _render_announcements_kpis_tab():
+    """Render announcements and emergency broadcast analytics metrics."""
+    st.markdown("#### 📊 Community Broadcast & Safety Metrics")
+    data = get_announcements_metrics_api()
+    metrics = data.get("metrics", {}) if data else {}
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Announcements", metrics.get("total_announcements", 0))
+        st.metric("Active Notices", metrics.get("active_announcements", 0))
+        st.metric("Active Emergency Alerts", metrics.get("active_emergency_alerts", 0))
+    with col2:
+        st.metric("Total Acknowledgments", metrics.get("total_acknowledgments", 0))
+        st.metric("Total Concierge Tasks", metrics.get("total_concierge_requests", 0))
+        st.metric("Pending Concierge Tasks", metrics.get("pending_concierge_requests", 0))
+
+
+def _render_announcements_board():
+    """Render announcements, emergency alerts, and concierge operations board in sidebar."""
+    with st.sidebar.expander("📢 Announcements, Alerts & Concierge"):
+        try:
+            views = [
+                "Active Notices",
+                "Publish Announcement",
+                "Concierge Desk",
+                "Broadcast KPIs",
+            ]
+            v_tab = st.radio(
+                "Announcements View",
+                views,
+                horizontal=True,
+                key="announcements_board_tab_radio",
+            )
+            if v_tab == "Active Notices":
+                _render_announcements_active_notices_tab()
+            elif v_tab == "Publish Announcement":
+                _render_announcements_publish_tab()
+            elif v_tab == "Concierge Desk":
+                _render_announcements_concierge_tab()
+            else:
+                _render_announcements_kpis_tab()
+        except Exception as e:
+            st.caption(f"Announcements board temporarily unavailable: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -5267,8 +5860,7 @@ def display_sidebar():
     _render_parking_management_board()
     _render_pet_registry_board()
     _render_access_control_board()
+    _render_incidents_violations_board()
+    _render_announcements_board()
     _render_knowledge_studio()
     _render_ops_metrics()
-
-
-

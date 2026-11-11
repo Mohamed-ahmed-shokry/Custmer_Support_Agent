@@ -16,10 +16,12 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from api import (
     access_control,
     amenities,
+    announcements,
     assignment,
     business_hours,
     csat,
     db_utils,
+    incidents,
     inspections,
     knowledge_base,
     lease_renewals,
@@ -145,6 +147,11 @@ from api.pydantic_models import (
     AmenityMetricsResponse,
     AmenityResponse,
     AmenityUpdateRequest,
+    AnnouncementAcknowledgeRequest,
+    AnnouncementAcknowledgmentItem,
+    AnnouncementAcknowledgmentListResponse,
+    AnnouncementAcknowledgmentResponse,
+    AnnouncementsMetricsResponse,
     AutoAssignRequest,
     BillingMetricsResponse,
     BillingTransactionCreateRequest,
@@ -166,6 +173,21 @@ from api.pydantic_models import (
     CollectionDetailResponse,
     CollectionRechunkRequest,
     CollectionRechunkResponse,
+    CommunityAnnouncementCreateRequest,
+    CommunityAnnouncementItem,
+    CommunityAnnouncementListResponse,
+    CommunityAnnouncementResponse,
+    CommunityAnnouncementUpdateRequest,
+    CommunityIncidentCreateRequest,
+    CommunityIncidentItem,
+    CommunityIncidentListResponse,
+    CommunityIncidentResponse,
+    CommunityIncidentUpdateRequest,
+    ConciergeRequestCreateRequest,
+    ConciergeRequestItem,
+    ConciergeRequestListResponse,
+    ConciergeRequestResponse,
+    ConciergeRequestUpdateRequest,
     ConfigResponse,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
@@ -190,6 +212,7 @@ from api.pydantic_models import (
     GuestPassResponse,
     GuestPassUpdateRequest,
     HealthResponse,
+    IncidentMetricsResponse,
     InspectionCompleteRequest,
     InspectionCreateRequest,
     InspectionDocumentPublishRequest,
@@ -285,15 +308,18 @@ from api.pydantic_models import (
     ReservationUpdateRequest,
     SearchInput,
     SearchResponse,
+    SessionAcknowledgeAlertRequest,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
+    SessionCreateConciergeRequest,
     SessionCreateReservationRequest,
     SessionDraftArticleRequest,
     SessionGenerateGuestPassRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
     SessionIntakePackageRequest,
+    SessionIssueViolationNoticeRequest,
     SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
@@ -301,6 +327,7 @@ from api.pydantic_models import (
     SessionSearchResponse,
     SessionSearchResult,
     SessionSLAStatusResponse,
+    SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
     SessionTenantContextResponse,
@@ -353,6 +380,16 @@ from api.pydantic_models import (
     VendorMetricsResponse,
     VendorResponse,
     VendorUpdateRequest,
+    ViolationAppealCreateRequest,
+    ViolationAppealItem,
+    ViolationAppealListResponse,
+    ViolationAppealResponse,
+    ViolationAppealUpdateRequest,
+    ViolationNoticeCreateRequest,
+    ViolationNoticeItem,
+    ViolationNoticeListResponse,
+    ViolationNoticeResponse,
+    ViolationNoticeUpdateRequest,
     VisitorPassCreateRequest,
     VisitorPassItem,
     VisitorPassListResponse,
@@ -6203,3 +6240,934 @@ def session_report_lost_fob_route(
         },
     )
     return AccessCredentialResponse(credential=AccessCredentialItem(**updated))
+
+
+
+# ---------------------------------------------------------------------------
+# Community Incidents, Violation Notices & Appeals Endpoints (v0.47.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/incidents/metrics", response_model=IncidentMetricsResponse)
+def get_incident_metrics_route():
+    """Retrieve portfolio metrics and counts for incidents, violations, and appeals."""
+    return IncidentMetricsResponse(**incidents.get_incident_metrics_summary())
+
+
+@app.post("/incidents", response_model=CommunityIncidentResponse, status_code=201)
+def create_incident_route(
+    request: CommunityIncidentCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Log a new community incident report."""
+    created = incidents.create_incident(
+        incident_type=request.incident_type,
+        description=request.description,
+        severity=request.severity,
+        status=request.status,
+        unit_id=request.unit_id,
+        tenant_id=request.tenant_id,
+        reported_by=request.reported_by,
+        reporter_name=request.reporter_name,
+        location=request.location,
+        incident_date=request.incident_date,
+        action_taken=request.action_taken,
+        resolution_notes=request.resolution_notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "incident.reported",
+        {
+            "incident_id": created["id"],
+            "incident_number": created["incident_number"],
+            "incident_type": created["incident_type"],
+            "severity": created["severity"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "status": created["status"],
+        },
+    )
+    return CommunityIncidentResponse(incident=CommunityIncidentItem(**created))
+
+
+@app.get("/incidents", response_model=CommunityIncidentListResponse)
+def list_incidents_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    incident_type: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List community incidents with filters and keyword search."""
+    items = incidents.list_incidents(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        incident_type=incident_type,
+        severity=severity,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return CommunityIncidentListResponse(
+        items=[CommunityIncidentItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.get("/incidents/{incident_id}", response_model=CommunityIncidentResponse)
+def get_incident_route(incident_id: str):
+    """Retrieve details for a specific incident."""
+    inc = incidents.get_incident(incident_id)
+    if not inc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Community incident '{incident_id}' not found.",
+        )
+    return CommunityIncidentResponse(incident=CommunityIncidentItem(**inc))
+
+
+@app.patch("/incidents/{incident_id}", response_model=CommunityIncidentResponse)
+def update_incident_route(  # noqa: PLR0913, PLR0917
+    incident_id: str,
+    request: CommunityIncidentUpdateRequest,
+):
+    """Update community incident record status, severity, or resolution."""
+    existing = incidents.get_incident(incident_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Community incident '{incident_id}' not found.",
+        )
+    updated = incidents.update_incident(
+        incident_id=incident_id,
+        incident_type=request.incident_type,
+        severity=request.severity,
+        status=request.status,
+        location=request.location,
+        description=request.description,
+        action_taken=request.action_taken,
+        resolution_notes=request.resolution_notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update incident record.")
+    return CommunityIncidentResponse(incident=CommunityIncidentItem(**updated))
+
+
+@app.delete("/incidents/{incident_id}")
+def delete_incident_route(incident_id: str):
+    """Permanently delete an incident record."""
+    deleted = incidents.delete_incident(incident_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Community incident '{incident_id}' not found.",
+        )
+    return {"status": "deleted", "incident_id": incident_id}
+
+
+@app.get("/tenants/{tenant_id}/incidents", response_model=CommunityIncidentListResponse)
+def get_tenant_incidents_route(tenant_id: str):
+    """List all incidents involving a specific tenant."""
+    items = incidents.list_incidents(tenant_id=tenant_id)
+    return CommunityIncidentListResponse(
+        items=[CommunityIncidentItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.post("/violations", response_model=ViolationNoticeResponse, status_code=201)
+def create_violation_notice_route(
+    request: ViolationNoticeCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a formal community violation notice to a resident."""
+    created = incidents.create_violation_notice(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        violation_type=request.violation_type,
+        remedy_instructions=request.remedy_instructions,
+        incident_id=request.incident_id,
+        notice_type=request.notice_type,
+        status=request.status,
+        cure_days=request.cure_days,
+        fine_amount=request.fine_amount,
+        charge_to_ledger=request.charge_to_ledger,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "violation.notice_issued",
+        {
+            "notice_id": created["id"],
+            "notice_number": created["notice_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "violation_type": created["violation_type"],
+            "notice_type": created["notice_type"],
+            "fine_amount": created["fine_amount"],
+            "cure_deadline": created["cure_deadline"],
+        },
+    )
+    if created["fine_amount"] > 0 and created["fine_charged_to_ledger"]:
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "violation.fine_assessed",
+            {
+                "notice_id": created["id"],
+                "tenant_id": created["tenant_id"],
+                "unit_id": created["unit_id"],
+                "fine_amount": created["fine_amount"],
+            },
+        )
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**created))
+
+
+@app.get("/violations", response_model=ViolationNoticeListResponse)
+def list_violation_notices_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    violation_type: str | None = None,
+    notice_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List violation notices with status, type, and keyword filters."""
+    items = incidents.list_violation_notices(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        violation_type=violation_type,
+        notice_type=notice_type,
+        status=status,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return ViolationNoticeListResponse(
+        items=[ViolationNoticeItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.get("/violations/{notice_id}", response_model=ViolationNoticeResponse)
+def get_violation_notice_route(notice_id: str):
+    """Retrieve details for a specific violation notice."""
+    vn = incidents.get_violation_notice(notice_id)
+    if not vn:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{notice_id}' not found.",
+        )
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**vn))
+
+
+@app.patch("/violations/{notice_id}", response_model=ViolationNoticeResponse)
+def update_violation_notice_route(
+    notice_id: str,
+    request: ViolationNoticeUpdateRequest,
+):
+    """Update violation notice status, cure deadline, or fine amount."""
+    existing = incidents.get_violation_notice(notice_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{notice_id}' not found.",
+        )
+    updated = incidents.update_violation_notice(
+        notice_id=notice_id,
+        status=request.status,
+        cure_deadline=request.cure_deadline,
+        fine_amount=request.fine_amount,
+        fine_charged_to_ledger=request.fine_charged_to_ledger,
+        remedy_instructions=request.remedy_instructions,
+        notes=request.notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update violation notice.")
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**updated))
+
+
+@app.delete("/violations/{notice_id}")
+def delete_violation_notice_route(notice_id: str):
+    """Delete a violation notice."""
+    deleted = incidents.delete_violation_notice(notice_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{notice_id}' not found.",
+        )
+    return {"status": "deleted", "notice_id": notice_id}
+
+
+@app.get("/tenants/{tenant_id}/violations", response_model=ViolationNoticeListResponse)
+def get_tenant_violations_route(tenant_id: str):
+    """List all violation notices issued to a specific tenant."""
+    items = incidents.list_violation_notices(tenant_id=tenant_id)
+    return ViolationNoticeListResponse(
+        items=[ViolationNoticeItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.post("/appeals", response_model=ViolationAppealResponse, status_code=201)
+def create_violation_appeal_route(
+    request: ViolationAppealCreateRequest,
+):
+    """Submit a formal resident appeal against a violation notice."""
+    existing_notice = incidents.get_violation_notice(request.notice_id)
+    if not existing_notice:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{request.notice_id}' not found.",
+        )
+    created = incidents.create_violation_appeal(
+        notice_id=request.notice_id,
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        reason=request.reason,
+    )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**created))
+
+
+@app.get("/appeals", response_model=ViolationAppealListResponse)
+def list_violation_appeals_route(
+    notice_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List violation appeals with notice, tenant, and status filters."""
+    items = incidents.list_violation_appeals(
+        notice_id=notice_id,
+        tenant_id=tenant_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return ViolationAppealListResponse(
+        items=[ViolationAppealItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.get("/appeals/{appeal_id}", response_model=ViolationAppealResponse)
+def get_violation_appeal_route(appeal_id: str):
+    """Retrieve details for a specific violation appeal."""
+    appeal = incidents.get_violation_appeal(appeal_id)
+    if not appeal:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation appeal '{appeal_id}' not found.",
+        )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**appeal))
+
+
+@app.patch("/appeals/{appeal_id}", response_model=ViolationAppealResponse)
+def update_violation_appeal_route(
+    appeal_id: str,
+    request: ViolationAppealUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Review or decide on a violation appeal."""
+    existing = incidents.get_violation_appeal(appeal_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation appeal '{appeal_id}' not found.",
+        )
+    updated = incidents.update_violation_appeal(
+        appeal_id=appeal_id,
+        status=request.status,
+        reviewed_by=request.reviewed_by,
+        decision_notes=request.decision_notes,
+        adjusted_fine_amount=request.adjusted_fine_amount,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update violation appeal.")
+
+    if request.status in ("waived", "upheld", "reduced"):
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "violation.appeal_resolved",
+            {
+                "appeal_id": updated["id"],
+                "notice_id": updated["notice_id"],
+                "tenant_id": updated["tenant_id"],
+                "status": updated["status"],
+                "adjusted_fine_amount": updated["adjusted_fine_amount"],
+            },
+        )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**updated))
+
+
+@app.delete("/appeals/{appeal_id}")
+def delete_violation_appeal_route(appeal_id: str):
+    """Delete a violation appeal record."""
+    deleted = incidents.delete_violation_appeal(appeal_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation appeal '{appeal_id}' not found.",
+        )
+    return {"status": "deleted", "appeal_id": appeal_id}
+
+
+@app.get("/tenants/{tenant_id}/appeals", response_model=ViolationAppealListResponse)
+def get_tenant_appeals_route(tenant_id: str):
+    """List all appeals submitted by a specific resident."""
+    items = incidents.list_violation_appeals(tenant_id=tenant_id)
+    return ViolationAppealListResponse(
+        items=[ViolationAppealItem(**i) for i in items["items"]],
+        total=items["total"],
+        limit=items["limit"],
+        offset=items["offset"],
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/issue-violation-notice",
+    response_model=ViolationNoticeResponse,
+    status_code=201,
+)
+def session_issue_violation_notice_route(
+    session_id: str,
+    request: SessionIssueViolationNoticeRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Issue a violation notice directly grounded in resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    created = incidents.create_violation_notice(
+        tenant_id=tenant["id"],
+        unit_id=tenant["unit_id"],
+        violation_type=request.violation_type,
+        notice_type=request.notice_type,
+        remedy_instructions=request.remedy_instructions,
+        cure_days=request.cure_days,
+        fine_amount=request.fine_amount,
+        charge_to_ledger=request.charge_to_ledger,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "violation.notice_issued",
+        {
+            "notice_id": created["id"],
+            "notice_number": created["notice_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "session_id": session_id,
+            "fine_amount": created["fine_amount"],
+        },
+    )
+    return ViolationNoticeResponse(notice=ViolationNoticeItem(**created))
+
+
+@app.post(
+    "/sessions/{session_id}/submit-violation-appeal",
+    response_model=ViolationAppealResponse,
+    status_code=201,
+)
+def session_submit_violation_appeal_route(
+    session_id: str,
+    request: SessionSubmitViolationAppealRequest,
+):
+    """Submit a violation appeal directly grounded in resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    notice = incidents.get_violation_notice(request.notice_id)
+    if not notice:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Violation notice '{request.notice_id}' not found.",
+        )
+    if notice["tenant_id"] != tenant["id"]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Violation notice '{request.notice_id}' is not issued to "
+                f"resident '{tenant['id']}'."
+            ),
+        )
+    created = incidents.create_violation_appeal(
+        notice_id=request.notice_id,
+        tenant_id=tenant["id"],
+        unit_id=tenant["unit_id"],
+        reason=request.reason,
+    )
+    return ViolationAppealResponse(appeal=ViolationAppealItem(**created))
+
+
+
+# ==============================================================================
+# Community Announcements, Emergency Alerts & Concierge Endpoints (v0.48.0)
+# ==============================================================================
+
+
+@app.get("/announcements/metrics", response_model=AnnouncementsMetricsResponse)
+def get_announcements_metrics_route():
+    """Retrieve portfolio-wide metrics for announcements, emergency alerts, and concierge."""
+    return AnnouncementsMetricsResponse(**announcements.get_announcements_metrics_summary())
+
+
+@app.post(
+    "/announcements",
+    response_model=CommunityAnnouncementResponse,
+    status_code=201,
+)
+def create_announcement_route(
+    request: CommunityAnnouncementCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Publish a new community announcement or emergency building alert."""
+    created = announcements.create_announcement(
+        title=request.title,
+        content=request.content,
+        category=request.category,
+        priority=request.priority,
+        scope=request.scope,
+        target_building=request.target_building,
+        target_floor=request.target_floor,
+        target_unit_id=request.target_unit_id,
+        author_name=request.author_name,
+        is_pinned=request.is_pinned,
+        require_acknowledgment=request.require_acknowledgment,
+        expires_at=request.expires_at,
+    )
+    is_emergency = (
+        request.priority in ("urgent", "critical_emergency")
+        or request.category == "emergency_alert"
+    )
+    event_name = "emergency_alert.broadcast" if is_emergency else "announcement.published"
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        event_name,
+        {
+            "announcement_id": created["id"],
+            "announcement_number": created["announcement_number"],
+            "title": created["title"],
+            "category": created["category"],
+            "priority": created["priority"],
+            "scope": created["scope"],
+            "require_acknowledgment": created["require_acknowledgment"],
+        },
+    )
+    return CommunityAnnouncementResponse(
+        announcement=CommunityAnnouncementItem(**created)
+    )
+
+
+@app.get("/announcements", response_model=CommunityAnnouncementListResponse)
+def list_announcements_route(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    scope: str | None = None,
+    target_unit_id: str | None = None,
+    pinned_first: bool = True,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List announcements matching optional filters."""
+    res = announcements.list_announcements(
+        status=status,
+        category=category,
+        priority=priority,
+        scope=scope,
+        target_unit_id=target_unit_id,
+        pinned_first=pinned_first,
+        limit=limit,
+        offset=offset,
+    )
+    return CommunityAnnouncementListResponse(
+        total=res["total"],
+        items=[CommunityAnnouncementItem(**item) for item in res["items"]],
+        limit=res["limit"],
+        offset=res["offset"],
+    )
+
+
+@app.get("/announcements/{announcement_id}", response_model=CommunityAnnouncementResponse)
+def get_announcement_route(announcement_id: str):
+    """Retrieve details of a specific announcement."""
+    ann = announcements.get_announcement(announcement_id)
+    if not ann:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Announcement '{announcement_id}' not found.",
+        )
+    return CommunityAnnouncementResponse(announcement=CommunityAnnouncementItem(**ann))
+
+
+@app.patch("/announcements/{announcement_id}", response_model=CommunityAnnouncementResponse)
+def update_announcement_route(
+    announcement_id: str,
+    request: CommunityAnnouncementUpdateRequest,
+):
+    """Update fields of an announcement."""
+    existing = announcements.get_announcement(announcement_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Announcement '{announcement_id}' not found.",
+        )
+    updated = announcements.update_announcement(
+        announcement_id=announcement_id,
+        title=request.title,
+        content=request.content,
+        category=request.category,
+        priority=request.priority,
+        scope=request.scope,
+        status=request.status,
+        is_pinned=request.is_pinned,
+        expires_at=request.expires_at,
+    )
+    return CommunityAnnouncementResponse(
+        announcement=CommunityAnnouncementItem(**(updated or existing))
+    )
+
+
+@app.delete("/announcements/{announcement_id}")
+def delete_announcement_route(announcement_id: str):
+    """Delete an announcement and its acknowledgments."""
+    deleted = announcements.delete_announcement(announcement_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Announcement '{announcement_id}' not found.",
+        )
+    return {"status": "success", "message": f"Announcement '{announcement_id}' deleted."}
+
+
+@app.get(
+    "/tenants/{tenant_id}/announcements",
+    response_model=CommunityAnnouncementListResponse,
+)
+def get_tenant_announcements_route(tenant_id: str, unit_id: str | None = None):
+    """List announcements applicable to a resident with acknowledgment status."""
+    res = announcements.list_tenant_announcements(tenant_id=tenant_id, unit_id=unit_id)
+    return CommunityAnnouncementListResponse(
+        total=res["total"],
+        items=[CommunityAnnouncementItem(**item) for item in res["items"]],
+    )
+
+
+@app.post(
+    "/announcements/{announcement_id}/acknowledge",
+    response_model=AnnouncementAcknowledgmentResponse,
+    status_code=201,
+)
+def acknowledge_announcement_route(
+    announcement_id: str,
+    request: AnnouncementAcknowledgeRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Record resident acknowledgment of an announcement or emergency alert."""
+    ann = announcements.get_announcement(announcement_id)
+    if not ann:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Announcement '{announcement_id}' not found.",
+        )
+    ack = announcements.acknowledge_announcement(
+        announcement_id=announcement_id,
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        channel=request.channel,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "announcement.acknowledged",
+        {
+            "acknowledgment_id": ack["id"],
+            "announcement_id": ack["announcement_id"],
+            "announcement_number": ack["announcement_number"],
+            "tenant_id": ack["tenant_id"],
+            "unit_id": ack.get("unit_id"),
+            "channel": ack["channel"],
+            "acknowledged_at": ack["acknowledged_at"],
+        },
+    )
+    return AnnouncementAcknowledgmentResponse(
+        acknowledgment=AnnouncementAcknowledgmentItem(**ack)
+    )
+
+
+@app.get(
+    "/announcements/{announcement_id}/acknowledgments",
+    response_model=AnnouncementAcknowledgmentListResponse,
+)
+def get_announcement_acknowledgments_route(announcement_id: str):
+    """List all acknowledgments recorded for an announcement."""
+    ann = announcements.get_announcement(announcement_id)
+    if not ann:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Announcement '{announcement_id}' not found.",
+        )
+    acks = announcements.get_announcement_acknowledgments(announcement_id)
+    return AnnouncementAcknowledgmentListResponse(
+        total=len(acks),
+        items=[AnnouncementAcknowledgmentItem(**item) for item in acks],
+    )
+
+
+@app.post(
+    "/concierge",
+    response_model=ConciergeRequestResponse,
+    status_code=201,
+)
+def create_concierge_request_route(
+    request: ConciergeRequestCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Submit a new resident concierge service request."""
+    created = announcements.create_concierge_request(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        request_type=request.request_type,
+        priority=request.priority,
+        instructions=request.instructions,
+        preferred_date=request.preferred_date,
+        assigned_staff=request.assigned_staff,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "concierge.requested",
+        {
+            "request_id": created["id"],
+            "request_number": created["request_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "request_type": created["request_type"],
+            "priority": created["priority"],
+        },
+    )
+    return ConciergeRequestResponse(
+        concierge_request=ConciergeRequestItem(**created)
+    )
+
+
+@app.get("/concierge", response_model=ConciergeRequestListResponse)
+def list_concierge_requests_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    request_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List concierge service requests with optional filters."""
+    res = announcements.list_concierge_requests(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        request_type=request_type,
+        limit=limit,
+        offset=offset,
+    )
+    return ConciergeRequestListResponse(
+        total=res["total"],
+        items=[ConciergeRequestItem(**item) for item in res["items"]],
+        limit=res["limit"],
+        offset=res["offset"],
+    )
+
+
+@app.get("/concierge/{request_id}", response_model=ConciergeRequestResponse)
+def get_concierge_request_route(request_id: str):
+    """Retrieve details of a specific concierge request."""
+    req = announcements.get_concierge_request(request_id)
+    if not req:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Concierge request '{request_id}' not found.",
+        )
+    return ConciergeRequestResponse(concierge_request=ConciergeRequestItem(**req))
+
+
+@app.patch("/concierge/{request_id}", response_model=ConciergeRequestResponse)
+def update_concierge_request_route(
+    request_id: str,
+    request: ConciergeRequestUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update status, staff assignment, or notes of a concierge request."""
+    existing = announcements.get_concierge_request(request_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Concierge request '{request_id}' not found.",
+        )
+    updated = announcements.update_concierge_request(
+        request_id=request_id,
+        status=request.status,
+        assigned_staff=request.assigned_staff,
+        fulfillment_notes=request.fulfillment_notes,
+        instructions=request.instructions,
+        priority=request.priority,
+    )
+    if request.status == "fulfilled":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "concierge.fulfilled",
+            {
+                "request_id": existing["id"],
+                "request_number": existing["request_number"],
+                "tenant_id": existing["tenant_id"],
+                "status": "fulfilled",
+                "fulfillment_notes": request.fulfillment_notes,
+            },
+        )
+    return ConciergeRequestResponse(
+        concierge_request=ConciergeRequestItem(**(updated or existing))
+    )
+
+
+@app.delete("/concierge/{request_id}")
+def delete_concierge_request_route(request_id: str):
+    """Delete a concierge service request."""
+    deleted = announcements.delete_concierge_request(request_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Concierge request '{request_id}' not found.",
+        )
+    return {"status": "success", "message": f"Concierge request '{request_id}' deleted."}
+
+
+@app.get(
+    "/tenants/{tenant_id}/concierge",
+    response_model=ConciergeRequestListResponse,
+)
+def get_tenant_concierge_route(tenant_id: str):
+    """List all concierge requests submitted by a specific resident."""
+    res = announcements.list_tenant_concierge_requests(tenant_id=tenant_id)
+    return ConciergeRequestListResponse(
+        total=res["total"],
+        items=[ConciergeRequestItem(**item) for item in res["items"]],
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/acknowledge-alert",
+    response_model=AnnouncementAcknowledgmentResponse,
+    status_code=201,
+)
+def session_acknowledge_alert_route(
+    session_id: str,
+    request: SessionAcknowledgeAlertRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Acknowledge an emergency building alert directly grounded in resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    ann = announcements.get_announcement(request.announcement_id)
+    if not ann:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Announcement '{request.announcement_id}' not found.",
+        )
+    ack = announcements.acknowledge_announcement(
+        announcement_id=request.announcement_id,
+        tenant_id=tenant["id"],
+        unit_id=tenant.get("unit_id"),
+        channel="chat_session",
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "announcement.acknowledged",
+        {
+            "acknowledgment_id": ack["id"],
+            "announcement_id": ack["announcement_id"],
+            "announcement_number": ack["announcement_number"],
+            "tenant_id": ack["tenant_id"],
+            "unit_id": ack.get("unit_id"),
+            "channel": ack["channel"],
+            "acknowledged_at": ack["acknowledged_at"],
+        },
+    )
+    return AnnouncementAcknowledgmentResponse(
+        acknowledgment=AnnouncementAcknowledgmentItem(**ack)
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/request-concierge",
+    response_model=ConciergeRequestResponse,
+    status_code=201,
+)
+def session_request_concierge_route(
+    session_id: str,
+    request: SessionCreateConciergeRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Submit a resident concierge service request directly from active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    if not tenant.get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for concierge service.",
+        )
+    created = announcements.create_concierge_request(
+        tenant_id=tenant["id"],
+        unit_id=tenant["unit_id"],
+        request_type=request.request_type,
+        priority=request.priority,
+        instructions=request.instructions,
+        preferred_date=request.preferred_date,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "concierge.requested",
+        {
+            "request_id": created["id"],
+            "request_number": created["request_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "request_type": created["request_type"],
+            "priority": created["priority"],
+        },
+    )
+    return ConciergeRequestResponse(
+        concierge_request=ConciergeRequestItem(**created)
+    )

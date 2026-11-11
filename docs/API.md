@@ -1065,3 +1065,129 @@ Integrated residential security and access control infrastructure managing physi
   - `{access_zones}`: Authorized zones list (e.g. `building_exterior, elevator_lobby, dog_run`)
   - `{intercom_code}`: Resident callbox directory dial code (e.g. `PH1`)
   - `{fob_replacement_fee}`: Standard lost fob replacement fee (e.g. `$50.00`)
+
+
+## Residential Incidents, Community Violations & Notice-to-Cure Engine (v0.47.0)
+
+Endpoints for logging community incident reports (security patrols, noise complaints, common area damage), issuing tiered violation notices to cure (courtesy warning, 1st/2nd notice, fine assessment, notice to vacate), and managing resident appeal adjudication.
+
+### Incident Management Endpoints
+- `POST /incidents`: Log a new community incident report.
+  - Body: `CommunityIncidentCreateRequest` (`incident_type`, `severity`, `unit_id`, `tenant_id`, `location`, `description`, `reported_by`, `patrol_officer`, `evidence_urls`).
+- `GET /incidents`: List filtered community incidents (`status`, `severity`, `incident_type`, `unit_id`, `tenant_id`, `limit`, `offset`).
+- `GET /incidents/{incident_id}`: Retrieve detailed record of an incident report.
+- `PATCH /incidents/{incident_id}`: Update incident status, patrol notes, or resolution outcome.
+- `DELETE /incidents/{incident_id}`: Remove an incident report.
+- `GET /tenants/{tenant_id}/incidents`: List incident reports associated with a specific resident.
+
+### Violation Notices Endpoints
+- `POST /violations`: Issue a formal notice to cure or violation notice.
+  - Body: `ViolationNoticeCreateRequest` (`tenant_id`, `unit_id`, `violation_type`, `notice_type`, `incident_id`, `remedy_instructions`, `cure_days`, `fine_amount`, `charge_to_ledger`, `issued_by`).
+  - Automatically calculates cure deadline (`issued_at + cure_days`).
+  - If `charge_to_ledger=true` and `fine_amount > 0`, immediately posts fine transaction to resident's billing ledger (`reason="violation_fine"`).
+- `GET /violations`: List filtered violation notices (`tenant_id`, `unit_id`, `status`, `notice_type`, `violation_type`, `limit`, `offset`).
+- `GET /violations/{notice_id}`: Retrieve violation notice details.
+- `PATCH /violations/{notice_id}`: Update violation notice status, cure deadline, or notes.
+- `DELETE /violations/{notice_id}`: Delete a violation notice record.
+- `GET /tenants/{tenant_id}/violations`: List all violation notices issued to a resident.
+
+### Violation Appeals & Adjudication Endpoints
+- `POST /appeals`: Submit an appeal against an issued violation notice.
+  - Body: `ViolationAppealCreateRequest` (`notice_id`, `tenant_id`, `reason`, `supporting_evidence_urls`).
+- `GET /appeals`: List resident violation appeals (`status`, `tenant_id`, `notice_id`, `limit`, `offset`).
+- `GET /appeals/{appeal_id}`: Retrieve appeal details and hearing outcome.
+- `PATCH /appeals/{appeal_id}`: Adjudicate appeal outcome (`under_review`, `waived`, `upheld`, `reduced`).
+  - Allows adjusting fine amount; updates parent violation notice status.
+- `DELETE /appeals/{appeal_id}`: Delete an appeal record.
+- `GET /tenants/{tenant_id}/appeals`: List appeals filed by a specific resident.
+
+### Session 1-Click Operations
+- `POST /sessions/{session_id}/issue-violation-notice`: Issue a formal notice to cure directly from the active resident chat session.
+  - Body: `SessionIssueViolationNoticeRequest` (`violation_type`, `notice_type`, `remedy_instructions`, `cure_days`, `fine_amount`, `charge_to_ledger`).
+- `POST /sessions/{session_id}/submit-violation-appeal`: Submit an appeal directly from the resident chat session.
+  - Body: `SessionSubmitViolationAppealRequest` (`notice_id`, `reason`, `supporting_evidence_urls`).
+
+### Community Compliance Metrics
+- `GET /incidents/metrics`: Returns portfolio-wide incident & compliance metrics summary:
+  - `total_incidents`: Total incident reports logged
+  - `active_incidents`: Open/investigating/patrolling incidents
+  - `total_violations`: Total violation notices issued
+  - `open_violations`: Currently active, uncured violations
+  - `cured_violations`: Successfully remediated violations
+  - `total_fines_assessed`: Cumulative violation fines assessed ($)
+  - `total_appeals`: Total appeals filed
+  - `pending_appeals`: Appeals awaiting adjudication
+
+### Context Grounding & Prompt Macros
+- **RAG Context Grounding**: Conversational assistant prompts automatically ground community violations under:
+  ```text
+  [RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]
+  - Active Community Violations: 1 (Total Fines: $25.00)
+    - Courtesy Warning: Noise Complaint | Cure Deadline: 2026-11-09T00:00:00 | Status: ISSUED | Fine: $25.00 | Remedy: Cease amplified audio after 10 PM.
+  - Pending Appeals: 1
+    - Appeal #APL-2026-042 (Notice: VN-2026-089) | Status: SUBMITTED | Reason: Resident claims audio was from adjacent apartment.
+  - Resident Incident History: 1 reports on file
+    - #INC-2026-101 | Type: noise_complaint | Severity: low | Status: resolved
+  [END INCIDENTS & VIOLATIONS]
+  ```
+- **Macro Template Variables**:
+  - `{active_violations_count}`: Number of active notices issued to resident (e.g. `1`)
+  - `{primary_violation_type}`: Most recent active violation category (e.g. `noise_complaint`)
+  - `{notice_type}`: Notice tier (e.g. `courtesy_warning`, `first_notice_to_cure`)
+  - `{cure_deadline}`: Expiration of cure window
+  - `{fine_amount}` / `{violation_fine_amount}`: Assessed fine in currency format (e.g. `$25.00`)
+  - `{violation_remedy}`: Actions required to resolve infraction
+  - `{appeal_status}`: Status of active appeal (e.g. `submitted`)
+  - `{active_incidents_count}`: Count of active community incidents involving resident
+
+
+---
+
+## 21. Community Announcements, Emergency Broadcast Alerts & Resident Concierge Requests API
+
+Comprehensive residential broadcast and concierge services lifecycle engine connecting management notices, safety advisories, and resident concierge requests.
+
+### Core Endpoints
+
+#### Announcements & Emergency Broadcasts
+- `POST /announcements`: Publish a new announcement or broadcast alert (`title`, `content`, `category`, `priority`, `target_scope`, `target_building`, `target_floor`, `target_unit_id`, `require_acknowledgment`, `action_instructions`, `author_id`, `starts_at`, `expires_at`). Dispatches `announcement.published` or `emergency_alert.broadcast` webhook.
+- `GET /announcements`: List announcements with optional filtering by `category`, `priority`, `target_scope`, `target_building`, and `status`.
+- `GET /announcements/{id}`: Retrieve detailed announcement record by ID.
+- `PATCH /announcements/{id}`: Update announcement properties (e.g. status transition to `archived`).
+- `DELETE /announcements/{id}`: Permanently delete an announcement.
+- `GET /tenants/{tenant_id}/announcements`: Retrieve all active announcements and emergency advisories targeting the resident's portfolio, building, floor, or specific unit.
+- `GET /announcements/metrics`: Aggregated broadcast analytics (total announcements, active notices, active emergency alerts, total acknowledgments, total concierge requests, pending concierge requests).
+
+#### Safety Acknowledgments
+- `POST /announcements/{id}/acknowledge`: Record resident safety acknowledgment for an advisory (`tenant_id`, `unit_id`, `acknowledgment_method`, `notes`). Dispatches `announcement.acknowledged` webhook.
+- `GET /announcements/{id}/acknowledgments`: List all resident acknowledgments recorded for a specific announcement.
+- `POST /sessions/{id}/acknowledge-alert`: 1-click safety acknowledgment from an active resident support session (`announcement_id`, `notes`).
+
+#### Resident Concierge Requests
+- `POST /concierge`: Create a resident concierge request ticket (`tenant_id`, `unit_id`, `request_type`, `priority`, `description`, `instructions`, `scheduled_time`, `metadata`). Dispatches `concierge.requested` webhook.
+- `GET /concierge`: List concierge requests with optional filtering by `status`, `request_type`, and `priority`.
+- `GET /concierge/{id}`: Retrieve detailed concierge request record by ID.
+- `PATCH /concierge/{id}`: Update concierge request status (`pending`, `in_progress`, `completed`, `cancelled`) or staff assignment. Dispatches `concierge.fulfilled` on completion.
+- `DELETE /concierge/{id}`: Cancel/delete concierge request.
+- `GET /tenants/{tenant_id}/concierge`: List concierge requests submitted by a specific resident.
+- `POST /sessions/{id}/request-concierge`: 1-click concierge request creation from an active resident support session (`request_type`, `priority`, `description`, `instructions`, `scheduled_time`).
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**: Conversational assistant prompts automatically ground active advisories and open concierge tasks under:
+  ```text
+  [COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]
+  - Active Community Announcements & Advisories: 2 active notices
+    - [EMERGENCY] Severe Freeze Advisory: Protect Exposed Pipes (Target: portfolio_wide | Req Ack: True)
+      Summary: Sub-freezing temperatures expected tonight through Thursday morning.
+      Instructions: Keep faucets on a slow drip and cabinet doors open.
+  - Active Resident Concierge Requests: 1 open requests
+    - [STANDARD] dry_cleaning: Dry cleaning pickup: Eco Cleaners garment bag in lobby (Status: pending)
+  [END ANNOUNCEMENTS & ALERTS]
+  ```
+- **Macro Template Variables**:
+  - `{active_announcements_count}`: Number of active notices affecting resident (e.g. `2`)
+  - `{active_emergency_alerts_count}`: Count of active urgent/emergency advisories (e.g. `1`)
+  - `{latest_alert_headline}`: Headline of the most critical active alert
+  - `{latest_alert_priority}`: Priority tier of most critical active alert (`EMERGENCY`, `URGENT`)
+  - `{alert_acknowledgment_status}`: Whether resident acknowledged the alert (`ACKNOWLEDGED` or `PENDING_ACKNOWLEDGMENT`)
+  - `{concierge_requests_count}`: Number of active concierge requests submitted by resident

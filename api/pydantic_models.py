@@ -3543,3 +3543,342 @@ class AccessControlMetricsResponse(BaseModel):
     total_guest_entries: int = 0
     intercom_directory_count: int = 0
     buzzer_enabled_count: int = 0
+
+
+
+class CommunityIncidentItem(BaseModel):
+    id: str
+    incident_number: str
+    incident_type: str
+    severity: str
+    status: str
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    reported_by: str = "resident"
+    reporter_name: str | None = None
+    incident_date: str
+    location: str | None = None
+    description: str
+    action_taken: str | None = None
+    resolution_notes: str | None = None
+    resolved_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class CommunityIncidentCreateRequest(BaseModel):
+    incident_type: str = Field(default="noise_complaint")
+    description: str = Field(..., min_length=1, max_length=2000)
+    severity: str = Field(default="low")
+    status: str = Field(default="reported")
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    reported_by: str = Field(default="resident")
+    reporter_name: str | None = Field(default=None, max_length=150)
+    location: str | None = Field(default=None, max_length=200)
+    incident_date: str | None = None
+    action_taken: str | None = Field(default=None, max_length=1000)
+    resolution_notes: str | None = Field(default=None, max_length=1000)
+
+
+class CommunityIncidentUpdateRequest(BaseModel):
+    incident_type: str | None = None
+    severity: str | None = None
+    status: str | None = None
+    location: str | None = None
+    description: str | None = None
+    action_taken: str | None = None
+    resolution_notes: str | None = None
+
+
+class CommunityIncidentResponse(BaseModel):
+    incident: CommunityIncidentItem
+
+
+class CommunityIncidentListResponse(BaseModel):
+    items: list[CommunityIncidentItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class ViolationNoticeItem(BaseModel):
+    id: str
+    notice_number: str
+    incident_id: str | None = None
+    tenant_id: str
+    unit_id: str
+    violation_type: str
+    notice_type: str
+    status: str
+    issued_at: str
+    cure_deadline: str | None = None
+    fine_amount: float = 0.0
+    fine_charged_to_ledger: bool = False
+    remedy_instructions: str
+    notes: str | None = None
+    cured_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ViolationNoticeCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    violation_type: str = Field(default="noise_complaint")
+    notice_type: str = Field(default="courtesy_warning")
+    remedy_instructions: str = Field(..., min_length=1, max_length=2000)
+    incident_id: str | None = None
+    status: str = Field(default="issued")
+    cure_days: int = Field(default=7, ge=0, le=90)
+    fine_amount: float = Field(default=0.0, ge=0.0)
+    charge_to_ledger: bool = False
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class ViolationNoticeUpdateRequest(BaseModel):
+    status: str | None = None
+    cure_deadline: str | None = None
+    fine_amount: float | None = Field(default=None, ge=0.0)
+    fine_charged_to_ledger: bool | None = None
+    remedy_instructions: str | None = None
+    notes: str | None = None
+
+
+class ViolationNoticeResponse(BaseModel):
+    notice: ViolationNoticeItem
+
+
+class ViolationNoticeListResponse(BaseModel):
+    items: list[ViolationNoticeItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class ViolationAppealItem(BaseModel):
+    id: str
+    appeal_number: str
+    notice_id: str
+    tenant_id: str
+    unit_id: str
+    status: str
+    reason: str
+    submitted_at: str
+    reviewed_by: str | None = None
+    decision_notes: str | None = None
+    adjusted_fine_amount: float | None = None
+    decided_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ViolationAppealCreateRequest(BaseModel):
+    notice_id: str = Field(..., min_length=1)
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class ViolationAppealUpdateRequest(BaseModel):
+    status: str | None = None
+    reviewed_by: str | None = Field(default=None, max_length=150)
+    decision_notes: str | None = Field(default=None, max_length=2000)
+    adjusted_fine_amount: float | None = Field(default=None, ge=0.0)
+
+
+class ViolationAppealResponse(BaseModel):
+    appeal: ViolationAppealItem
+
+
+class ViolationAppealListResponse(BaseModel):
+    items: list[ViolationAppealItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class SessionIssueViolationNoticeRequest(BaseModel):
+    violation_type: str = Field(default="noise_complaint")
+    notice_type: str = Field(default="courtesy_warning")
+    remedy_instructions: str = Field(..., min_length=1, max_length=2000)
+    cure_days: int = Field(default=7, ge=0, le=90)
+    fine_amount: float = Field(default=0.0, ge=0.0)
+    charge_to_ledger: bool = False
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class SessionSubmitViolationAppealRequest(BaseModel):
+    notice_id: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class IncidentMetricsResponse(BaseModel):
+    total_incidents: int = 0
+    active_incidents: int = 0
+    total_violations: int = 0
+    open_violations: int = 0
+    cured_violations: int = 0
+    total_fines_assessed: float = 0.0
+    total_appeals: int = 0
+    pending_appeals: int = 0
+    appeals_waived: int = 0
+
+
+
+# ==============================================================================
+# Community Announcements, Emergency Alerts & Concierge Models (v0.48.0)
+# ==============================================================================
+
+
+class CommunityAnnouncementItem(BaseModel):
+    id: str
+    announcement_number: str
+    title: str
+    content: str
+    category: str
+    priority: str
+    scope: str = "portfolio_wide"
+    target_building: str | None = None
+    target_floor: str | None = None
+    target_unit_id: str | None = None
+    author_name: str = "Property Management"
+    is_pinned: bool = False
+    require_acknowledgment: bool = False
+    status: str = "published"
+    published_at: str
+    expires_at: str | None = None
+    created_at: str
+    updated_at: str
+    is_acknowledged: bool | None = None
+    acknowledged_at: str | None = None
+
+
+class CommunityAnnouncementCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1, max_length=5000)
+    category: str = Field(default="general_notice")
+    priority: str = Field(default="normal")
+    scope: str = Field(default="portfolio_wide")
+    target_building: str | None = Field(default=None, max_length=100)
+    target_floor: str | None = Field(default=None, max_length=50)
+    target_unit_id: str | None = Field(default=None, max_length=64)
+    author_name: str = Field(default="Property Management", max_length=100)
+    is_pinned: bool = False
+    require_acknowledgment: bool = False
+    expires_at: str | None = None
+
+
+class CommunityAnnouncementUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    content: str | None = Field(default=None, min_length=1, max_length=5000)
+    category: str | None = None
+    priority: str | None = None
+    scope: str | None = None
+    status: str | None = None
+    is_pinned: bool | None = None
+    expires_at: str | None = None
+
+
+class CommunityAnnouncementResponse(BaseModel):
+    announcement: CommunityAnnouncementItem
+
+
+class CommunityAnnouncementListResponse(BaseModel):
+    items: list[CommunityAnnouncementItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class AnnouncementAcknowledgmentItem(BaseModel):
+    id: str
+    announcement_id: str
+    tenant_id: str
+    unit_id: str | None = None
+    channel: str = "chat_session"
+    acknowledged_at: str
+    notes: str | None = None
+
+
+class AnnouncementAcknowledgeRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str | None = None
+    channel: str = Field(default="chat_session")
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class AnnouncementAcknowledgmentResponse(BaseModel):
+    acknowledgment: AnnouncementAcknowledgmentItem
+
+
+class AnnouncementAcknowledgmentListResponse(BaseModel):
+    items: list[AnnouncementAcknowledgmentItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class ConciergeRequestItem(BaseModel):
+    id: str
+    request_number: str
+    tenant_id: str
+    unit_id: str
+    request_type: str
+    priority: str = "normal"
+    instructions: str
+    preferred_date: str | None = None
+    status: str = "submitted"
+    assigned_staff: str | None = None
+    fulfillment_notes: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ConciergeRequestCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    request_type: str = Field(default="other")
+    priority: str = Field(default="normal")
+    instructions: str = Field(..., min_length=1, max_length=2000)
+    preferred_date: str | None = None
+    assigned_staff: str | None = Field(default=None, max_length=100)
+
+
+class ConciergeRequestUpdateRequest(BaseModel):
+    status: str | None = None
+    assigned_staff: str | None = Field(default=None, max_length=100)
+    fulfillment_notes: str | None = Field(default=None, max_length=2000)
+    instructions: str | None = Field(default=None, max_length=2000)
+    priority: str | None = None
+
+
+class ConciergeRequestResponse(BaseModel):
+    concierge_request: ConciergeRequestItem
+
+
+class ConciergeRequestListResponse(BaseModel):
+    items: list[ConciergeRequestItem] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class SessionAcknowledgeAlertRequest(BaseModel):
+    announcement_id: str = Field(..., min_length=1)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class SessionCreateConciergeRequest(BaseModel):
+    request_type: str = Field(default="other")
+    priority: str = Field(default="normal")
+    instructions: str = Field(..., min_length=1, max_length=2000)
+    preferred_date: str | None = None
+
+
+class AnnouncementsMetricsResponse(BaseModel):
+    total_announcements: int = 0
+    published_announcements: int = 0
+    active_emergency_alerts: int = 0
+    total_acknowledgments: int = 0
+    total_concierge_requests: int = 0
+    pending_concierge_requests: int = 0
+    fulfilled_concierge_requests: int = 0

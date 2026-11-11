@@ -9,7 +9,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from api import access_control, amenities, packages, parking, pets, vendors
+from api import (
+    access_control,
+    amenities,
+    announcements,
+    incidents,
+    packages,
+    parking,
+    pets,
+    vendors,
+)
 from api.db_utils import (
     get_session_tenant_context,
     get_tenant,
@@ -662,6 +671,258 @@ def _extract_access_control_vars(
     }
 
 
+def _format_incident_lines(
+    incident_items: list[dict[str, Any]],
+    notice_items: list[dict[str, Any]],
+    appeal_items: list[dict[str, Any]],
+) -> list[str]:
+    """Format community incidents, violation notices, and resident appeals for prompt context."""
+    if not incident_items and not notice_items and not appeal_items:
+        return []
+
+    lines = ["[RESIDENTIAL INCIDENTS & COMMUNITY VIOLATIONS]"]
+
+    if notice_items:
+        active_notices = [
+            n for n in notice_items if n.get("status") in ("issued", "escalated", "appealed")
+        ]
+        lines.append(
+            f"- Active Violation Notices: {len(active_notices)} (Total Issued: {len(notice_items)})"
+        )
+        for n in notice_items[:3]:
+            ntype = str(n.get("notice_type", "warning")).replace("_", " ").title()
+            vtype = str(n.get("violation_type", "violation")).replace("_", " ").title()
+            issued = str(n.get("issued_at", ""))[:10]
+            deadline = str(n.get("cure_deadline", "None"))[:10]
+            fine = format_currency(n.get("fine_amount", 0.0))
+            status = str(n.get("status", "issued")).upper()
+            lines.append(
+                f"  - {ntype}: {vtype} | Issued: {issued} | Cure Deadline: {deadline} "
+                f"| Fine: {fine} | Status: {status}"
+            )
+            remedy = n.get("remedy_instructions")
+            if remedy:
+                lines.append(f"    Remedy: {remedy}")
+    else:
+        lines.append("- Active Violation Notices: None")
+
+    if incident_items:
+        open_incs = [
+            i for i in incident_items
+            if i.get("status") in ("reported", "under_investigation", "notice_issued")
+        ]
+        lines.append(f"- Open Community Incidents: {len(open_incs)}")
+        for inc in incident_items[:2]:
+            num = inc.get("incident_number", "Unknown")
+            itype = str(inc.get("incident_type", "incident")).replace("_", " ").title()
+            sev = str(inc.get("severity", "low")).title()
+            idate = str(inc.get("incident_date", ""))[:10]
+            stat = str(inc.get("status", "reported")).upper()
+            lines.append(
+                f"  - Incident #{num}: {itype} (Severity: {sev}) | Date: {idate} | Status: {stat}"
+            )
+    else:
+        lines.append("- Open Community Incidents: None")
+
+    if appeal_items:
+        pending_apps = [
+            a for a in appeal_items if a.get("status") in ("submitted", "under_review")
+        ]
+        lines.append(f"- Active Appeals: {len(appeal_items)} (Pending Review: {len(pending_apps)})")
+        for a in appeal_items[:2]:
+            num = a.get("appeal_number", "Unknown")
+            nid = a.get("notice_id", "Unknown")
+            astat = str(a.get("status", "submitted")).upper()
+            asub = str(a.get("submitted_at", ""))[:10]
+            lines.append(f"  - Appeal #{num} (Notice #{nid}) | Status: {astat} | Submitted: {asub}")
+
+    lines.append("[END INCIDENTS & VIOLATIONS]")
+    return lines
+
+
+def _extract_incident_vars(
+    incident_items: list[dict[str, Any]],
+    notice_items: list[dict[str, Any]],
+    appeal_items: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Extract macro template replacement variables for incidents and violations."""
+    active_notices = [
+        n for n in notice_items if n.get("status") in ("issued", "escalated", "appealed")
+    ]
+    open_incidents = [
+        i for i in incident_items
+        if i.get("status") in ("reported", "under_investigation", "notice_issued")
+    ]
+    pending_appeals = [a for a in appeal_items if a.get("status") in ("submitted", "under_review")]
+
+    primary_notice = (
+        active_notices[0]
+        if active_notices
+        else (notice_items[0] if notice_items else None)
+    )
+    latest_appeal = (
+        pending_appeals[0]
+        if pending_appeals
+        else (appeal_items[0] if appeal_items else None)
+    )
+
+    v_count = str(len(active_notices))
+    v_type = (
+        str(primary_notice.get("violation_type", "None")).replace("_", " ").title()
+        if primary_notice
+        else "None"
+    )
+    n_type = (
+        str(primary_notice.get("notice_type", "None")).replace("_", " ").title()
+        if primary_notice
+        else "None"
+    )
+    c_deadline = (
+        str(primary_notice.get("cure_deadline", "None"))[:10]
+        if primary_notice and primary_notice.get("cure_deadline")
+        else "None"
+    )
+    f_amount = (
+        format_currency(primary_notice.get("fine_amount", 0.0))
+        if primary_notice
+        else "$0.00"
+    )
+    remedy = primary_notice.get("remedy_instructions", "None") if primary_notice else "None"
+    a_stat = (
+        str(latest_appeal.get("status", "none")).lower()
+        if latest_appeal
+        else "none"
+    )
+
+    return {
+        "active_violations_count": v_count,
+        "primary_violation_type": v_type,
+        "notice_type": n_type,
+        "cure_deadline": c_deadline,
+        "fine_amount": f_amount,
+        "violation_fine_amount": f_amount,
+        "violation_remedy": remedy,
+        "appeal_status": a_stat,
+        "active_incidents_count": str(len(open_incidents)),
+    }
+
+
+def _format_announcements_lines(
+    announcements_list: list[dict[str, Any]],
+    concierge_requests: list[dict[str, Any]],
+) -> list[str]:
+    """Format community announcements, alerts, and concierge requests for prompt context."""
+    if not announcements_list and not concierge_requests:
+        return []
+
+    lines = ["[COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]"]
+
+    if announcements_list:
+        emergency_alerts = [
+            a
+            for a in announcements_list
+            if a.get("priority") in ("urgent", "critical_emergency")
+            or a.get("category") == "emergency_alert"
+        ]
+        lines.append(
+            f"- Active Announcements & Alerts: {len(announcements_list)} "
+            f"(Emergency/Urgent: {len(emergency_alerts)})"
+        )
+        for a in announcements_list[:3]:
+            anum = a.get("announcement_number", "ANN")
+            title = a.get("title", "Notice")
+            prio = str(a.get("priority", "normal")).upper()
+            cat = str(a.get("category", "general_notice")).replace("_", " ").title()
+            is_ack = a.get("is_acknowledged")
+            ack_str = (
+                " | ACKNOWLEDGED"
+                if is_ack
+                else (" | ACKNOWLEDGMENT REQUIRED" if a.get("require_acknowledgment") else "")
+            )
+            lines.append(f"  - #{anum} [{prio}] {title} ({cat}){ack_str}")
+            content = str(a.get("content", ""))
+            if content:
+                max_summary_len = 100
+                summary = (content[:97] + "...") if len(content) > max_summary_len else content
+                lines.append(f"    Summary: {summary}")
+    else:
+        lines.append("- Active Announcements & Alerts: None")
+
+    if concierge_requests:
+        open_requests = [
+            c for c in concierge_requests if c.get("status") in ("submitted", "in_progress")
+        ]
+        lines.append(
+            f"- Resident Concierge Requests: {len(concierge_requests)} "
+            f"(Open: {len(open_requests)})"
+        )
+        for c in concierge_requests[:2]:
+            cnum = c.get("request_number", "CON")
+            ctype = str(c.get("request_type", "other")).replace("_", " ").title()
+            cstat = str(c.get("status", "submitted")).upper()
+            staff = c.get("assigned_staff") or "Concierge Desk"
+            lines.append(f"  - Request #{cnum}: {ctype} | Status: {cstat} | Staff: {staff}")
+            instructions = c.get("instructions")
+            if instructions:
+                max_instr_len = 100
+                instr_summary = (
+                    (instructions[:97] + "...")
+                    if len(instructions) > max_instr_len
+                    else instructions
+                )
+                lines.append(f"    Instructions: {instr_summary}")
+    else:
+        lines.append("- Resident Concierge Requests: None")
+
+    lines.append("[END ANNOUNCEMENTS & ALERTS]")
+    return lines
+
+
+def _extract_announcement_vars(
+    announcements_list: list[dict[str, Any]],
+    concierge_requests: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Extract macro template replacement variables for announcements and concierge."""
+    emergency_alerts = [
+        a
+        for a in announcements_list
+        if a.get("priority") in ("urgent", "critical_emergency")
+        or a.get("category") == "emergency_alert"
+    ]
+    latest_alert = (
+        emergency_alerts[0]
+        if emergency_alerts
+        else (announcements_list[0] if announcements_list else None)
+    )
+
+    alert_headline = (
+        latest_alert.get("title", "No active emergency alerts")
+        if latest_alert
+        else "No active emergency alerts"
+    )
+    alert_priority = (
+        str(latest_alert.get("priority", "none")).upper() if latest_alert else "NONE"
+    )
+    alert_ack_status = (
+        "acknowledged"
+        if (latest_alert and latest_alert.get("is_acknowledged"))
+        else "pending_acknowledgment"
+    )
+
+    open_concierge = [
+        c for c in concierge_requests if c.get("status") in ("submitted", "in_progress")
+    ]
+
+    return {
+        "active_announcements_count": str(len(announcements_list)),
+        "active_emergency_alerts_count": str(len(emergency_alerts)),
+        "latest_alert_headline": alert_headline,
+        "latest_alert_priority": alert_priority,
+        "alert_acknowledgment_status": alert_ack_status,
+        "concierge_requests_count": str(len(open_concierge)),
+    }
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -721,6 +982,39 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             parking_spots = parking.list_parking_spots(unit_id=resolved_unit_id)
             resident_vehicles = parking.list_vehicles(unit_id=resolved_unit_id)
             visitor_passes = parking.list_visitor_passes(unit_id=resolved_unit_id)
+
+    community_incidents: list[dict[str, Any]] = []
+    violation_notices: list[dict[str, Any]] = []
+    violation_appeals: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        inc_res = incidents.list_incidents(tenant_id=resolved_tenant_id)
+        community_incidents = inc_res.get("items", [])
+        vn_res = incidents.list_violation_notices(tenant_id=resolved_tenant_id)
+        violation_notices = vn_res.get("items", [])
+        ap_res = incidents.list_violation_appeals(tenant_id=resolved_tenant_id)
+        violation_appeals = ap_res.get("items", [])
+    elif resolved_unit_id:
+        inc_res = incidents.list_incidents(unit_id=resolved_unit_id)
+        community_incidents = inc_res.get("items", [])
+        vn_res = incidents.list_violation_notices(unit_id=resolved_unit_id)
+        violation_notices = vn_res.get("items", [])
+        ap_res = incidents.list_violation_appeals(tenant_id=resolved_unit_id)
+        violation_appeals = ap_res.get("items", [])
+
+    announcements_list: list[dict[str, Any]] = []
+    concierge_requests: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        ann_res = announcements.list_tenant_announcements(
+            tenant_id=resolved_tenant_id, unit_id=resolved_unit_id
+        )
+        announcements_list = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_tenant_concierge_requests(tenant_id=resolved_tenant_id)
+        concierge_requests = con_res.get("items", []) if con_res else []
+    elif resolved_unit_id:
+        ann_res = announcements.list_announcements(target_unit_id=resolved_unit_id)
+        announcements_list = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_concierge_requests(unit_id=resolved_unit_id)
+        concierge_requests = con_res.get("items", []) if con_res else []
 
     access_credentials: list[dict[str, Any]] = []
     active_guest_passes: list[dict[str, Any]] = []
@@ -820,6 +1114,20 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             lines.append("")
         lines.extend(
             _format_access_control_lines(access_credentials, active_guest_passes, intercom_entry)
+        )
+
+    if community_incidents or violation_notices or violation_appeals:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_incident_lines(community_incidents, violation_notices, violation_appeals)
+        )
+
+    if announcements_list or concierge_requests:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_announcements_lines(announcements_list, concierge_requests)
         )
 
     return "\n".join(lines)
@@ -1064,6 +1372,37 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         t_pets = pets.list_resident_pets(unit_id=resolved_unit_id)
     default_policy = pets.get_pet_policy("policy_default")
     variables.update(_extract_pet_vars(t_pets, default_policy))
+
+    t_incidents: list[dict[str, Any]] = []
+    t_notices: list[dict[str, Any]] = []
+    t_appeals: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        t_incidents = incidents.list_incidents(tenant_id=resolved_tenant_id).get("items", [])
+        t_notices = incidents.list_violation_notices(tenant_id=resolved_tenant_id).get("items", [])
+        t_appeals = incidents.list_violation_appeals(tenant_id=resolved_tenant_id).get("items", [])
+    elif resolved_unit_id:
+        t_incidents = incidents.list_incidents(unit_id=resolved_unit_id).get("items", [])
+        t_notices = incidents.list_violation_notices(unit_id=resolved_unit_id).get("items", [])
+        t_appeals = incidents.list_violation_appeals(unit_id=resolved_unit_id).get("items", [])
+
+    variables.update(_extract_incident_vars(t_incidents, t_notices, t_appeals))
+
+    t_announcements: list[dict[str, Any]] = []
+    t_concierge: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        ann_res = announcements.list_tenant_announcements(
+            tenant_id=resolved_tenant_id, unit_id=resolved_unit_id
+        )
+        t_announcements = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_tenant_concierge_requests(tenant_id=resolved_tenant_id)
+        t_concierge = con_res.get("items", []) if con_res else []
+    elif resolved_unit_id:
+        ann_res = announcements.list_announcements(target_unit_id=resolved_unit_id)
+        t_announcements = ann_res.get("items", []) if ann_res else []
+        con_res = announcements.list_concierge_requests(unit_id=resolved_unit_id)
+        t_concierge = con_res.get("items", []) if con_res else []
+
+    variables.update(_extract_announcement_vars(t_announcements, t_concierge))
 
     t_creds: list[dict[str, Any]] = []
     t_passes: list[dict[str, Any]] = []

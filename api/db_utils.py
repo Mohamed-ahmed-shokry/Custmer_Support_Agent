@@ -315,6 +315,15 @@ VALID_WEBHOOK_EVENTS = {
     "access.credential_deactivated",
     "access.guest_pass_generated",
     "access.fob_reported_lost",
+    "incident.reported",
+    "violation.notice_issued",
+    "violation.fine_assessed",
+    "violation.appeal_resolved",
+    "announcement.published",
+    "emergency_alert.broadcast",
+    "announcement.acknowledged",
+    "concierge.requested",
+    "concierge.fulfilled",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
