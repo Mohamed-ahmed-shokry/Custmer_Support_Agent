@@ -4933,3 +4933,302 @@ def get_incident_metrics_api() -> dict[str, Any] | None:
         "Failed to fetch incident metrics",
         "fetching incident metrics",
     )
+
+
+
+# ==============================================================================
+# Community Announcements, Emergency Alerts & Concierge API Helpers (v0.48.0)
+# ==============================================================================
+
+
+def _announcement_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute announcement and concierge API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_announcement_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Publish a community announcement or emergency alert."""
+    return _announcement_call(
+        "post",
+        "/announcements",
+        HTTP_CREATED,
+        "Failed to publish announcement",
+        "publishing community announcement",
+        json=payload,
+    )
+
+
+def list_announcements_api(  # noqa: PLR0913, PLR0917
+    status: str | None = None,
+    category: str | None = None,
+    priority: str | None = None,
+    scope: str | None = None,
+    target_unit_id: str | None = None,
+    pinned_first: bool = True,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List announcements with optional filters."""
+    params: dict[str, Any] = {
+        "pinned_first": pinned_first,
+        "limit": limit,
+        "offset": offset,
+    }
+    if status:
+        params["status"] = status
+    if category:
+        params["category"] = category
+    if priority:
+        params["priority"] = priority
+    if scope:
+        params["scope"] = scope
+    if target_unit_id:
+        params["target_unit_id"] = target_unit_id
+
+    return _announcement_call(
+        "get",
+        "/announcements",
+        HTTP_OK,
+        "Failed to fetch announcements",
+        "fetching community announcements",
+        params=params,
+    )
+
+
+def get_announcement_api(announcement_id: str) -> dict[str, Any] | None:
+    """Retrieve details of an announcement."""
+    return _announcement_call(
+        "get",
+        f"/announcements/{announcement_id}",
+        HTTP_OK,
+        f"Failed to fetch announcement '{announcement_id}'",
+        f"fetching announcement '{announcement_id}'",
+    )
+
+
+def update_announcement_api(
+    announcement_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update announcement fields."""
+    return _announcement_call(
+        "patch",
+        f"/announcements/{announcement_id}",
+        HTTP_OK,
+        f"Failed to update announcement '{announcement_id}'",
+        f"updating announcement '{announcement_id}'",
+        json=payload,
+    )
+
+
+def delete_announcement_api(announcement_id: str) -> bool:
+    """Delete an announcement."""
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/announcements/{announcement_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete announcement '{announcement_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting announcement: {str(e)}")
+        return False
+
+
+def list_tenant_announcements_api(
+    tenant_id: str, unit_id: str | None = None
+) -> dict[str, Any] | None:
+    """List announcements applicable to a resident."""
+    params = {"unit_id": unit_id} if unit_id else None
+    return _announcement_call(
+        "get",
+        f"/tenants/{tenant_id}/announcements",
+        HTTP_OK,
+        f"Failed to fetch announcements for resident '{tenant_id}'",
+        f"fetching announcements for resident '{tenant_id}'",
+        params=params,
+    )
+
+
+def acknowledge_announcement_api(
+    announcement_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Record resident acknowledgment of an announcement."""
+    return _announcement_call(
+        "post",
+        f"/announcements/{announcement_id}/acknowledge",
+        HTTP_CREATED,
+        f"Failed to acknowledge announcement '{announcement_id}'",
+        f"acknowledging announcement '{announcement_id}'",
+        json=payload,
+    )
+
+
+def list_announcement_acknowledgments_api(
+    announcement_id: str,
+) -> dict[str, Any] | None:
+    """List resident acknowledgments for an announcement."""
+    return _announcement_call(
+        "get",
+        f"/announcements/{announcement_id}/acknowledgments",
+        HTTP_OK,
+        f"Failed to fetch acknowledgments for '{announcement_id}'",
+        f"fetching acknowledgments for '{announcement_id}'",
+    )
+
+
+def create_concierge_request_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Submit a concierge service request."""
+    return _announcement_call(
+        "post",
+        "/concierge",
+        HTTP_CREATED,
+        "Failed to submit concierge request",
+        "submitting concierge request",
+        json=payload,
+    )
+
+
+def list_concierge_requests_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    request_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """List concierge requests matching filters."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    if request_type:
+        params["request_type"] = request_type
+
+    return _announcement_call(
+        "get",
+        "/concierge",
+        HTTP_OK,
+        "Failed to fetch concierge requests",
+        "fetching concierge requests",
+        params=params,
+    )
+
+
+def get_concierge_request_api(request_id: str) -> dict[str, Any] | None:
+    """Retrieve details of a concierge request."""
+    return _announcement_call(
+        "get",
+        f"/concierge/{request_id}",
+        HTTP_OK,
+        f"Failed to fetch concierge request '{request_id}'",
+        f"fetching concierge request '{request_id}'",
+    )
+
+
+def update_concierge_request_api(
+    request_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update concierge request status or notes."""
+    return _announcement_call(
+        "patch",
+        f"/concierge/{request_id}",
+        HTTP_OK,
+        f"Failed to update concierge request '{request_id}'",
+        f"updating concierge request '{request_id}'",
+        json=payload,
+    )
+
+
+def delete_concierge_request_api(request_id: str) -> bool:
+    """Delete a concierge request."""
+    try:
+        response = requests.delete(
+            f"{API_BASE_URL}/concierge/{request_id}",
+            headers=_request_headers(),
+            timeout=10,
+        )
+        if response.status_code == HTTP_OK:
+            return True
+        show_api_error(f"Failed to delete concierge request '{request_id}'", response)
+        return False
+    except Exception as e:
+        st.error(f"An error occurred while deleting concierge request: {str(e)}")
+        return False
+
+
+def list_tenant_concierge_requests_api(
+    tenant_id: str,
+) -> dict[str, Any] | None:
+    """List all concierge requests submitted by a specific resident."""
+    return _announcement_call(
+        "get",
+        f"/tenants/{tenant_id}/concierge",
+        HTTP_OK,
+        f"Failed to fetch concierge requests for resident '{tenant_id}'",
+        f"fetching concierge requests for resident '{tenant_id}'",
+    )
+
+
+def session_acknowledge_alert_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Acknowledge an emergency alert directly grounded in resident support session."""
+    return _announcement_call(
+        "post",
+        f"/sessions/{session_id}/acknowledge-alert",
+        HTTP_CREATED,
+        f"Failed to acknowledge alert for session '{session_id}'",
+        "acknowledging session building alert",
+        json=payload,
+    )
+
+
+def session_request_concierge_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Submit a concierge request directly grounded in resident support session."""
+    return _announcement_call(
+        "post",
+        f"/sessions/{session_id}/request-concierge",
+        HTTP_CREATED,
+        f"Failed to submit concierge request for session '{session_id}'",
+        "submitting session concierge request",
+        json=payload,
+    )
+
+
+def get_announcements_metrics_api() -> dict[str, Any] | None:
+    """Retrieve portfolio announcement, alert, and concierge summary metrics."""
+    return _announcement_call(
+        "get",
+        "/announcements/metrics",
+        HTTP_OK,
+        "Failed to fetch announcement metrics",
+        "fetching announcement metrics",
+    )

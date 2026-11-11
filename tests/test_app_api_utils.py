@@ -134,9 +134,7 @@ def test_get_api_response_includes_optional_flags(fake_requests):
 def test_get_api_response_includes_file_and_hybrid_flags(fake_requests):
     fake_requests.response = FakeResponse(payload={"answer": "hi"})
 
-    api_utils.get_api_response(
-        "q", None, "gpt-4o-mini", file_ids=[3, 7], use_hybrid=True
-    )
+    api_utils.get_api_response("q", None, "gpt-4o-mini", file_ids=[3, 7], use_hybrid=True)
 
     _, _, kwargs = fake_requests.calls[0]
     assert kwargs["json"]["file_ids"] == [3, 7]
@@ -246,10 +244,7 @@ def test_upload_document_success(fake_requests):
 
 def test_upload_documents_success(fake_requests):
     fake_requests.response = FakeResponse(payload={"uploaded": 2, "failed": 0})
-    files = [
-        type("File", (), {"name": f"f{i}.pdf", "type": "application/pdf"})()
-        for i in range(2)
-    ]
+    files = [type("File", (), {"name": f"f{i}.pdf", "type": "application/pdf"})() for i in range(2)]
 
     result = api_utils.upload_documents(files, "rentals")
 
@@ -418,7 +413,6 @@ def test_export_session_passes_format(fake_requests):
     assert result == '{"session_id": "s1"}'
     _, _, kwargs = fake_requests.calls[0]
     assert kwargs["params"] == {"format": "json"}
-
 
 
 def test_submit_feedback_success(fake_requests):
@@ -1343,9 +1337,7 @@ def test_create_sla_policy(fake_requests, fake_st, monkeypatch):
     assert kwargs["json"]["priority"] == "urgent"
 
     # 422 failure
-    fake_requests.response = FakeResponse(
-        status_code=422, payload={"detail": "invalid parameters"}
-    )
+    fake_requests.response = FakeResponse(status_code=422, payload={"detail": "invalid parameters"})
     assert (
         api_utils.create_sla_policy(
             name="Emergency",
@@ -2019,9 +2011,7 @@ def test_work_order_list_and_metrics_helpers(fake_requests, fake_st, monkeypatch
     assert api_utils.get_work_order("wo_101") is None
 
     # 3. get_work_order_metrics
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_metrics
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_metrics)
     assert api_utils.get_work_order_metrics() == mock_metrics
 
     fake_requests.response = FakeResponse(status_code=500)
@@ -2092,9 +2082,7 @@ def test_work_order_crud_and_session_helpers(fake_requests, monkeypatch):
     fake_requests.response = FakeResponse(
         status_code=api_utils.HTTP_CREATED, payload={"work_order": mock_wo}
     )
-    assert api_utils.create_work_order_from_session("sess_1", mock_wo) == {
-        "work_order": mock_wo
-    }
+    assert api_utils.create_work_order_from_session("sess_1", mock_wo) == {"work_order": mock_wo}
 
     fake_requests.response = FakeResponse(status_code=422)
     assert api_utils.create_work_order_from_session("sess_1", mock_wo) is None
@@ -2167,10 +2155,9 @@ def test_billing_api_utils_helpers(fake_requests, fake_st, monkeypatch):  # noqa
     fake_requests.response = FakeResponse(
         status_code=api_utils.HTTP_OK, payload={"transaction": mock_tx}
     )
-    assert (
-        api_utils.update_billing_transaction("tx_test_1", {"status": "paid"})
-        == {"transaction": mock_tx}
-    )
+    assert api_utils.update_billing_transaction("tx_test_1", {"status": "paid"}) == {
+        "transaction": mock_tx
+    }
 
     fake_requests.response = FakeResponse(status_code=404)
     assert api_utils.update_billing_transaction("tx_test_1", {"status": "paid"}) is None
@@ -2231,9 +2218,7 @@ def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # 
     mock_pub_resp = {"renewal_id": "lr_test_101", "indexed_in_chroma": True}
 
     # 1. list_lease_renewals
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_list_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list_resp)
     res = api_utils.list_lease_renewals(tenant_id="tenant_1", status="offered")
     assert res == mock_list_resp
     _, url, kwargs = fake_requests.calls[0]
@@ -2253,9 +2238,7 @@ def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # 
     assert api_utils.get_lease_renewal("lr_missing") is None
 
     # 3. get_lease_renewal_metrics
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_metrics_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_metrics_resp)
     assert api_utils.get_lease_renewal_metrics() == mock_metrics_resp
 
     fake_requests.response = FakeResponse(status_code=500)
@@ -2274,16 +2257,12 @@ def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # 
     fake_requests.response = FakeResponse(
         status_code=api_utils.HTTP_OK, payload={"renewal": mock_lr}
     )
-    assert (
-        api_utils.update_lease_renewal("lr_test_101", {"status": "accepted"})
-        == {"renewal": mock_lr}
-    )
+    assert api_utils.update_lease_renewal("lr_test_101", {"status": "accepted"}) == {
+        "renewal": mock_lr
+    }
 
     fake_requests.response = FakeResponse(status_code=404)
-    assert (
-        api_utils.update_lease_renewal("lr_test_101", {"status": "accepted"})
-        is None
-    )
+    assert api_utils.update_lease_renewal("lr_test_101", {"status": "accepted"}) is None
 
     # 6. delete_lease_renewal
     fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK)
@@ -2296,25 +2275,16 @@ def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # 
     fake_requests.response = FakeResponse(
         status_code=api_utils.HTTP_OK, payload={"renewal": mock_lr}
     )
-    assert (
-        api_utils.sign_lease_renewal("lr_test_101", {"signature_name": "Test Signer"})
-        == {"renewal": mock_lr}
-    )
+    assert api_utils.sign_lease_renewal("lr_test_101", {"signature_name": "Test Signer"}) == {
+        "renewal": mock_lr
+    }
 
     fake_requests.response = FakeResponse(status_code=422)
-    assert (
-        api_utils.sign_lease_renewal("lr_test_101", {"signature_name": "Test Signer"})
-        is None
-    )
+    assert api_utils.sign_lease_renewal("lr_test_101", {"signature_name": "Test Signer"}) is None
 
     # 8. publish_lease_renewal_document
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_pub_resp
-    )
-    assert (
-        api_utils.publish_lease_renewal_document("lr_test_101", {})
-        == mock_pub_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_pub_resp)
+    assert api_utils.publish_lease_renewal_document("lr_test_101", {}) == mock_pub_resp
 
     fake_requests.response = FakeResponse(status_code=500)
     assert api_utils.publish_lease_renewal_document("lr_test_101", {}) is None
@@ -2323,18 +2293,13 @@ def test_lease_renewals_client_helpers(fake_requests, fake_st, monkeypatch):  # 
     fake_requests.response = FakeResponse(
         status_code=api_utils.HTTP_CREATED, payload={"renewal": mock_lr}
     )
-    assert (
-        api_utils.create_session_lease_renewal("sess_101", mock_lr)
-        == {"renewal": mock_lr}
-    )
+    assert api_utils.create_session_lease_renewal("sess_101", mock_lr) == {"renewal": mock_lr}
 
     fake_requests.response = FakeResponse(status_code=400)
     assert api_utils.create_session_lease_renewal("sess_101", mock_lr) is None
 
     # 10. get_tenant_lease_renewals
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_list_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list_resp)
     assert api_utils.get_tenant_lease_renewals("tenant_1") == mock_list_resp
 
     fake_requests.response = FakeResponse(status_code=404)
@@ -2379,9 +2344,7 @@ def test_inspection_api_utils_crud(fake_requests):
     assert api_utils.create_inspection(mock_insp) is None
 
     # 2. list_inspections
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_list_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list_resp)
     assert api_utils.list_inspections({"status": "scheduled", "empty": ""}) == mock_list_resp
     method, url, kwargs = fake_requests.calls[-1]
     assert method == "get"
@@ -2459,9 +2422,7 @@ def test_inspection_api_utils_actions(fake_requests):
 
     # 7. convert_inspection_item_to_work_order
     mock_wo_resp = {"work_order": {"id": "wo_99", "title": "Fix lock"}, "item_id": "item_1"}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_wo_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_wo_resp)
     assert (
         api_utils.convert_inspection_item_to_work_order("insp_test_101", {"item_id": "item_1"})
         == mock_wo_resp
@@ -2478,9 +2439,7 @@ def test_inspection_api_utils_actions(fake_requests):
     )
 
     # 8. publish_inspection_document
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_pub_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_pub_resp)
     assert api_utils.publish_inspection_document("insp_test_101") == mock_pub_resp
     method, url, kwargs = fake_requests.calls[-1]
     assert method == "post"
@@ -2494,9 +2453,7 @@ def test_inspection_api_utils_actions(fake_requests):
     fake_requests.response = FakeResponse(
         status_code=api_utils.HTTP_CREATED, payload={"inspection": mock_insp}
     )
-    assert api_utils.create_session_inspection("sess_101", mock_insp) == {
-        "inspection": mock_insp
-    }
+    assert api_utils.create_session_inspection("sess_101", mock_insp) == {"inspection": mock_insp}
     method, url, kwargs = fake_requests.calls[-1]
     assert method == "post"
     assert url.endswith("/sessions/sess_101/create-inspection")
@@ -2534,9 +2491,7 @@ def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
     }
 
     # 10. get_tenant_inspections
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_list_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list_resp)
     assert api_utils.get_tenant_inspections("tenant_1") == mock_list_resp
     method, url, _ = fake_requests.calls[-1]
     assert method == "get"
@@ -2546,9 +2501,7 @@ def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
     assert api_utils.get_tenant_inspections("tenant_1") is None
 
     # 11. get_unit_inspections
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_list_resp
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_list_resp)
     assert api_utils.get_unit_inspections("unit_101") == mock_list_resp
     method, url, _ = fake_requests.calls[-1]
     assert method == "get"
@@ -2558,9 +2511,7 @@ def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
     assert api_utils.get_unit_inspections("unit_101") is None
 
     # 12. get_inspection_metrics
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=mock_metrics
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=mock_metrics)
     assert api_utils.get_inspection_metrics() == mock_metrics
     method, url, _ = fake_requests.calls[-1]
     assert method == "get"
@@ -2583,19 +2534,6 @@ def test_inspection_api_utils_queries_and_errors(fake_requests, monkeypatch):
     assert api_utils.get_tenant_inspections("tenant_1") is None
     assert api_utils.get_unit_inspections("unit_1") is None
     assert api_utils.get_inspection_metrics() is None
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_vendor_read_helpers(fake_requests, fake_st):
@@ -2788,9 +2726,6 @@ def test_package_pickup_and_session_helpers(fake_requests, fake_st):
         assert fake_st.errors
     finally:
         fake_requests.post = orig_post
-
-
-
 
 
 def test_amenity_and_reservation_api_helpers():
@@ -3118,10 +3053,7 @@ def test_pet_policies_and_incidents_api_utils(monkeypatch):
     # 5. record_pet_incident_api
     inc_payload = {"incident": {"id": "inc_1", "incident_type": "noise_barking"}}
     fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=inc_payload)
-    assert (
-        api_utils.record_pet_incident_api({"incident_type": "noise_barking"})
-        == inc_payload
-    )
+    assert api_utils.record_pet_incident_api({"incident_type": "noise_barking"}) == inc_payload
     assert fake_requests.calls[-1][1].endswith("/pet-incidents")
 
     # 6. list_pet_incidents_api
@@ -3171,13 +3103,10 @@ def test_pet_api_utils_errors(monkeypatch):
     assert api_utils.get_pet_metrics_api() is None
 
 
-
 def test_access_control_credentials_api_utils(monkeypatch):
     """Verify happy-path execution for access credentials API client helpers."""
     fake_st = FakeStreamlit()
-    fake_requests = FakeRequests(
-        response=FakeResponse(status_code=200, payload={"status": "ok"})
-    )
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
     monkeypatch.setattr(api_utils, "requests", fake_requests)
     monkeypatch.setattr(api_utils, "st", fake_st)
 
@@ -3189,12 +3118,9 @@ def test_access_control_credentials_api_utils(monkeypatch):
             "status": "active",
         }
     }
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=cred_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=cred_payload)
     assert (
-        api_utils.create_access_credential_api({"tenant_id": "t1", "unit_id": "u1"})
-        == cred_payload
+        api_utils.create_access_credential_api({"tenant_id": "t1", "unit_id": "u1"}) == cred_payload
     )
     assert fake_requests.calls[-1][1].endswith("/access/credentials")
 
@@ -3205,9 +3131,7 @@ def test_access_control_credentials_api_utils(monkeypatch):
         "limit": 50,
         "offset": 0,
     }
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_payload)
     assert (
         api_utils.list_access_credentials_api(
             tenant_id="t1", status="active", credential_type="key_fob"
@@ -3217,53 +3141,35 @@ def test_access_control_credentials_api_utils(monkeypatch):
     assert fake_requests.calls[-1][1].endswith("/access/credentials")
 
     # 3. get_access_credential_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=cred_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=cred_payload)
     assert api_utils.get_access_credential_api("cred_1") == cred_payload
     assert fake_requests.calls[-1][1].endswith("/access/credentials/cred_1")
 
     # 4. update_access_credential_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=cred_payload
-    )
-    assert (
-        api_utils.update_access_credential_api("cred_1", {"status": "lost"})
-        == cred_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=cred_payload)
+    assert api_utils.update_access_credential_api("cred_1", {"status": "lost"}) == cred_payload
     assert fake_requests.calls[-1][1].endswith("/access/credentials/cred_1")
 
     # 5. delete_access_credential_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload={"deleted": True}
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"deleted": True})
     assert api_utils.delete_access_credential_api("cred_1") is True
     assert fake_requests.calls[-1][1].endswith("/access/credentials/cred_1")
 
     # 6. list_tenant_credentials_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_payload)
     assert api_utils.list_tenant_credentials_api("t1") == list_payload
     assert fake_requests.calls[-1][1].endswith("/tenants/t1/credentials")
 
     # 7. session_report_lost_fob_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=cred_payload
-    )
-    assert (
-        api_utils.session_report_lost_fob_api("s1", {"credential_id": "cred_1"})
-        == cred_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=cred_payload)
+    assert api_utils.session_report_lost_fob_api("s1", {"credential_id": "cred_1"}) == cred_payload
     assert fake_requests.calls[-1][1].endswith("/sessions/s1/report-lost-fob")
 
 
 def test_access_control_passes_and_intercom_api_utils(monkeypatch):
     """Verify happy-path execution for guest passes and intercom directory client helpers."""
     fake_st = FakeStreamlit()
-    fake_requests = FakeRequests(
-        response=FakeResponse(status_code=200, payload={"status": "ok"})
-    )
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
     monkeypatch.setattr(api_utils, "requests", fake_requests)
     monkeypatch.setattr(api_utils, "st", fake_st)
 
@@ -3275,9 +3181,7 @@ def test_access_control_passes_and_intercom_api_utils(monkeypatch):
             "access_code": "654321",
         }
     }
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=pass_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pass_payload)
     assert (
         api_utils.create_guest_pass_api({"tenant_id": "t1", "guest_name": "Dog Walker"})
         == pass_payload
@@ -3291,50 +3195,32 @@ def test_access_control_passes_and_intercom_api_utils(monkeypatch):
         "limit": 50,
         "offset": 0,
     }
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_pass_payload
-    )
-    assert (
-        api_utils.list_guest_passes_api(tenant_id="t1", status="active")
-        == list_pass_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_pass_payload)
+    assert api_utils.list_guest_passes_api(tenant_id="t1", status="active") == list_pass_payload
     assert fake_requests.calls[-1][1].endswith("/access/guest-passes")
 
     # 3. get_guest_pass_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=pass_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pass_payload)
     assert api_utils.get_guest_pass_api("pass_1") == pass_payload
     assert fake_requests.calls[-1][1].endswith("/access/guest-passes/pass_1")
 
     # 4. update_guest_pass_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=pass_payload
-    )
-    assert (
-        api_utils.update_guest_pass_api("pass_1", {"increment_use": True})
-        == pass_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=pass_payload)
+    assert api_utils.update_guest_pass_api("pass_1", {"increment_use": True}) == pass_payload
     assert fake_requests.calls[-1][1].endswith("/access/guest-passes/pass_1")
 
     # 5. delete_guest_pass_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload={"deleted": True}
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"deleted": True})
     assert api_utils.delete_guest_pass_api("pass_1") is True
     assert fake_requests.calls[-1][1].endswith("/access/guest-passes/pass_1")
 
     # 6. list_tenant_guest_passes_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_pass_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_pass_payload)
     assert api_utils.list_tenant_guest_passes_api("t1") == list_pass_payload
     assert fake_requests.calls[-1][1].endswith("/tenants/t1/guest-passes")
 
     # 7. session_generate_guest_pass_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=pass_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=pass_payload)
     assert (
         api_utils.session_generate_guest_pass_api("s1", {"guest_name": "Dog Walker"})
         == pass_payload
@@ -3343,51 +3229,34 @@ def test_access_control_passes_and_intercom_api_utils(monkeypatch):
 
     # 8. create_intercom_entry_api
     dir_payload = {"entry": {"id": "dir_1", "directory_code": "101"}}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=dir_payload
-    )
-    assert (
-        api_utils.create_intercom_entry_api({"directory_code": "101"}) == dir_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=dir_payload)
+    assert api_utils.create_intercom_entry_api({"directory_code": "101"}) == dir_payload
     assert fake_requests.calls[-1][1].endswith("/access/intercom")
 
     # 9. list_intercom_entries_api
     list_dir_payload = {"items": [dir_payload["entry"]], "total": 1}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_dir_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_dir_payload)
     assert api_utils.list_intercom_entries_api(unit_id="u1") == list_dir_payload
     assert fake_requests.calls[-1][1].endswith("/access/intercom")
 
     # 10. get_intercom_entry_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=dir_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=dir_payload)
     assert api_utils.get_intercom_entry_api("dir_1") == dir_payload
     assert fake_requests.calls[-1][1].endswith("/access/intercom/dir_1")
 
     # 11. update_intercom_entry_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=dir_payload
-    )
-    assert (
-        api_utils.update_intercom_entry_api("dir_1", {"buzzer_enabled": False})
-        == dir_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=dir_payload)
+    assert api_utils.update_intercom_entry_api("dir_1", {"buzzer_enabled": False}) == dir_payload
     assert fake_requests.calls[-1][1].endswith("/access/intercom/dir_1")
 
     # 12. delete_intercom_entry_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload={"deleted": True}
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload={"deleted": True})
     assert api_utils.delete_intercom_entry_api("dir_1") is True
     assert fake_requests.calls[-1][1].endswith("/access/intercom/dir_1")
 
     # 13. get_access_control_metrics_api
     metrics_payload = {"total_credentials": 25, "active_guest_passes": 5}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=metrics_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=metrics_payload)
     assert api_utils.get_access_control_metrics_api() == metrics_payload
     assert fake_requests.calls[-1][1].endswith("/access/metrics")
 
@@ -3420,45 +3289,34 @@ def test_access_control_api_utils_errors(monkeypatch):
     assert api_utils.get_access_control_metrics_api() is None
 
 
-
 def test_incidents_api_utils(monkeypatch):
     """Verify happy-path execution for incident API client helpers."""
     fake_st = FakeStreamlit()
-    fake_requests = FakeRequests(
-        response=FakeResponse(status_code=200, payload={"status": "ok"})
-    )
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
     monkeypatch.setattr(api_utils, "requests", fake_requests)
     monkeypatch.setattr(api_utils, "st", fake_st)
 
     # 1. create_incident_api
     inc_payload = {"incident": {"id": "inc_1", "incident_number": "INC-2026-101"}}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=inc_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=inc_payload)
     assert api_utils.create_incident_api({"description": "Test"}) == inc_payload
     assert fake_requests.calls[-1][1].endswith("/incidents")
 
     # 2. list_incidents_api
     list_payload = {"items": [inc_payload["incident"]], "total": 1, "limit": 50, "offset": 0}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_payload)
     assert api_utils.list_incidents_api(severity="medium") == list_payload
     params = fake_requests.calls[-1][2].get("params", {})
     assert "severity=medium" in fake_requests.calls[-1][1] or params.get("severity") == "medium"
 
     # 3. get_incident_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=inc_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=inc_payload)
     assert api_utils.get_incident_api("inc_1") == inc_payload
     assert fake_requests.calls[-1][1].endswith("/incidents/inc_1")
 
     # 4. update_incident_api
     updated_payload = {"incident": {"id": "inc_1", "status": "resolved"}}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=updated_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=updated_payload)
     assert api_utils.update_incident_api("inc_1", {"status": "resolved"}) == updated_payload
     assert fake_requests.calls[-1][1].endswith("/incidents/inc_1")
 
@@ -3470,9 +3328,7 @@ def test_incidents_api_utils(monkeypatch):
     assert fake_requests.calls[-1][1].endswith("/incidents/inc_1")
 
     # 6. list_tenant_incidents_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=list_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=list_payload)
     assert api_utils.list_tenant_incidents_api("tenant_1") == list_payload
     assert fake_requests.calls[-1][1].endswith("/tenants/tenant_1/incidents")
 
@@ -3480,39 +3336,29 @@ def test_incidents_api_utils(monkeypatch):
 def test_violations_and_appeals_api_utils(monkeypatch):
     """Verify happy-path execution for violation notices and appeals client helpers."""
     fake_st = FakeStreamlit()
-    fake_requests = FakeRequests(
-        response=FakeResponse(status_code=200, payload={"status": "ok"})
-    )
+    fake_requests = FakeRequests(response=FakeResponse(status_code=200, payload={"status": "ok"}))
     monkeypatch.setattr(api_utils, "requests", fake_requests)
     monkeypatch.setattr(api_utils, "st", fake_st)
 
     # 1. create_violation_notice_api
     vn_payload = {"notice": {"id": "viol_1", "notice_number": "VN-2026-089"}}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=vn_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=vn_payload)
     assert api_utils.create_violation_notice_api({"tenant_id": "t1"}) == vn_payload
     assert fake_requests.calls[-1][1].endswith("/violations")
 
     # 2. list_violation_notices_api
     vn_list = {"items": [vn_payload["notice"]], "total": 1, "limit": 50, "offset": 0}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=vn_list
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=vn_list)
     assert api_utils.list_violation_notices_api(tenant_id="t1") == vn_list
     assert fake_requests.calls[-1][1].endswith("/violations")
 
     # 3. get_violation_notice_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=vn_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=vn_payload)
     assert api_utils.get_violation_notice_api("viol_1") == vn_payload
     assert fake_requests.calls[-1][1].endswith("/violations/viol_1")
 
     # 4. update_violation_notice_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=vn_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=vn_payload)
     assert api_utils.update_violation_notice_api("viol_1", {"status": "cured"}) == vn_payload
 
     # 5. delete_violation_notice_api
@@ -3522,38 +3368,28 @@ def test_violations_and_appeals_api_utils(monkeypatch):
     assert api_utils.delete_violation_notice_api("viol_1") is True
 
     # 6. list_tenant_violation_notices_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=vn_list
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=vn_list)
     assert api_utils.list_tenant_violation_notices_api("t1") == vn_list
     assert fake_requests.calls[-1][1].endswith("/tenants/t1/violations")
 
     # 7. create_violation_appeal_api
     apl_payload = {"appeal": {"id": "apl_1", "appeal_number": "APL-2026-042"}}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=apl_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=apl_payload)
     assert api_utils.create_violation_appeal_api({"reason": "Test"}) == apl_payload
     assert fake_requests.calls[-1][1].endswith("/appeals")
 
     # 8. list_violation_appeals_api
     apl_list = {"items": [apl_payload["appeal"]], "total": 1, "limit": 50, "offset": 0}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=apl_list
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=apl_list)
     assert api_utils.list_violation_appeals_api(tenant_id="t1") == apl_list
     assert fake_requests.calls[-1][1].endswith("/appeals")
 
     # 9. get_violation_appeal_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=apl_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=apl_payload)
     assert api_utils.get_violation_appeal_api("apl_1") == apl_payload
 
     # 10. update_violation_appeal_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=apl_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=apl_payload)
     assert api_utils.update_violation_appeal_api("apl_1", {"status": "waived"}) == apl_payload
 
     # 11. delete_violation_appeal_api
@@ -3563,31 +3399,23 @@ def test_violations_and_appeals_api_utils(monkeypatch):
     assert api_utils.delete_violation_appeal_api("apl_1") is True
 
     # 12. list_tenant_violation_appeals_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=apl_list
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=apl_list)
     assert api_utils.list_tenant_violation_appeals_api("t1") == apl_list
     assert fake_requests.calls[-1][1].endswith("/tenants/t1/appeals")
 
     # 13. session_issue_violation_notice_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=vn_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=vn_payload)
     assert api_utils.session_issue_violation_notice_api("sess_1", {}) == vn_payload
     assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/issue-violation-notice")
 
     # 14. session_submit_violation_appeal_api
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_CREATED, payload=apl_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_CREATED, payload=apl_payload)
     assert api_utils.session_submit_violation_appeal_api("sess_1", {}) == apl_payload
     assert fake_requests.calls[-1][1].endswith("/sessions/sess_1/submit-violation-appeal")
 
     # 15. get_incident_metrics_api
     metrics_payload = {"total_incidents": 10, "total_violations": 5}
-    fake_requests.response = FakeResponse(
-        status_code=api_utils.HTTP_OK, payload=metrics_payload
-    )
+    fake_requests.response = FakeResponse(status_code=api_utils.HTTP_OK, payload=metrics_payload)
     assert api_utils.get_incident_metrics_api() == metrics_payload
     assert fake_requests.calls[-1][1].endswith("/incidents/metrics")
 
@@ -3622,3 +3450,182 @@ def test_incident_api_utils_errors(monkeypatch):
     assert api_utils.session_issue_violation_notice_api("fail", {}) is None
     assert api_utils.session_submit_violation_appeal_api("fail", {}) is None
     assert api_utils.get_incident_metrics_api() is None
+
+
+def test_announcements_api_utils(monkeypatch):
+    """Verify happy path requests and URL routing for announcement API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # 1. Create announcement
+    ann_payload = {"announcement": {"id": "ann_1", "title": "Fire Drill"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=ann_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.create_announcement_api({"title": "Fire Drill"}) == ann_payload
+    assert fake_requests.calls[0][0] == "post"
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/announcements"
+
+    # 2. List announcements
+    list_payload = {"announcements": [{"id": "ann_1"}], "total": 1}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_announcements_api(category="emergency_alert") == list_payload
+    assert fake_requests.calls[0][0] == "get"
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/announcements"
+
+    # 3. Get announcement
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=ann_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_announcement_api("ann_1") == ann_payload
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/announcements/ann_1"
+
+    # 4. Update announcement
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=ann_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.update_announcement_api("ann_1", {"title": "Fire Drill Rescheduled"})
+        == ann_payload
+    )
+    assert fake_requests.calls[0][0] == "patch"
+
+    # 5. Delete announcement
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload={"success": True}))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.delete_announcement_api("ann_1") is True
+    assert fake_requests.calls[0][0] == "delete"
+
+    # 6. List tenant announcements
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_tenant_announcements_api("tenant_1") == list_payload
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/tenants/tenant_1/announcements"
+
+    # 7. Acknowledge announcement
+    ack_payload = {"acknowledgment": {"id": "ack_1", "announcement_id": "ann_1"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=ack_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.acknowledge_announcement_api("ann_1", {"tenant_id": "tenant_1"})
+        == ack_payload
+    )
+    assert (
+        fake_requests.calls[0][1]
+        == f"{api_utils.API_BASE_URL}/announcements/ann_1/acknowledge"
+    )
+
+    # 8. List acknowledgments
+    ack_list = {"acknowledgments": [{"id": "ack_1"}], "total": 1}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=ack_list))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_announcement_acknowledgments_api("ann_1") == ack_list
+    assert (
+        fake_requests.calls[0][1]
+        == f"{api_utils.API_BASE_URL}/announcements/ann_1/acknowledgments"
+    )
+
+    # 9. Session acknowledge alert
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=ack_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_acknowledge_alert_api("sess_1", {"announcement_id": "ann_1"})
+        == ack_payload
+    )
+    assert (
+        fake_requests.calls[0][1]
+        == f"{api_utils.API_BASE_URL}/sessions/sess_1/acknowledge-alert"
+    )
+
+    # 10. Metrics
+    metrics_payload = {"metrics": {"active_announcements": 2}}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=metrics_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_announcements_metrics_api() == metrics_payload
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/announcements/metrics"
+
+
+def test_concierge_api_utils(monkeypatch):
+    """Verify happy path requests and URL routing for concierge API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # 1. Create concierge request
+    con_payload = {"concierge_request": {"id": "con_1", "request_type": "dry_cleaning"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=con_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.create_concierge_request_api({"request_type": "dry_cleaning"}) == con_payload
+    assert fake_requests.calls[0][0] == "post"
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/concierge"
+
+    # 2. List concierge requests
+    list_payload = {"concierge_requests": [{"id": "con_1"}], "total": 1}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_concierge_requests_api(status="pending") == list_payload
+    assert fake_requests.calls[0][0] == "get"
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/concierge"
+
+    # 3. Get concierge request
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=con_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_concierge_request_api("con_1") == con_payload
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/concierge/con_1"
+
+    # 4. Update concierge request
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=con_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.update_concierge_request_api("con_1", {"status": "completed"})
+        == con_payload
+    )
+    assert fake_requests.calls[0][0] == "patch"
+
+    # 5. Delete concierge request
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload={"success": True}))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.delete_concierge_request_api("con_1") is True
+    assert fake_requests.calls[0][0] == "delete"
+
+    # 6. List tenant concierge requests
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_tenant_concierge_requests_api("tenant_1") == list_payload
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/tenants/tenant_1/concierge"
+
+    # 7. Session request concierge
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=con_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_request_concierge_api("sess_1", {"request_type": "package_hold"})
+        == con_payload
+    )
+    assert (
+        fake_requests.calls[0][1]
+        == f"{api_utils.API_BASE_URL}/sessions/sess_1/request-concierge"
+    )
+
+
+def test_announcements_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in announcement and concierge client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.create_announcement_api({}) is None
+    assert api_utils.list_announcements_api() is None
+    assert api_utils.get_announcement_api("fail") is None
+    assert api_utils.update_announcement_api("fail", {}) is None
+    assert api_utils.delete_announcement_api("fail") is False
+    assert api_utils.list_tenant_announcements_api("fail") is None
+    assert api_utils.acknowledge_announcement_api("fail", {}) is None
+    assert api_utils.list_announcement_acknowledgments_api("fail") is None
+    assert api_utils.get_announcements_metrics_api() is None
+
+    assert api_utils.create_concierge_request_api({}) is None
+    assert api_utils.list_concierge_requests_api() is None
+    assert api_utils.get_concierge_request_api("fail") is None
+    assert api_utils.update_concierge_request_api("fail", {}) is None
+    assert api_utils.delete_concierge_request_api("fail") is False
+    assert api_utils.list_tenant_concierge_requests_api("fail") is None
+
+    assert api_utils.session_acknowledge_alert_api("fail", {}) is None
+    assert api_utils.session_request_concierge_api("fail", {}) is None
