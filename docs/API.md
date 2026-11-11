@@ -1139,3 +1139,55 @@ Endpoints for logging community incident reports (security patrols, noise compla
   - `{violation_remedy}`: Actions required to resolve infraction
   - `{appeal_status}`: Status of active appeal (e.g. `submitted`)
   - `{active_incidents_count}`: Count of active community incidents involving resident
+
+
+---
+
+## 21. Community Announcements, Emergency Broadcast Alerts & Resident Concierge Requests API
+
+Comprehensive residential broadcast and concierge services lifecycle engine connecting management notices, safety advisories, and resident concierge requests.
+
+### Core Endpoints
+
+#### Announcements & Emergency Broadcasts
+- `POST /announcements`: Publish a new announcement or broadcast alert (`title`, `content`, `category`, `priority`, `target_scope`, `target_building`, `target_floor`, `target_unit_id`, `require_acknowledgment`, `action_instructions`, `author_id`, `starts_at`, `expires_at`). Dispatches `announcement.published` or `emergency_alert.broadcast` webhook.
+- `GET /announcements`: List announcements with optional filtering by `category`, `priority`, `target_scope`, `target_building`, and `status`.
+- `GET /announcements/{id}`: Retrieve detailed announcement record by ID.
+- `PATCH /announcements/{id}`: Update announcement properties (e.g. status transition to `archived`).
+- `DELETE /announcements/{id}`: Permanently delete an announcement.
+- `GET /tenants/{tenant_id}/announcements`: Retrieve all active announcements and emergency advisories targeting the resident's portfolio, building, floor, or specific unit.
+- `GET /announcements/metrics`: Aggregated broadcast analytics (total announcements, active notices, active emergency alerts, total acknowledgments, total concierge requests, pending concierge requests).
+
+#### Safety Acknowledgments
+- `POST /announcements/{id}/acknowledge`: Record resident safety acknowledgment for an advisory (`tenant_id`, `unit_id`, `acknowledgment_method`, `notes`). Dispatches `announcement.acknowledged` webhook.
+- `GET /announcements/{id}/acknowledgments`: List all resident acknowledgments recorded for a specific announcement.
+- `POST /sessions/{id}/acknowledge-alert`: 1-click safety acknowledgment from an active resident support session (`announcement_id`, `notes`).
+
+#### Resident Concierge Requests
+- `POST /concierge`: Create a resident concierge request ticket (`tenant_id`, `unit_id`, `request_type`, `priority`, `description`, `instructions`, `scheduled_time`, `metadata`). Dispatches `concierge.requested` webhook.
+- `GET /concierge`: List concierge requests with optional filtering by `status`, `request_type`, and `priority`.
+- `GET /concierge/{id}`: Retrieve detailed concierge request record by ID.
+- `PATCH /concierge/{id}`: Update concierge request status (`pending`, `in_progress`, `completed`, `cancelled`) or staff assignment. Dispatches `concierge.fulfilled` on completion.
+- `DELETE /concierge/{id}`: Cancel/delete concierge request.
+- `GET /tenants/{tenant_id}/concierge`: List concierge requests submitted by a specific resident.
+- `POST /sessions/{id}/request-concierge`: 1-click concierge request creation from an active resident support session (`request_type`, `priority`, `description`, `instructions`, `scheduled_time`).
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**: Conversational assistant prompts automatically ground active advisories and open concierge tasks under:
+  ```text
+  [COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]
+  - Active Community Announcements & Advisories: 2 active notices
+    - [EMERGENCY] Severe Freeze Advisory: Protect Exposed Pipes (Target: portfolio_wide | Req Ack: True)
+      Summary: Sub-freezing temperatures expected tonight through Thursday morning.
+      Instructions: Keep faucets on a slow drip and cabinet doors open.
+  - Active Resident Concierge Requests: 1 open requests
+    - [STANDARD] dry_cleaning: Dry cleaning pickup: Eco Cleaners garment bag in lobby (Status: pending)
+  [END ANNOUNCEMENTS & ALERTS]
+  ```
+- **Macro Template Variables**:
+  - `{active_announcements_count}`: Number of active notices affecting resident (e.g. `2`)
+  - `{active_emergency_alerts_count}`: Count of active urgent/emergency advisories (e.g. `1`)
+  - `{latest_alert_headline}`: Headline of the most critical active alert
+  - `{latest_alert_priority}`: Priority tier of most critical active alert (`EMERGENCY`, `URGENT`)
+  - `{alert_acknowledgment_status}`: Whether resident acknowledged the alert (`ACKNOWLEDGED` or `PENDING_ACKNOWLEDGMENT`)
+  - `{concierge_requests_count}`: Number of active concierge requests submitted by resident
