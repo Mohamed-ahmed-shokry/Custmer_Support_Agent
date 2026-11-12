@@ -1237,3 +1237,55 @@ The Move-In / Move-Out Logistics Engine automates resident arrival, departure, a
   - `{loading_dock_status}`: Loading dock access status (`RESERVED` or `NOT_REQUESTED`)
   - `{move_checklist_progress}`: Percentage of completed checklist items (`50.0%`)
   - `{move_status}`: Current move status (`SCHEDULED`, `IN PROGRESS`, `COMPLETED`, `NONE`)
+
+---
+
+## Resident Utility Submetering, Energy & Water Consumption & Billing Splits Engine (v0.50.0)
+
+### Overview
+The Resident Utility Submetering & RUBS Engine automates property submeter telemetry, continuous usage tracking, automatic leak/spike anomaly detection, ratio utility billing split calculations, and direct ledger integration for electricity (`kWh`), water (`gallons`), gas (`therms`), sewer, and trash services.
+
+### Core Endpoints
+
+#### Submeters & Readings
+- `POST /utilities/meters`: Provision a new property unit submeter (`unit_id`, `meter_type`, `serial_number`, `unit_of_measure`, `rate_per_unit`, `installation_date`, `notes`). Dispatches `utility.meter_created` webhook.
+- `GET /utilities/meters`: List registered submeters with optional filtering by `unit_id`, `meter_type`, and `status`.
+- `GET /utilities/meters/{id}`: Retrieve detailed submeter configuration and last recorded reading.
+- `PATCH /utilities/meters/{id}`: Update submeter metadata, operational status, or tariff rate (`rate_per_unit`, `status`, `notes`).
+- `POST /utilities/readings`: Record a utility meter reading (`meter_id`, `reading_value`, `reading_date`, `reading_source`, `notes`). Automatically evaluates consumption against rolling baseline and flags spikes >50% as anomalies. Dispatches `utility.reading_recorded` and `utility.anomaly_detected` webhooks.
+- `GET /utilities/readings`: List meter reading logs with optional filtering by `meter_id`, `unit_id`, `meter_type`, and `anomalies_only`.
+- `GET /utilities/readings/{id}`: Retrieve specific meter reading event details.
+
+#### Statements & RUBS Billing
+- `POST /utilities/invoices`: Generate a utility statement (`unit_id`, `tenant_id`, `billing_period_start`, `billing_period_end`, `electric_amount`, `water_amount`, `gas_amount`, `trash_amount`, `total_amount`, `notes`). Dispatches `utility.invoice_created` webhook.
+- `GET /utilities/invoices`: List utility statements with optional filtering by `tenant_id`, `unit_id`, and `status`.
+- `GET /utilities/invoices/{id}`: Retrieve detailed utility invoice breakdown and payment status.
+- `PATCH /utilities/invoices/{id}`: Update utility statement status or dispute notes.
+- `POST /utilities/invoices/{id}/post-to-ledger`: Post approved utility statement directly to tenant billing ledger transactions. Dispatches `utility.invoice_posted` webhook.
+
+#### Summaries & Metrics
+- `GET /utilities/metrics`: Retrieve portfolio-wide submetering KPIs (total submeters, total consumption, invoiced amounts, collection rates, active anomalies).
+- `GET /units/{id}/utilities/summary`: Aggregated submeter telemetry, active anomalies, and current billing statement for a unit.
+- `GET /tenants/{id}/utilities/summary`: Resident-linked submeter telemetry, recent readings, and statement history.
+
+#### Support Session 1-Click Actions
+- `POST /sessions/{id}/record-meter-reading`: 1-click meter reading submission directly within resident support chat (`meter_id`, `meter_type`, `reading_value`, `reading_date`, `notes`).
+- `POST /sessions/{id}/report-utility-leak`: 1-click emergency utility leak reporting directly from support session. Auto-generates an urgent maintenance work order dispatched to property management.
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**: Verified resident context automatically includes:
+  ```text
+  [RESIDENT UTILITY METERS, USAGE & SUBMETERING]
+  - Active Utility Meters: 1
+    - Electricity (SN: EL-101-301) [ACTIVE] - Last Reading: 310.0 kWh
+  - Recent Consumption: Electricity: 310.0 kWh
+  - Current Utility Statement: #INV-202611-001 [DRAFT] $95.50 (2026-10-01 to 2026-10-31)
+  [END RESIDENT UTILITY METERS, USAGE & SUBMETERING]
+  ```
+- **Macro Template Variables**:
+  - `{primary_meter_status}`: Status of primary meter (`active`, `inactive`, `none`)
+  - `{latest_electric_kwh}`: Latest electricity consumption reading (e.g. `310.0 kWh`)
+  - `{latest_water_gallons}`: Latest water consumption reading (e.g. `1200.0 gal`)
+  - `{latest_utility_total}`: Total amount on current utility invoice (e.g. `$95.50`)
+  - `{utility_anomaly_alert}`: Active spike/leak alert or `none`
+  - `{utility_invoice_status}`: Current invoice status (`draft`, `posted`, `paid`, `none`)
