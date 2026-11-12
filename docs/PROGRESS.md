@@ -29,7 +29,7 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 - [x] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
 - [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
-- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
 - [ ] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
 - [ ] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
