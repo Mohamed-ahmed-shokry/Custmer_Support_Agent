@@ -5,23 +5,15 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: SQLite Database Tables & Schema Migration (`api/move_logistics.py`)** ✅
-- [ ] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)**
-  - Request/response schemas for move logistics events, elevator bookings, checklist status updates, session actions, and summary KPIs with full field validations.
-- [ ] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)**
-  - RESTful endpoints for move logistics, elevator reservations, checklist updates, metrics, and 1-click session actions `POST /sessions/{id}/schedule-move` and `POST /sessions/{id}/reserve-freight-elevator`.
-- [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
-  - Context injection `[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]` and auto-resolution of `{move_logistics_type}`, `{move_date}`, `{elevator_slot}`, `{loading_dock_status}`, `{move_checklist_progress}`, `{move_status}`.
-- [ ] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)**
-  - Typed client API wrappers with error handling, session header forwarding, and payload verification.
-- [ ] **AC6: Streamlit UI Move Logistics Board & Session Actions (`app/sidebar.py`)**
-  - 4-tab move logistics management board (`Scheduled Moves`, `Book Move / Elevator`, `Mover COI Tracker`, `Logistics KPIs`) and 1-click resident profile move scheduling & elevator reservation actions.
-- [ ] **AC7: Automated Unit & Integration Tests (`tests/`)**
-  - Test suites for database operations, models, FastAPI routes, RAG context, client utilities, and UI mocks.
+- [x] **AC1: SQLite Database Tables & Schema Migration (`api/move_logistics.py`)** ✅
+- [x] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)** ✅
+- [x] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)** ✅
+- [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
+- [x] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)** ✅
+- [x] **AC6: Streamlit UI Move Logistics Board & Session Actions (`app/sidebar.py`)** ✅
+- [x] **AC7: Automated Unit & Integration Tests (`tests/`)** ✅
 - [ ] **AC8: Documentation Updates & Version Bump**
-  - Endpoints documented in `docs/API.md`, feature highlights in `README.md`, version bump to `0.49.0` in `pyproject.toml` and `api/settings.py`.
 - [ ] **AC9: 100% Green CI Parity & Remote Actions Pass**
-  - All formatters, linters, type checks, secret scans, unit tests (coverage >= 80%), and remote CI runs green.
 
 ## Micro-Task Execution Checklist
 
@@ -31,7 +23,7 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
 - [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
-- [ ] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
 - [ ] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
 - [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
