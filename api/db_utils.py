@@ -324,6 +324,10 @@ VALID_WEBHOOK_EVENTS = {
     "announcement.acknowledged",
     "concierge.requested",
     "concierge.fulfilled",
+    "move_logistics.scheduled",
+    "move_logistics.elevator_reserved",
+    "move_logistics.coi_approved",
+    "move_logistics.completed",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

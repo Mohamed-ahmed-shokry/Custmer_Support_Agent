@@ -4937,3 +4937,93 @@ def test_render_session_announcement_widget(monkeypatch):
     assert len(created_concierge) == expected_count
     assert created_concierge[0][0] == "sess_42"
     assert created_concierge[0][1]["request_type"] == "package_hold"
+
+
+
+def test_move_logistics_board_ui(monkeypatch):
+    """Test rendering the Move Logistics & Elevators operations board tabs."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    moves_data = {
+        "items": [
+            {
+                "id": "move_1",
+                "move_number": "MOV-100",
+                "tenant_name": "Elena Rostova",
+                "move_type": "move_in",
+                "status": "scheduled",
+                "scheduled_date": "2026-11-20",
+                "checklist_progress_pct": 50.0,
+                "checklist_items": [{"id": "coi", "label": "COI", "completed": False}],
+            }
+        ],
+        "total": 1,
+    }
+    elev_data = {
+        "items": [
+            {
+                "id": "elv_1",
+                "booking_number": "ELV-100",
+                "tenant_name": "Elena Rostova",
+                "booking_date": "2026-11-20",
+                "time_slot": "08:00-12:00",
+                "status": "confirmed",
+                "deposit_collected": True,
+            }
+        ],
+        "total": 1,
+    }
+    kpis_data = {
+        "total_moves": 2,
+        "scheduled_moves": 1,
+        "active_elevator_bookings": 1,
+        "pending_cois": 1,
+        "verified_cois": 1,
+        "avg_checklist_progress_pct": 50.0,
+    }
+
+    monkeypatch.setattr(sidebar, "list_move_events_api", lambda **kw: moves_data)
+    monkeypatch.setattr(sidebar, "list_freight_elevator_bookings_api", lambda **kw: elev_data)
+    monkeypatch.setattr(sidebar, "get_move_logistics_metrics_api", lambda: kpis_data)
+
+    sidebar._render_move_logistics_moves_tab()
+    sidebar._render_move_logistics_elevators_tab()
+    sidebar._render_move_logistics_kpis_tab()
+    sidebar._render_move_logistics_board()
+
+
+def test_session_move_logistics_widget_ui(monkeypatch):
+    """Test resident move logistics and elevator action widget in active support session."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    moves_data = {
+        "items": [
+            {
+                "id": "move_1",
+                "move_number": "MOV-100",
+                "move_type": "move_in",
+                "scheduled_date": "2026-11-20",
+                "status": "scheduled",
+                "checklist_progress_pct": 40.0,
+            }
+        ]
+    }
+    scheduled_moves = []
+    reserved_elevators = []
+
+    monkeypatch.setattr(sidebar, "list_move_events_api", lambda **kw: moves_data)
+    monkeypatch.setattr(
+        sidebar,
+        "session_schedule_move_api",
+        lambda sid, p: scheduled_moves.append((sid, p)) or {"move_event": {"id": "m_new"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_reserve_elevator_api",
+        lambda sid, p: reserved_elevators.append((sid, p)) or {"booking": {"id": "e_new"}},
+    )
+
+    tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
+    sidebar._render_session_move_logistics_widget("sess_test_1", tenant)

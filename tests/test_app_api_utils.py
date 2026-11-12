@@ -3629,3 +3629,79 @@ def test_announcements_api_utils_errors(monkeypatch):
 
     assert api_utils.session_acknowledge_alert_api("fail", {}) is None
     assert api_utils.session_request_concierge_api("fail", {}) is None
+
+
+
+def test_move_logistics_api_utils_success(monkeypatch):
+    """Verify happy-path execution of move logistics and elevator booking client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    move_payload = {"move_event": {"id": "move_1", "move_number": "MOV-100"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=move_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    assert api_utils.create_move_event_api({"tenant_id": "t1"}) == move_payload
+    assert fake_requests.calls[0][1] == f"{api_utils.API_BASE_URL}/move-logistics"
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=move_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    assert api_utils.list_move_events_api(tenant_id="t1") == move_payload
+    assert api_utils.get_move_event_api("move_1") == move_payload
+    assert api_utils.update_move_event_api("move_1", {"status": "completed"}) == move_payload
+    assert api_utils.toggle_move_checklist_api("move_1", {"item_id": "coi"}) == move_payload
+
+    # Elevator bookings
+    elv_payload = {"booking": {"id": "elv_1", "time_slot": "08:00-12:00"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=elv_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    assert api_utils.book_freight_elevator_api({"tenant_id": "t1"}) == elv_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=elv_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+
+    assert api_utils.list_freight_elevator_bookings_api() == elv_payload
+    assert api_utils.get_freight_elevator_booking_api("elv_1") == elv_payload
+    assert api_utils.cancel_freight_elevator_booking_api("elv_1") == elv_payload
+
+    # Session actions
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=move_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.session_schedule_move_api("sess_1", {"move_type": "move_in"}) == move_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=elv_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_reserve_elevator_api("sess_1", {"booking_date": "2026-11-20"})
+        == elv_payload
+    )
+
+    # Metrics
+    metrics_payload = {"total_moves": 4, "active_elevator_bookings": 2}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=metrics_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_move_logistics_metrics_api() == metrics_payload
+
+
+def test_move_logistics_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in move logistics client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.create_move_event_api({}) is None
+    assert api_utils.list_move_events_api() is None
+    assert api_utils.get_move_event_api("fail") is None
+    assert api_utils.update_move_event_api("fail", {}) is None
+    assert api_utils.toggle_move_checklist_api("fail", {}) is None
+
+    assert api_utils.book_freight_elevator_api({}) is None
+    assert api_utils.list_freight_elevator_bookings_api() is None
+    assert api_utils.get_freight_elevator_booking_api("fail") is None
+    assert api_utils.cancel_freight_elevator_booking_api("fail") is None
+
+    assert api_utils.session_schedule_move_api("fail", {}) is None
+    assert api_utils.session_reserve_elevator_api("fail", {}) is None
+    assert api_utils.get_move_logistics_metrics_api() is None

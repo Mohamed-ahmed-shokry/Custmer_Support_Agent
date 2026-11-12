@@ -14,6 +14,7 @@ from api import (
     amenities,
     announcements,
     incidents,
+    move_logistics,
     packages,
     parking,
     pets,
@@ -807,6 +808,90 @@ def _extract_incident_vars(
     }
 
 
+
+
+def _format_move_logistics_lines(
+    move_events: list[dict[str, Any]],
+    elevator_bookings: list[dict[str, Any]],
+) -> list[str]:
+    """Format resident move logistics and freight elevator reservations for prompt grounding."""
+    if not move_events and not elevator_bookings:
+        return []
+
+    lines = ["[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]"]
+    if move_events:
+        lines.append(f"- Scheduled Moves & Transfers: {len(move_events)}")
+        for m in move_events[:2]:
+            mnum = m.get("move_number", "MOV")
+            mtype = str(m.get("move_type", "move_in")).replace("_", " ").title()
+            date = m.get("scheduled_date", "TBD")
+            status = str(m.get("status", "scheduled")).upper()
+            mover = m.get("moving_company") or "Self / Unassigned Mover"
+            coi = str(m.get("coi_status", "pending")).upper()
+            pct = m.get("checklist_progress_pct", 0.0)
+            dock = m.get("loading_dock_assigned") or (
+                "Permit Required" if m.get("loading_dock_required") else "None"
+            )
+            lines.append(f"  - #{mnum} [{status}] {mtype} on {date}")
+            lines.append(f"    Mover: {mover} | COI: {coi} | Loading Dock: {dock}")
+            lines.append(f"    Checklist Progress: {pct}% complete")
+    else:
+        lines.append("- Scheduled Moves & Transfers: None")
+
+    if elevator_bookings:
+        active_bookings = [
+            b for b in elevator_bookings if b.get("status") == "confirmed"
+        ]
+        lines.append(f"- Freight Elevator Bookings: {len(active_bookings)} active")
+        for b in active_bookings[:2]:
+            bnum = b.get("booking_number", "ELV")
+            bdate = b.get("booking_date", "")
+            slot = b.get("time_slot", "")
+            elev = b.get("elevator_identifier", "Freight Elevator")
+            dep_status = "Collected" if b.get("deposit_collected") else "Pending"
+            lines.append(f"  - #{bnum} on {bdate} ({slot}) - {elev} | Deposit: {dep_status}")
+
+    return lines
+
+
+def _extract_move_logistics_vars(
+    move_events: list[dict[str, Any]],
+    elevator_bookings: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Extract template macro variables for move logistics."""
+    vars_dict: dict[str, str] = {
+        "move_logistics_type": "None",
+        "move_date": "None",
+        "elevator_slot": "None",
+        "loading_dock_status": "None",
+        "move_checklist_progress": "0%",
+        "move_status": "None",
+    }
+    if move_events:
+        latest_move = move_events[0]
+        vars_dict["move_logistics_type"] = str(
+            latest_move.get("move_type", "move_in")
+        ).replace("_", " ").title()
+        vars_dict["move_date"] = str(latest_move.get("scheduled_date", "None"))
+        vars_dict["move_status"] = str(latest_move.get("status", "scheduled")).upper()
+        vars_dict["move_checklist_progress"] = f"{latest_move.get('checklist_progress_pct', 0.0)}%"
+        dock = latest_move.get("loading_dock_assigned")
+        if dock:
+            vars_dict["loading_dock_status"] = f"Assigned: {dock}"
+        elif latest_move.get("loading_dock_required"):
+            vars_dict["loading_dock_status"] = "Permit Pending"
+        else:
+            vars_dict["loading_dock_status"] = "Not Required"
+
+    active_elev = [b for b in elevator_bookings if b.get("status") == "confirmed"]
+    if active_elev:
+        latest_elev = active_elev[0]
+        b_date = latest_elev.get("booking_date", "")
+        b_slot = latest_elev.get("time_slot", "")
+        vars_dict["elevator_slot"] = f"{b_date} {b_slot}".strip()
+
+    return vars_dict
+
 def _format_announcements_lines(
     announcements_list: list[dict[str, Any]],
     concierge_requests: list[dict[str, Any]],
@@ -1001,6 +1086,19 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         ap_res = incidents.list_violation_appeals(tenant_id=resolved_unit_id)
         violation_appeals = ap_res.get("items", [])
 
+    move_events: list[dict[str, Any]] = []
+    elevator_bookings: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        move_events = move_logistics.list_move_events(tenant_id=resolved_tenant_id)
+        elevator_bookings = move_logistics.list_freight_elevator_bookings(
+            tenant_id=resolved_tenant_id
+        )
+    elif resolved_unit_id:
+        move_events = move_logistics.list_move_events(unit_id=resolved_unit_id)
+        elevator_bookings = move_logistics.list_freight_elevator_bookings(
+            unit_id=resolved_unit_id
+        )
+
     announcements_list: list[dict[str, Any]] = []
     concierge_requests: list[dict[str, Any]] = []
     if resolved_tenant_id:
@@ -1121,6 +1219,13 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             lines.append("")
         lines.extend(
             _format_incident_lines(community_incidents, violation_notices, violation_appeals)
+        )
+
+    if move_events or elevator_bookings:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_move_logistics_lines(move_events, elevator_bookings)
         )
 
     if announcements_list or concierge_requests:
@@ -1403,6 +1508,17 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         t_concierge = con_res.get("items", []) if con_res else []
 
     variables.update(_extract_announcement_vars(t_announcements, t_concierge))
+
+    t_moves: list[dict[str, Any]] = []
+    t_elevators: list[dict[str, Any]] = []
+    if resolved_tenant_id:
+        t_moves = move_logistics.list_move_events(tenant_id=resolved_tenant_id)
+        t_elevators = move_logistics.list_freight_elevator_bookings(tenant_id=resolved_tenant_id)
+    elif resolved_unit_id:
+        t_moves = move_logistics.list_move_events(unit_id=resolved_unit_id)
+        t_elevators = move_logistics.list_freight_elevator_bookings(unit_id=resolved_unit_id)
+
+    variables.update(_extract_move_logistics_vars(t_moves, t_elevators))
 
     t_creds: list[dict[str, Any]] = []
     t_passes: list[dict[str, Any]] = []

@@ -27,6 +27,7 @@ from api import (
     lease_renewals,
     macro_suggestions,
     macros,
+    move_logistics,
     packages,
     parking,
     pets,
@@ -206,6 +207,10 @@ from api.pydantic_models import (
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
+    FreightElevatorBookingCreateRequest,
+    FreightElevatorBookingItem,
+    FreightElevatorBookingListResponse,
+    FreightElevatorBookingResponse,
     GuestPassCreateRequest,
     GuestPassItem,
     GuestPassListResponse,
@@ -260,6 +265,13 @@ from api.pydantic_models import (
     MacroSuggestRequest,
     MacroSuggestResponse,
     MacroUpdateRequest,
+    MoveChecklistToggleRequest,
+    MoveLogisticsCreateRequest,
+    MoveLogisticsItem,
+    MoveLogisticsListResponse,
+    MoveLogisticsMetricsResponse,
+    MoveLogisticsResponse,
+    MoveLogisticsUpdateRequest,
     PackageCreateRequest,
     PackageItem,
     PackageListResponse,
@@ -324,6 +336,8 @@ from api.pydantic_models import (
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
+    SessionReserveElevatorRequest,
+    SessionScheduleMoveRequest,
     SessionSearchResponse,
     SessionSearchResult,
     SessionSLAStatusResponse,
@@ -7170,4 +7184,321 @@ def session_request_concierge_route(
     )
     return ConciergeRequestResponse(
         concierge_request=ConciergeRequestItem(**created)
+    )
+
+
+
+# ==============================================================================
+# Move-In / Move-Out Logistics & Freight Elevator Endpoints (v0.49.0)
+# ==============================================================================
+
+
+@app.get("/move-logistics/metrics", response_model=MoveLogisticsMetricsResponse)
+def get_move_logistics_metrics_route():
+    """Retrieve portfolio-wide metrics for move logistics and freight elevator bookings."""
+    return MoveLogisticsMetricsResponse(**move_logistics.get_move_logistics_metrics_summary())
+
+
+@app.post("/move-logistics", response_model=MoveLogisticsResponse, status_code=201)
+def create_move_event_route(
+    request: MoveLogisticsCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Schedule a new move-in, move-out, or internal transfer event."""
+    created = move_logistics.create_move_event(
+        tenant_id=request.tenant_id,
+        unit_id=request.unit_id,
+        move_type=request.move_type,
+        scheduled_date=request.scheduled_date,
+        moving_company=request.moving_company,
+        mover_contact_phone=request.mover_contact_phone,
+        coi_status=request.coi_status,
+        coi_document_url=request.coi_document_url,
+        loading_dock_required=request.loading_dock_required,
+        loading_dock_assigned=request.loading_dock_assigned,
+        keys_count=request.keys_count,
+        fobs_count=request.fobs_count,
+        forwarding_address=request.forwarding_address,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "move_logistics.scheduled",
+        {
+            "move_id": created["id"],
+            "move_number": created["move_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "move_type": created["move_type"],
+            "scheduled_date": created["scheduled_date"],
+        },
+    )
+    return MoveLogisticsResponse(move_event=MoveLogisticsItem(**created))
+
+
+@app.get("/move-logistics", response_model=MoveLogisticsListResponse)
+def list_move_events_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    move_type: str | None = None,
+    limit: int = 50,
+):
+    """List move logistics events with optional filters."""
+    res = move_logistics.list_move_events(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        move_type=move_type,
+        limit=limit,
+    )
+    items = [MoveLogisticsItem(**m) for m in res]
+    return MoveLogisticsListResponse(items=items, total=len(items))
+
+
+@app.get("/move-logistics/{move_id}", response_model=MoveLogisticsResponse)
+def get_move_event_route(move_id: str):
+    """Retrieve details of a specific move event."""
+    m = move_logistics.get_move_event(move_id)
+    if not m:
+        raise HTTPException(status_code=404, detail=f"Move event '{move_id}' not found.")
+    return MoveLogisticsResponse(move_event=MoveLogisticsItem(**m))
+
+
+@app.patch("/move-logistics/{move_id}", response_model=MoveLogisticsResponse)
+def update_move_event_route(  # noqa: PLR0913, PLR0917
+    move_id: str,
+    request: MoveLogisticsUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Update fields, status, or COI compliance for a move event."""
+    existing = move_logistics.get_move_event(move_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Move event '{move_id}' not found.")
+
+    updated = move_logistics.update_move_event(
+        move_id=move_id,
+        status=request.status,
+        scheduled_date=request.scheduled_date,
+        moving_company=request.moving_company,
+        mover_contact_phone=request.mover_contact_phone,
+        coi_status=request.coi_status,
+        coi_document_url=request.coi_document_url,
+        coi_notes=request.coi_notes,
+        loading_dock_assigned=request.loading_dock_assigned,
+        key_handover_status=request.key_handover_status,
+        forwarding_address=request.forwarding_address,
+        notes=request.notes,
+    )
+    if request.coi_status == "verified" and existing.get("coi_status") != "verified":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "move_logistics.coi_approved",
+            {"move_id": move_id, "move_number": existing["move_number"]},
+        )
+    if request.status == "completed" and existing.get("status") != "completed":
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "move_logistics.completed",
+            {"move_id": move_id, "move_number": existing["move_number"]},
+        )
+
+    res = updated or existing
+    return MoveLogisticsResponse(move_event=MoveLogisticsItem(**res))
+
+
+@app.post("/move-logistics/{move_id}/checklist", response_model=MoveLogisticsResponse)
+def toggle_move_checklist_route(move_id: str, request: MoveChecklistToggleRequest):
+    """Toggle completion of an individual checklist item on a move event."""
+    existing = move_logistics.get_move_event(move_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Move event '{move_id}' not found.")
+    updated = move_logistics.update_move_checklist_item(
+        move_id=move_id,
+        item_id=request.item_id,
+        completed=request.completed,
+    )
+    return MoveLogisticsResponse(move_event=MoveLogisticsItem(**(updated or existing)))
+
+
+@app.post(
+    "/elevator-bookings",
+    response_model=FreightElevatorBookingResponse,
+    status_code=201,
+)
+def book_freight_elevator_route(
+    request: FreightElevatorBookingCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Reserve a dedicated freight elevator slot."""
+    try:
+        created = move_logistics.book_freight_elevator(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            booking_date=request.booking_date,
+            time_slot=request.time_slot,
+            move_id=request.move_id,
+            elevator_identifier=request.elevator_identifier,
+            deposit_collected=request.deposit_collected,
+            deposit_amount=request.deposit_amount,
+            padding_installed=request.padding_installed,
+            notes=request.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "move_logistics.elevator_reserved",
+        {
+            "booking_id": created["id"],
+            "booking_number": created["booking_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "booking_date": created["booking_date"],
+            "time_slot": created["time_slot"],
+        },
+    )
+    return FreightElevatorBookingResponse(
+        booking=FreightElevatorBookingItem(**created)
+    )
+
+
+@app.get("/elevator-bookings", response_model=FreightElevatorBookingListResponse)
+def list_freight_elevator_bookings_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    booking_date: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+):
+    """List freight elevator bookings with optional filtering."""
+    res = move_logistics.list_freight_elevator_bookings(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        booking_date=booking_date,
+        status=status,
+        limit=limit,
+    )
+    items = [FreightElevatorBookingItem(**b) for b in res]
+    return FreightElevatorBookingListResponse(items=items, total=len(items))
+
+
+@app.get("/elevator-bookings/{booking_id}", response_model=FreightElevatorBookingResponse)
+def get_freight_elevator_booking_route(booking_id: str):
+    """Retrieve details of an elevator booking."""
+    b = move_logistics.get_freight_elevator_booking(booking_id)
+    if not b:
+        raise HTTPException(status_code=404, detail=f"Elevator booking '{booking_id}' not found.")
+    return FreightElevatorBookingResponse(booking=FreightElevatorBookingItem(**b))
+
+
+@app.post("/elevator-bookings/{booking_id}/cancel", response_model=FreightElevatorBookingResponse)
+def cancel_freight_elevator_booking_route(booking_id: str):
+    """Cancel a freight elevator booking."""
+    existing = move_logistics.get_freight_elevator_booking(booking_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Elevator booking '{booking_id}' not found.")
+    cancelled = move_logistics.cancel_elevator_booking(booking_id)
+    return FreightElevatorBookingResponse(
+        booking=FreightElevatorBookingItem(**(cancelled or existing))
+    )
+
+
+@app.post(
+    "/sessions/{session_id}/schedule-move",
+    response_model=MoveLogisticsResponse,
+    status_code=201,
+)
+def session_schedule_move_route(
+    session_id: str,
+    request: SessionScheduleMoveRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Schedule a resident move event directly from active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    if not tenant.get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for move scheduling.",
+        )
+    created = move_logistics.create_move_event(
+        tenant_id=tenant["id"],
+        unit_id=tenant["unit_id"],
+        move_type=request.move_type,
+        scheduled_date=request.scheduled_date,
+        moving_company=request.moving_company,
+        mover_contact_phone=request.mover_contact_phone,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "move_logistics.scheduled",
+        {
+            "move_id": created["id"],
+            "move_number": created["move_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "move_type": created["move_type"],
+            "scheduled_date": created["scheduled_date"],
+        },
+    )
+    return MoveLogisticsResponse(move_event=MoveLogisticsItem(**created))
+
+
+@app.post(
+    "/sessions/{session_id}/reserve-elevator",
+    response_model=FreightElevatorBookingResponse,
+    status_code=201,
+)
+def session_reserve_elevator_route(
+    session_id: str,
+    request: SessionReserveElevatorRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Reserve a freight elevator slot directly from active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    if not tenant.get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for elevator booking.",
+        )
+    try:
+        created = move_logistics.book_freight_elevator(
+            tenant_id=tenant["id"],
+            unit_id=tenant["unit_id"],
+            booking_date=request.booking_date,
+            time_slot=request.time_slot,
+            elevator_identifier=request.elevator_identifier,
+            notes=request.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "move_logistics.elevator_reserved",
+        {
+            "booking_id": created["id"],
+            "booking_number": created["booking_number"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "booking_date": created["booking_date"],
+            "time_slot": created["time_slot"],
+        },
+    )
+    return FreightElevatorBookingResponse(
+        booking=FreightElevatorBookingItem(**created)
     )

@@ -55,6 +55,10 @@ from api.pydantic_models import (
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
+    FreightElevatorBookingCreateRequest,
+    FreightElevatorBookingItem,
+    FreightElevatorBookingListResponse,
+    FreightElevatorBookingResponse,
     GuestPassCreateRequest,
     GuestPassItem,
     GuestPassListResponse,
@@ -110,6 +114,14 @@ from api.pydantic_models import (
     MacroSuggestResponse,
     MacroUpdateRequest,
     ModelName,
+    MoveChecklistItem,
+    MoveChecklistToggleRequest,
+    MoveLogisticsCreateRequest,
+    MoveLogisticsItem,
+    MoveLogisticsListResponse,
+    MoveLogisticsMetricsResponse,
+    MoveLogisticsResponse,
+    MoveLogisticsUpdateRequest,
     PackageCarrier,
     PackageCreateRequest,
     PackageItem,
@@ -166,6 +178,8 @@ from api.pydantic_models import (
     SessionMacroSuggestionsResponse,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
+    SessionReserveElevatorRequest,
+    SessionScheduleMoveRequest,
     SessionSLAStatusResponse,
     SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
@@ -2962,3 +2976,87 @@ def test_announcement_models_validation():
     )
     assert metrics.total_announcements == expected_announcements
     assert metrics.active_emergency_alerts == expected_alerts
+
+
+
+def test_move_logistics_models():
+    """Test Pydantic model schemas for move logistics and elevator bookings."""
+    expected_moves = 5
+    expected_cois = 2
+
+    chk = MoveChecklistItem(id="coi", label="COI Submission", completed=True)
+    assert chk.id == "coi"
+    assert chk.completed is True
+
+    move_item = MoveLogisticsItem(
+        id="move_test_1",
+        move_number="MOV-IN-2026-TEST1",
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        scheduled_date="2026-11-20",
+        moving_company="Apex Movers",
+        checklist_items=[chk],
+        created_at="2026-11-12T00:00:00Z",
+        updated_at="2026-11-12T00:00:00Z",
+    )
+    assert move_item.move_number == "MOV-IN-2026-TEST1"
+    assert len(move_item.checklist_items) == 1
+
+    resp = MoveLogisticsResponse(move_event=move_item)
+    assert resp.move_event.id == "move_test_1"
+
+    list_resp = MoveLogisticsListResponse(items=[move_item], total=1)
+    assert list_resp.total == 1
+
+    create_req = MoveLogisticsCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        move_type="move_out",
+        scheduled_date="2026-12-05",
+        moving_company="Quick Mover",
+    )
+    assert create_req.move_type == "move_out"
+
+    update_req = MoveLogisticsUpdateRequest(status="completed", coi_status="verified")
+    assert update_req.status == "completed"
+
+    toggle_req = MoveChecklistToggleRequest(item_id="coi", completed=True)
+    assert toggle_req.item_id == "coi"
+
+    booking_item = FreightElevatorBookingItem(
+        id="elv_test_1",
+        booking_number="ELV-2026-TEST1",
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        booking_date="2026-11-20",
+        time_slot="08:00-12:00",
+        created_at="2026-11-12T00:00:00Z",
+        updated_at="2026-11-12T00:00:00Z",
+    )
+    assert booking_item.time_slot == "08:00-12:00"
+
+    book_create = FreightElevatorBookingCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        booking_date="2026-11-25",
+        time_slot="12:00-16:00",
+    )
+    assert book_create.booking_date == "2026-11-25"
+
+    book_resp = FreightElevatorBookingResponse(booking=booking_item)
+    assert book_resp.booking.id == "elv_test_1"
+
+    book_list = FreightElevatorBookingListResponse(items=[booking_item], total=1)
+    assert book_list.total == 1
+
+    sess_move = SessionScheduleMoveRequest(move_type="move_in", scheduled_date="2026-11-20")
+    assert sess_move.move_type == "move_in"
+
+    sess_elv = SessionReserveElevatorRequest(booking_date="2026-11-20", time_slot="08:00-12:00")
+    assert sess_elv.time_slot == "08:00-12:00"
+
+    metrics = MoveLogisticsMetricsResponse(
+        total_moves=expected_moves, scheduled_moves=3, pending_cois=expected_cois
+    )
+    assert metrics.total_moves == expected_moves
+    assert metrics.pending_cois == expected_cois

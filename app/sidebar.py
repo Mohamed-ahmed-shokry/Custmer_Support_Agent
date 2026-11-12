@@ -1,4 +1,6 @@
 import datetime
+from datetime import UTC
+from datetime import datetime as dt
 from typing import Any
 
 import streamlit as st
@@ -11,6 +13,8 @@ from app.api_utils import (
     apply_macro_to_session,
     assign_session,
     auto_assign_session,
+    book_freight_elevator_api,
+    cancel_freight_elevator_booking_api,
     complete_inspection,
     complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
@@ -80,6 +84,7 @@ from app.api_utils import (
     get_knowledge_analytics,
     get_lease_renewal_metrics,
     get_metrics,
+    get_move_logistics_metrics_api,
     get_package_metrics_api,
     get_parking_metrics_api,
     get_pet_metrics_api,
@@ -110,6 +115,7 @@ from app.api_utils import (
     list_documents,
     list_feedback,
     list_feedback_review_queue,
+    list_freight_elevator_bookings_api,
     list_guest_passes_api,
     list_incidents_api,
     list_inspections,
@@ -119,6 +125,7 @@ from app.api_utils import (
     list_lease_renewals,
     list_macro_categories,
     list_macros,
+    list_move_events_api,
     list_packages_api,
     list_parking_spots_api,
     list_parking_violations_api,
@@ -174,16 +181,20 @@ from app.api_utils import (
     session_register_pet_api,
     session_report_lost_fob_api,
     session_request_concierge_api,
+    session_reserve_elevator_api,
+    session_schedule_move_api,
     session_submit_violation_appeal_api,
     sign_lease_renewal,
     suggest_macros,
     summarize_session,
+    toggle_move_checklist_api,
     update_announcement_api,
     update_billing_transaction,
     update_concierge_request_api,
     update_feedback_review,
     update_inspection,
     update_knowledge_gap,
+    update_move_event_api,
     update_reservation_api,
     update_session,
     update_support_agent,
@@ -1116,6 +1127,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_access_widget(selected, tenant)
     _render_session_incident_widget(selected, tenant)
     _render_session_announcement_widget(selected, tenant)
+    _render_session_move_logistics_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -5827,6 +5839,228 @@ def _render_announcements_board():
             st.caption(f"Announcements board temporarily unavailable: {e}")
 
 
+
+
+
+def _render_session_move_logistics_widget(selected: str, tenant: dict):  # noqa: PLR0912, PLR0915
+    """Render active move-in/out logistics, freight elevator bookings, and 1-click actions."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    try:
+        moves_resp = list_move_events_api(tenant_id=tenant_id)
+        moves = moves_resp.get("items", []) if moves_resp else []
+        active_moves = [m for m in moves if m.get("status") in ("scheduled", "in_progress")]
+
+        if active_moves:
+            st.sidebar.markdown("**📦 Scheduled Move Logistics:**")
+            for m in active_moves[:2]:
+                mtype = str(m.get("move_type", "move_in")).replace("_", " ").title()
+                mdate = m.get("scheduled_date", "TBD")
+                mnum = m.get("move_number", "MOV")
+                pct = m.get("checklist_progress_pct", 0.0)
+                st.sidebar.info(f"**{mtype}** on {mdate} (#{mnum}) - {pct}% Ready")
+
+        with st.sidebar.expander("📦 Move & Elevator Actions"):
+            st.markdown("**Schedule Move Event**")
+            m_type = st.selectbox(
+                "Move Type",
+                ["move_in", "move_out", "internal_transfer"],
+                key=f"sb_mtype_{selected}",
+            )
+            m_date = st.text_input(
+                "Move Date (YYYY-MM-DD)",
+                value=dt.now(UTC).strftime("%Y-%m-%d"),
+                key=f"txt_mdate_{selected}",
+            )
+            m_mover = st.text_input("Moving Company", key=f"txt_mmover_{selected}")
+            if st.button("Schedule Move", key=f"btn_sched_move_{selected}"):
+                with st.spinner("Scheduling move event..."):
+                    res = session_schedule_move_api(
+                        selected,
+                        {
+                            "move_type": m_type,
+                            "scheduled_date": m_date,
+                            "moving_company": m_mover,
+                        },
+                    )
+                    if res:
+                        st.success("Move event scheduled successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to schedule move.")
+
+            st.markdown("---")
+            st.markdown("**Reserve Freight Elevator**")
+            e_date = st.text_input(
+                "Booking Date (YYYY-MM-DD)",
+                value=dt.now(UTC).strftime("%Y-%m-%d"),
+                key=f"txt_edate_{selected}",
+            )
+            e_slot = st.selectbox(
+                "Time Slot",
+                ["08:00-12:00", "12:00-16:00", "16:00-20:00"],
+                key=f"sb_eslot_{selected}",
+            )
+            if st.button("Reserve Freight Elevator", key=f"btn_res_elev_{selected}"):
+                with st.spinner("Reserving elevator slot..."):
+                    res = session_reserve_elevator_api(
+                        selected,
+                        {
+                            "booking_date": e_date,
+                            "time_slot": e_slot,
+                        },
+                    )
+                    if res:
+                        st.success("Freight elevator reserved!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to reserve elevator.")
+    except Exception as e:
+        st.sidebar.caption(f"Move logistics session widget unavailable: {e}")
+
+
+def _render_move_logistics_moves_tab():
+    """Render list of scheduled moves and interactive checklists."""
+    st.markdown("#### 🚚 Scheduled Move Events")
+    data = list_move_events_api()
+    moves = data.get("items", []) if data else []
+    if not moves:
+        st.info("No move logistics events scheduled.")
+        return
+
+    for m in moves:
+        mid = m.get("id")
+        mnum = m.get("move_number")
+        tname = m.get("tenant_name") or m.get("tenant_id")
+        mtype = str(m.get("move_type", "move_in")).replace("_", " ").title()
+        status = str(m.get("status", "scheduled")).upper()
+        date = m.get("scheduled_date")
+        pct = m.get("checklist_progress_pct", 0.0)
+
+        with st.expander(f"{mtype}: {tname} on {date} (#{mnum}) - [{status}] ({pct}%)"):
+            st.write(f"**Moving Company:** {m.get('moving_company') or 'Self-managed'}")
+            st.write(f"**COI Status:** {str(m.get('coi_status')).upper()}")
+            st.write(f"**Loading Dock:** {m.get('loading_dock_assigned') or 'Dock Bay #1'}")
+            st.write(f"**Key Handover:** {m.get('key_handover_status')}")
+
+            # Checklist
+            items = m.get("checklist_items", [])
+            for item in items:
+                iid = item.get("id")
+                lbl = item.get("label")
+                done = item.get("completed", False)
+                chk = st.checkbox(lbl, value=done, key=f"chk_step_{mid}_{iid}")
+                if chk != done:
+                    toggle_move_checklist_api(mid, {"item_id": iid, "completed": chk})
+                    st.rerun()
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if status != "COMPLETED" and st.button(
+                    "Mark Move Completed", key=f"btn_done_move_{mid}"
+                ):
+                    update_move_event_api(mid, {"status": "completed"})
+                    st.rerun()
+            with col2:
+                if m.get("coi_status") != "verified" and st.button(
+                    "Approve COI", key=f"btn_appr_coi_{mid}"
+                ):
+                    update_move_event_api(mid, {"coi_status": "verified"})
+                    st.rerun()
+
+
+def _render_move_logistics_elevators_tab():
+    """Render freight elevator bookings and reservation form."""
+    st.markdown("#### 🛗 Freight Elevator Reservations")
+    data = list_freight_elevator_bookings_api()
+    bookings = data.get("items", []) if data else []
+    if bookings:
+        for b in bookings:
+            bid = b.get("id")
+            bnum = b.get("booking_number")
+            tname = b.get("tenant_name") or b.get("tenant_id")
+            date = b.get("booking_date")
+            slot = b.get("time_slot")
+            stat = str(b.get("status", "confirmed")).upper()
+            dep = "Collected" if b.get("deposit_collected") else "Pending"
+            st.write(
+                f"**#{bnum}** | {tname} | {date} ({slot}) | Status: **{stat}** | Deposit: {dep}"
+            )
+            if stat == "CONFIRMED" and st.button("Cancel Booking", key=f"btn_canc_elv_{bid}"):
+                cancel_freight_elevator_booking_api(bid)
+                st.rerun()
+    else:
+        st.info("No freight elevator reservations found.")
+
+    st.markdown("---")
+    st.markdown("##### Book Freight Elevator Slot")
+    b_tid = st.text_input("Tenant ID", value="tenant_3", key="txt_book_elv_tid")
+    b_uid = st.text_input("Unit ID", value="unit_PH1", key="txt_book_elv_uid")
+    b_date = st.text_input(
+        "Date (YYYY-MM-DD)", value=dt.now(UTC).strftime("%Y-%m-%d"), key="txt_book_elv_date"
+    )
+    b_slot = st.selectbox(
+        "Slot", ["08:00-12:00", "12:00-16:00", "16:00-20:00"], key="sb_book_elv_slot"
+    )
+    b_dep = st.checkbox(
+        "Security Deposit Collected ($250)", value=True, key="chk_book_elv_deposit"
+    )
+    if st.button("Reserve Elevator", key="btn_book_elv_submit"):
+        res = book_freight_elevator_api(
+            {
+                "tenant_id": b_tid,
+                "unit_id": b_uid,
+                "booking_date": b_date,
+                "time_slot": b_slot,
+                "deposit_collected": b_dep,
+            }
+        )
+        if res:
+            st.success("Elevator booked successfully!")
+            st.rerun()
+        else:
+            st.error("Booking failed or slot already reserved.")
+
+
+def _render_move_logistics_kpis_tab():
+    """Render move logistics summary operational metrics."""
+    st.markdown("#### 📊 Logistics & Move KPIs")
+    metrics = get_move_logistics_metrics_api()
+    if metrics:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Moves", metrics.get("total_moves", 0))
+            st.metric("Scheduled Moves", metrics.get("scheduled_moves", 0))
+            st.metric("Pending COIs", metrics.get("pending_cois", 0))
+        with col2:
+            st.metric("Active Elevator Slots", metrics.get("active_elevator_bookings", 0))
+            st.metric("Verified COIs", metrics.get("verified_cois", 0))
+            pct_val = metrics.get("avg_checklist_progress_pct", 0.0)
+            st.metric("Avg Checklist Progress", f"{pct_val}%")
+    else:
+        st.info("Logistics metrics unavailable.")
+
+
+def _render_move_logistics_board():
+    """Render move logistics and elevator operations board in sidebar."""
+    with st.sidebar.expander("📦 Move Logistics & Elevators"):
+        try:
+            v_tab = st.radio(
+                "Move View",
+                ["Scheduled Moves", "Freight Elevators", "Logistics KPIs"],
+                key="move_logistics_board_tab_radio",
+            )
+            if v_tab == "Scheduled Moves":
+                _render_move_logistics_moves_tab()
+            elif v_tab == "Freight Elevators":
+                _render_move_logistics_elevators_tab()
+            else:
+                _render_move_logistics_kpis_tab()
+        except Exception as e:
+            st.caption(f"Move logistics board temporarily unavailable: {e}")
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -5862,5 +6096,6 @@ def display_sidebar():
     _render_access_control_board()
     _render_incidents_violations_board()
     _render_announcements_board()
+    _render_move_logistics_board()
     _render_knowledge_studio()
     _render_ops_metrics()
