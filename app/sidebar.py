@@ -38,6 +38,7 @@ from app.api_utils import (
     create_support_agent,
     create_tenant,
     create_unit,
+    create_utility_invoice_api,
     create_vendor,
     create_violation_notice_api,
     create_webhook,
@@ -101,7 +102,10 @@ from app.api_utils import (
     get_tenant_lease_renewals,
     get_tenant_ledger,
     get_tenant_support_history,
+    get_tenant_utilities_summary_api,
+    get_unit_utilities_summary_api,
     get_unit_work_orders,
+    get_utility_metrics_api,
     get_vendor_metrics,
     get_work_order_metrics,
     issue_visitor_pass_api,
@@ -125,6 +129,7 @@ from app.api_utils import (
     list_lease_renewals,
     list_macro_categories,
     list_macros,
+    list_meter_readings_api,
     list_move_events_api,
     list_packages_api,
     list_parking_spots_api,
@@ -146,6 +151,7 @@ from app.api_utils import (
     list_tenant_violation_notices_api,
     list_tenants,
     list_units,
+    list_utility_invoices_api,
     list_vehicles_api,
     list_vendors,
     list_violation_appeals_api,
@@ -157,11 +163,13 @@ from app.api_utils import (
     list_work_orders,
     pickup_package_api,
     ping_webhook,
+    post_utility_invoice_to_ledger_api,
     publish_inspection_document,
     publish_knowledge_article,
     publish_lease_renewal_document,
     rechunk_collection,
     rechunk_document,
+    record_meter_reading_api,
     record_parking_violation_api,
     record_pet_incident_api,
     record_session_payment,
@@ -178,8 +186,10 @@ from app.api_utils import (
     session_intake_package_api,
     session_issue_violation_notice_api,
     session_issue_visitor_pass_api,
+    session_record_meter_reading_api,
     session_register_pet_api,
     session_report_lost_fob_api,
+    session_report_utility_leak_api,
     session_request_concierge_api,
     session_reserve_elevator_api,
     session_schedule_move_api,
@@ -1128,6 +1138,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_incident_widget(selected, tenant)
     _render_session_announcement_widget(selected, tenant)
     _render_session_move_logistics_widget(selected, tenant)
+    _render_session_utilities_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6061,6 +6072,239 @@ def _render_move_logistics_board():
         except Exception as e:
             st.caption(f"Move logistics board temporarily unavailable: {e}")
 
+
+# ---------------------------------------------------------------------------
+# Utility Submetering, Readings & Statements UI
+# ---------------------------------------------------------------------------
+
+
+def _render_session_utilities_widget(selected: str, tenant: dict[str, Any]) -> None:
+    """Render 1-click utility telemetry, leak reporting, and readings in resident context."""
+    tenant_id = tenant.get("id")
+    unit_id = tenant.get("unit_id")
+    if not tenant_id and not unit_id:
+        return
+
+    with st.sidebar.expander("⚡ Resident Utility Submetering"):
+        summary = None
+        if tenant_id:
+            summary = get_tenant_utilities_summary_api(tenant_id)
+        elif unit_id:
+            summary = get_unit_utilities_summary_api(unit_id)
+
+        if summary:
+            meters = summary.get("meters", [])
+            st.caption(f"Active Submeters: **{len(meters)}**")
+            elec = summary.get("latest_electricity_kwh", 0.0)
+            water = summary.get("latest_water_gallons", 0.0)
+            st.caption(f"Latest Usage: 💡 {elec:.1f} kWh | 💧 {water:.1f} gal")
+
+            if summary.get("has_anomaly"):
+                st.warning("⚠️ High Consumption Anomaly Detected for this Unit!")
+                for an in summary.get("anomalies", []):
+                    st.caption(
+                        f"Spike: {an.get('consumption')} {an.get('unit_of_measure')} "
+                        f"on {an.get('reading_date')}"
+                    )
+
+            inv = summary.get("latest_invoice")
+            if inv:
+                st.caption(
+                    f"Current Bill: #{inv.get('invoice_number')} "
+                    f"[{str(inv.get('status')).upper()}] - ${inv.get('total_amount', 0.0):,.2f}"
+                )
+
+        st.markdown("---")
+        st.markdown("##### 📝 Submit Meter Reading")
+        r_val = st.number_input(
+            "Meter Reading Value",
+            min_value=0.0,
+            step=1.0,
+            value=100.0,
+            key=f"sess_util_r_val_{selected}",
+        )
+        r_type = st.selectbox(
+            "Meter Type",
+            ["electricity", "water", "gas"],
+            key=f"sess_util_r_type_{selected}",
+        )
+        if st.button("Record Reading", key=f"btn_sess_util_rec_{selected}"):
+            res = session_record_meter_reading_api(
+                selected,
+                {"reading_value": float(r_val), "meter_type": r_type},
+            )
+            if res and res.get("reading"):
+                num = res["reading"].get("id")
+                st.success(f"Reading saved: `{num}`")
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("##### 🚨 Report Utility Leak")
+        leak_type = st.selectbox(
+            "Leak / Failure Type",
+            ["water", "gas", "electricity"],
+            key=f"sess_leak_type_{selected}",
+        )
+        leak_desc = st.text_input(
+            "Description",
+            value="Uncontrolled leak detected in resident fixture",
+            key=f"sess_leak_desc_{selected}",
+        )
+        if st.button("Dispatch Leak Work Order", key=f"btn_sess_leak_dispatch_{selected}"):
+            l_res = session_report_utility_leak_api(
+                selected,
+                {"meter_type": leak_type, "description": leak_desc},
+            )
+            if l_res and l_res.get("work_order"):
+                wo_id = l_res["work_order"].get("id")
+                st.error(f"EMERGENCY DISPATCH CREATED: `{wo_id}`")
+                st.rerun()
+
+
+def _render_utilities_readings_tab() -> None:
+    """Render telemetry reading logs and manual meter reading submission."""
+    readings_resp = list_meter_readings_api(limit=10)
+    items = readings_resp.get("items", []) if readings_resp else []
+    total = readings_resp.get("total", len(items)) if readings_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** recorded meter readings.")
+    for r in items[:5]:
+        m_type = str(r.get("meter_type", "utility")).title()
+        val = r.get("reading_value", 0.0)
+        uom = r.get("unit_of_measure", "units")
+        date = r.get("reading_date", "")
+        stat = "⚠️ SPIKE" if r.get("is_anomaly") else "✅ Normal"
+        unit = r.get("unit_number") or r.get("unit_id")
+        st.markdown(f"- **Unit {unit}** - {m_type}: `{val} {uom}` on {date} ({stat})")
+
+    with st.expander("➕ Log Meter Reading"):
+        m_id = st.text_input("Meter ID*", value="mtr_101_elec", key="man_util_m_id")
+        m_val = st.number_input(
+            "Reading Value*", min_value=0.0, step=1.0, value=350.0, key="man_util_m_val"
+        )
+        m_notes = st.text_input("Notes", placeholder="Routine monthly audit", key="man_util_m_note")
+        if st.button("Submit Reading", key="btn_man_util_sub") and m_id:
+            res = record_meter_reading_api(
+                {"meter_id": m_id, "reading_value": float(m_val), "notes": m_notes}
+            )
+            if res and res.get("reading"):
+                st.success("Reading recorded!")
+                st.rerun()
+
+
+def _render_utilities_invoices_tab() -> None:
+    """Render billing statements and RUBS generation."""
+    inv_resp = list_utility_invoices_api(limit=10)
+    items = inv_resp.get("items", []) if inv_resp else []
+    total = inv_resp.get("total", len(items)) if inv_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** utility statements.")
+    for inv in items[:5]:
+        inv_id = inv.get("id")
+        num = inv.get("invoice_number")
+        total_amt = inv.get("total_amount", 0.0)
+        stat = str(inv.get("status", "draft")).upper()
+        unit = inv.get("unit_number") or inv.get("unit_id")
+        st.markdown(f"- **#{num}** (Unit {unit}): `${total_amt:,.2f}` [{stat}]")
+        if stat == "DRAFT" and st.button("Post to Ledger", key=f"btn_post_ledger_{inv_id}"):
+            res = post_utility_invoice_to_ledger_api(inv_id)
+            if res:
+                st.success(f"Invoice {num} posted to ledger!")
+                st.rerun()
+
+    with st.expander("➕ Generate Utility Invoice"):
+        i_uid = st.text_input("Unit ID*", value="unit_101", key="gen_inv_uid")
+        i_tid = st.text_input("Tenant ID*", value="tenant_1", key="gen_inv_tid")
+        i_total = st.number_input(
+            "Total Amount ($)*", min_value=1.0, step=5.0, value=75.50, key="gen_inv_amt"
+        )
+        i_elec = st.number_input(
+            "Electricity Portion ($)", min_value=0.0, step=5.0, value=45.0, key="gen_inv_elec"
+        )
+        i_water = st.number_input(
+            "Water Portion ($)", min_value=0.0, step=5.0, value=30.50, key="gen_inv_water"
+        )
+        if st.button("Create Invoice", key="btn_gen_inv_sub") and i_uid and i_tid:
+            inv_res = create_utility_invoice_api(
+                {
+                    "unit_id": i_uid,
+                    "tenant_id": i_tid,
+                    "total_amount": float(i_total),
+                    "electric_amount": float(i_elec),
+                    "water_amount": float(i_water),
+                    "gas_amount": 0.0,
+                    "trash_amount": 0.0,
+                }
+            )
+            if inv_res and inv_res.get("invoice"):
+                st.success("Utility invoice created!")
+                st.rerun()
+
+
+def _render_utilities_anomalies_tab() -> None:
+    """Render consumption anomaly monitor."""
+    st.markdown("#### 🚨 Consumption Spikes & Leaks")
+    anom_resp = list_meter_readings_api(anomalies_only=True, limit=10)
+    items = anom_resp.get("items", []) if anom_resp else []
+
+    if not items:
+        st.info("✅ No consumption anomalies detected across property meters.")
+        return
+
+    st.warning(f"⚠️ {len(items)} Active Consumption Anomaly / Spike(s) Flagged!")
+    for a in items:
+        m_type = str(a.get("meter_type", "utility")).title()
+        cons = a.get("consumption", 0.0)
+        uom = a.get("unit_of_measure", "")
+        date = a.get("reading_date", "")
+        notes = a.get("anomaly_notes") or "Spike >50% above baseline"
+        unit = a.get("unit_number") or a.get("unit_id")
+        st.markdown(f"- **Unit {unit}** ({m_type}): `{cons} {uom}` on {date} — *{notes}*")
+
+
+def _render_utilities_kpis_tab() -> None:
+    """Render utility submetering and conservation KPIs."""
+    st.markdown("#### 📊 Utility Submetering KPIs")
+    metrics = get_utility_metrics_api()
+    if metrics:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Submeters", metrics.get("total_meters", 0))
+            st.metric("Total Invoiced", f"${metrics.get('total_invoiced_amount', 0.0):,.2f}")
+            st.metric("Consumption Spikes", metrics.get("active_anomalies", 0))
+        with col2:
+            st.metric("Total Consumption", f"{metrics.get('total_consumption', 0.0):,.1f}")
+            st.metric("Paid Invoices", metrics.get("paid_invoices_count", 0))
+            st.metric("Collection Rate", f"{metrics.get('collection_rate_pct', 0.0)}%")
+    else:
+        st.info("Utility metrics unavailable.")
+
+
+def _render_utilities_board() -> None:
+    """Render utility submetering and RUBS operations board in sidebar."""
+    with st.sidebar.expander("⚡ Utility Submetering & RUBS"):
+        try:
+            u_tab = st.radio(
+                "Utility View",
+                [
+                    "Readings & Telemetry",
+                    "Invoices & Billing",
+                    "Anomaly Monitor",
+                    "Submetering KPIs",
+                ],
+                key="utility_board_tab_radio",
+            )
+            if u_tab == "Readings & Telemetry":
+                _render_utilities_readings_tab()
+            elif u_tab == "Invoices & Billing":
+                _render_utilities_invoices_tab()
+            elif u_tab == "Anomaly Monitor":
+                _render_utilities_anomalies_tab()
+            else:
+                _render_utilities_kpis_tab()
+        except Exception as e:
+            st.caption(f"Utilities board temporarily unavailable: {e}")
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -6097,5 +6341,6 @@ def display_sidebar():
     _render_incidents_violations_board()
     _render_announcements_board()
     _render_move_logistics_board()
+    _render_utilities_board()
     _render_knowledge_studio()
     _render_ops_metrics()

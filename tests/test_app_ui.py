@@ -5027,3 +5027,127 @@ def test_session_move_logistics_widget_ui(monkeypatch):
 
     tenant = {"id": "tenant_3", "first_name": "Elena", "unit_id": "unit_PH1"}
     sidebar._render_session_move_logistics_widget("sess_test_1", tenant)
+
+
+def test_utilities_board_ui(monkeypatch):
+    """Test utility submetering board tabs, logs, invoices, anomalies, and KPI rendering."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    readings_data = {
+        "items": [
+            {
+                "id": "rd_1",
+                "meter_type": "electricity",
+                "reading_value": 310.5,
+                "unit_of_measure": "kWh",
+                "reading_date": "2026-11-01",
+                "is_anomaly": False,
+                "unit_number": "101",
+            }
+        ],
+        "total": 1,
+    }
+    invoices_data = {
+        "items": [
+            {
+                "id": "inv_1",
+                "invoice_number": "INV-202611-001",
+                "total_amount": 95.50,
+                "status": "draft",
+                "unit_number": "101",
+            }
+        ],
+        "total": 1,
+    }
+    anomalies_data = {
+        "items": [
+            {
+                "id": "rd_2",
+                "meter_type": "water",
+                "consumption": 850.0,
+                "unit_of_measure": "gallons",
+                "reading_date": "2026-11-10",
+                "is_anomaly": True,
+                "anomaly_notes": "Continuous flow detected",
+                "unit_number": "101",
+            }
+        ],
+        "total": 1,
+    }
+    kpis_data = {
+        "total_meters": 4,
+        "total_invoiced_amount": 1250.0,
+        "active_anomalies": 1,
+        "total_consumption": 4500.0,
+        "paid_invoices_count": 3,
+        "collection_rate_pct": 85.0,
+    }
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_meter_readings_api",
+        lambda **kw: anomalies_data if kw.get("anomalies_only") else readings_data,
+    )
+    monkeypatch.setattr(sidebar, "list_utility_invoices_api", lambda **kw: invoices_data)
+    monkeypatch.setattr(sidebar, "get_utility_metrics_api", lambda: kpis_data)
+    monkeypatch.setattr(
+        sidebar, "post_utility_invoice_to_ledger_api", lambda iid: {"status": "posted"}
+    )
+    monkeypatch.setattr(
+        sidebar, "record_meter_reading_api", lambda p: {"reading": {"id": "rd_new"}}
+    )
+    monkeypatch.setattr(
+        sidebar, "create_utility_invoice_api", lambda p: {"invoice": {"id": "inv_new"}}
+    )
+
+    sidebar._render_utilities_readings_tab()
+    sidebar._render_utilities_invoices_tab()
+    sidebar._render_utilities_anomalies_tab()
+    sidebar._render_utilities_kpis_tab()
+    sidebar._render_utilities_board()
+
+
+def test_session_utilities_widget_ui(monkeypatch):
+    """Test resident utility telemetry, readings, and leak reporting in active support session."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    summary_data = {
+        "unit_id": "unit_101",
+        "meters": [{"id": "mtr_1", "meter_type": "electricity"}],
+        "has_anomaly": True,
+        "anomalies": [
+            {
+                "consumption": 500.0,
+                "unit_of_measure": "kWh",
+                "reading_date": "2026-11-12",
+            }
+        ],
+        "latest_electricity_kwh": 310.0,
+        "latest_water_gallons": 1200.0,
+        "latest_invoice": {
+            "invoice_number": "INV-101",
+            "status": "draft",
+            "total_amount": 110.0,
+        },
+    }
+
+    recorded_readings = []
+    reported_leaks = []
+
+    monkeypatch.setattr(sidebar, "get_tenant_utilities_summary_api", lambda tid: summary_data)
+    monkeypatch.setattr(sidebar, "get_unit_utilities_summary_api", lambda uid: summary_data)
+    monkeypatch.setattr(
+        sidebar,
+        "session_record_meter_reading_api",
+        lambda sid, p: recorded_readings.append((sid, p)) or {"reading": {"id": "rd_new"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_report_utility_leak_api",
+        lambda sid, p: reported_leaks.append((sid, p)) or {"work_order": {"id": "wo_leak_new"}},
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_utilities_widget("sess_test_1", tenant)
