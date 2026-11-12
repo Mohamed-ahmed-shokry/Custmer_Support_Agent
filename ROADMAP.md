@@ -1840,6 +1840,63 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.49.0 plan — Resident Move-In / Move-Out Logistics, Freight Elevator Bookings & Key Handover Engine (IN PROGRESS)
+
+Provide property managers, leasing coordinators, and residents with an end-to-end move-in/move-out logistics orchestration engine. The system coordinates elevator reservations, loading dock access, moving company insurance/COI tracking, checklist verification, key handovers, and condition sign-offs. Active resident chat conversations automatically ground upcoming move logistics into prompt context (`[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]`) and resolve canned response macros (`{move_logistics_type}`, `{move_date}`, `{elevator_slot}`, `{loading_dock_status}`, `{move_checklist_progress}`, `{move_status}`). Real-time webhook events (`move_logistics.scheduled`, `move_logistics.elevator_reserved`, `move_logistics.coi_approved`, `move_logistics.completed`) keep on-site operations and residents aligned.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers and residents can:
+1. Schedule and track move-in and move-out events linked to tenants and units with moving types (`move_in`, `move_out`, `internal_transfer`), scheduled dates, and moving companies.
+2. Book dedicated freight elevator time windows (`08:00-12:00`, `12:00-16:00`, `16:00-20:00`) and loading dock permits preventing scheduling collisions.
+3. Track Certificate of Insurance (COI) verification status (`pending`, `verified`, `waived`, `rejected`) and mover contact information.
+4. Execute interactive move checklists (key handover, security deposit verification, walk-through inspection linkage, forwarding address confirmation) with progress percentage.
+5. Ground active resident chat sessions with move logistics and resolve `{move_*}` template macros.
+6. Track portfolio logistics metrics (scheduled moves, active elevator reservations, pending COIs, completed moves this month).
+
+### Scope
+- `api/move_logistics.py`:
+  - SQLite tables `move_logistics_events` and `freight_elevator_bookings` with indexes, foreign keys to `tenants` and `units`, and seed records.
+  - Enums: `MoveType`, `MoveStatus`, `ElevatorSlot`, `COIStatus`, `ChecklistStep`.
+  - CRUD operations and metrics aggregator `get_move_logistics_metrics_summary()`.
+  - Conflict prevention for freight elevator slots and loading dock slots.
+  - Seed records for Elena Rostova (`tenant_3`, `unit_PH1`).
+- `api/pydantic_models.py`:
+  - Pydantic models for move logistics events, elevator bookings, checklist updates, session actions, and summary metrics.
+- `api/db_utils.py`:
+  - Webhook event types for move logistics lifecycle (`move_logistics.scheduled`, `move_logistics.elevator_reserved`, `move_logistics.coi_approved`, `move_logistics.completed`).
+- `api/main.py`:
+  - REST endpoints for `/move-logistics`, `/move-logistics/{id}`, `/move-logistics/{id}/elevator-booking`, `/move-logistics/{id}/checklist`, `/move-logistics/metrics`, and session 1-click actions `POST /sessions/{id}/schedule-move` and `POST /sessions/{id}/reserve-freight-elevator`.
+- `api/tenant_context.py`:
+  - RAG prompt grounding block `[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]` and macro variables.
+- `app/api_utils.py`:
+  - Typed client API wrappers for move logistics and elevator booking endpoints.
+- `app/sidebar.py`:
+  - Streamlit `📦 Move Logistics & Freight Elevators` sidebar management panel (Scheduled Moves, Book Move / Elevator, Mover COI Tracker, Logistics KPIs) and 1-click resident profile move scheduling & elevator reservation actions.
+- Tests:
+  - Unit tests for engine, models, tenant context, routes, app client, and UI.
+
+### Acceptance Criteria
+- [ ] AC1: Core SQLite database schema & migrations in `api/move_logistics.py` with foreign keys to `tenants` and `units` and seeds.
+- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [ ] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click move scheduling and elevator reservation actions.
+- [ ] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [ ] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [ ] AC6: Streamlit UI components in `app/sidebar.py` (move logistics board & session resident widget).
+- [ ] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [ ] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [ ] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Breakdown
+- [ ] Task 1: Document v0.49.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [ ] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
+- [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
+- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [ ] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [ ] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
+- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+
 ## v0.48.0 — Community Announcements, Emergency Broadcast Alerts & Resident Concierge Requests Engine (COMPLETED)
 
 Provide property managers and residents with a full-lifecycle community announcements, emergency building broadcast alerts, resident acknowledgment tracking, and concierge service request management engine. Operators publish building notices (emergency repairs, elevator maintenance, severe weather, social events, policy reminders), broadcast urgent alerts requiring resident acknowledgment, monitor read/acknowledgment rates, and fulfill resident concierge requests (dry cleaning, package holds, contractor entry permissions, special assistance). Active resident chat conversations automatically ground open announcements, emergency alerts, and concierge requests into prompt context (`[COMMUNITY ANNOUNCEMENTS & ACTIVE BUILDING ALERTS]`) and resolve canned response macros (`{active_announcements_count}`, `{active_emergency_alerts_count}`, `{latest_alert_headline}`, `{latest_alert_priority}`, `{alert_acknowledgment_status}`, `{concierge_requests_count}`). Real-time webhook events (`announcement.published`, `emergency_alert.broadcast`, `announcement.acknowledged`, `concierge.requested`, `concierge.fulfilled`) keep on-site staff, concierge, and residents continuously aligned.
