@@ -1,33 +1,42 @@
-# Phase Execution Progress: v0.49.0
+# Phase Execution Progress: v0.50.0
 
-## Phase Scope: Resident Move-In / Move-Out Logistics, Freight Elevator Bookings & Key Handover Engine
-Complete move-in/move-out logistics orchestration engine including freight elevator reservations, loading dock access, moving company COI compliance, interactive move checklists, conversational RAG grounding, and Streamlit management hub.
+## Phase Scope: Resident Utility Submetering, Energy & Water Consumption & Billing Splits Engine
+Complete utility submetering, meter reading telemetry, consumption anomaly and water leak detection, ratio utility billing (RUBS), conversational RAG grounding, and Streamlit management operations hub.
 
 ## Acceptance Criteria Status
 
-- [x] **AC1: SQLite Database Tables & Schema Migration (`api/move_logistics.py`)** ✅
+- [x] **AC1: SQLite Database Tables & Schema Migration (`api/utilities.py`)** ✅
+  - Tables `utility_meters`, `utility_readings`, `utility_invoices`, and `utility_disputes` with indexes, foreign keys to `units` and `tenants`, and seed records.
 - [x] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)** ✅
+  - Request/response schemas for meters, readings, invoices, disputes, session actions, and summary KPIs with full field validations.
 - [x] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)** ✅
+  - RESTful endpoints for utility submetering, readings, invoices, metrics, unit/tenant summaries, and 1-click session actions `POST /sessions/{id}/record-meter-reading` and `POST /sessions/{id}/report-utility-leak`.
 - [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
+  - Context injection `[RESIDENT UTILITY METERS, USAGE & SUBMETERING]` and auto-resolution of `{primary_meter_status}`, `{latest_electric_kwh}`, `{latest_water_gallons}`, `{latest_utility_total}`, `{utility_anomaly_alert}`, `{utility_invoice_status}`.
 - [x] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)** ✅
-- [x] **AC6: Streamlit UI Move Logistics Board & Session Actions (`app/sidebar.py`)** ✅
+  - Typed client API wrappers with error handling, session header forwarding, and payload verification.
+- [x] **AC6: Streamlit UI Utility Board & Session Actions (`app/sidebar.py`)** ✅
+  - 4-tab utility management board (`Meter Readings & Telemetry`, `Monthly Statements & RUBS`, `Consumption Alerts & Anomaly Monitor`, `Submetering KPIs`) and 1-click resident profile utility actions.
 - [x] **AC7: Automated Unit & Integration Tests (`tests/`)** ✅
+  - Test suites for database operations, models, FastAPI routes, RAG context, client utilities, and UI mocks.
 - [x] **AC8: Documentation Updates & Version Bump** ✅
-- [ ] **AC9: 100% Green CI Parity & Remote Actions Pass**
+  - Endpoints documented in `docs/API.md`, feature highlights in `README.md`, version bump to `0.50.0` in `pyproject.toml` and `api/settings.py`.
+- [x] **AC9: 100% Green CI Parity & Remote Actions Pass** ✅
+  - All formatters, linters, type checks, secret scans, unit tests (coverage >= 80%), and remote CI runs green.
 
 ## Micro-Task Execution Checklist
 
-- [x] Task 1: Document v0.49.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [x] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
+- [x] Task 1: Document v0.50.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/utilities.py` database schema, models, CRUD helpers, anomaly detection, metrics, and seed data with unit tests in `tests/test_utilities.py`.
 - [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
-- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_utility_routes.py`.
 - [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
-- [x] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
-- [x] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
-- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+- [x] Task 7: Implement Streamlit UI utility board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.50.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
 ## Decision Log
-- **D1: Dedicated Move Logistics & Elevator Module**: Followed established modular pattern (`api/announcements.py`, `api/incidents.py`, `api/access_control.py`) creating a dedicated `api/move_logistics.py`.
-- **D2: Dedicated Elevator Booking Slots**: Freight elevators operate in fixed discrete slots (`slot_morning_08_12`, `slot_afternoon_12_16`, `slot_evening_16_20`) with strict double-booking collision prevention per building/elevator.
-- **D3: Moving Company Insurance (COI) Verification**: COI compliance state machine (`pending`, `verified`, `waived`, `rejected`) ensures building security and safety protocols prior to elevator key release.
+- **D1: Dedicated Utilities & Submetering Module**: Followed established modular pattern (`api/announcements.py`, `api/incidents.py`, `api/move_logistics.py`) creating a dedicated `api/utilities.py`.
+- **D2: Multi-Utility Submeter Hierarchy**: Support electricity (`kWh`), water (`gallons`), gas (`therms`), sewer, and trash meters with per-meter serial numbers and calibration dates.
+- **D3: Rolling Anomaly Baseline**: Automatically flag any consumption reading exceeding prior average by >50% as a potential leak or equipment malfunction, enabling proactive resident alerts and 1-click work-order dispatch.

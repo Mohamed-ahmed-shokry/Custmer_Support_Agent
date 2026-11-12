@@ -1840,7 +1840,64 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
-## ## v0.49.0 — Resident Move-In / Move-Out Logistics, Freight Elevator Bookings & Key Handover Engine (COMPLETED)
+## v0.50.0 — Resident Utility Submetering, Energy & Water Consumption & Billing Splits Engine (COMPLETED)
+
+Provide property managers, facility engineers, and residents with an end-to-end utility submetering, meter reading telemetry, consumption anomaly and water leak detection, ratio utility billing (RUBS), conversational RAG grounding, and Streamlit management operations hub. The system coordinates submeter registry (`electricity`, `water`, `gas`, `sewer`, `trash`), records periodic meter readings, flags consumption spikes and leak anomalies (>50% variance from historical average), computes utility billing splits and invoices linked to resident rent ledgers (`billing_transactions`), grounds active utility and meter context in conversational turns (`[RESIDENT UTILITY METERS, USAGE & SUBMETERING]`), and resolves canned template macros (`{primary_meter_status}`, `{latest_electric_kwh}`, `{latest_water_gallons}`, `{latest_utility_total}`, `{utility_anomaly_alert}`, `{utility_invoice_status}`). Real-time webhooks (`utility.meter_registered`, `utility.reading_recorded`, `utility.anomaly_detected`, `utility.invoice_posted`, `utility.dispute_opened`) keep facilities and residents alerted.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers and residents can:
+1. Register, view, and inspect submeters per unit (`electricity`, `water`, `gas`, `sewer`, `trash`) with serial numbers, measurement units, and operational status (`active`, `inactive`, `faulty`).
+2. Log manual audits, smart telemetry, and resident self-reported meter readings with prior-reading validation and consumption delta computation.
+3. Automatically flag abnormal consumption spikes and potential plumbing leaks (>50% variance against rolling baseline) with anomaly alert notes.
+4. Generate monthly utility statements and post charges directly to resident rent ledgers (`api/billing.py`).
+5. Ground active resident chat sessions with utility usage and resolve `{latest_electric_kwh}`, `{latest_water_gallons}`, `{utility_anomaly_alert}`, and related template macros.
+6. Manage utility telemetry, monthly billing statements, leak alarms, and portfolio consumption KPIs in an interactive Streamlit operations board.
+
+### Scope
+- `api/utilities.py`:
+  - SQLite tables `utility_meters`, `utility_readings`, `utility_invoices`, and `utility_disputes` with indexes, foreign keys to `units` and `tenants`, and seed records.
+  - Enums: `UtilityMeterType`, `MeterStatus`, `ReadingSource`, `UtilityInvoiceStatus`, `DisputeStatus`.
+  - CRUD operations, consumption delta calculation, anomaly detection, ledger posting helper, and metrics aggregator `get_utility_metrics_summary()`.
+  - Default seed data for property units and residents.
+- `api/pydantic_models.py`:
+  - Request/response schemas for meters, readings, invoices, disputes, session actions, and summary metrics.
+- `api/db_utils.py`:
+  - Webhook event types for utility submetering lifecycle.
+- `api/main.py`:
+  - REST endpoints for `/utilities/meters`, `/utilities/readings`, `/utilities/invoices`, `/utilities/metrics`, unit/tenant summaries, and session actions `POST /sessions/{id}/record-meter-reading` and `POST /sessions/{id}/report-utility-leak`.
+- `api/tenant_context.py`:
+  - RAG prompt grounding block `[RESIDENT UTILITY METERS, USAGE & SUBMETERING]` and macro variables.
+- `app/api_utils.py`:
+  - Typed client API wrappers for utility endpoints.
+- `app/sidebar.py`:
+  - Streamlit `⚡ Utilities & Submetering` sidebar board with 4 tabs and resident profile quick utility actions.
+- Tests:
+  - Unit tests for engine, models, tenant context, routes, app client, and UI.
+
+### Acceptance Criteria
+- [x] AC1: Core SQLite database schema & migrations in `api/utilities.py` with foreign keys to `units` and `tenants` and seeds.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click meter reading and leak reporting actions.
+- [x] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [x] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [x] AC6: Streamlit UI components in `app/sidebar.py` (utility board & session resident widget).
+- [x] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [x] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [x] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Breakdown
+- [x] Task 1: Document v0.50.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/utilities.py` database schema, models, CRUD helpers, anomaly detection, metrics, and seed data with unit tests in `tests/test_utilities.py`.
+- [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_utility_routes.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 7: Implement Streamlit UI utility board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.50.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+
+
+## v0.49.0 — Resident Move-In / Move-Out Logistics, Freight Elevator Bookings & Key Handover Engine (COMPLETED)
 
 Provide property managers, leasing coordinators, and residents with an end-to-end move-in/move-out logistics orchestration engine. The system coordinates elevator reservations, loading dock access, moving company insurance/COI tracking, checklist verification, key handovers, and condition sign-offs. Active resident chat conversations automatically ground upcoming move logistics into prompt context (`[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]`) and resolve canned response macros (`{move_logistics_type}`, `{move_date}`, `{elevator_slot}`, `{loading_dock_status}`, `{move_checklist_progress}`, `{move_status}`). Real-time webhook events (`move_logistics.scheduled`, `move_logistics.elevator_reserved`, `move_logistics.coi_approved`, `move_logistics.completed`) keep on-site operations and residents aligned.
 

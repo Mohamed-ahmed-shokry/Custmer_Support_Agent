@@ -17,6 +17,7 @@ from api import (
     packages,
     parking,
     pets,
+    utilities,
     vendors,
 )
 from api.macros import render_template
@@ -49,6 +50,7 @@ def setup_temp_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     access_control.init_access_control_db()
     incidents.init_incidents_db()
     announcements.init_announcements_db()
+    utilities.init_utilities_db()
     db_utils.create_session_labels()
     db_utils.migrate_session_labels()
     yield
@@ -882,3 +884,48 @@ def test_render_template_with_move_logistics_variables():
     assert "Move In" in rendered
     assert "SCHEDULED" in rendered
     assert "Dock Bay #2" in rendered
+
+
+def test_build_tenant_rag_context_with_utilities():
+    """Verify utilities grounding block is included when meters and readings are present."""
+    sid = "sess-util-grounding"
+    db_utils.insert_application_logs(sid, "Utility test", "Checking utility context", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    block = build_tenant_rag_context(session_id=sid)
+    assert "[RESIDENT UTILITY METERS, USAGE & SUBMETERING]" in block
+    assert "Active Utility Meters:" in block
+    assert "Electricity (SN: EL-101-301) [ACTIVE]" in block
+    assert "[END RESIDENT UTILITY METERS, USAGE & SUBMETERING]" in block
+
+
+def test_extract_tenant_macro_variables_with_utilities():
+    """Verify utility macro variables are properly resolved from session context."""
+    sid = "sess-util-macro"
+    db_utils.insert_application_logs(sid, "Utility macro", "Checking utility macros", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["primary_meter_status"] == "active"
+    assert "kWh" in variables["latest_electric_kwh"]
+    assert "gal" in variables["latest_water_gallons"]
+    assert "$" in variables["latest_utility_total"]
+    assert "utility_anomaly_alert" in variables
+    assert "utility_invoice_status" in variables
+
+
+def test_render_template_with_utility_variables():
+    """Verify macro template rendering with utility variables."""
+    sid = "sess-util-render"
+    db_utils.insert_application_logs(sid, "Utility template", "Rendering utilities", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+
+    template = (
+        "Hello {customer_name}, your electric meter status is {primary_meter_status} "
+        "and latest consumption is {latest_electric_kwh}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
+    assert "active" in rendered
+    assert "kWh" in rendered

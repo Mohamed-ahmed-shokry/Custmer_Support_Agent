@@ -5433,3 +5433,260 @@ def get_move_logistics_metrics_api() -> dict[str, Any] | None:
         "Failed to fetch move logistics metrics",
         "fetching move logistics metrics",
     )
+
+
+# ---------------------------------------------------------------------------
+# Utility Submetering & RUBS Billing API Wrappers
+# ---------------------------------------------------------------------------
+
+
+def _utility_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute utility submetering API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_utility_metrics_api() -> dict[str, Any] | None:
+    """Retrieve portfolio utility submetering and conservation metrics."""
+    return _utility_call(
+        "get",
+        "/utilities/metrics",
+        HTTP_OK,
+        "Failed to fetch utility metrics",
+        "fetching utility metrics",
+    )
+
+
+def create_utility_meter_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Provision a new submeter."""
+    return _utility_call(
+        "post",
+        "/utilities/meters",
+        HTTP_CREATED,
+        "Failed to provision utility meter",
+        "provisioning utility meter",
+        json=payload,
+    )
+
+
+def list_utility_meters_api(
+    unit_id: str | None = None,
+    meter_type: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any] | None:
+    """List utility submeters."""
+    params: dict[str, Any] = {}
+    if unit_id:
+        params["unit_id"] = unit_id
+    if meter_type:
+        params["meter_type"] = meter_type
+    if status:
+        params["status"] = status
+    return _utility_call(
+        "get",
+        "/utilities/meters",
+        HTTP_OK,
+        "Failed to fetch utility meters",
+        "fetching utility meters",
+        params=params,
+    )
+
+
+def get_utility_meter_api(meter_id: str) -> dict[str, Any] | None:
+    """Get details of a utility submeter."""
+    return _utility_call(
+        "get",
+        f"/utilities/meters/{meter_id}",
+        HTTP_OK,
+        f"Failed to fetch utility meter '{meter_id}'",
+        f"fetching utility meter '{meter_id}'",
+    )
+
+
+def update_utility_meter_api(meter_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update fields or status of a utility submeter."""
+    return _utility_call(
+        "patch",
+        f"/utilities/meters/{meter_id}",
+        HTTP_OK,
+        f"Failed to update utility meter '{meter_id}'",
+        f"updating utility meter '{meter_id}'",
+        json=payload,
+    )
+
+
+def record_meter_reading_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Record a utility meter reading."""
+    return _utility_call(
+        "post",
+        "/utilities/readings",
+        HTTP_CREATED,
+        "Failed to record meter reading",
+        "recording meter reading",
+        json=payload,
+    )
+
+
+def list_meter_readings_api(  # noqa: PLR0913, PLR0917
+    meter_id: str | None = None,
+    unit_id: str | None = None,
+    meter_type: str | None = None,
+    anomalies_only: bool = False,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    """List utility meter readings."""
+    params: dict[str, Any] = {"limit": limit}
+    if meter_id:
+        params["meter_id"] = meter_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if meter_type:
+        params["meter_type"] = meter_type
+    if anomalies_only:
+        params["anomalies_only"] = anomalies_only
+    return _utility_call(
+        "get",
+        "/utilities/readings",
+        HTTP_OK,
+        "Failed to fetch meter readings",
+        "fetching meter readings",
+        params=params,
+    )
+
+
+def get_meter_reading_api(reading_id: str) -> dict[str, Any] | None:
+    """Get details of a specific meter reading."""
+    return _utility_call(
+        "get",
+        f"/utilities/readings/{reading_id}",
+        HTTP_OK,
+        f"Failed to fetch meter reading '{reading_id}'",
+        f"fetching meter reading '{reading_id}'",
+    )
+
+
+def create_utility_invoice_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Generate a utility invoice."""
+    return _utility_call(
+        "post",
+        "/utilities/invoices",
+        HTTP_CREATED,
+        "Failed to generate utility invoice",
+        "generating utility invoice",
+        json=payload,
+    )
+
+
+def list_utility_invoices_api(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    """List utility invoices."""
+    params: dict[str, Any] = {"limit": limit}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    return _utility_call(
+        "get",
+        "/utilities/invoices",
+        HTTP_OK,
+        "Failed to fetch utility invoices",
+        "fetching utility invoices",
+        params=params,
+    )
+
+
+def get_utility_invoice_api(invoice_id: str) -> dict[str, Any] | None:
+    """Get details of a utility invoice."""
+    return _utility_call(
+        "get",
+        f"/utilities/invoices/{invoice_id}",
+        HTTP_OK,
+        f"Failed to fetch utility invoice '{invoice_id}'",
+        f"fetching utility invoice '{invoice_id}'",
+    )
+
+
+def post_utility_invoice_to_ledger_api(invoice_id: str) -> dict[str, Any] | None:
+    """Post utility invoice charge to general ledger."""
+    return _utility_call(
+        "post",
+        f"/utilities/invoices/{invoice_id}/post-to-ledger",
+        HTTP_OK,
+        f"Failed to post invoice '{invoice_id}' to ledger",
+        f"posting utility invoice '{invoice_id}' to ledger",
+    )
+
+
+def get_unit_utilities_summary_api(unit_id: str) -> dict[str, Any] | None:
+    """Get utility meters and consumption summary for a unit."""
+    return _utility_call(
+        "get",
+        f"/units/{unit_id}/utilities/summary",
+        HTTP_OK,
+        f"Failed to fetch utility summary for unit '{unit_id}'",
+        f"fetching utility summary for unit '{unit_id}'",
+    )
+
+
+def get_tenant_utilities_summary_api(tenant_id: str) -> dict[str, Any] | None:
+    """Get utility telemetry and invoices for a tenant."""
+    return _utility_call(
+        "get",
+        f"/tenants/{tenant_id}/utilities/summary",
+        HTTP_OK,
+        f"Failed to fetch utility summary for tenant '{tenant_id}'",
+        f"fetching utility summary for tenant '{tenant_id}'",
+    )
+
+
+def session_record_meter_reading_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Record a meter reading directly from support session."""
+    return _utility_call(
+        "post",
+        f"/sessions/{session_id}/record-meter-reading",
+        HTTP_CREATED,
+        f"Failed to record meter reading for session '{session_id}'",
+        "recording meter reading from support session",
+        json=payload,
+    )
+
+
+def session_report_utility_leak_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Report an emergency utility leak from support session."""
+    return _utility_call(
+        "post",
+        f"/sessions/{session_id}/report-utility-leak",
+        HTTP_CREATED,
+        f"Failed to report utility leak for session '{session_id}'",
+        "reporting utility leak from support session",
+        json=payload,
+    )

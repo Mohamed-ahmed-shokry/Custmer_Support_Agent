@@ -33,6 +33,7 @@ from api import (
     pets,
     sla,
     tenant_context,
+    utilities,
     vendors,
     webhooks,
 )
@@ -265,6 +266,10 @@ from api.pydantic_models import (
     MacroSuggestRequest,
     MacroSuggestResponse,
     MacroUpdateRequest,
+    MeterReadingCreateRequest,
+    MeterReadingItem,
+    MeterReadingListResponse,
+    MeterReadingResponse,
     MoveChecklistToggleRequest,
     MoveLogisticsCreateRequest,
     MoveLogisticsItem,
@@ -334,8 +339,10 @@ from api.pydantic_models import (
     SessionIssueViolationNoticeRequest,
     SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
+    SessionRecordMeterReadingRequest,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
+    SessionReportUtilityLeakRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSearchResponse,
@@ -371,13 +378,26 @@ from api.pydantic_models import (
     TenantSupportHistoryResponse,
     TenantSupportHistorySessionItem,
     TenantUpdateRequest,
+    TenantUtilitiesSummaryResponse,
     UnitCreateRequest,
     UnitItem,
     UnitListResponse,
     UnitResponse,
     UnitUpdateRequest,
+    UnitUtilitiesSummaryResponse,
     UpdateSessionRequest,
     UploadDocumentResponse,
+    UtilityInvoiceCreateRequest,
+    UtilityInvoiceItem,
+    UtilityInvoiceListResponse,
+    UtilityInvoiceResponse,
+    UtilityInvoiceUpdateRequest,
+    UtilityMeterCreateRequest,
+    UtilityMeterItem,
+    UtilityMeterListResponse,
+    UtilityMeterResponse,
+    UtilityMeterUpdateRequest,
+    UtilityMetricsResponse,
     VehicleItem,
     VehicleListResponse,
     VehicleRegisterRequest,
@@ -7502,3 +7522,314 @@ def session_reserve_elevator_route(
     return FreightElevatorBookingResponse(
         booking=FreightElevatorBookingItem(**created)
     )
+
+
+# ---------------------------------------------------------------------------
+# Utility Submetering, Meter Readings & Billing Splits Routes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/utilities/metrics", response_model=UtilityMetricsResponse)
+def get_utility_metrics_route():
+    """Retrieve aggregated utility submetering, telemetry, and billing metrics."""
+    return UtilityMetricsResponse(**utilities.get_utility_metrics_summary())
+
+
+@app.post("/utilities/meters", response_model=UtilityMeterResponse, status_code=201)
+def create_utility_meter_route(
+    request: UtilityMeterCreateRequest, background_tasks: BackgroundTasks
+):
+    """Register a new submeter for a property unit."""
+    created = utilities.create_utility_meter(request.model_dump())
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "utility.meter_registered",
+        {
+            "meter_id": created["id"],
+            "unit_id": created["unit_id"],
+            "meter_type": created["meter_type"],
+            "serial_number": created["serial_number"],
+        },
+    )
+    return UtilityMeterResponse(meter=UtilityMeterItem(**created))
+
+
+@app.get("/utilities/meters", response_model=UtilityMeterListResponse)
+def list_utility_meters_route(
+    unit_id: str | None = None,
+    meter_type: str | None = None,
+    status: str | None = None,
+):
+    """List registered submeters with optional filters."""
+    items = utilities.list_utility_meters(unit_id=unit_id, meter_type=meter_type, status=status)
+    return UtilityMeterListResponse(
+        items=[UtilityMeterItem(**m) for m in items],
+        total=len(items),
+    )
+
+
+@app.get("/utilities/meters/{meter_id}", response_model=UtilityMeterResponse)
+def get_utility_meter_route(meter_id: str):
+    """Retrieve submeter details by ID."""
+    m = utilities.get_utility_meter(meter_id)
+    if not m:
+        raise HTTPException(status_code=404, detail=f"Meter '{meter_id}' not found.")
+    return UtilityMeterResponse(meter=UtilityMeterItem(**m))
+
+
+@app.patch("/utilities/meters/{meter_id}", response_model=UtilityMeterResponse)
+def update_utility_meter_route(meter_id: str, request: UtilityMeterUpdateRequest):
+    """Update submeter configuration, rate, or status."""
+    existing = utilities.get_utility_meter(meter_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Meter '{meter_id}' not found.")
+    updated = utilities.update_utility_meter(
+        meter_id, request.model_dump(exclude_unset=True)
+    )
+    return UtilityMeterResponse(meter=UtilityMeterItem(**updated))  # type: ignore[arg-type]
+
+
+@app.post("/utilities/readings", response_model=MeterReadingResponse, status_code=201)
+def record_meter_reading_route(
+    request: MeterReadingCreateRequest, background_tasks: BackgroundTasks
+):
+    """Record a meter reading with automatic consumption and anomaly calculation."""
+    try:
+        created = utilities.record_meter_reading(request.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "utility.reading_recorded",
+        {
+            "reading_id": created["id"],
+            "meter_id": created["meter_id"],
+            "unit_id": created["unit_id"],
+            "consumption": created["consumption"],
+            "is_anomaly": created["is_anomaly"],
+        },
+    )
+    if created.get("is_anomaly"):
+        background_tasks.add_task(
+            webhooks.dispatch_event,
+            "utility.anomaly_detected",
+            {
+                "reading_id": created["id"],
+                "meter_id": created["meter_id"],
+                "unit_id": created["unit_id"],
+                "consumption": created["consumption"],
+                "anomaly_notes": created["anomaly_notes"],
+            },
+        )
+    return MeterReadingResponse(reading=MeterReadingItem(**created))
+
+
+@app.get("/utilities/readings", response_model=MeterReadingListResponse)
+def list_meter_readings_route(
+    meter_id: str | None = None,
+    unit_id: str | None = None,
+    is_anomaly: bool | None = None,
+    limit: int = 50,
+):
+    """List meter reading telemetry records."""
+    items = utilities.list_meter_readings(
+        meter_id=meter_id, unit_id=unit_id, is_anomaly=is_anomaly, limit=limit
+    )
+    return MeterReadingListResponse(
+        items=[MeterReadingItem(**r) for r in items],
+        total=len(items),
+    )
+
+
+@app.get("/utilities/readings/{reading_id}", response_model=MeterReadingResponse)
+def get_meter_reading_route(reading_id: str):
+    """Retrieve meter reading record by ID."""
+    r = utilities.get_meter_reading(reading_id)
+    if not r:
+        raise HTTPException(status_code=404, detail=f"Reading '{reading_id}' not found.")
+    return MeterReadingResponse(reading=MeterReadingItem(**r))
+
+
+@app.post("/utilities/invoices", response_model=UtilityInvoiceResponse, status_code=201)
+def create_utility_invoice_route(request: UtilityInvoiceCreateRequest):
+    """Create a monthly utility statement invoice for a unit."""
+    created = utilities.create_utility_invoice(request.model_dump())
+    return UtilityInvoiceResponse(invoice=UtilityInvoiceItem(**created))
+
+
+@app.get("/utilities/invoices", response_model=UtilityInvoiceListResponse)
+def list_utility_invoices_route(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    billing_month: str | None = None,
+    status: str | None = None,
+):
+    """List utility invoices with optional filters."""
+    items = utilities.list_utility_invoices(
+        unit_id=unit_id, tenant_id=tenant_id, billing_month=billing_month, status=status
+    )
+    return UtilityInvoiceListResponse(
+        items=[UtilityInvoiceItem(**inv) for inv in items],
+        total=len(items),
+    )
+
+
+@app.get("/utilities/invoices/{invoice_id}", response_model=UtilityInvoiceResponse)
+def get_utility_invoice_route(invoice_id: str):
+    """Retrieve utility invoice by ID."""
+    inv = utilities.get_utility_invoice(invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Utility invoice '{invoice_id}' not found.")
+    return UtilityInvoiceResponse(invoice=UtilityInvoiceItem(**inv))
+
+
+@app.patch("/utilities/invoices/{invoice_id}", response_model=UtilityInvoiceResponse)
+def update_utility_invoice_route(invoice_id: str, request: UtilityInvoiceUpdateRequest):
+    """Update utility invoice status or notes."""
+    existing = utilities.get_utility_invoice(invoice_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Utility invoice '{invoice_id}' not found.")
+    updated = utilities.update_utility_invoice(
+        invoice_id, request.model_dump(exclude_unset=True)
+    )
+    return UtilityInvoiceResponse(invoice=UtilityInvoiceItem(**updated))  # type: ignore[arg-type]
+
+
+@app.post("/utilities/invoices/{invoice_id}/post-to-ledger", response_model=UtilityInvoiceResponse)
+def post_utility_invoice_to_ledger_route(invoice_id: str, background_tasks: BackgroundTasks):
+    """Post an unpaid utility invoice as a resident rent ledger charge."""
+    try:
+        updated = utilities.post_utility_invoice_to_ledger(invoice_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "utility.invoice_posted",
+        {
+            "invoice_id": updated["id"],
+            "invoice_number": updated["invoice_number"],
+            "tenant_id": updated["tenant_id"],
+            "unit_id": updated["unit_id"],
+            "total_amount": updated["total_amount"],
+            "ledger_transaction_id": updated["ledger_transaction_id"],
+        },
+    )
+    return UtilityInvoiceResponse(invoice=UtilityInvoiceItem(**updated))
+
+
+@app.get("/units/{unit_id}/utilities/summary", response_model=UnitUtilitiesSummaryResponse)
+def get_unit_utilities_summary_route(unit_id: str):
+    """Retrieve utility meters, latest readings, and anomalies for a property unit."""
+    summary = utilities.get_unit_utilities_summary(unit_id)
+    return UnitUtilitiesSummaryResponse(**summary)
+
+
+@app.get("/tenants/{tenant_id}/utilities/summary", response_model=TenantUtilitiesSummaryResponse)
+def get_tenant_utilities_summary_route(tenant_id: str):
+    """Retrieve utility submetering summary for a resident."""
+    summary = utilities.get_tenant_utilities_summary(tenant_id)
+    return TenantUtilitiesSummaryResponse(**summary)
+
+
+@app.post(
+    "/sessions/{session_id}/record-meter-reading",
+    response_model=MeterReadingResponse,
+    status_code=201,
+)
+def session_record_meter_reading_route(
+    session_id: str,
+    request: SessionRecordMeterReadingRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Record a resident self-reported or concierge meter reading directly within chat session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    try:
+        created = utilities.record_meter_reading(
+            {
+                "meter_id": request.meter_id,
+                "reading_value": request.reading_value,
+                "reading_date": request.reading_date,
+                "source": request.source,
+                "anomaly_notes": request.notes or "",
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "utility.reading_recorded",
+        {
+            "session_id": session_id,
+            "reading_id": created["id"],
+            "meter_id": created["meter_id"],
+            "consumption": created["consumption"],
+        },
+    )
+    return MeterReadingResponse(reading=MeterReadingItem(**created))
+
+
+@app.post("/sessions/{session_id}/report-utility-leak", status_code=201)
+def session_report_utility_leak_route(
+    session_id: str,
+    request: SessionReportUtilityLeakRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Triage resident utility leak alert, create emergency work order, and dispatch webhooks."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    unit_id = tenant.get("unit_id")
+    if not unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for leak reporting.",
+        )
+
+    # Automatically create emergency maintenance work order
+    wo_id = f"wo_leak_{uuid.uuid4().hex[:8]}"
+    wo_title = f"EMERGENCY {request.utility_type.upper()} LEAK - {request.location_description}"
+    wo_desc = (
+        f"Resident reported {request.utility_type} leak. "
+        f"Location: {request.location_description}. "
+        f"Severity: {request.severity}. "
+        f"Duration: {request.estimated_duration or 'Unknown'}."
+    )
+    wo = db_utils.create_work_order(
+        wo_id,
+        unit_id=unit_id,
+        title=wo_title,
+        description=wo_desc,
+        category="plumbing" if request.utility_type in ("water", "sewer") else "general",
+        priority="emergency" if request.severity == "urgent" else "high",
+        tenant_id=tenant["id"],
+    )
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "utility.anomaly_detected",
+        {
+            "session_id": session_id,
+            "tenant_id": tenant["id"],
+            "unit_id": unit_id,
+            "utility_type": request.utility_type,
+            "work_order_id": wo["id"],
+            "location": request.location_description,
+        },
+    )
+    return {
+        "status": "reported",
+        "work_order": wo,
+        "message": f"Emergency work order #{wo['id']} created and maintenance dispatched.",
+    }

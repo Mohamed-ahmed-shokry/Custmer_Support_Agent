@@ -113,6 +113,10 @@ from api.pydantic_models import (
     MacroSuggestRequest,
     MacroSuggestResponse,
     MacroUpdateRequest,
+    MeterReadingCreateRequest,
+    MeterReadingItem,
+    MeterReadingListResponse,
+    MeterReadingResponse,
     ModelName,
     MoveChecklistItem,
     MoveChecklistToggleRequest,
@@ -176,8 +180,10 @@ from api.pydantic_models import (
     SessionIntakePackageRequest,
     SessionIssueViolationNoticeRequest,
     SessionMacroSuggestionsResponse,
+    SessionRecordMeterReadingRequest,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
+    SessionReportUtilityLeakRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSLAStatusResponse,
@@ -210,12 +216,25 @@ from api.pydantic_models import (
     TenantSupportHistoryResponse,
     TenantSupportHistorySessionItem,
     TenantUpdateRequest,
+    TenantUtilitiesSummaryResponse,
     UnitCreateRequest,
     UnitItem,
     UnitListResponse,
     UnitResponse,
     UnitUpdateRequest,
+    UnitUtilitiesSummaryResponse,
     UpdateSessionRequest,
+    UtilityInvoiceCreateRequest,
+    UtilityInvoiceItem,
+    UtilityInvoiceListResponse,
+    UtilityInvoiceResponse,
+    UtilityInvoiceUpdateRequest,
+    UtilityMeterCreateRequest,
+    UtilityMeterItem,
+    UtilityMeterListResponse,
+    UtilityMeterResponse,
+    UtilityMeterUpdateRequest,
+    UtilityMetricsResponse,
     VehicleItem,
     VehicleListResponse,
     VehicleRegisterRequest,
@@ -3060,3 +3079,181 @@ def test_move_logistics_models():
     )
     assert metrics.total_moves == expected_moves
     assert metrics.pending_cois == expected_cois
+
+
+def test_utility_meter_and_reading_models():
+    """Verify serialization and validation of utility meter and reading schemas."""
+    expected_rate = 0.15
+    expected_updated_rate = 0.16
+    expected_consumption = 70.0
+    expected_reading_val = 600.0
+    expected_sess_reading = 620.0
+
+    meter_item = UtilityMeterItem(
+        id="mtr_test_1",
+        unit_id="unit_PH1",
+        meter_type="electricity",
+        serial_number="EL-TEST-001",
+        unit_of_measure="kWh",
+        rate_per_unit=expected_rate,
+        status="active",
+        installation_date="2026-01-01",
+        last_reading_value=480.0,
+        last_reading_date="2026-11-01",
+        notes="Penthouse main electrical meter",
+        created_at="2026-11-01T00:00:00Z",
+        updated_at="2026-11-01T00:00:00Z",
+    )
+    assert meter_item.serial_number == "EL-TEST-001"
+    assert meter_item.rate_per_unit == expected_rate
+
+    create_req = UtilityMeterCreateRequest(
+        unit_id="unit_101",
+        meter_type="water",
+        rate_per_unit=0.01,
+        serial_number="WTR-101-002",
+    )
+    assert create_req.meter_type == "water"
+
+    update_req = UtilityMeterUpdateRequest(rate_per_unit=expected_updated_rate, status="inactive")
+    assert update_req.rate_per_unit == expected_updated_rate
+    assert update_req.status == "inactive"
+
+    meter_resp = UtilityMeterResponse(meter=meter_item)
+    assert meter_resp.meter.id == "mtr_test_1"
+
+    meter_list = UtilityMeterListResponse(items=[meter_item], total=1)
+    assert meter_list.total == 1
+
+    reading_item = MeterReadingItem(
+        id="rdg_test_1",
+        meter_id="mtr_test_1",
+        unit_id="unit_PH1",
+        reading_value=550.0,
+        previous_reading_value=480.0,
+        consumption=expected_consumption,
+        rate_per_unit=expected_rate,
+        cost=10.50,
+        billing_period_start="2026-11-01",
+        billing_period_end="2026-11-30",
+        reading_date="2026-11-30",
+        source="smart_meter_telemetry",
+        is_anomaly=False,
+        created_at="2026-11-30T00:00:00Z",
+    )
+    assert reading_item.consumption == expected_consumption
+
+    reading_create = MeterReadingCreateRequest(
+        meter_id="mtr_test_1",
+        reading_value=expected_reading_val,
+        reading_date="2026-12-01",
+    )
+    assert reading_create.reading_value == expected_reading_val
+
+    reading_resp = MeterReadingResponse(reading=reading_item)
+    assert reading_resp.reading.id == "rdg_test_1"
+
+    reading_list = MeterReadingListResponse(items=[reading_item], total=1)
+    assert reading_list.total == 1
+
+    sess_meter = SessionRecordMeterReadingRequest(
+        meter_id="mtr_test_1", reading_value=expected_sess_reading
+    )
+    assert sess_meter.reading_value == expected_sess_reading
+
+    sess_leak = SessionReportUtilityLeakRequest(
+        utility_type="water",
+        severity="urgent",
+        location_description="Master bathroom vanity leak",
+    )
+    assert sess_leak.utility_type == "water"
+
+
+def test_utility_invoice_and_summary_models():
+    """Verify serialization and validation of utility invoice, summaries, and KPIs."""
+    expected_inv_total = 150.0
+    expected_elec_amount = 75.0
+    expected_total_meters = 4
+    expected_total_kwh = 1200.0
+
+    meter_item = UtilityMeterItem(
+        id="mtr_test_1",
+        unit_id="unit_PH1",
+        meter_type="electricity",
+        serial_number="EL-TEST-001",
+        unit_of_measure="kWh",
+        rate_per_unit=0.15,
+        status="active",
+        installation_date="2026-01-01",
+        last_reading_value=480.0,
+        last_reading_date="2026-11-01",
+        notes="Penthouse main electrical meter",
+        created_at="2026-11-01T00:00:00Z",
+        updated_at="2026-11-01T00:00:00Z",
+    )
+
+    inv_item = UtilityInvoiceItem(
+        id="inv_test_1",
+        invoice_number="UTIL-202611-001",
+        unit_id="unit_PH1",
+        tenant_id="tenant_3",
+        billing_month="2026-11",
+        electricity_amount=70.0,
+        water_amount=20.0,
+        gas_amount=15.0,
+        sewer_trash_amount=45.0,
+        total_amount=expected_inv_total,
+        status="posted_to_ledger",
+        created_at="2026-11-01T00:00:00Z",
+        updated_at="2026-11-01T00:00:00Z",
+    )
+    assert inv_item.total_amount == expected_inv_total
+
+    inv_create = UtilityInvoiceCreateRequest(
+        unit_id="unit_PH1",
+        tenant_id="tenant_3",
+        billing_month="2026-12",
+        electricity_amount=expected_elec_amount,
+    )
+    assert inv_create.electricity_amount == expected_elec_amount
+
+    inv_update = UtilityInvoiceUpdateRequest(status="paid")
+    assert inv_update.status == "paid"
+
+    inv_resp = UtilityInvoiceResponse(invoice=inv_item)
+    assert inv_resp.invoice.id == "inv_test_1"
+
+    inv_list = UtilityInvoiceListResponse(items=[inv_item], total=1)
+    assert inv_list.total == 1
+
+    unit_summary = UnitUtilitiesSummaryResponse(
+        unit_id="unit_PH1",
+        meters_count=1,
+        meters=[meter_item],
+        has_anomaly=False,
+        latest_electricity_kwh=70.0,
+    )
+    assert unit_summary.unit_id == "unit_PH1"
+
+    tenant_summary = TenantUtilitiesSummaryResponse(
+        tenant_id="tenant_3",
+        unit_id="unit_PH1",
+        meters_count=1,
+        meters=[meter_item],
+        has_anomaly=False,
+    )
+    assert tenant_summary.tenant_id == "tenant_3"
+
+    metrics = UtilityMetricsResponse(
+        total_meters=expected_total_meters,
+        active_meters=expected_total_meters,
+        total_readings=10,
+        total_anomalies=1,
+        total_kwh=expected_total_kwh,
+        total_water_gallons=5000.0,
+        total_billed=450.0,
+        total_posted=450.0,
+    )
+    assert metrics.total_meters == expected_total_meters
+    assert metrics.total_kwh == expected_total_kwh
+

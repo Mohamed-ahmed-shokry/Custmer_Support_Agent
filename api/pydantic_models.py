@@ -4040,3 +4040,195 @@ class MoveLogisticsMetricsResponse(BaseModel):
     verified_cois: int = 0
     active_elevator_bookings: int = 0
     avg_checklist_progress_pct: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Utility Submetering & Consumption Telemetry Models
+# ---------------------------------------------------------------------------
+
+
+class UtilityMeterItem(BaseModel):
+    id: str
+    unit_id: str
+    meter_type: str = "electricity"
+    serial_number: str
+    unit_of_measure: str = "kWh"
+    rate_per_unit: float = 0.15
+    status: str = "active"
+    installation_date: str
+    last_reading_value: float = 0.0
+    last_reading_date: str | None = None
+    notes: str = ""
+    created_at: str
+    updated_at: str
+    unit_number: str | None = None
+    building_name: str | None = None
+
+
+class UtilityMeterCreateRequest(BaseModel):
+    unit_id: str = Field(..., min_length=1)
+    meter_type: str = Field(default="electricity")
+    serial_number: str | None = Field(default=None, max_length=100)
+    unit_of_measure: str | None = Field(default=None, max_length=30)
+    rate_per_unit: float = Field(default=0.15, ge=0.0)
+    status: str = Field(default="active")
+    installation_date: str | None = None
+    last_reading_value: float = Field(default=0.0, ge=0.0)
+    notes: str = Field(default="", max_length=1000)
+
+
+class UtilityMeterUpdateRequest(BaseModel):
+    status: str | None = None
+    rate_per_unit: float | None = Field(default=None, ge=0.0)
+    notes: str | None = Field(default=None, max_length=1000)
+    last_reading_value: float | None = Field(default=None, ge=0.0)
+    last_reading_date: str | None = None
+
+
+class UtilityMeterResponse(BaseModel):
+    meter: UtilityMeterItem
+
+
+class UtilityMeterListResponse(BaseModel):
+    items: list[UtilityMeterItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class MeterReadingItem(BaseModel):
+    id: str
+    meter_id: str
+    unit_id: str
+    reading_value: float
+    previous_reading_value: float = 0.0
+    consumption: float = 0.0
+    rate_per_unit: float = 0.15
+    cost: float = 0.0
+    billing_period_start: str
+    billing_period_end: str
+    reading_date: str
+    source: str = "smart_meter_telemetry"
+    is_anomaly: bool = False
+    anomaly_notes: str = ""
+    created_at: str
+    meter_type: str | None = None
+    serial_number: str | None = None
+    unit_of_measure: str | None = None
+    unit_number: str | None = None
+
+
+class MeterReadingCreateRequest(BaseModel):
+    meter_id: str = Field(..., min_length=1)
+    reading_value: float = Field(..., ge=0.0)
+    previous_reading_value: float | None = Field(default=None, ge=0.0)
+    rate_per_unit: float | None = Field(default=None, ge=0.0)
+    billing_period_start: str | None = None
+    billing_period_end: str | None = None
+    reading_date: str | None = None
+    source: str = Field(default="smart_meter_telemetry")
+    anomaly_notes: str = Field(default="", max_length=1000)
+
+
+class MeterReadingResponse(BaseModel):
+    reading: MeterReadingItem
+
+
+class MeterReadingListResponse(BaseModel):
+    items: list[MeterReadingItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class UtilityInvoiceItem(BaseModel):
+    id: str
+    invoice_number: str
+    unit_id: str
+    tenant_id: str
+    billing_month: str
+    electricity_amount: float = 0.0
+    water_amount: float = 0.0
+    gas_amount: float = 0.0
+    sewer_trash_amount: float = 0.0
+    total_amount: float = 0.0
+    status: str = "pending"
+    ledger_transaction_id: str | None = None
+    notes: str = ""
+    created_at: str
+    updated_at: str
+    unit_number: str | None = None
+    tenant_name: str | None = None
+
+
+class UtilityInvoiceCreateRequest(BaseModel):
+    unit_id: str = Field(..., min_length=1)
+    tenant_id: str = Field(..., min_length=1)
+    billing_month: str = Field(default="")
+    electricity_amount: float = Field(default=0.0, ge=0.0)
+    water_amount: float = Field(default=0.0, ge=0.0)
+    gas_amount: float = Field(default=0.0, ge=0.0)
+    sewer_trash_amount: float = Field(default=45.0, ge=0.0)
+    notes: str = Field(default="", max_length=1000)
+
+
+class UtilityInvoiceUpdateRequest(BaseModel):
+    status: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class UtilityInvoiceResponse(BaseModel):
+    invoice: UtilityInvoiceItem
+
+
+class UtilityInvoiceListResponse(BaseModel):
+    items: list[UtilityInvoiceItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class UnitUtilitiesSummaryResponse(BaseModel):
+    unit_id: str
+    meters_count: int = 0
+    meters: list[UtilityMeterItem] = Field(default_factory=list)
+    has_anomaly: bool = False
+    anomalies: list[MeterReadingItem] = Field(default_factory=list)
+    latest_electricity_kwh: float = 0.0
+    latest_water_gallons: float = 0.0
+    latest_gas_therms: float = 0.0
+    latest_invoice: UtilityInvoiceItem | None = None
+
+
+class TenantUtilitiesSummaryResponse(BaseModel):
+    tenant_id: str
+    unit_id: str | None = None
+    meters_count: int = 0
+    meters: list[UtilityMeterItem] = Field(default_factory=list)
+    has_anomaly: bool = False
+    anomalies: list[MeterReadingItem] = Field(default_factory=list)
+    latest_electricity_kwh: float = 0.0
+    latest_water_gallons: float = 0.0
+    latest_gas_therms: float = 0.0
+    latest_invoice: UtilityInvoiceItem | None = None
+
+
+class SessionRecordMeterReadingRequest(BaseModel):
+    meter_id: str = Field(..., min_length=1)
+    reading_value: float = Field(..., ge=0.0)
+    reading_date: str | None = None
+    source: str = Field(default="resident_self_report")
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class SessionReportUtilityLeakRequest(BaseModel):
+    utility_type: str = Field(default="water")
+    severity: str = Field(default="urgent")
+    location_description: str = Field(..., min_length=3, max_length=500)
+    estimated_duration: str | None = Field(default=None, max_length=200)
+
+
+class UtilityMetricsResponse(BaseModel):
+    total_meters: int = 0
+    active_meters: int = 0
+    total_readings: int = 0
+    total_anomalies: int = 0
+    total_kwh: float = 0.0
+    total_gallons: float = 0.0
+    total_billed: float = 0.0
+    total_posted: float = 0.0
+

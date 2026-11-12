@@ -328,6 +328,11 @@ VALID_WEBHOOK_EVENTS = {
     "move_logistics.elevator_reserved",
     "move_logistics.coi_approved",
     "move_logistics.completed",
+    "utility.meter_registered",
+    "utility.reading_recorded",
+    "utility.anomaly_detected",
+    "utility.invoice_posted",
+    "utility.dispute_opened",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

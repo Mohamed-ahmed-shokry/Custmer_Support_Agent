@@ -3705,3 +3705,100 @@ def test_move_logistics_api_utils_errors(monkeypatch):
     assert api_utils.session_schedule_move_api("fail", {}) is None
     assert api_utils.session_reserve_elevator_api("fail", {}) is None
     assert api_utils.get_move_logistics_metrics_api() is None
+
+
+def test_utility_submetering_api_utils_success(monkeypatch):
+    """Verify happy-path execution of utility submetering client API helpers."""
+    meter_payload = {"meter": {"id": "mtr_1", "meter_type": "electricity"}}
+    reading_payload = {"reading": {"id": "rd_1", "consumption": 120.5}}
+    invoice_payload = {"invoice": {"id": "inv_1", "total_amount": 85.0}}
+    metrics_payload = {"total_meters": 10, "active_anomalies": 1}
+    summary_payload = {"unit_id": "unit_101", "meters": []}
+
+    # Meter CRUD
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=meter_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.create_utility_meter_api({"meter_type": "electricity"}) == meter_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=meter_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_utility_meters_api(unit_id="unit_101") == meter_payload
+    assert api_utils.get_utility_meter_api("mtr_1") == meter_payload
+    assert api_utils.update_utility_meter_api("mtr_1", {"status": "inactive"}) == meter_payload
+
+    # Readings
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=reading_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.record_meter_reading_api({"meter_id": "mtr_1", "reading_value": 150.0})
+        == reading_payload
+    )
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=reading_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_meter_readings_api(unit_id="unit_101") == reading_payload
+    assert api_utils.get_meter_reading_api("rd_1") == reading_payload
+
+    # Invoices
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=invoice_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.create_utility_invoice_api({"unit_id": "unit_101"}) == invoice_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=invoice_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_utility_invoices_api(unit_id="unit_101") == invoice_payload
+    assert api_utils.get_utility_invoice_api("inv_1") == invoice_payload
+    assert api_utils.post_utility_invoice_to_ledger_api("inv_1") == invoice_payload
+
+    # Summaries & Metrics
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=metrics_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_utility_metrics_api() == metrics_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=summary_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_unit_utilities_summary_api("unit_101") == summary_payload
+    assert api_utils.get_tenant_utilities_summary_api("tenant_1") == summary_payload
+
+    # Session actions
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=reading_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_record_meter_reading_api("sess_1", {"reading_value": 300.0})
+        == reading_payload
+    )
+
+    leak_payload = {"work_order": {"id": "wo_leak_1"}, "success": True}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=leak_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_report_utility_leak_api("sess_1", {"meter_type": "water"})
+        == leak_payload
+    )
+
+
+def test_utility_submetering_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in utility client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_utility_metrics_api() is None
+    assert api_utils.create_utility_meter_api({}) is None
+    assert api_utils.list_utility_meters_api() is None
+    assert api_utils.get_utility_meter_api("fail") is None
+    assert api_utils.update_utility_meter_api("fail", {}) is None
+
+    assert api_utils.record_meter_reading_api({}) is None
+    assert api_utils.list_meter_readings_api() is None
+    assert api_utils.get_meter_reading_api("fail") is None
+
+    assert api_utils.create_utility_invoice_api({}) is None
+    assert api_utils.list_utility_invoices_api() is None
+    assert api_utils.get_utility_invoice_api("fail") is None
+    assert api_utils.post_utility_invoice_to_ledger_api("fail") is None
+
+    assert api_utils.get_unit_utilities_summary_api("fail") is None
+    assert api_utils.get_tenant_utilities_summary_api("fail") is None
+    assert api_utils.session_record_meter_reading_api("fail", {}) is None
+    assert api_utils.session_report_utility_leak_api("fail", {}) is None
