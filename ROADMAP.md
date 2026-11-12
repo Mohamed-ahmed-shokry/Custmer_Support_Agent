@@ -1840,7 +1840,7 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
-## v0.49.0 plan — Resident Move-In / Move-Out Logistics, Freight Elevator Bookings & Key Handover Engine (IN PROGRESS)
+## ## v0.49.0 — Resident Move-In / Move-Out Logistics, Freight Elevator Bookings & Key Handover Engine (COMPLETED)
 
 Provide property managers, leasing coordinators, and residents with an end-to-end move-in/move-out logistics orchestration engine. The system coordinates elevator reservations, loading dock access, moving company insurance/COI tracking, checklist verification, key handovers, and condition sign-offs. Active resident chat conversations automatically ground upcoming move logistics into prompt context (`[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]`) and resolve canned response macros (`{move_logistics_type}`, `{move_date}`, `{elevator_slot}`, `{loading_dock_status}`, `{move_checklist_progress}`, `{move_status}`). Real-time webhook events (`move_logistics.scheduled`, `move_logistics.elevator_reserved`, `move_logistics.coi_approved`, `move_logistics.completed`) keep on-site operations and residents aligned.
 
@@ -1876,26 +1876,26 @@ Via the API and Streamlit UI, property managers and residents can:
   - Unit tests for engine, models, tenant context, routes, app client, and UI.
 
 ### Acceptance Criteria
-- [ ] AC1: Core SQLite database schema & migrations in `api/move_logistics.py` with foreign keys to `tenants` and `units` and seeds.
-- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
-- [ ] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click move scheduling and elevator reservation actions.
-- [ ] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
-- [ ] AC5: Streamlit API client utilities in `app/api_utils.py`.
-- [ ] AC6: Streamlit UI components in `app/sidebar.py` (move logistics board & session resident widget).
-- [ ] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
-- [ ] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
-- [ ] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+- [x] AC1: Core SQLite database schema & migrations in `api/move_logistics.py` with foreign keys to `tenants` and `units` and seeds.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click move scheduling and elevator reservation actions.
+- [x] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [x] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [x] AC6: Streamlit UI components in `app/sidebar.py` (move logistics board & session resident widget).
+- [x] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [x] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [x] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
 
 ### Micro-Task Breakdown
-- [ ] Task 1: Document v0.49.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
-- [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
-- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
-- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
-- [ ] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
-- [ ] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
-- [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+- [x] Task 1: Document v0.49.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
+- [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
 ## v0.48.0 — Community Announcements, Emergency Broadcast Alerts & Resident Concierge Requests Engine (COMPLETED)
 

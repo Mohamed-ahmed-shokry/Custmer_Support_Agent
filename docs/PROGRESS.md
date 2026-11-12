@@ -12,7 +12,7 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 - [x] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)** ✅
 - [x] **AC6: Streamlit UI Move Logistics Board & Session Actions (`app/sidebar.py`)** ✅
 - [x] **AC7: Automated Unit & Integration Tests (`tests/`)** ✅
-- [ ] **AC8: Documentation Updates & Version Bump**
+- [x] **AC8: Documentation Updates & Version Bump** ✅
 - [ ] **AC9: 100% Green CI Parity & Remote Actions Pass**
 
 ## Micro-Task Execution Checklist
@@ -24,7 +24,7 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 - [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
 - [x] Task 7: Implement Streamlit UI move logistics board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
-- [ ] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 8: Version bump to `0.49.0` and documentation updates in `docs/API.md` and `README.md`.
 - [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
 ## Decision Log

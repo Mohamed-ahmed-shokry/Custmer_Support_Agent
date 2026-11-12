@@ -1191,3 +1191,49 @@ Comprehensive residential broadcast and concierge services lifecycle engine conn
   - `{latest_alert_priority}`: Priority tier of most critical active alert (`EMERGENCY`, `URGENT`)
   - `{alert_acknowledgment_status}`: Whether resident acknowledged the alert (`ACKNOWLEDGED` or `PENDING_ACKNOWLEDGMENT`)
   - `{concierge_requests_count}`: Number of active concierge requests submitted by resident
+
+---
+
+## Resident Move-In / Move-Out Logistics & Freight Elevator Engine (v0.49.0)
+
+### Overview
+The Move-In / Move-Out Logistics Engine automates resident arrival, departure, and internal transfers with dedicated freight elevator booking collision detection, moving company Certificate of Insurance (COI) verification, loading dock access scheduling, and customizable onboarding/offboarding checklists.
+
+### Core Endpoints
+
+#### Move Logistics Events
+- `POST /move-logistics`: Schedule a new resident move event (`tenant_id`, `unit_id`, `move_type`, `scheduled_date`, `time_slot`, `moving_company`, `coi_status`, `dock_required`, `notes`). Dispatches `move_logistics.scheduled` webhook.
+- `GET /move-logistics`: List move logistics records with optional filtering by `tenant_id`, `unit_id`, `move_type`, `status`, `from_date`, and `to_date`.
+- `GET /move-logistics/{id}`: Retrieve detailed move logistics event record with complete checklist status.
+- `PATCH /move-logistics/{id}`: Update move properties (`status`, `scheduled_date`, `coi_status`, `moving_company`, `coi_policy_number`, `coi_expiry_date`, `keys_issued`, `fobs_issued`, `notes`). Dispatches `move_logistics.completed` or `move_logistics.cancelled` on status changes.
+- `POST /move-logistics/{id}/checklist`: Toggle or update a specific move checklist item (`item_id`, `completed`, `notes`). Auto-recalculates overall checklist progress percentage.
+- `GET /move-logistics/metrics`: Aggregated operational metrics (total moves, scheduled moves, completed moves, in-progress moves, active elevator bookings, pending COIs, verified COIs, average checklist progress percentage).
+
+#### Freight Elevator Reservations
+- `POST /elevator-bookings`: Reserve a freight elevator time window (`tenant_id`, `unit_id`, `building_name`, `elevator_id`, `booking_date`, `time_slot`, `move_event_id`, `deposit_collected`, `notes`). Validates slot availability to prevent double-booking. Dispatches `move_logistics.elevator_booked` webhook.
+- `GET /elevator-bookings`: List elevator reservations with optional filtering by `building_name`, `booking_date`, `elevator_id`, and `status`.
+- `GET /elevator-bookings/{id}`: Retrieve specific elevator booking record.
+- `POST /elevator-bookings/{id}/cancel`: Cancel an elevator reservation with optional reason. Dispatches `move_logistics.elevator_cancelled` webhook.
+
+#### Session Resident Actions (1-Click)
+- `POST /sessions/{id}/schedule-move`: 1-click move event creation directly within an active tenant support session (`move_type`, `scheduled_date`, `time_slot`, `moving_company`, `dock_required`, `notes`).
+- `POST /sessions/{id}/reserve-elevator`: 1-click freight elevator reservation directly within an active tenant support session (`booking_date`, `time_slot`, `building_name`, `elevator_id`, `deposit_collected`, `notes`).
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**: Grounded resident context injects active move logistics under:
+  ```text
+  [MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]
+  - Active Move-In / Move-Out Events: 1 active events
+    - [MOVE_IN] Scheduled on 2026-11-20 (Status: scheduled | Checklist: 50.0% complete)
+      Mover: Metropolis Relocations | COI: verified | Loading Dock: True
+  - Upcoming Freight Elevator Reservations: 1 reservations
+    - Reservation on 2026-11-20 (08:00-12:00) | Elevator: freight_elv_1 (Building: Horizon Tower | Status: confirmed)
+  [END MOVE LOGISTICS]
+  ```
+- **Macro Template Variables**:
+  - `{move_logistics_type}`: Active move type (`MOVE-IN`, `MOVE-OUT`, `INTERNAL TRANSFER`, `NONE`)
+  - `{move_date}`: Scheduled move date (e.g. `2026-11-20` or `N/A`)
+  - `{elevator_slot}`: Reserved elevator time slot (e.g. `08:00-12:00` or `NONE`)
+  - `{loading_dock_status}`: Loading dock access status (`RESERVED` or `NOT_REQUESTED`)
+  - `{move_checklist_progress}`: Percentage of completed checklist items (`50.0%`)
+  - `{move_status}`: Current move status (`SCHEDULED`, `IN PROGRESS`, `COMPLETED`, `NONE`)
