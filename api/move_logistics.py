@@ -423,6 +423,7 @@ def create_move_event(  # noqa: PLR0913, PLR0917
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         now_iso = datetime.datetime.now(datetime.UTC).isoformat()
         if not scheduled_date:
             scheduled_date = (
@@ -484,6 +485,7 @@ def get_move_event(move_id: str, conn: sqlite3.Connection | None = None) -> dict
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(
