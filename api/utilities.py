@@ -399,19 +399,21 @@ def create_utility_meter(
 
         meter_id = payload.get("id") or f"mtr_{secrets.token_hex(4)}"
         unit_id = payload["unit_id"]
-        meter_type = payload.get("meter_type", UtilityMeterType.ELECTRICITY)
+        meter_type = payload.get("meter_type") or UtilityMeterType.ELECTRICITY
         serial = payload.get("serial_number") or _generate_meter_serial(meter_type, unit_id)
-        unit_of_measure = payload.get(
-            "unit_of_measure", METER_UNITS_OF_MEASURE.get(meter_type, "units")
+        unit_of_measure = (
+            payload.get("unit_of_measure")
+            or METER_UNITS_OF_MEASURE.get(meter_type, "units")
         )
-        rate = float(payload.get("rate_per_unit", DEFAULT_METER_RATES.get(meter_type, 0.15)))
-        status = payload.get("status", MeterStatus.ACTIVE)
-        install_date = payload.get(
-            "installation_date", datetime.datetime.now(UTC).strftime("%Y-%m-%d")
-        )
+        rate_val = payload.get("rate_per_unit")
+        rate_default = DEFAULT_METER_RATES.get(meter_type, 0.15)
+        rate = float(rate_val) if rate_val is not None else rate_default
+        status = payload.get("status") or MeterStatus.ACTIVE
+        today_date = datetime.datetime.now(UTC).strftime("%Y-%m-%d")
+        install_date = payload.get("installation_date") or today_date
         last_val = float(payload.get("last_reading_value", 0.0))
         last_date = payload.get("last_reading_date")
-        notes = payload.get("notes", "")
+        notes = payload.get("notes") or ""
         now_str = datetime.datetime.now(UTC).isoformat()
 
         cursor.execute(
@@ -621,19 +623,26 @@ def record_meter_reading(
         unit_id = meter["unit_id"]
         reading_val = float(payload["reading_value"])
         prev_default = meter.get("last_reading_value", 0.0)
-        prev_val = float(payload.get("previous_reading_value", prev_default))
+        prev_val_raw = payload.get("previous_reading_value")
+        prev_val = float(prev_val_raw) if prev_val_raw is not None else float(prev_default)
         consumption = max(0.0, reading_val - prev_val)
-        rate = float(payload.get("rate_per_unit", meter["rate_per_unit"]))
+        rate_val = payload.get("rate_per_unit")
+        rate = float(rate_val) if rate_val is not None else float(meter["rate_per_unit"])
         cost = round(consumption * rate, 2)
 
-        start_date = payload.get(
-            "billing_period_start", datetime.datetime.now(UTC).strftime("%Y-%m-01")
+        start_date = (
+            payload.get("billing_period_start")
+            or datetime.datetime.now(UTC).strftime("%Y-%m-01")
         )
-        end_date = payload.get(
-            "billing_period_end", datetime.datetime.now(UTC).strftime("%Y-%m-%d")
+        end_date = (
+            payload.get("billing_period_end")
+            or datetime.datetime.now(UTC).strftime("%Y-%m-%d")
         )
-        reading_date = payload.get("reading_date", datetime.datetime.now(UTC).strftime("%Y-%m-%d"))
-        source = payload.get("source", ReadingSource.SMART_METER_TELEMETRY)
+        reading_date = (
+            payload.get("reading_date")
+            or datetime.datetime.now(UTC).strftime("%Y-%m-%d")
+        )
+        source = payload.get("source") or ReadingSource.SMART_METER_TELEMETRY
 
         # Automated Anomaly Detection: check historical average consumption for this meter
         cursor.execute(
@@ -860,17 +869,17 @@ def create_utility_invoice(
         invoice_id = payload.get("id") or f"util_inv_{secrets.token_hex(4)}"
         unit_id = payload["unit_id"]
         tenant_id = payload["tenant_id"]
-        month = payload.get("billing_month", datetime.datetime.now(UTC).strftime("%Y-%m"))
+        month = payload.get("billing_month") or datetime.datetime.now(UTC).strftime("%Y-%m")
         inv_num = payload.get("invoice_number") or _generate_invoice_number(month)
 
-        elec = float(payload.get("electricity_amount", 0.0))
-        water = float(payload.get("water_amount", 0.0))
-        gas = float(payload.get("gas_amount", 0.0))
-        sewer_trash = float(payload.get("sewer_trash_amount", DEFAULT_SEWER_TRASH_RATE))
+        elec = float(payload.get("electricity_amount") or 0.0)
+        water = float(payload.get("water_amount") or 0.0)
+        gas = float(payload.get("gas_amount") or 0.0)
+        sewer_trash = float(payload.get("sewer_trash_amount") or DEFAULT_SEWER_TRASH_RATE)
         total = round(elec + water + gas + sewer_trash, 2)
 
-        status = payload.get("status", UtilityInvoiceStatus.PENDING)
-        notes = payload.get("notes", "")
+        status = payload.get("status") or UtilityInvoiceStatus.PENDING
+        notes = payload.get("notes") or ""
         now_str = datetime.datetime.now(UTC).isoformat()
 
         cursor.execute(
@@ -1099,9 +1108,9 @@ def post_utility_invoice_to_ledger(
         cursor.execute(
             """
             INSERT INTO billing_transactions (
-                id, tenant_id, unit_id, type, amount, status, due_date,
+                id, tenant_id, unit_id, transaction_type, amount, status, due_date,
                 description, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, 'charge', ?, 'pending', ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, 'utility', ?, 'posted', ?, ?, ?, ?, ?)
             """,
             (
                 tx_id,

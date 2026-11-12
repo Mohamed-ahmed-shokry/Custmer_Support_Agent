@@ -65,7 +65,7 @@ def memory_db():
             id TEXT PRIMARY KEY,
             tenant_id TEXT NOT NULL,
             unit_id TEXT NOT NULL,
-            type TEXT NOT NULL,
+            transaction_type TEXT NOT NULL,
             amount REAL NOT NULL,
             status TEXT NOT NULL,
             due_date TEXT NOT NULL,
