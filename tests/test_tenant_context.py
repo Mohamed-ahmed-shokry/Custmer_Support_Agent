@@ -13,6 +13,7 @@ from api import (
     announcements,
     db_utils,
     incidents,
+    move_logistics,
     packages,
     parking,
     pets,
@@ -828,3 +829,56 @@ def test_render_template_with_announcement_variables():
     assert "Severe Cold Weather & Pipe Freeze Advisory" in rendered
     assert "URGENT" in rendered
     assert "acknowledged" in rendered
+
+
+
+def test_build_tenant_rag_context_with_move_logistics():
+    """Verify move logistics and elevator reservations appear in RAG context."""
+    sid = "sess-move-context-test"
+    db_utils.insert_application_logs(sid, "Move query", "Need help moving in", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+    move_logistics.init_move_logistics_db()
+
+    block = build_tenant_rag_context(session_id=sid)
+    assert "[MOVE-IN / MOVE-OUT LOGISTICS & ELEVATOR RESERVATIONS]" in block
+    assert "Scheduled Moves & Transfers:" in block
+    assert "Apex Elite Moving" in block
+    assert "Freight Elevator Bookings:" in block
+    assert "Freight Elevator #1" in block
+
+
+def test_extract_tenant_macro_variables_with_move_logistics():
+    """Verify move logistics macro variables are extracted accurately."""
+    sid = "sess-move-macro-test"
+    db_utils.insert_application_logs(sid, "Move macros", "Checking move macros", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+    move_logistics.init_move_logistics_db()
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert variables["move_logistics_type"] == "Move In"
+    assert variables["move_status"] == "SCHEDULED"
+    assert "Dock Bay #2" in variables["loading_dock_status"]
+    assert (
+        "Freight Elevator #1" in variables.get("elevator_slot", "")
+        or ":" in variables.get("elevator_slot", "")
+    )
+    assert "%" in variables["move_checklist_progress"]
+
+
+def test_render_template_with_move_logistics_variables():
+    """Verify macro template rendering with move logistics variables."""
+    sid = "sess-move-render"
+    db_utils.insert_application_logs(sid, "Move template", "Rendering move details", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_3")
+    move_logistics.init_move_logistics_db()
+
+    template = (
+        "Hello {customer_name}, your {move_logistics_type} is scheduled on {move_date} "
+        "(Status: {move_status}, Loading Dock: {loading_dock_status})."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Elena Rostova" in rendered
+    assert "Move In" in rendered
+    assert "SCHEDULED" in rendered
+    assert "Dock Bay #2" in rendered

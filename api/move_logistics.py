@@ -536,6 +536,7 @@ def update_move_event(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         current = get_move_event(move_id, conn=conn)
         if not current:
             return None
@@ -610,6 +611,7 @@ def update_move_checklist_item(
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         current = get_move_event(move_id, conn=conn)
         if not current:
             return None
@@ -659,6 +661,7 @@ def list_move_events(  # noqa: PLR0913, PLR0917
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         conn.row_factory = sqlite3.Row
         query = """
             SELECT m.*, TRIM(t.first_name || ' ' || t.last_name) as tenant_name,
@@ -723,6 +726,7 @@ def book_freight_elevator(  # noqa: PLR0913, PLR0917
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         cursor = conn.cursor()
         cursor.execute(
             """
@@ -790,6 +794,7 @@ def get_freight_elevator_booking(
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(
@@ -826,6 +831,7 @@ def list_freight_elevator_bookings(  # noqa: PLR0913, PLR0917
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         conn.row_factory = sqlite3.Row
         query = """
             SELECT b.*, TRIM(t.first_name || ' ' || t.last_name) as tenant_name,
@@ -871,6 +877,7 @@ def cancel_elevator_booking(
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         current = get_freight_elevator_booking(booking_id, conn=conn)
         if not current:
             return None
@@ -896,6 +903,7 @@ def get_move_logistics_metrics_summary(conn: sqlite3.Connection | None = None) -
         close_conn = True
 
     try:
+        init_move_logistics_db(conn)
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM move_logistics_events")
         total_moves = cursor.fetchone()[0]
