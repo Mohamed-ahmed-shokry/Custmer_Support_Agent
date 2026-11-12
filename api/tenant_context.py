@@ -18,6 +18,7 @@ from api import (
     packages,
     parking,
     pets,
+    utilities,
     vendors,
 )
 from api.db_utils import (
@@ -1008,6 +1009,101 @@ def _extract_announcement_vars(
     }
 
 
+def _format_utility_lines(
+    meters: list[dict[str, Any]],
+    summary: dict[str, Any] | None,
+) -> list[str]:
+    """Format utility submetering, telemetry, and billing for prompt grounding."""
+    if not meters and not summary:
+        return []
+
+    lines = ["[RESIDENT UTILITY METERS, USAGE & SUBMETERING]"]
+    lines.append(f"- Active Utility Meters: {len(meters)}")
+    for m in meters[:3]:
+        m_type = str(m.get("meter_type", "electricity")).replace("_", " ").title()
+        serial = m.get("serial_number", "Unknown")
+        status = str(m.get("status", "active")).upper()
+        uom = m.get("unit_of_measure", "units")
+        last_val = m.get("last_reading_value")
+        val_str = f"{last_val} {uom}" if last_val is not None else "No readings"
+        lines.append(f"  - {m_type} (SN: {serial}) [{status}] - Last Reading: {val_str}")
+
+    if summary:
+        elec = summary.get("latest_electricity_kwh", 0.0)
+        water = summary.get("latest_water_gallons", 0.0)
+        gas = summary.get("latest_gas_therms", 0.0)
+        usage_parts: list[str] = []
+        if elec:
+            usage_parts.append(f"Electricity: {elec:.1f} kWh")
+        if water:
+            usage_parts.append(f"Water: {water:.1f} gal")
+        if gas:
+            usage_parts.append(f"Gas: {gas:.1f} therms")
+        if usage_parts:
+            lines.append(f"- Recent Consumption: {', '.join(usage_parts)}")
+
+        anomalies = summary.get("anomalies", [])
+        if anomalies:
+            lines.append(f"- ⚠️ ACTIVE UTILITY ANOMALIES DETECTED: {len(anomalies)} spike(s)")
+            for a in anomalies[:2]:
+                m_type = str(a.get("meter_type", "utility")).title()
+                cons = a.get("consumption", 0.0)
+                uom = a.get("unit_of_measure", "")
+                r_date = a.get("reading_date", "")
+                note = a.get("anomaly_notes") or "Consumption anomaly alert"
+                lines.append(f"  - {m_type}: {cons:.1f} {uom} on {r_date} ({note})")
+
+        inv = summary.get("latest_invoice")
+        if inv:
+            inv_num = inv.get("invoice_number", "INV")
+            inv_stat = str(inv.get("status", "draft")).upper()
+            total = format_currency(inv.get("total_amount", 0.0))
+            period = f"{inv.get('billing_period_start', '')} to {inv.get('billing_period_end', '')}"
+            lines.append(f"- Current Utility Statement: #{inv_num} [{inv_stat}] {total} ({period})")
+
+    lines.append("[END RESIDENT UTILITY METERS, USAGE & SUBMETERING]")
+    return lines
+
+
+def _extract_utility_vars(
+    meters: list[dict[str, Any]],
+    summary: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Extract template macro variables for resident utility submetering."""
+    vars_dict: dict[str, str] = {
+        "primary_meter_status": "none",
+        "latest_electric_kwh": "0.0 kWh",
+        "latest_water_gallons": "0.0 gal",
+        "latest_utility_total": "$0.00",
+        "utility_anomaly_alert": "none",
+        "utility_invoice_status": "none",
+    }
+    if meters:
+        primary = meters[0]
+        vars_dict["primary_meter_status"] = str(primary.get("status", "active")).lower()
+
+    if summary:
+        elec = summary.get("latest_electricity_kwh", 0.0)
+        water = summary.get("latest_water_gallons", 0.0)
+        vars_dict["latest_electric_kwh"] = f"{elec:.1f} kWh"
+        vars_dict["latest_water_gallons"] = f"{water:.1f} gal"
+
+        anomalies = summary.get("anomalies", [])
+        if anomalies:
+            latest_ano = anomalies[0]
+            m_type = str(latest_ano.get("meter_type", "utility")).title()
+            cons = latest_ano.get("consumption", 0.0)
+            uom = latest_ano.get("unit_of_measure", "")
+            vars_dict["utility_anomaly_alert"] = f"Spike detected: {cons:.1f} {uom} ({m_type})"
+
+        inv = summary.get("latest_invoice")
+        if inv:
+            vars_dict["latest_utility_total"] = format_currency(inv.get("total_amount", 0.0))
+            vars_dict["utility_invoice_status"] = str(inv.get("status", "draft")).lower()
+
+    return vars_dict
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -1143,6 +1239,16 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             tenant_pets = pets.list_resident_pets(unit_id=resolved_unit_id)
         pet_policy = pets.get_pet_policy("policy_default")
 
+    utility_meters: list[dict[str, Any]] = []
+    utility_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        utility_meters = utilities.list_utility_meters(unit_id=resolved_unit_id)
+        utility_summary = utilities.get_unit_utilities_summary(resolved_unit_id)
+    elif resolved_tenant_id:
+        utility_summary = utilities.get_tenant_utilities_summary(resolved_tenant_id)
+        if utility_summary:
+            utility_meters = utility_summary.get("meters", [])
+
     if (
         not tenant
         and not unit
@@ -1156,6 +1262,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         and not resident_vehicles
         and not visitor_passes
         and not tenant_pets
+        and not utility_meters
     ):
         return ""
 
@@ -1234,6 +1341,11 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         lines.extend(
             _format_announcements_lines(announcements_list, concierge_requests)
         )
+
+    if utility_meters or utility_summary:
+        if lines:
+            lines.append("")
+        lines.extend(_format_utility_lines(utility_meters, utility_summary))
 
     return "\n".join(lines)
 
@@ -1537,5 +1649,17 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
             t_intercom = ic_list[0]
 
     variables.update(_extract_access_control_vars(t_creds, t_passes, t_intercom))
+
+    t_utility_meters: list[dict[str, Any]] = []
+    t_utility_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        t_utility_meters = utilities.list_utility_meters(unit_id=resolved_unit_id)
+        t_utility_summary = utilities.get_unit_utilities_summary(resolved_unit_id)
+    elif resolved_tenant_id:
+        t_utility_summary = utilities.get_tenant_utilities_summary(resolved_tenant_id)
+        if t_utility_summary:
+            t_utility_meters = t_utility_summary.get("meters", [])
+
+    variables.update(_extract_utility_vars(t_utility_meters, t_utility_summary))
 
     return variables
