@@ -490,7 +490,9 @@ def get_move_event(move_id: str, conn: sqlite3.Connection | None = None) -> dict
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT m.*, t.name as tenant_name, t.email as tenant_email, u.unit_number, u.building
+            SELECT m.*, TRIM(t.first_name || ' ' || t.last_name) as tenant_name,
+                t.email as tenant_email, u.unit_number,
+                COALESCE(u.building_name, '') as building
             FROM move_logistics_events m
             LEFT JOIN tenants t ON m.tenant_id = t.id
             LEFT JOIN units u ON m.unit_id = u.id
@@ -659,7 +661,9 @@ def list_move_events(  # noqa: PLR0913, PLR0917
     try:
         conn.row_factory = sqlite3.Row
         query = """
-            SELECT m.*, t.name as tenant_name, t.email as tenant_email, u.unit_number, u.building
+            SELECT m.*, TRIM(t.first_name || ' ' || t.last_name) as tenant_name,
+                t.email as tenant_email, u.unit_number,
+                COALESCE(u.building_name, '') as building
             FROM move_logistics_events m
             LEFT JOIN tenants t ON m.tenant_id = t.id
             LEFT JOIN units u ON m.unit_id = u.id
@@ -790,7 +794,9 @@ def get_freight_elevator_booking(
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT b.*, t.name as tenant_name, t.email as tenant_email, u.unit_number, u.building
+            SELECT b.*, TRIM(t.first_name || ' ' || t.last_name) as tenant_name,
+                t.email as tenant_email, u.unit_number,
+                COALESCE(u.building_name, '') as building
             FROM freight_elevator_bookings b
             LEFT JOIN tenants t ON b.tenant_id = t.id
             LEFT JOIN units u ON b.unit_id = u.id
@@ -822,7 +828,9 @@ def list_freight_elevator_bookings(  # noqa: PLR0913, PLR0917
     try:
         conn.row_factory = sqlite3.Row
         query = """
-            SELECT b.*, t.name as tenant_name, t.email as tenant_email, u.unit_number, u.building
+            SELECT b.*, TRIM(t.first_name || ' ' || t.last_name) as tenant_name,
+                t.email as tenant_email, u.unit_number,
+                COALESCE(u.building_name, '') as building
             FROM freight_elevator_bookings b
             LEFT JOIN tenants t ON b.tenant_id = t.id
             LEFT JOIN units u ON b.unit_id = u.id

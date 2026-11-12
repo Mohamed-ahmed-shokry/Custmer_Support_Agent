@@ -26,7 +26,7 @@ def memory_db():
         CREATE TABLE IF NOT EXISTS units (
             id TEXT PRIMARY KEY,
             unit_number TEXT NOT NULL,
-            building TEXT NOT NULL
+            building_name TEXT NOT NULL
         )
         """
     )
@@ -34,7 +34,8 @@ def memory_db():
         """
         CREATE TABLE IF NOT EXISTS tenants (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
             email TEXT NOT NULL,
             unit_id TEXT NOT NULL,
             FOREIGN KEY (unit_id) REFERENCES units(id)
@@ -42,18 +43,19 @@ def memory_db():
         """
     )
     cursor.execute(
-        "INSERT INTO units (id, unit_number, building) VALUES ('unit_PH1', 'PH1', 'Main Tower')"
+        "INSERT INTO units (id, unit_number, building_name) "
+        "VALUES ('unit_PH1', 'PH1', 'Main Tower')"
     )
     cursor.execute(
-        "INSERT INTO units (id, unit_number, building) VALUES ('unit_101', '101', 'West Wing')"
+        "INSERT INTO units (id, unit_number, building_name) VALUES ('unit_101', '101', 'West Wing')"
     )
     cursor.execute(
-        "INSERT INTO tenants (id, name, email, unit_id) VALUES "
-        "('tenant_3', 'Elena Rostova', 'elena@example.com', 'unit_PH1')"
+        "INSERT INTO tenants (id, first_name, last_name, email, unit_id) VALUES "
+        "('tenant_3', 'Elena', 'Rostova', 'elena@example.com', 'unit_PH1')"
     )
     cursor.execute(
-        "INSERT INTO tenants (id, name, email, unit_id) VALUES "
-        "('tenant_1', 'Marcus Vance', 'marcus@example.com', 'unit_101')"
+        "INSERT INTO tenants (id, first_name, last_name, email, unit_id) VALUES "
+        "('tenant_1', 'Marcus', 'Vance', 'marcus@example.com', 'unit_101')"
     )
     conn.commit()
 
