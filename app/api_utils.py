@@ -5232,3 +5232,204 @@ def get_announcements_metrics_api() -> dict[str, Any] | None:
         "Failed to fetch announcement metrics",
         "fetching announcement metrics",
     )
+
+
+
+# ==============================================================================
+# Move Logistics & Freight Elevator Bookings Client Helpers (v0.49.0)
+# ==============================================================================
+
+
+def _move_logistics_call(
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute move logistics API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def create_move_event_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Schedule a new move event."""
+    return _move_logistics_call(
+        "post",
+        "/move-logistics",
+        HTTP_CREATED,
+        "Failed to schedule move event",
+        "scheduling move event",
+        json=payload,
+    )
+
+
+def list_move_events_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    move_type: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    """List move logistics events."""
+    params: dict[str, Any] = {"limit": limit}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    if move_type:
+        params["move_type"] = move_type
+    return _move_logistics_call(
+        "get",
+        "/move-logistics",
+        HTTP_OK,
+        "Failed to fetch move events",
+        "fetching move logistics events",
+        params=params,
+    )
+
+
+def get_move_event_api(move_id: str) -> dict[str, Any] | None:
+    """Retrieve details of a move logistics event."""
+    return _move_logistics_call(
+        "get",
+        f"/move-logistics/{move_id}",
+        HTTP_OK,
+        f"Failed to fetch move event '{move_id}'",
+        f"fetching move event '{move_id}'",
+    )
+
+
+def update_move_event_api(move_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update fields or status of a move logistics event."""
+    return _move_logistics_call(
+        "patch",
+        f"/move-logistics/{move_id}",
+        HTTP_OK,
+        f"Failed to update move event '{move_id}'",
+        f"updating move event '{move_id}'",
+        json=payload,
+    )
+
+
+def toggle_move_checklist_api(move_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Toggle a checklist item on a move event."""
+    return _move_logistics_call(
+        "post",
+        f"/move-logistics/{move_id}/checklist",
+        HTTP_OK,
+        f"Failed to update checklist for move '{move_id}'",
+        f"updating move checklist '{move_id}'",
+        json=payload,
+    )
+
+
+def book_freight_elevator_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Book a freight elevator slot."""
+    return _move_logistics_call(
+        "post",
+        "/elevator-bookings",
+        HTTP_CREATED,
+        "Failed to book freight elevator",
+        "reserving freight elevator",
+        json=payload,
+    )
+
+
+def list_freight_elevator_bookings_api(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    booking_date: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    """List freight elevator bookings."""
+    params: dict[str, Any] = {"limit": limit}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if booking_date:
+        params["booking_date"] = booking_date
+    if status:
+        params["status"] = status
+    return _move_logistics_call(
+        "get",
+        "/elevator-bookings",
+        HTTP_OK,
+        "Failed to fetch elevator bookings",
+        "fetching freight elevator bookings",
+        params=params,
+    )
+
+
+def get_freight_elevator_booking_api(booking_id: str) -> dict[str, Any] | None:
+    """Retrieve details of an elevator booking."""
+    return _move_logistics_call(
+        "get",
+        f"/elevator-bookings/{booking_id}",
+        HTTP_OK,
+        f"Failed to fetch elevator booking '{booking_id}'",
+        f"fetching elevator booking '{booking_id}'",
+    )
+
+
+def cancel_freight_elevator_booking_api(booking_id: str) -> dict[str, Any] | None:
+    """Cancel a freight elevator booking."""
+    return _move_logistics_call(
+        "post",
+        f"/elevator-bookings/{booking_id}/cancel",
+        HTTP_OK,
+        f"Failed to cancel elevator booking '{booking_id}'",
+        f"cancelling elevator booking '{booking_id}'",
+    )
+
+
+def session_schedule_move_api(session_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Schedule move directly from support session."""
+    return _move_logistics_call(
+        "post",
+        f"/sessions/{session_id}/schedule-move",
+        HTTP_CREATED,
+        f"Failed to schedule move for session '{session_id}'",
+        "scheduling move from support session",
+        json=payload,
+    )
+
+
+def session_reserve_elevator_api(session_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Reserve elevator directly from support session."""
+    return _move_logistics_call(
+        "post",
+        f"/sessions/{session_id}/reserve-elevator",
+        HTTP_CREATED,
+        f"Failed to reserve elevator for session '{session_id}'",
+        "reserving elevator from support session",
+        json=payload,
+    )
+
+
+def get_move_logistics_metrics_api() -> dict[str, Any] | None:
+    """Retrieve portfolio move logistics summary metrics."""
+    return _move_logistics_call(
+        "get",
+        "/move-logistics/metrics",
+        HTTP_OK,
+        "Failed to fetch move logistics metrics",
+        "fetching move logistics metrics",
+    )
