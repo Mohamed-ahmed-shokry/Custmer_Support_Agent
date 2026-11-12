@@ -5,8 +5,7 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: SQLite Database Tables & Schema Migration (`api/move_logistics.py`)**
-  - Tables `move_logistics_events` and `freight_elevator_bookings` bootstrapped with UUID primary keys, foreign references to `units` and `tenants`, indexing on lookup keys, and pre-seeded default move event and elevator reservation.
+- [ ] **AC1: SQLite Database Tables & Schema Migration (`api/move_logistics.py`)** ✅
 - [ ] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)**
   - Request/response schemas for move logistics events, elevator bookings, checklist status updates, session actions, and summary KPIs with full field validations.
 - [ ] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)**
@@ -26,8 +25,8 @@ Complete move-in/move-out logistics orchestration engine including freight eleva
 
 ## Micro-Task Execution Checklist
 
-- [ ] Task 1: Document v0.49.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
+- [x] Task 1: Document v0.49.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/move_logistics.py` database schema, models, CRUD helpers, metrics, and seed data with unit tests in `tests/test_move_logistics.py`.
 - [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_move_logistics_routes.py`.
 - [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
