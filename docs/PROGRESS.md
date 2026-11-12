@@ -11,7 +11,7 @@ Complete utility submetering, meter reading telemetry, consumption anomaly and w
   - Request/response schemas for meters, readings, invoices, disputes, session actions, and summary KPIs with full field validations.
 - [x] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)** ✅
   - RESTful endpoints for utility submetering, readings, invoices, metrics, unit/tenant summaries, and 1-click session actions `POST /sessions/{id}/record-meter-reading` and `POST /sessions/{id}/report-utility-leak`.
-- [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
+- [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
   - Context injection `[RESIDENT UTILITY METERS, USAGE & SUBMETERING]` and auto-resolution of `{primary_meter_status}`, `{latest_electric_kwh}`, `{latest_water_gallons}`, `{latest_utility_total}`, `{utility_anomaly_alert}`, `{utility_invoice_status}`.
 - [ ] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)**
   - Typed client API wrappers with error handling, session header forwarding, and payload verification.
@@ -30,7 +30,7 @@ Complete utility submetering, meter reading telemetry, consumption anomaly and w
 - [x] Task 2: Implement `api/utilities.py` database schema, models, CRUD helpers, anomaly detection, metrics, and seed data with unit tests in `tests/test_utilities.py`.
 - [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_utility_routes.py`.
-- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
 - [ ] Task 7: Implement Streamlit UI utility board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
 - [ ] Task 8: Version bump to `0.50.0` and documentation updates in `docs/API.md` and `README.md`.
