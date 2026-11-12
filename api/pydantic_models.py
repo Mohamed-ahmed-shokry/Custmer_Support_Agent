@@ -3882,3 +3882,161 @@ class AnnouncementsMetricsResponse(BaseModel):
     total_concierge_requests: int = 0
     pending_concierge_requests: int = 0
     fulfilled_concierge_requests: int = 0
+
+
+# ==============================================================================
+# Move Logistics, Freight Elevator Bookings & Checklist Models (v0.49.0)
+# ==============================================================================
+
+
+class MoveChecklistItem(BaseModel):
+    id: str
+    label: str
+    completed: bool = False
+
+
+class MoveLogisticsItem(BaseModel):
+    id: str
+    move_number: str
+    tenant_id: str
+    unit_id: str
+    tenant_name: str | None = None
+    tenant_email: str | None = None
+    unit_number: str | None = None
+    building: str | None = None
+    move_type: str = "move_in"
+    scheduled_date: str
+    status: str = "scheduled"
+    moving_company: str | None = None
+    mover_contact_phone: str | None = None
+    coi_status: str = "pending"
+    coi_document_url: str | None = None
+    coi_notes: str | None = None
+    loading_dock_required: bool = True
+    loading_dock_assigned: str | None = None
+    key_handover_status: str = "pending"
+    keys_count: int = 2
+    fobs_count: int = 2
+    forwarding_address: str | None = None
+    security_deposit_action: str | None = "pending"
+    inspection_id: str | None = None
+    notes: str | None = None
+    checklist_progress_pct: float = 0.0
+    checklist_items: list[MoveChecklistItem] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class MoveLogisticsCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    move_type: str = Field(default="move_in")
+    scheduled_date: str = Field(default="")
+    moving_company: str | None = Field(default=None, max_length=200)
+    mover_contact_phone: str | None = Field(default=None, max_length=50)
+    coi_status: str = Field(default="pending")
+    coi_document_url: str | None = Field(default=None, max_length=500)
+    loading_dock_required: bool = True
+    loading_dock_assigned: str | None = Field(default=None, max_length=100)
+    keys_count: int = Field(default=2, ge=0, le=20)
+    fobs_count: int = Field(default=2, ge=0, le=20)
+    forwarding_address: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MoveLogisticsUpdateRequest(BaseModel):
+    status: str | None = None
+    scheduled_date: str | None = None
+    moving_company: str | None = Field(default=None, max_length=200)
+    mover_contact_phone: str | None = Field(default=None, max_length=50)
+    coi_status: str | None = None
+    coi_document_url: str | None = Field(default=None, max_length=500)
+    coi_notes: str | None = Field(default=None, max_length=1000)
+    loading_dock_assigned: str | None = Field(default=None, max_length=100)
+    key_handover_status: str | None = None
+    forwarding_address: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MoveLogisticsResponse(BaseModel):
+    move_event: MoveLogisticsItem
+
+
+class MoveLogisticsListResponse(BaseModel):
+    items: list[MoveLogisticsItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class MoveChecklistToggleRequest(BaseModel):
+    item_id: str = Field(..., min_length=1)
+    completed: bool = True
+
+
+class FreightElevatorBookingItem(BaseModel):
+    id: str
+    booking_number: str
+    move_id: str | None = None
+    tenant_id: str
+    unit_id: str
+    tenant_name: str | None = None
+    tenant_email: str | None = None
+    unit_number: str | None = None
+    building: str | None = None
+    booking_date: str
+    time_slot: str
+    elevator_identifier: str = "Freight Elevator #1"
+    status: str = "confirmed"
+    deposit_collected: bool = False
+    deposit_amount: float = 250.0
+    padding_installed: bool = True
+    notes: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class FreightElevatorBookingCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str = Field(..., min_length=1)
+    booking_date: str = Field(..., min_length=1)
+    time_slot: str = Field(..., min_length=1)
+    move_id: str | None = None
+    elevator_identifier: str = Field(default="Freight Elevator #1", max_length=100)
+    deposit_collected: bool = False
+    deposit_amount: float = Field(default=250.0, ge=0.0)
+    padding_installed: bool = True
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class FreightElevatorBookingResponse(BaseModel):
+    booking: FreightElevatorBookingItem
+
+
+class FreightElevatorBookingListResponse(BaseModel):
+    items: list[FreightElevatorBookingItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class SessionScheduleMoveRequest(BaseModel):
+    move_type: str = Field(default="move_in")
+    scheduled_date: str = Field(default="")
+    moving_company: str | None = Field(default=None, max_length=200)
+    mover_contact_phone: str | None = Field(default=None, max_length=50)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class SessionReserveElevatorRequest(BaseModel):
+    booking_date: str = Field(..., min_length=1)
+    time_slot: str = Field(..., min_length=1)
+    elevator_identifier: str = Field(default="Freight Elevator #1")
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class MoveLogisticsMetricsResponse(BaseModel):
+    total_moves: int = 0
+    scheduled_moves: int = 0
+    in_progress_moves: int = 0
+    completed_moves: int = 0
+    pending_cois: int = 0
+    verified_cois: int = 0
+    active_elevator_bookings: int = 0
+    avg_checklist_progress_pct: float = 0.0
