@@ -1289,3 +1289,55 @@ The Resident Utility Submetering & RUBS Engine automates property submeter telem
   - `{latest_utility_total}`: Total amount on current utility invoice (e.g. `$95.50`)
   - `{utility_anomaly_alert}`: Active spike/leak alert or `none`
   - `{utility_invoice_status}`: Current invoice status (`draft`, `posted`, `paid`, `none`)
+
+## Resident Renters Insurance Compliance, Policy Verification & Claims Engine (v0.51.0)
+
+### Overview
+The Resident Renters Insurance Compliance Engine automates proof-of-insurance registration, Certificate of Insurance (COI) verification against property minimum liability standards ($100,000 threshold with property entity interested party), automated force-placed non-compliance fee ledger assessments ($25.00/mo), and resident damage/loss claims intake with adjuster settlements.
+
+### Core Endpoints
+
+#### Policies & Verification
+- `POST /insurance/policies`: Register a newly submitted renters insurance policy (`tenant_id`, `unit_id`, `carrier_name`, `policy_number`, `liability_coverage_amount`, `expiration_date`, `document_url`). Dispatches `insurance.policy_submitted` webhook.
+- `GET /insurance/policies`: List registered insurance policies with optional filtering by `tenant_id`, `unit_id`, and `status` (`active`, `pending_verification`, `expiring_soon`, `expired`, `lapsed`, `rejected`).
+- `GET /insurance/policies/{id}`: Retrieve details of a specific renters insurance policy.
+- `POST /insurance/policies/{id}/verify`: Verify and approve or reject a policy certificate (`is_approved`, `verified_by`, `verification_notes`). Dispatches `insurance.policy_verified` or `insurance.policy_rejected` webhooks.
+- `POST /insurance/policies/{id}/assess-fee`: Post an automated force-placed non-compliance fee ($25.00) directly to tenant rent ledger (`billing_transactions`). Dispatches `insurance.fee_assessed` webhook.
+
+#### Claims Engine
+- `POST /insurance/claims`: File a resident property loss or damage claim (`tenant_id`, `unit_id`, `policy_id`, `claim_type`, `incident_date`, `description`, `estimated_loss`). Dispatches `insurance.claim_filed` webhook.
+- `GET /insurance/claims`: List resident claims with optional filtering by `tenant_id`, `unit_id`, and `status` (`submitted`, `under_review`, `adjuster_assigned`, `approved`, `settled`, `denied`, `closed`).
+- `GET /insurance/claims/{id}`: Retrieve specific insurance claim details.
+- `PATCH /insurance/claims/{id}`: Update claim status, settlement payout, adjuster assignment, or resolution notes (`status`, `settled_amount`, `adjuster_name`, `resolution_notes`). Dispatches `insurance.claim_settled` webhook.
+
+#### Summaries & Metrics
+- `GET /insurance/metrics`: Retrieve portfolio-wide compliance KPIs (total policies, active policies, expired policies, compliance rate percentage, total claims, settled amounts).
+- `GET /units/{id}/insurance/summary`: Aggregated compliance status, primary policy details, and recent claims for a unit.
+- `GET /tenants/{id}/insurance/summary`: Resident-linked insurance compliance status, primary policy, and claims history.
+
+#### Support Session 1-Click Actions
+- `POST /sessions/{id}/submit-insurance`: 1-click insurance submission directly within resident support chat (`carrier_name`, `policy_number`, `liability_coverage_amount`, `expiration_date`, `document_url`).
+- `POST /sessions/{id}/file-insurance-claim`: 1-click insurance claim filing directly from support session (`claim_type`, `incident_date`, `description`, `estimated_loss`).
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**: Verified resident context automatically includes:
+  ```text
+  [RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]
+  - Compliance Status: COMPLIANT (Active Policy on File)
+  - Submitted Insurance Policies: 1
+    - Lemonade #POL-LEM-10101 [ACTIVE] - Liability: $100,000.00 | Expires: 2027-12-31
+  - Insurance Claims History: 1 claim(s)
+    - Claim #CLM-202611-001 (Water Damage) [SETTLED] - Incident: 2026-10-15 | Est Loss: $850.00 | Settled: $850.00
+  [END RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]
+  ```
+- **Macro Template Variables**:
+  - `{insurance_policy_status}`: Primary policy status (`active`, `pending_verification`, `expired`, `none`)
+  - `{insurance_carrier}`: Carrier name (`Lemonade`, `State Farm`, `none`)
+  - `{insurance_policy_number}`: Policy identifier (e.g. `POL-LEM-10101`)
+  - `{insurance_liability_coverage}`: Formatted liability coverage (e.g. `$100,000.00`)
+  - `{insurance_expiration_date}`: Policy expiration date (e.g. `2027-12-31`)
+  - `{insurance_is_compliant}`: Boolean compliance flag (`true` or `false`)
+  - `{insurance_compliance_fee}`: Force-placed fee assessed (e.g. `$25.00` or `$0.00`)
+  - `{insurance_claims_count}`: Number of claims filed by resident
+  - `{insurance_latest_claim_number}`: Latest claim identifier (e.g. `CLM-202611-001`)
+  - `{insurance_latest_claim_status}`: Latest claim status (`submitted`, `settled`, `none`)
