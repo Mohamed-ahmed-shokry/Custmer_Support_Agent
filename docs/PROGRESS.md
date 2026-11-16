@@ -29,7 +29,7 @@ Complete renters insurance compliance verification, certificate of insurance (CO
 - [x] Task 1: Document v0.51.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
 - [x] Task 2: Implement `api/insurance.py` database schema, models, CRUD helpers, verification, fee assessment, metrics, and seed data with unit tests in `tests/test_insurance.py`.
 - [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_insurance_routes.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_insurance_routes.py`.
 - [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
 - [ ] Task 7: Implement Streamlit UI insurance board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
