@@ -4232,3 +4232,176 @@ class UtilityMetricsResponse(BaseModel):
     total_billed: float = 0.0
     total_posted: float = 0.0
 
+
+# ---------------------------------------------------------------------------
+# Renters Insurance Compliance & Claims Schemas
+# ---------------------------------------------------------------------------
+
+
+class InsurancePolicyCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str | None = None
+    carrier_name: str = Field(..., min_length=2, max_length=150)
+    policy_number: str = Field(..., min_length=3, max_length=100)
+    liability_coverage_amount: float = Field(default=100000.0, ge=0.0)
+    personal_property_coverage: float = Field(default=20000.0, ge=0.0)
+    deductible_amount: float = Field(default=500.0, ge=0.0)
+    effective_start_date: str | None = None
+    expiration_date: str | None = None
+    interested_party_listed: bool = True
+    interested_party_name: str | None = Field(
+        default="Metropolis Property Management LLC", max_length=200
+    )
+    document_url: str | None = Field(default=None, max_length=500)
+    verification_notes: str | None = Field(default=None, max_length=1000)
+
+
+class InsurancePolicyVerifyRequest(BaseModel):
+    is_approved: bool = True
+    verified_by: str = Field(default="property_management", min_length=1, max_length=100)
+    verification_notes: str | None = Field(default=None, max_length=1000)
+
+
+class InsurancePolicyFeeRequest(BaseModel):
+    fee_amount: float = Field(default=25.0, gt=0.0)
+
+
+class InsurancePolicyItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    carrier_name: str
+    policy_number: str
+    liability_coverage_amount: float
+    personal_property_coverage: float = 20000.0
+    deductible_amount: float = 500.0
+    effective_start_date: str
+    expiration_date: str
+    status: str
+    interested_party_listed: int | bool = 1
+    interested_party_name: str | None = None
+    document_url: str | None = None
+    verification_notes: str | None = None
+    verified_by: str | None = None
+    verified_at: str | None = None
+    non_compliance_fee_assessed: int = 0
+    tenant_name: str | None = None
+    unit_number: str | None = None
+    building_name: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class InsurancePolicyResponse(BaseModel):
+    policy: InsurancePolicyItem
+
+
+class InsurancePolicyListResponse(BaseModel):
+    items: list[InsurancePolicyItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class InsuranceClaimCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str | None = None
+    policy_id: str | None = None
+    claim_type: str = Field(default="water_damage")
+    incident_date: str | None = None
+    description: str = Field(..., min_length=5, max_length=2000)
+    estimated_loss: float = Field(default=0.0, ge=0.0)
+    adjuster_name: str | None = Field(default=None, max_length=150)
+    adjuster_phone: str | None = Field(default=None, max_length=50)
+    adjuster_email: str | None = Field(default=None, max_length=100)
+    resolution_notes: str | None = Field(default=None, max_length=1000)
+
+
+class InsuranceClaimUpdateRequest(BaseModel):
+    status: str | None = None
+    estimated_loss: float | None = Field(default=None, ge=0.0)
+    settled_amount: float | None = Field(default=None, ge=0.0)
+    adjuster_name: str | None = Field(default=None, max_length=150)
+    adjuster_phone: str | None = Field(default=None, max_length=50)
+    adjuster_email: str | None = Field(default=None, max_length=100)
+    resolution_notes: str | None = Field(default=None, max_length=1000)
+
+
+class InsuranceClaimItem(BaseModel):
+    id: str
+    claim_number: str
+    policy_id: str | None = None
+    tenant_id: str
+    unit_id: str
+    claim_type: str
+    status: str
+    incident_date: str
+    description: str
+    estimated_loss: float = 0.0
+    settled_amount: float = 0.0
+    adjuster_name: str | None = None
+    adjuster_phone: str | None = None
+    adjuster_email: str | None = None
+    resolution_notes: str | None = None
+    tenant_name: str | None = None
+    unit_number: str | None = None
+    building_name: str | None = None
+    carrier_name: str | None = None
+    policy_number: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class InsuranceClaimResponse(BaseModel):
+    claim: InsuranceClaimItem
+
+
+class InsuranceClaimListResponse(BaseModel):
+    items: list[InsuranceClaimItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class UnitInsuranceSummaryResponse(BaseModel):
+    unit_id: str
+    policies_count: int = 0
+    is_compliant: bool = False
+    primary_policy: InsurancePolicyItem | None = None
+    claims_count: int = 0
+    recent_claims: list[InsuranceClaimItem] = Field(default_factory=list)
+
+
+class TenantInsuranceSummaryResponse(BaseModel):
+    tenant_id: str
+    unit_id: str | None = None
+    policies_count: int = 0
+    is_compliant: bool = False
+    primary_policy: InsurancePolicyItem | None = None
+    claims_count: int = 0
+    recent_claims: list[InsuranceClaimItem] = Field(default_factory=list)
+
+
+class SessionSubmitInsuranceRequest(BaseModel):
+    carrier_name: str = Field(..., min_length=2, max_length=150)
+    policy_number: str = Field(..., min_length=3, max_length=100)
+    liability_coverage_amount: float = Field(default=100000.0, ge=0.0)
+    expiration_date: str | None = None
+    document_url: str | None = Field(default=None, max_length=500)
+
+
+class SessionFileInsuranceClaimRequest(BaseModel):
+    claim_type: str = Field(default="water_damage")
+    incident_date: str | None = None
+    description: str = Field(..., min_length=5, max_length=2000)
+    estimated_loss: float = Field(default=0.0, ge=0.0)
+
+
+class InsuranceMetricsResponse(BaseModel):
+    total_policies: int = 0
+    active_policies: int = 0
+    pending_verification: int = 0
+    expiring_soon: int = 0
+    non_compliant_policies: int = 0
+    compliance_rate_pct: float = 0.0
+    total_claims: int = 0
+    open_claims: int = 0
+    total_estimated_loss: float = 0.0
+
+

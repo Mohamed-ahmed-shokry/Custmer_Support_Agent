@@ -76,6 +76,18 @@ from api.pydantic_models import (
     InspectionResponse,
     InspectionUpdateRequest,
     InspectionWorkOrderConversionRequest,
+    InsuranceClaimCreateRequest,
+    InsuranceClaimItem,
+    InsuranceClaimListResponse,
+    InsuranceClaimResponse,
+    InsuranceClaimUpdateRequest,
+    InsuranceMetricsResponse,
+    InsurancePolicyCreateRequest,
+    InsurancePolicyFeeRequest,
+    InsurancePolicyItem,
+    InsurancePolicyListResponse,
+    InsurancePolicyResponse,
+    InsurancePolicyVerifyRequest,
     IntercomDirectoryCreateRequest,
     IntercomDirectoryItem,
     IntercomDirectoryListResponse,
@@ -174,6 +186,7 @@ from api.pydantic_models import (
     SessionAssignmentRequest,
     SessionCreateConciergeRequest,
     SessionDraftArticleRequest,
+    SessionFileInsuranceClaimRequest,
     SessionGenerateGuestPassRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
@@ -187,6 +200,7 @@ from api.pydantic_models import (
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSLAStatusResponse,
+    SessionSubmitInsuranceRequest,
     SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -207,6 +221,7 @@ from api.pydantic_models import (
     SupportTriageAnalyticsResponse,
     TagCount,
     TenantCreateRequest,
+    TenantInsuranceSummaryResponse,
     TenantItem,
     TenantLedgerSummaryResponse,
     TenantListResponse,
@@ -218,6 +233,7 @@ from api.pydantic_models import (
     TenantUpdateRequest,
     TenantUtilitiesSummaryResponse,
     UnitCreateRequest,
+    UnitInsuranceSummaryResponse,
     UnitItem,
     UnitListResponse,
     UnitResponse,
@@ -3256,4 +3272,141 @@ def test_utility_invoice_and_summary_models():
     )
     assert metrics.total_meters == expected_total_meters
     assert metrics.total_kwh == expected_total_kwh
+
+
+def test_insurance_policy_and_claim_models():
+    """Verify serialization and validation of renters insurance Pydantic models."""
+    expected_liability = 100000.0
+    expected_property = 25000.0
+    expected_deductible = 500.0
+    expected_loss = 2500.0
+    expected_settled = 2200.0
+    expected_fee = 25.0
+    expected_rate = 90.0
+
+    # Policy create request
+    pol_req = InsurancePolicyCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        carrier_name="State Farm",
+        policy_number="SF-123456",
+        liability_coverage_amount=expected_liability,
+        personal_property_coverage=expected_property,
+        deductible_amount=expected_deductible,
+    )
+    assert pol_req.carrier_name == "State Farm"
+    assert pol_req.liability_coverage_amount == expected_liability
+
+    # Policy verify & fee request
+    verify_req = InsurancePolicyVerifyRequest(is_approved=True, verified_by="admin")
+    assert verify_req.is_approved is True
+    fee_req = InsurancePolicyFeeRequest(fee_amount=expected_fee)
+    assert fee_req.fee_amount == expected_fee
+
+    # Policy item & response
+    pol_item = InsurancePolicyItem(
+        id="pol_1",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        carrier_name="State Farm",
+        policy_number="SF-123456",
+        liability_coverage_amount=expected_liability,
+        personal_property_coverage=expected_property,
+        deductible_amount=expected_deductible,
+        effective_start_date="2026-01-01",
+        expiration_date="2027-01-01",
+        status="active",
+        interested_party_listed=1,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    assert pol_item.status == "active"
+    pol_resp = InsurancePolicyResponse(policy=pol_item)
+    assert pol_resp.policy.id == "pol_1"
+    pol_list = InsurancePolicyListResponse(items=[pol_item], total=1)
+    assert pol_list.total == 1
+
+    # Claim create, update, item & response
+    claim_req = InsuranceClaimCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        policy_id="pol_1",
+        claim_type="water_damage",
+        description="Burst pipe damaged bedroom flooring and furniture.",
+        estimated_loss=expected_loss,
+    )
+    assert claim_req.estimated_loss == expected_loss
+
+    claim_up = InsuranceClaimUpdateRequest(status="approved", settled_amount=expected_settled)
+    assert claim_up.settled_amount == expected_settled
+
+    claim_item = InsuranceClaimItem(
+        id="clm_1",
+        claim_number="CLM-20261116-A1B2",
+        policy_id="pol_1",
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        claim_type="water_damage",
+        status="approved",
+        incident_date="2026-11-15",
+        description="Burst pipe damaged bedroom flooring and furniture.",
+        estimated_loss=expected_loss,
+        settled_amount=expected_settled,
+        created_at="2026-11-15T00:00:00Z",
+        updated_at="2026-11-15T00:00:00Z",
+    )
+    assert claim_item.claim_number == "CLM-20261116-A1B2"
+    claim_resp = InsuranceClaimResponse(claim=claim_item)
+    assert claim_resp.claim.id == "clm_1"
+    claim_list = InsuranceClaimListResponse(items=[claim_item], total=1)
+    assert claim_list.total == 1
+
+    # Unit & Tenant summaries
+    unit_summary = UnitInsuranceSummaryResponse(
+        unit_id="unit_101",
+        policies_count=1,
+        is_compliant=True,
+        primary_policy=pol_item,
+        claims_count=1,
+        recent_claims=[claim_item],
+    )
+    assert unit_summary.is_compliant is True
+
+    tenant_summary = TenantInsuranceSummaryResponse(
+        tenant_id="tenant_1",
+        policies_count=1,
+        is_compliant=True,
+        primary_policy=pol_item,
+    )
+    assert tenant_summary.tenant_id == "tenant_1"
+
+    # Session actions
+    sess_ins = SessionSubmitInsuranceRequest(
+        carrier_name="Lemonade",
+        policy_number="LEM-9901",
+        liability_coverage_amount=expected_liability,
+    )
+    assert sess_ins.carrier_name == "Lemonade"
+
+    sess_clm = SessionFileInsuranceClaimRequest(
+        claim_type="water_damage",
+        description="Kitchen leak under refrigerator.",
+        estimated_loss=500.0,
+    )
+    assert sess_clm.claim_type == "water_damage"
+
+    # Metrics
+    metrics = InsuranceMetricsResponse(
+        total_policies=10,
+        active_policies=9,
+        pending_verification=1,
+        expiring_soon=2,
+        non_compliant_policies=0,
+        compliance_rate_pct=expected_rate,
+        total_claims=3,
+        open_claims=1,
+        total_estimated_loss=5000.0,
+    )
+    assert metrics.compliance_rate_pct == expected_rate
+
 

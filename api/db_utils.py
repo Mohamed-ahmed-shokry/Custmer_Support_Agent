@@ -333,6 +333,12 @@ VALID_WEBHOOK_EVENTS = {
     "utility.anomaly_detected",
     "utility.invoice_posted",
     "utility.dispute_opened",
+    "insurance.policy_submitted",
+    "insurance.policy_verified",
+    "insurance.policy_rejected",
+    "insurance.policy_expired",
+    "insurance.fee_assessed",
+    "insurance.claim_filed",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
