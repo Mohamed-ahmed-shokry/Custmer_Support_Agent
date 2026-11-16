@@ -14,6 +14,7 @@ from api import (
     amenities,
     announcements,
     incidents,
+    insurance,
     move_logistics,
     packages,
     parking,
@@ -1104,6 +1105,101 @@ def _extract_utility_vars(
     return vars_dict
 
 
+def _format_insurance_lines(
+    policies: list[dict[str, Any]],
+    claims: list[dict[str, Any]],
+    summary: dict[str, Any] | None,
+) -> list[str]:
+    """Format renters insurance coverage, verification, and claims for prompt grounding."""
+    if not policies and not claims and not summary:
+        return []
+
+    lines = ["[RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]"]
+    is_compliant = summary.get("is_compliant", False) if summary else False
+    comp_str = (
+        "COMPLIANT (Active Policy on File)"
+        if is_compliant
+        else "⚠️ NON-COMPLIANT (Force-placed fee may apply)"
+    )
+    lines.append(f"- Compliance Status: {comp_str}")
+
+    if policies:
+        lines.append(f"- Submitted Insurance Policies: {len(policies)}")
+        for pol in policies[:3]:
+            carrier = pol.get("carrier_name", "Unknown Carrier")
+            pol_num = pol.get("policy_number", "Unknown")
+            status = str(pol.get("status", "pending")).replace("_", " ").upper()
+            cov = format_currency(pol.get("liability_coverage_amount", 0.0))
+            exp = pol.get("expiration_date") or "Unknown"
+            fee_count = pol.get("non_compliance_fee_assessed", 0)
+            fee_info = f" | Fees Assessed: {fee_count}" if fee_count > 0 else ""
+            lines.append(
+                f"  - {carrier} #{pol_num} [{status}] - Liability: {cov} | Expires: {exp}{fee_info}"
+            )
+    else:
+        lines.append("- No renters insurance policies registered.")
+
+    if claims:
+        lines.append(f"- Insurance Claims History: {len(claims)} claim(s)")
+        for clm in claims[:3]:
+            clm_num = clm.get("claim_number", "CLM")
+            clm_type = str(clm.get("claim_type", "damage")).replace("_", " ").title()
+            clm_stat = str(clm.get("status", "submitted")).upper()
+            inc_date = clm.get("incident_date", "")
+            est_loss = format_currency(clm.get("estimated_loss", 0.0))
+            settled = format_currency(clm.get("settled_amount", 0.0))
+            lines.append(
+                f"  - Claim #{clm_num} ({clm_type}) [{clm_stat}] - Incident: {inc_date} | "
+                f"Est Loss: {est_loss} | Settled: {settled}"
+            )
+
+    lines.append("[END RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]")
+    return lines
+
+
+def _extract_insurance_vars(
+    policies: list[dict[str, Any]],
+    claims: list[dict[str, Any]],
+    summary: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Extract template macro variables for resident renters insurance and claims."""
+    vars_dict: dict[str, str] = {
+        "insurance_policy_status": "none",
+        "insurance_carrier": "none",
+        "insurance_policy_number": "none",
+        "insurance_liability_coverage": "$0.00",
+        "insurance_expiration_date": "none",
+        "insurance_is_compliant": "false",
+        "insurance_compliance_fee": "$0.00",
+        "insurance_claims_count": "0",
+        "insurance_latest_claim_number": "none",
+        "insurance_latest_claim_status": "none",
+    }
+    if summary:
+        vars_dict["insurance_is_compliant"] = "true" if summary.get("is_compliant") else "false"
+
+    if policies:
+        primary = policies[0]
+        vars_dict["insurance_policy_status"] = str(primary.get("status", "pending_verification"))
+        vars_dict["insurance_carrier"] = str(primary.get("carrier_name", "none"))
+        vars_dict["insurance_policy_number"] = str(primary.get("policy_number", "none"))
+        vars_dict["insurance_liability_coverage"] = format_currency(
+            primary.get("liability_coverage_amount", 0.0)
+        )
+        vars_dict["insurance_expiration_date"] = str(primary.get("expiration_date") or "none")
+        fees = primary.get("non_compliance_fee_assessed", 0)
+        if fees > 0:
+            vars_dict["insurance_compliance_fee"] = format_currency(fees * 25.0)
+
+    if claims:
+        vars_dict["insurance_claims_count"] = str(len(claims))
+        latest = claims[0]
+        vars_dict["insurance_latest_claim_number"] = str(latest.get("claim_number", "none"))
+        vars_dict["insurance_latest_claim_status"] = str(latest.get("status", "none"))
+
+    return vars_dict
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -1116,6 +1212,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     include_amenities: bool = True,
     include_parking: bool = True,
     include_pets: bool = True,
+    include_insurance: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -1249,6 +1346,19 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if utility_summary:
             utility_meters = utility_summary.get("meters", [])
 
+    insurance_policies: list[dict[str, Any]] = []
+    insurance_claims: list[dict[str, Any]] = []
+    insurance_summary: dict[str, Any] | None = None
+    if include_insurance:
+        if resolved_tenant_id:
+            insurance_policies = insurance.list_insurance_policies(tenant_id=resolved_tenant_id)
+            insurance_claims = insurance.list_insurance_claims(tenant_id=resolved_tenant_id)
+            insurance_summary = insurance.get_tenant_insurance_summary(resolved_tenant_id)
+        elif resolved_unit_id:
+            insurance_policies = insurance.list_insurance_policies(unit_id=resolved_unit_id)
+            insurance_claims = insurance.list_insurance_claims(unit_id=resolved_unit_id)
+            insurance_summary = insurance.get_unit_insurance_summary(resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -1263,6 +1373,8 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         and not visitor_passes
         and not tenant_pets
         and not utility_meters
+        and not insurance_policies
+        and not insurance_claims
     ):
         return ""
 
@@ -1346,6 +1458,13 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(_format_utility_lines(utility_meters, utility_summary))
+
+    if insurance_policies or insurance_claims or insurance_summary:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_insurance_lines(insurance_policies, insurance_claims, insurance_summary)
+        )
 
     return "\n".join(lines)
 
@@ -1661,5 +1780,19 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
             t_utility_meters = t_utility_summary.get("meters", [])
 
     variables.update(_extract_utility_vars(t_utility_meters, t_utility_summary))
+
+    t_policies: list[dict[str, Any]] = []
+    t_claims: list[dict[str, Any]] = []
+    t_ins_summary: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        t_policies = insurance.list_insurance_policies(tenant_id=resolved_tenant_id)
+        t_claims = insurance.list_insurance_claims(tenant_id=resolved_tenant_id)
+        t_ins_summary = insurance.get_tenant_insurance_summary(resolved_tenant_id)
+    elif resolved_unit_id:
+        t_policies = insurance.list_insurance_policies(unit_id=resolved_unit_id)
+        t_claims = insurance.list_insurance_claims(unit_id=resolved_unit_id)
+        t_ins_summary = insurance.get_unit_insurance_summary(resolved_unit_id)
+
+    variables.update(_extract_insurance_vars(t_policies, t_claims, t_ins_summary))
 
     return variables

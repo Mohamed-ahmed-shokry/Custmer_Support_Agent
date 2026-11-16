@@ -13,6 +13,7 @@ from api import (
     announcements,
     db_utils,
     incidents,
+    insurance,
     move_logistics,
     packages,
     parking,
@@ -929,3 +930,54 @@ def test_render_template_with_utility_variables():
     assert "Sarah Connor" in rendered
     assert "active" in rendered
     assert "kWh" in rendered
+
+
+def test_build_tenant_rag_context_with_insurance():
+    """Verify renters insurance grounding block is included in RAG context."""
+    sid = "sess-ins-grounding"
+    db_utils.insert_application_logs(sid, "Insurance test", "Checking insurance policy", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    insurance.init_insurance_db()
+
+    block = build_tenant_rag_context(session_id=sid)
+    assert "[RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]" in block
+    assert "Compliance Status:" in block
+    assert "Submitted Insurance Policies:" in block
+    assert "Lemonade" in block
+    assert "[END RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]" in block
+
+
+def test_extract_tenant_macro_variables_with_insurance():
+    """Verify insurance macro variables are properly resolved from session context."""
+    sid = "sess-ins-macro"
+    db_utils.insert_application_logs(sid, "Insurance macro", "Checking insurance macros", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    insurance.init_insurance_db()
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "insurance_policy_status" in variables
+    assert "insurance_carrier" in variables
+    assert "insurance_policy_number" in variables
+    assert "$" in variables["insurance_liability_coverage"]
+    assert "insurance_is_compliant" in variables
+    assert "insurance_claims_count" in variables
+
+
+def test_render_template_with_insurance_variables():
+    """Verify macro template rendering with insurance variables."""
+    sid = "sess-ins-render"
+    db_utils.insert_application_logs(
+        sid, "Insurance template", "Rendering insurance macros", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    insurance.init_insurance_db()
+
+    template = (
+        "Hello {customer_name}, your renters insurance carrier is {insurance_carrier} "
+        "(Policy #{insurance_policy_number}, Status: {insurance_policy_status})."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
+    assert "Lemonade" in rendered
+    assert "active" in rendered
