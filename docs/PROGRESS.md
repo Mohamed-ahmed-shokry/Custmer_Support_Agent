@@ -26,7 +26,7 @@ Complete renters insurance compliance verification, certificate of insurance (CO
 
 ## Micro-Task Execution Checklist
 
-- [ ] Task 1: Document v0.51.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 1: Document v0.51.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
 - [ ] Task 2: Implement `api/insurance.py` database schema, models, CRUD helpers, verification, fee assessment, metrics, and seed data with unit tests in `tests/test_insurance.py`.
 - [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_insurance_routes.py`.
