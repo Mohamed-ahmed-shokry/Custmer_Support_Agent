@@ -11,6 +11,7 @@ from api.settings import settings
 from app.api_utils import (
     API_BASE_URL,
     apply_macro_to_session,
+    assess_insurance_fee_api,
     assign_session,
     auto_assign_session,
     book_freight_elevator_api,
@@ -24,6 +25,8 @@ from app.api_utils import (
     create_guest_pass_api,
     create_incident_api,
     create_inspection,
+    create_insurance_claim_api,
+    create_insurance_policy_api,
     create_intercom_entry_api,
     create_lease_renewal,
     create_macro,
@@ -82,6 +85,7 @@ from app.api_utils import (
     get_health,
     get_incident_metrics_api,
     get_inspection_metrics,
+    get_insurance_metrics_api,
     get_knowledge_analytics,
     get_lease_renewal_metrics,
     get_metrics,
@@ -99,10 +103,12 @@ from app.api_utils import (
     get_stats,
     get_support_triage_analytics,
     get_tenant_inspections,
+    get_tenant_insurance_summary_api,
     get_tenant_lease_renewals,
     get_tenant_ledger,
     get_tenant_support_history,
     get_tenant_utilities_summary_api,
+    get_unit_insurance_summary_api,
     get_unit_utilities_summary_api,
     get_unit_work_orders,
     get_utility_metrics_api,
@@ -123,6 +129,8 @@ from app.api_utils import (
     list_guest_passes_api,
     list_incidents_api,
     list_inspections,
+    list_insurance_claims_api,
+    list_insurance_policies_api,
     list_intercom_entries_api,
     list_knowledge_articles,
     list_knowledge_gaps,
@@ -182,6 +190,7 @@ from app.api_utils import (
     search_sessions,
     session_acknowledge_alert_api,
     session_create_reservation_api,
+    session_file_insurance_claim_api,
     session_generate_guest_pass_api,
     session_intake_package_api,
     session_issue_violation_notice_api,
@@ -193,6 +202,7 @@ from app.api_utils import (
     session_request_concierge_api,
     session_reserve_elevator_api,
     session_schedule_move_api,
+    session_submit_insurance_api,
     session_submit_violation_appeal_api,
     sign_lease_renewal,
     suggest_macros,
@@ -203,6 +213,7 @@ from app.api_utils import (
     update_concierge_request_api,
     update_feedback_review,
     update_inspection,
+    update_insurance_claim_api,
     update_knowledge_gap,
     update_move_event_api,
     update_reservation_api,
@@ -214,6 +225,7 @@ from app.api_utils import (
     update_work_order,
     upload_document,
     upload_documents,
+    verify_insurance_policy_api,
 )
 
 MODEL_OPTIONS = [model.value for model in ModelName]
@@ -1139,6 +1151,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_announcement_widget(selected, tenant)
     _render_session_move_logistics_widget(selected, tenant)
     _render_session_utilities_widget(selected, tenant)
+    _render_session_insurance_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6161,6 +6174,111 @@ def _render_session_utilities_widget(selected: str, tenant: dict[str, Any]) -> N
                 st.rerun()
 
 
+def _render_session_insurance_widget(  # noqa: PLR0915
+    selected: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click renters insurance submission and claims in resident session context."""
+    tenant_id = tenant.get("id")
+    unit_id = tenant.get("unit_id")
+    if not tenant_id and not unit_id:
+        return
+
+    with st.sidebar.expander("🛡️ Resident Renters Insurance"):
+        summary = None
+        if tenant_id:
+            summary = get_tenant_insurance_summary_api(tenant_id)
+        elif unit_id:
+            summary = get_unit_insurance_summary_api(unit_id)
+
+        if summary:
+            is_comp = summary.get("is_compliant", False)
+            badge = "🟢 COMPLIANT" if is_comp else "⚠️ NON-COMPLIANT"
+            st.markdown(f"**Status:** {badge}")
+            pol = summary.get("primary_policy")
+            if pol:
+                carrier = pol.get("carrier_name", "Unknown")
+                p_num = pol.get("policy_number", "Unknown")
+                cov = pol.get("liability_coverage_amount", 0.0)
+                exp = pol.get("expiration_date", "N/A")
+                p_stat = str(pol.get("status", "pending")).replace("_", " ").upper()
+                st.caption(f"Policy: **{carrier}** `#{p_num}` [{p_stat}]")
+                st.caption(f"Coverage: ${cov:,.2f} | Expires: {exp}")
+            else:
+                st.caption("No active policy on file. Force-placed fee: $25.00/mo")
+
+            claims_cnt = summary.get("claims_count", 0)
+            if claims_cnt > 0:
+                st.caption(f"Filed Claims: **{claims_cnt}**")
+
+        st.markdown("---")
+        st.markdown("##### 📄 Submit Insurance Proof")
+        i_carrier = st.text_input(
+            "Insurance Carrier*", value="Lemonade", key=f"sess_ins_carrier_{selected}"
+        )
+        i_pol_num = st.text_input(
+            "Policy Number*", value="POL-998877", key=f"sess_ins_pol_num_{selected}"
+        )
+        i_cov = st.number_input(
+            "Liability Coverage ($)*",
+            min_value=0.0,
+            step=10000.0,
+            value=100000.0,
+            key=f"sess_ins_cov_{selected}",
+        )
+        i_exp = st.text_input(
+            "Expiration Date (YYYY-MM-DD)*",
+            value="2027-12-31",
+            key=f"sess_ins_exp_{selected}",
+        )
+        if st.button("Submit Insurance Policy", key=f"btn_sess_ins_sub_{selected}") and i_carrier:
+            s_res = session_submit_insurance_api(
+                selected,
+                {
+                    "carrier_name": i_carrier,
+                    "policy_number": i_pol_num,
+                    "liability_coverage_amount": float(i_cov),
+                    "expiration_date": i_exp,
+                },
+            )
+            if s_res and s_res.get("policy"):
+                p_id = s_res["policy"].get("id")
+                st.success(f"Policy submitted: `{p_id}`")
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("##### 🚨 File Resident Insurance Claim")
+        c_type = st.selectbox(
+            "Claim Type",
+            ["water_damage", "theft", "fire", "liability", "vandalism", "other"],
+            key=f"sess_ins_claim_type_{selected}",
+        )
+        c_loss = st.number_input(
+            "Estimated Loss ($)",
+            min_value=0.0,
+            step=50.0,
+            value=500.0,
+            key=f"sess_ins_claim_loss_{selected}",
+        )
+        c_desc = st.text_input(
+            "Claim Description",
+            value="Personal property damage due to bathroom leak",
+            key=f"sess_ins_claim_desc_{selected}",
+        )
+        if st.button("File Insurance Claim", key=f"btn_sess_ins_claim_file_{selected}"):
+            c_res = session_file_insurance_claim_api(
+                selected,
+                {
+                    "claim_type": c_type,
+                    "estimated_loss": float(c_loss),
+                    "description": c_desc,
+                },
+            )
+            if c_res and c_res.get("claim"):
+                c_num = c_res["claim"].get("claim_number")
+                st.success(f"Claim filed: `#{c_num}`")
+                st.rerun()
+
+
 def _render_utilities_readings_tab() -> None:
     """Render telemetry reading logs and manual meter reading submission."""
     readings_resp = list_meter_readings_api(limit=10)
@@ -6305,6 +6423,219 @@ def _render_utilities_board() -> None:
         except Exception as e:
             st.caption(f"Utilities board temporarily unavailable: {e}")
 
+def _render_insurance_policies_tab() -> None:
+    """Render registered renters insurance policies and submission form."""
+    pol_resp = list_insurance_policies_api(limit=10)
+    items = pol_resp.get("items", []) if pol_resp else []
+    total = pol_resp.get("total", len(items)) if pol_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** insurance policies.")
+    for p in items[:5]:
+        p_id = p.get("id")
+        carrier = p.get("carrier_name", "Unknown")
+        p_num = p.get("policy_number", "Unknown")
+        stat = str(p.get("status", "pending")).replace("_", " ").upper()
+        cov = p.get("liability_coverage_amount", 0.0)
+        exp = p.get("expiration_date", "N/A")
+        unit = p.get("unit_number") or p.get("unit_id")
+        st.markdown(f"- **Unit {unit}** - {carrier} `#{p_num}` [{stat}] | ${cov:,.2f} | Exp: {exp}")
+        if p.get("status") in ("expired", "lapsed", "rejected") and st.button(
+            "Assess $25 Fee", key=f"btn_assess_pol_fee_{p_id}"
+        ):
+            res = assess_insurance_fee_api(p_id)
+            if res:
+                st.warning(f"Force-placed fee assessed: {res.get('transaction_id')}")
+                st.rerun()
+
+    with st.expander("➕ Register Insurance Policy"):
+        p_uid = st.text_input("Unit ID*", value="unit_101", key="reg_ins_uid")
+        p_tid = st.text_input("Tenant ID*", value="tenant_1", key="reg_ins_tid")
+        p_carrier = st.text_input("Insurance Carrier*", value="State Farm", key="reg_ins_carrier")
+        p_num_in = st.text_input("Policy Number*", value="SF-889900", key="reg_ins_pnum")
+        p_cov_in = st.number_input(
+            "Liability Coverage ($)*",
+            min_value=0.0,
+            step=10000.0,
+            value=100000.0,
+            key="reg_ins_cov",
+        )
+        p_exp_in = st.text_input("Expiration Date*", value="2027-12-31", key="reg_ins_exp")
+        if st.button("Register Policy", key="btn_reg_ins_sub") and p_carrier and p_num_in:
+            c_res = create_insurance_policy_api(
+                {
+                    "unit_id": p_uid,
+                    "tenant_id": p_tid,
+                    "carrier_name": p_carrier,
+                    "policy_number": p_num_in,
+                    "liability_coverage_amount": float(p_cov_in),
+                    "expiration_date": p_exp_in,
+                }
+            )
+            if c_res and c_res.get("policy"):
+                st.success("Insurance policy registered!")
+                st.rerun()
+
+
+def _render_insurance_verification_tab() -> None:
+    """Render COI verification queue for property management."""
+    st.markdown("#### 📋 Policy Verification Queue")
+    queue_resp = list_insurance_policies_api(status="pending_verification", limit=10)
+    items = queue_resp.get("items", []) if queue_resp else []
+
+    if not items:
+        st.info("✅ Verification queue clear: No pending insurance policies.")
+        return
+
+    st.warning(f"⚠️ {len(items)} Policy/Policies Pending Review & Verification")
+    for p in items:
+        p_id = p.get("id")
+        carrier = p.get("carrier_name")
+        p_num = p.get("policy_number")
+        cov = p.get("liability_coverage_amount", 0.0)
+        unit = p.get("unit_number") or p.get("unit_id")
+        t_name = p.get("tenant_name") or p.get("tenant_id")
+        st.markdown(
+            f"**Resident:** {t_name} (Unit {unit}) — **{carrier}** `#{p_num}` (${cov:,.2f})"
+        )
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("✅ Approve", key=f"btn_appr_pol_{p_id}"):
+                res = verify_insurance_policy_api(
+                    p_id, {"is_approved": True, "verification_notes": "COI verified compliant"}
+                )
+                if res:
+                    st.success("Policy approved!")
+                    st.rerun()
+        with col2:
+            if st.button("❌ Reject", key=f"btn_rej_pol_{p_id}"):
+                res = verify_insurance_policy_api(
+                    p_id,
+                    {
+                        "is_approved": False,
+                        "verification_notes": "Policy rejected - insufficient liability",
+                    },
+                )
+                if res:
+                    st.error("Policy rejected.")
+                    st.rerun()
+        with col3:
+            if st.button("⚡ Assess Fee", key=f"btn_fee_pol_{p_id}"):
+                res = assess_insurance_fee_api(p_id)
+                if res:
+                    st.warning("Fee posted to ledger.")
+                    st.rerun()
+
+
+def _render_insurance_claims_tab() -> None:
+    """Render resident claims intake, review, and adjuster settlement."""
+    claims_resp = list_insurance_claims_api(limit=10)
+    items = claims_resp.get("items", []) if claims_resp else []
+    total = claims_resp.get("total", len(items)) if claims_resp else 0
+
+    st.caption(f"Showing **{len(items)}** of **{total}** resident claims.")
+    for c in items[:5]:
+        c_id = c.get("id")
+        num = c.get("claim_number")
+        c_type = str(c.get("claim_type", "loss")).replace("_", " ").title()
+        stat = str(c.get("status", "submitted")).upper()
+        loss = c.get("estimated_loss", 0.0)
+        settled = c.get("settled_amount", 0.0)
+        unit = c.get("unit_number") or c.get("unit_id")
+        st.markdown(
+            f"- **Claim #{num}** ({c_type}) [Unit {unit}]: `{stat}` | "
+            f"Est: ${loss:,.2f} | Settled: ${settled:,.2f}"
+        )
+        if stat in ("SUBMITTED", "UNDER_REVIEW") and st.button(
+            "Settle Claim ($)", key=f"btn_settle_claim_{c_id}"
+        ):
+            res = update_insurance_claim_api(
+                c_id,
+                {
+                    "status": "approved",
+                    "settled_amount": float(loss),
+                    "resolution_notes": "Approved in full",
+                },
+            )
+            if res:
+                st.success(f"Claim #{num} approved and settled!")
+                st.rerun()
+
+    with st.expander("➕ File Resident Claim"):
+        c_uid = st.text_input("Unit ID*", value="unit_101", key="file_clm_uid")
+        c_tid = st.text_input("Tenant ID*", value="tenant_1", key="file_clm_tid")
+        c_type_in = st.selectbox(
+            "Claim Type*",
+            ["water_damage", "theft", "fire", "liability", "vandalism", "other"],
+            key="file_clm_type",
+        )
+        c_loss_in = st.number_input(
+            "Estimated Loss ($)*", min_value=1.0, step=50.0, value=750.0, key="file_clm_loss"
+        )
+        c_desc_in = st.text_input(
+            "Description*", value="Water pipe leak damage to rug", key="file_clm_desc"
+        )
+        if st.button("Submit Claim", key="btn_file_clm_sub") and c_uid and c_tid:
+            res = create_insurance_claim_api(
+                {
+                    "unit_id": c_uid,
+                    "tenant_id": c_tid,
+                    "claim_type": c_type_in,
+                    "estimated_loss": float(c_loss_in),
+                    "description": c_desc_in,
+                }
+            )
+            if res and res.get("claim"):
+                st.success("Claim filed successfully!")
+                st.rerun()
+
+
+def _render_insurance_kpis_tab() -> None:
+    """Render renters insurance compliance, coverage, and claim KPIs."""
+    st.markdown("#### 📊 Renters Insurance & Claims KPIs")
+    metrics = get_insurance_metrics_api()
+    if metrics:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Policies", metrics.get("total_policies", 0))
+            st.metric("Active & Compliant", metrics.get("active_policies", 0))
+            st.metric("Non-Compliant Policies", metrics.get("non_compliant_policies", 0))
+            st.metric("Compliance Rate", f"{metrics.get('compliance_rate_pct', 0.0)}%")
+        with col2:
+            st.metric("Total Claims", metrics.get("total_claims", 0))
+            st.metric("Pending Claims", metrics.get("pending_claims", 0))
+            st.metric("Total Claimed Loss", f"${metrics.get('total_claimed_loss', 0.0):,.2f}")
+            st.metric("Approved Settlements", f"${metrics.get('total_approved_amount', 0.0):,.2f}")
+    else:
+        st.info("Insurance metrics unavailable.")
+
+
+def _render_insurance_compliance_board() -> None:
+    """Render renters insurance compliance, verification queue & claims board in sidebar."""
+    with st.sidebar.expander("🛡️ Renters Insurance & Claims"):
+        try:
+            ins_tab = st.radio(
+                "Insurance View",
+                [
+                    "Active Policies & COIs",
+                    "Verification Queue",
+                    "Resident Claims",
+                    "Compliance KPIs",
+                ],
+                key="insurance_board_tab_radio",
+            )
+            if ins_tab == "Active Policies & COIs":
+                _render_insurance_policies_tab()
+            elif ins_tab == "Verification Queue":
+                _render_insurance_verification_tab()
+            elif ins_tab == "Resident Claims":
+                _render_insurance_claims_tab()
+            else:
+                _render_insurance_kpis_tab()
+        except Exception as e:
+            st.caption(f"Insurance board temporarily unavailable: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -6342,5 +6673,6 @@ def display_sidebar():
     _render_announcements_board()
     _render_move_logistics_board()
     _render_utilities_board()
+    _render_insurance_compliance_board()
     _render_knowledge_studio()
     _render_ops_metrics()
