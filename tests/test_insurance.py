@@ -47,11 +47,10 @@ def memory_db():
             tenant_id TEXT NOT NULL,
             unit_id TEXT NOT NULL,
             transaction_type TEXT NOT NULL,
-            reason TEXT NOT NULL,
             amount REAL NOT NULL,
             status TEXT NOT NULL,
             due_date TEXT NOT NULL,
-            posted_at TEXT,
+            description TEXT NOT NULL,
             notes TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -168,7 +167,7 @@ def test_assess_non_compliance_fee(memory_db: sqlite3.Connection):
     tx = cursor.fetchone()
     assert tx is not None
     assert tx["amount"] == expected_fee
-    assert tx["transaction_type"] == "charge"
+    assert tx["transaction_type"] == "insurance_fee"
 
 
 def test_create_and_update_insurance_claim(memory_db: sqlite3.Connection):

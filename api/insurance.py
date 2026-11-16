@@ -518,24 +518,22 @@ def assess_insurance_non_compliance_fee(
 
         # Insert fee transaction into billing_transactions
         tx_id = f"tx_ins_fee_{secrets.token_hex(4)}"
+        desc = f"Renters insurance non-compliance fee for policy {policy['policy_number']}"
         cursor.execute(
             """
             INSERT INTO billing_transactions (
-                id, tenant_id, unit_id, transaction_type, reason,
-                amount, status, due_date, posted_at, notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, tenant_id, unit_id, transaction_type, amount,
+                status, due_date, description, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, 'insurance_fee', ?, 'posted', ?, ?, ?, ?, ?)
             """,
             (
                 tx_id,
                 tenant_id,
                 unit_id,
-                "charge",
-                "other",
                 fee_amount,
-                "posted",
                 now_date,
-                now_iso,
-                f"Renters insurance non-compliance fee for policy {policy['policy_number']}",
+                desc,
+                f"Assessed non-compliance fee on policy {policy_id}",
                 now_iso,
                 now_iso,
             ),

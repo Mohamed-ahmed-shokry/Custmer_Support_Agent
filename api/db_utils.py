@@ -592,6 +592,7 @@ VALID_TRANSACTION_TYPES = {
     "parking_fee",
     "pet_rent",
     "maintenance_charge",
+    "insurance_fee",
     "payment",
     "credit_refund",
 }
