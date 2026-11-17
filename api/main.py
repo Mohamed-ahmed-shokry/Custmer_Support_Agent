@@ -23,6 +23,7 @@ from api import (
     db_utils,
     incidents,
     inspections,
+    insurance,
     knowledge_base,
     lease_renewals,
     macro_suggestions,
@@ -229,6 +230,18 @@ from api.pydantic_models import (
     InspectionResponse,
     InspectionUpdateRequest,
     InspectionWorkOrderConversionRequest,
+    InsuranceClaimCreateRequest,
+    InsuranceClaimItem,
+    InsuranceClaimListResponse,
+    InsuranceClaimResponse,
+    InsuranceClaimUpdateRequest,
+    InsuranceMetricsResponse,
+    InsurancePolicyCreateRequest,
+    InsurancePolicyFeeRequest,
+    InsurancePolicyItem,
+    InsurancePolicyListResponse,
+    InsurancePolicyResponse,
+    InsurancePolicyVerifyRequest,
     IntercomDirectoryCreateRequest,
     IntercomDirectoryItem,
     IntercomDirectoryListResponse,
@@ -332,6 +345,7 @@ from api.pydantic_models import (
     SessionCreateConciergeRequest,
     SessionCreateReservationRequest,
     SessionDraftArticleRequest,
+    SessionFileInsuranceClaimRequest,
     SessionGenerateGuestPassRequest,
     SessionInfo,
     SessionInspectionCreateRequest,
@@ -348,6 +362,7 @@ from api.pydantic_models import (
     SessionSearchResponse,
     SessionSearchResult,
     SessionSLAStatusResponse,
+    SessionSubmitInsuranceRequest,
     SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -369,6 +384,7 @@ from api.pydantic_models import (
     SupportTriageAnalyticsResponse,
     TagCount,
     TenantCreateRequest,
+    TenantInsuranceSummaryResponse,
     TenantItem,
     TenantLedgerSummaryResponse,
     TenantListResponse,
@@ -380,6 +396,7 @@ from api.pydantic_models import (
     TenantUpdateRequest,
     TenantUtilitiesSummaryResponse,
     UnitCreateRequest,
+    UnitInsuranceSummaryResponse,
     UnitItem,
     UnitListResponse,
     UnitResponse,
@@ -7832,4 +7849,318 @@ def session_report_utility_leak_route(
         "status": "reported",
         "work_order": wo,
         "message": f"Emergency work order #{wo['id']} created and maintenance dispatched.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Renters Insurance Compliance & Claims Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/insurance/metrics", response_model=InsuranceMetricsResponse)
+def get_insurance_metrics_route():
+    """Retrieve portfolio renters insurance compliance and claim KPIs."""
+    metrics = insurance.get_insurance_metrics_summary()
+    return InsuranceMetricsResponse(**metrics)
+
+
+@app.post("/insurance/policies", response_model=InsurancePolicyResponse, status_code=201)
+def create_insurance_policy_route(
+    request: InsurancePolicyCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Register a new renters insurance policy submitted by a resident or property team."""
+    try:
+        created = insurance.create_insurance_policy(request.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "insurance.policy_submitted",
+        {"policy_id": created["id"], "policy": created},
+    )
+    return InsurancePolicyResponse(policy=InsurancePolicyItem(**created))
+
+
+@app.get("/insurance/policies", response_model=InsurancePolicyListResponse)
+def list_insurance_policies_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+):
+    """List renters insurance policies with optional filters."""
+    items = insurance.list_insurance_policies(
+        tenant_id=tenant_id, unit_id=unit_id, status=status, limit=limit
+    )
+    return InsurancePolicyListResponse(
+        items=[InsurancePolicyItem(**p) for p in items], total=len(items)
+    )
+
+
+@app.get("/insurance/policies/{policy_id}", response_model=InsurancePolicyResponse)
+def get_insurance_policy_route(policy_id: str):
+    """Retrieve details of a renters insurance policy by ID."""
+    policy = insurance.get_insurance_policy(policy_id)
+    if not policy:
+        raise HTTPException(
+            status_code=404, detail=f"Insurance policy '{policy_id}' not found."
+        )
+    return InsurancePolicyResponse(policy=InsurancePolicyItem(**policy))
+
+
+@app.post("/insurance/policies/{policy_id}/verify", response_model=InsurancePolicyResponse)
+def verify_insurance_policy_route(
+    policy_id: str,
+    request: InsurancePolicyVerifyRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Approve or reject a submitted renters insurance policy."""
+    verified = insurance.verify_insurance_policy(
+        policy_id,
+        is_approved=request.is_approved,
+        verified_by=request.verified_by,
+        notes=request.verification_notes,
+    )
+    if not verified:
+        raise HTTPException(
+            status_code=404, detail=f"Insurance policy '{policy_id}' not found."
+        )
+
+    event = "insurance.policy_verified" if request.is_approved else "insurance.policy_rejected"
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        event,
+        {"policy_id": policy_id, "policy": verified, "verified_by": request.verified_by},
+    )
+    return InsurancePolicyResponse(policy=InsurancePolicyItem(**verified))
+
+
+@app.post("/insurance/policies/{policy_id}/assess-fee", status_code=200)
+def assess_insurance_fee_route(
+    policy_id: str,
+    request: InsurancePolicyFeeRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Assess non-compliance force-placed coverage fee directly to tenant ledger."""
+    res = insurance.assess_insurance_non_compliance_fee(
+        policy_id, fee_amount=request.fee_amount
+    )
+    if not res:
+        raise HTTPException(
+            status_code=404, detail=f"Insurance policy '{policy_id}' not found."
+        )
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "insurance.fee_assessed",
+        {
+            "policy_id": policy_id,
+            "tenant_id": res["policy"]["tenant_id"],
+            "fee_amount": res["fee_amount"],
+            "transaction_id": res["transaction_id"],
+        },
+    )
+    return res
+
+
+@app.post("/insurance/claims", response_model=InsuranceClaimResponse, status_code=201)
+def create_insurance_claim_route(
+    request: InsuranceClaimCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """File a resident insurance claim."""
+    try:
+        created = insurance.create_insurance_claim(request.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "insurance.claim_filed",
+        {"claim_id": created["id"], "claim": created},
+    )
+    return InsuranceClaimResponse(claim=InsuranceClaimItem(**created))
+
+
+@app.get("/insurance/claims", response_model=InsuranceClaimListResponse)
+def list_insurance_claims_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    claim_type: str | None = None,
+    limit: int = 50,
+):
+    """List insurance claims with optional filtering."""
+    items = insurance.list_insurance_claims(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        claim_type=claim_type,
+        limit=limit,
+    )
+    return InsuranceClaimListResponse(
+        items=[InsuranceClaimItem(**c) for c in items], total=len(items)
+    )
+
+
+@app.get("/insurance/claims/{claim_id}", response_model=InsuranceClaimResponse)
+def get_insurance_claim_route(claim_id: str):
+    """Retrieve details of an insurance claim by ID."""
+    claim = insurance.get_insurance_claim(claim_id)
+    if not claim:
+        raise HTTPException(
+            status_code=404, detail=f"Insurance claim '{claim_id}' not found."
+        )
+    return InsuranceClaimResponse(claim=InsuranceClaimItem(**claim))
+
+
+@app.patch("/insurance/claims/{claim_id}", response_model=InsuranceClaimResponse)
+def update_insurance_claim_route(
+    claim_id: str,
+    request: InsuranceClaimUpdateRequest,
+):
+    """Update claim status, estimated loss, or adjuster info."""
+    updated = insurance.update_insurance_claim(claim_id, request.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(
+            status_code=404, detail=f"Insurance claim '{claim_id}' not found."
+        )
+    return InsuranceClaimResponse(claim=InsuranceClaimItem(**updated))
+
+
+@app.get("/units/{unit_id}/insurance/summary", response_model=UnitInsuranceSummaryResponse)
+def get_unit_insurance_summary_route(unit_id: str):
+    """Retrieve insurance compliance and claim history for a unit."""
+    summary = insurance.get_unit_insurance_summary(unit_id)
+    return UnitInsuranceSummaryResponse(
+        unit_id=unit_id,
+        policies_count=summary["policies_count"],
+        is_compliant=summary["is_compliant"],
+        primary_policy=(
+            InsurancePolicyItem(**summary["primary_policy"])
+            if summary.get("primary_policy")
+            else None
+        ),
+        claims_count=summary["claims_count"],
+        recent_claims=[InsuranceClaimItem(**c) for c in summary.get("recent_claims", [])],
+    )
+
+
+@app.get("/tenants/{tenant_id}/insurance/summary", response_model=TenantInsuranceSummaryResponse)
+def get_tenant_insurance_summary_route(tenant_id: str):
+    """Retrieve insurance compliance and claim history for a tenant."""
+    summary = insurance.get_tenant_insurance_summary(tenant_id)
+    return TenantInsuranceSummaryResponse(
+        tenant_id=tenant_id,
+        unit_id=summary.get("unit_id"),
+        policies_count=summary["policies_count"],
+        is_compliant=summary["is_compliant"],
+        primary_policy=(
+            InsurancePolicyItem(**summary["primary_policy"])
+            if summary.get("primary_policy")
+            else None
+        ),
+        claims_count=summary["claims_count"],
+        recent_claims=[InsuranceClaimItem(**c) for c in summary.get("recent_claims", [])],
+    )
+
+
+@app.post("/sessions/{session_id}/submit-insurance", status_code=201)
+def session_submit_insurance_route(
+    session_id: str,
+    request: SessionSubmitInsuranceRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Submit proof of renters insurance directly from active resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    unit_id = tenant.get("unit_id")
+    if not unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for insurance registration.",
+        )
+
+    policy_payload = {
+        "tenant_id": tenant["id"],
+        "unit_id": unit_id,
+        "carrier_name": request.carrier_name,
+        "policy_number": request.policy_number,
+        "liability_coverage_amount": request.liability_coverage_amount,
+        "expiration_date": request.expiration_date,
+        "document_url": request.document_url,
+    }
+    created = insurance.create_insurance_policy(policy_payload)
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "insurance.policy_submitted",
+        {"session_id": session_id, "policy_id": created["id"], "tenant_id": tenant["id"]},
+    )
+    return {
+        "status": "submitted",
+        "policy": created,
+        "message": f"Insurance policy {request.policy_number} submitted for verification.",
+    }
+
+
+@app.post("/sessions/{session_id}/file-insurance-claim", status_code=201)
+def session_file_insurance_claim_route(
+    session_id: str,
+    request: SessionFileInsuranceClaimRequest,
+    background_tasks: BackgroundTasks,
+):
+    """File a resident insurance claim directly from active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    unit_id = tenant.get("unit_id")
+    if not unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for claim filing.",
+        )
+
+    # Lookup primary active policy if available
+    policies = insurance.list_insurance_policies(tenant_id=tenant["id"])
+    active_policy = next(
+        (p for p in policies if p.get("status") in ("active", "expiring_soon")),
+        None,
+    )
+    policy_id = active_policy["id"] if active_policy else (policies[0]["id"] if policies else None)
+
+    claim_payload = {
+        "tenant_id": tenant["id"],
+        "unit_id": unit_id,
+        "policy_id": policy_id,
+        "claim_type": request.claim_type,
+        "incident_date": request.incident_date,
+        "description": request.description,
+        "estimated_loss": request.estimated_loss,
+    }
+    created = insurance.create_insurance_claim(claim_payload)
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "insurance.claim_filed",
+        {
+            "session_id": session_id,
+            "claim_id": created["id"],
+            "claim_number": created["claim_number"],
+            "tenant_id": tenant["id"],
+        },
+    )
+    return {
+        "status": "filed",
+        "claim": created,
+        "message": f"Claim #{created['claim_number']} filed successfully.",
     }

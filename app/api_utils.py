@@ -5690,3 +5690,230 @@ def session_report_utility_leak_api(
         "reporting utility leak from support session",
         json=payload,
     )
+
+
+# ---------------------------------------------------------------------------
+# Renters Insurance Compliance & Claims Client Helpers
+# ---------------------------------------------------------------------------
+
+
+def _insurance_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute insurance compliance API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_insurance_metrics_api() -> dict[str, Any] | None:
+    """Retrieve portfolio renters insurance compliance and claim KPIs."""
+    return _insurance_call(
+        "get",
+        "/insurance/metrics",
+        HTTP_OK,
+        "Failed to fetch insurance metrics",
+        "fetching insurance metrics",
+    )
+
+
+def create_insurance_policy_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Register a new renters insurance policy."""
+    return _insurance_call(
+        "post",
+        "/insurance/policies",
+        HTTP_CREATED,
+        "Failed to create insurance policy",
+        "creating insurance policy",
+        json=payload,
+    )
+
+
+def list_insurance_policies_api(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    """List renters insurance policies with optional filters."""
+    params: dict[str, Any] = {"limit": limit}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    return _insurance_call(
+        "get",
+        "/insurance/policies",
+        HTTP_OK,
+        "Failed to list insurance policies",
+        "listing insurance policies",
+        params=params,
+    )
+
+
+def get_insurance_policy_api(policy_id: str) -> dict[str, Any] | None:
+    """Retrieve details of an insurance policy by ID."""
+    return _insurance_call(
+        "get",
+        f"/insurance/policies/{policy_id}",
+        HTTP_OK,
+        f"Failed to fetch insurance policy '{policy_id}'",
+        f"fetching insurance policy '{policy_id}'",
+    )
+
+
+def verify_insurance_policy_api(
+    policy_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Verify (approve/reject) an insurance policy."""
+    return _insurance_call(
+        "post",
+        f"/insurance/policies/{policy_id}/verify",
+        HTTP_OK,
+        f"Failed to verify insurance policy '{policy_id}'",
+        f"verifying insurance policy '{policy_id}'",
+        json=payload,
+    )
+
+
+def assess_insurance_fee_api(
+    policy_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Assess force-placed non-compliance fee directly to tenant ledger."""
+    return _insurance_call(
+        "post",
+        f"/insurance/policies/{policy_id}/assess-fee",
+        HTTP_OK,
+        f"Failed to assess insurance fee for policy '{policy_id}'",
+        f"assessing insurance fee for policy '{policy_id}'",
+        json=payload or {"fee_amount": 25.0},
+    )
+
+
+def create_insurance_claim_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """File a resident property loss or damage claim."""
+    return _insurance_call(
+        "post",
+        "/insurance/claims",
+        HTTP_CREATED,
+        "Failed to create insurance claim",
+        "filing insurance claim",
+        json=payload,
+    )
+
+
+def list_insurance_claims_api(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any] | None:
+    """List resident insurance claims with optional filters."""
+    params: dict[str, Any] = {"limit": limit}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    return _insurance_call(
+        "get",
+        "/insurance/claims",
+        HTTP_OK,
+        "Failed to list insurance claims",
+        "listing insurance claims",
+        params=params,
+    )
+
+
+def get_insurance_claim_api(claim_id: str) -> dict[str, Any] | None:
+    """Retrieve details of an insurance claim by ID."""
+    return _insurance_call(
+        "get",
+        f"/insurance/claims/{claim_id}",
+        HTTP_OK,
+        f"Failed to fetch insurance claim '{claim_id}'",
+        f"fetching insurance claim '{claim_id}'",
+    )
+
+
+def update_insurance_claim_api(
+    claim_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update claim status, adjuster notes, or settlement payout."""
+    return _insurance_call(
+        "patch",
+        f"/insurance/claims/{claim_id}",
+        HTTP_OK,
+        f"Failed to update insurance claim '{claim_id}'",
+        f"updating insurance claim '{claim_id}'",
+        json=payload,
+    )
+
+
+def get_unit_insurance_summary_api(unit_id: str) -> dict[str, Any] | None:
+    """Get insurance compliance and claims summary for a unit."""
+    return _insurance_call(
+        "get",
+        f"/units/{unit_id}/insurance/summary",
+        HTTP_OK,
+        f"Failed to fetch insurance summary for unit '{unit_id}'",
+        f"fetching insurance summary for unit '{unit_id}'",
+    )
+
+
+def get_tenant_insurance_summary_api(tenant_id: str) -> dict[str, Any] | None:
+    """Get insurance compliance and claims summary for a resident."""
+    return _insurance_call(
+        "get",
+        f"/tenants/{tenant_id}/insurance/summary",
+        HTTP_OK,
+        f"Failed to fetch insurance summary for resident '{tenant_id}'",
+        f"fetching insurance summary for resident '{tenant_id}'",
+    )
+
+
+def session_submit_insurance_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Submit proof of insurance directly from active resident session."""
+    return _insurance_call(
+        "post",
+        f"/sessions/{session_id}/submit-insurance",
+        HTTP_CREATED,
+        f"Failed to submit insurance for session '{session_id}'",
+        "submitting insurance from support session",
+        json=payload,
+    )
+
+
+def session_file_insurance_claim_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """File an insurance claim directly from active resident session."""
+    return _insurance_call(
+        "post",
+        f"/sessions/{session_id}/file-insurance-claim",
+        HTTP_CREATED,
+        f"Failed to file insurance claim for session '{session_id}'",
+        "filing insurance claim from support session",
+        json=payload,
+    )

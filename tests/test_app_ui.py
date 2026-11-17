@@ -5151,3 +5151,165 @@ def test_session_utilities_widget_ui(monkeypatch):
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_utilities_widget("sess_test_1", tenant)
+
+
+def test_insurance_compliance_board_ui(monkeypatch):
+    """Test renters insurance operations board tabs rendering in sidebar."""
+    fake_st = FakeStreamlit(
+        values={
+            "insurance_board_tab_radio": "Active Policies & COIs",
+            "reg_ins_uid": "unit_101",
+            "reg_ins_tid": "tenant_1",
+            "reg_ins_carrier": "State Farm",
+            "reg_ins_pnum": "SF-991122",
+            "reg_ins_cov": 100000.0,
+            "reg_ins_exp": "2027-12-31",
+            "file_clm_uid": "unit_101",
+            "file_clm_tid": "tenant_1",
+            "file_clm_type": "water_damage",
+            "file_clm_loss": 850.0,
+            "file_clm_desc": "Bathroom leak damaged floor rug",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    policies_data = {
+        "items": [
+            {
+                "id": "pol_1",
+                "carrier_name": "Lemonade",
+                "policy_number": "LEM-101",
+                "status": "active",
+                "liability_coverage_amount": 100000.0,
+                "expiration_date": "2027-12-31",
+                "unit_number": "101",
+            },
+            {
+                "id": "pol_2",
+                "carrier_name": "Unknown",
+                "policy_number": "EXP-99",
+                "status": "expired",
+                "liability_coverage_amount": 50000.0,
+                "expiration_date": "2024-01-01",
+                "unit_number": "102",
+            },
+        ],
+        "total": 2,
+    }
+    pending_data = {
+        "items": [
+            {
+                "id": "pol_pending_1",
+                "carrier_name": "Geico",
+                "policy_number": "GEC-555",
+                "liability_coverage_amount": 100000.0,
+                "unit_number": "103",
+                "tenant_name": "John Connor",
+            }
+        ],
+        "total": 1,
+    }
+    claims_data = {
+        "items": [
+            {
+                "id": "clm_1",
+                "claim_number": "CLM-001",
+                "claim_type": "water_damage",
+                "status": "submitted",
+                "estimated_loss": 500.0,
+                "settled_amount": 0.0,
+                "unit_number": "101",
+            }
+        ],
+        "total": 1,
+    }
+    kpis_data = {
+        "total_policies": 15,
+        "active_policies": 12,
+        "non_compliant_policies": 3,
+        "compliance_rate_pct": 80.0,
+        "total_claims": 4,
+        "pending_claims": 2,
+        "total_claimed_loss": 4500.0,
+        "total_approved_amount": 3200.0,
+    }
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_insurance_policies_api",
+        lambda **kw: pending_data if kw.get("status") == "pending_verification" else policies_data,
+    )
+    monkeypatch.setattr(sidebar, "list_insurance_claims_api", lambda **kw: claims_data)
+    monkeypatch.setattr(sidebar, "get_insurance_metrics_api", lambda: kpis_data)
+    monkeypatch.setattr(
+        sidebar, "verify_insurance_policy_api", lambda pid, p: {"policy": {"id": pid}}
+    )
+    monkeypatch.setattr(
+        sidebar, "assess_insurance_fee_api", lambda pid, **kw: {"transaction_id": "tx_fee_1"}
+    )
+    monkeypatch.setattr(
+        sidebar, "update_insurance_claim_api", lambda cid, p: {"claim": {"id": cid}}
+    )
+    monkeypatch.setattr(
+        sidebar, "create_insurance_policy_api", lambda p: {"policy": {"id": "pol_new"}}
+    )
+    monkeypatch.setattr(
+        sidebar, "create_insurance_claim_api", lambda p: {"claim": {"id": "clm_new"}}
+    )
+
+    sidebar._render_insurance_policies_tab()
+    sidebar._render_insurance_verification_tab()
+    sidebar._render_insurance_claims_tab()
+    sidebar._render_insurance_kpis_tab()
+    sidebar._render_insurance_compliance_board()
+
+
+def test_session_insurance_widget_ui(monkeypatch):
+    """Test resident renters insurance proof submission and claim filing in active session."""
+    fake_st = FakeStreamlit(
+        values={
+            "sess_ins_carrier_sess_test_1": "Lemonade",
+            "sess_ins_pol_num_sess_test_1": "POL-998877",
+            "sess_ins_cov_sess_test_1": 100000.0,
+            "sess_ins_exp_sess_test_1": "2027-12-31",
+            "sess_ins_claim_type_sess_test_1": "water_damage",
+            "sess_ins_claim_loss_sess_test_1": 500.0,
+            "sess_ins_claim_desc_sess_test_1": "Water leak from unit above",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    summary_data = {
+        "unit_id": "unit_101",
+        "tenant_id": "tenant_1",
+        "is_compliant": True,
+        "policies_count": 1,
+        "claims_count": 1,
+        "primary_policy": {
+            "id": "pol_101",
+            "carrier_name": "Lemonade",
+            "policy_number": "POL-LEM-101",
+            "liability_coverage_amount": 100000.0,
+            "expiration_date": "2027-12-31",
+            "status": "active",
+        },
+    }
+
+    submitted_policies = []
+    filed_claims = []
+
+    monkeypatch.setattr(sidebar, "get_tenant_insurance_summary_api", lambda tid: summary_data)
+    monkeypatch.setattr(sidebar, "get_unit_insurance_summary_api", lambda uid: summary_data)
+    monkeypatch.setattr(
+        sidebar,
+        "session_submit_insurance_api",
+        lambda sid, p: submitted_policies.append((sid, p)) or {"policy": {"id": "pol_sub_1"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_file_insurance_claim_api",
+        lambda sid, p: filed_claims.append((sid, p)) or {"claim": {"claim_number": "CLM-SUB-1"}},
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_insurance_widget("sess_test_1", tenant)

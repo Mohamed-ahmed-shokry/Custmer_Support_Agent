@@ -3802,3 +3802,88 @@ def test_utility_submetering_api_utils_errors(monkeypatch):
     assert api_utils.get_tenant_utilities_summary_api("fail") is None
     assert api_utils.session_record_meter_reading_api("fail", {}) is None
     assert api_utils.session_report_utility_leak_api("fail", {}) is None
+
+
+def test_insurance_compliance_api_utils(monkeypatch):
+    """Verify renters insurance compliance and claims client API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    policy_payload = {"policy": {"id": "pol_1", "policy_number": "POL-101", "status": "active"}}
+    claim_payload = {"claim": {"id": "clm_1", "claim_number": "CLM-101", "status": "submitted"}}
+    metrics_payload = {"total_policies": 10, "active_policies": 8, "compliance_rate_pct": 80.0}
+    summary_payload = {"tenant_id": "tenant_1", "policies_count": 1, "is_compliant": True}
+
+    # Policies
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=policy_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.create_insurance_policy_api({"policy_number": "POL-101"}) == policy_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=policy_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_insurance_policies_api(tenant_id="tenant_1") == policy_payload
+    assert api_utils.get_insurance_policy_api("pol_1") == policy_payload
+    assert api_utils.verify_insurance_policy_api("pol_1", {"is_approved": True}) == policy_payload
+    assert api_utils.assess_insurance_fee_api("pol_1") == policy_payload
+
+    # Claims
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=claim_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.create_insurance_claim_api({"claim_type": "water_damage"}) == claim_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=claim_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_insurance_claims_api(tenant_id="tenant_1") == claim_payload
+    assert api_utils.get_insurance_claim_api("clm_1") == claim_payload
+    assert api_utils.update_insurance_claim_api("clm_1", {"status": "approved"}) == claim_payload
+
+    # Summaries & Metrics
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=metrics_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_insurance_metrics_api() == metrics_payload
+
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=summary_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_unit_insurance_summary_api("unit_101") == summary_payload
+    assert api_utils.get_tenant_insurance_summary_api("tenant_1") == summary_payload
+
+    # Session actions
+    sub_payload = {"status": "submitted", "policy": policy_payload["policy"]}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_submit_insurance_api("sess_1", {"carrier_name": "Lemonade"})
+        == sub_payload
+    )
+
+    file_payload = {"status": "filed", "claim": claim_payload["claim"]}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=file_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_file_insurance_claim_api("sess_1", {"claim_type": "theft"})
+        == file_payload
+    )
+
+
+def test_insurance_compliance_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in insurance client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_insurance_metrics_api() is None
+    assert api_utils.create_insurance_policy_api({}) is None
+    assert api_utils.list_insurance_policies_api() is None
+    assert api_utils.get_insurance_policy_api("fail") is None
+    assert api_utils.verify_insurance_policy_api("fail", {}) is None
+    assert api_utils.assess_insurance_fee_api("fail") is None
+
+    assert api_utils.create_insurance_claim_api({}) is None
+    assert api_utils.list_insurance_claims_api() is None
+    assert api_utils.get_insurance_claim_api("fail") is None
+    assert api_utils.update_insurance_claim_api("fail", {}) is None
+
+    assert api_utils.get_unit_insurance_summary_api("fail") is None
+    assert api_utils.get_tenant_insurance_summary_api("fail") is None
+    assert api_utils.session_submit_insurance_api("fail", {}) is None
+    assert api_utils.session_file_insurance_claim_api("fail", {}) is None
