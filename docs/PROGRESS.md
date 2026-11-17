@@ -9,7 +9,7 @@ Complete resident subletting lifecycle, roommate replacement workflows, guest ro
   - Tables `sublet_requests`, `sublet_occupants`, and `unauthorized_rental_alerts` with indexes, foreign keys to `units` and `tenants`, and default seed records.
 - [x] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)** ✅
   - Request/response schemas for sublet requests, approvals, occupants, unauthorized rental alerts, session actions, and summary KPIs with full field validations.
-- [ ] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)**
+- [x] **AC3: FastAPI Endpoints & Webhook Dispatch (`api/main.py`, `api/db_utils.py`)** ✅
   - RESTful endpoints for sublets, occupants, alerts, metrics, unit/tenant summaries, and 1-click session actions `POST /sessions/{id}/submit-sublet-request` and `POST /sessions/{id}/report-unauthorized-rental`.
 - [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
   - Context injection `[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]` and auto-resolution of `{sublet_status}`, `{sublet_start_date}`, `{sublet_end_date}`, `{subtenant_name}`, `{sublet_fee}`, `{max_occupancy_limit}`, `{current_occupancy_count}`.
@@ -29,7 +29,7 @@ Complete resident subletting lifecycle, roommate replacement workflows, guest ro
 - [x] Task 1: Document v0.52.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
 - [x] Task 2: Implement `api/sublets.py` database schema, models, CRUD helpers, approval workflow, fee posting, occupant management, rental alerts, metrics, and seed data with unit tests in `tests/test_sublets.py`.
 - [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_sublet_routes.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_sublet_routes.py`.
 - [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
 - [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
 - [ ] Task 7: Implement Streamlit UI subletting board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
