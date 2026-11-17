@@ -5,7 +5,7 @@ Complete resident subletting lifecycle, roommate replacement workflows, guest ro
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: SQLite Database Tables & Schema Migration (`api/sublets.py`)**
+- [x] **AC1: SQLite Database Tables & Schema Migration (`api/sublets.py`)** ✅
   - Tables `sublet_requests`, `sublet_occupants`, and `unauthorized_rental_alerts` with indexes, foreign keys to `units` and `tenants`, and default seed records.
 - [ ] **AC2: Pydantic Validation Schemas & Enums (`api/pydantic_models.py`)**
   - Request/response schemas for sublet requests, approvals, occupants, unauthorized rental alerts, session actions, and summary KPIs with full field validations.
@@ -26,8 +26,8 @@ Complete resident subletting lifecycle, roommate replacement workflows, guest ro
 
 ## Micro-Task Execution Checklist
 
-- [ ] Task 1: Document v0.52.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/sublets.py` database schema, models, CRUD helpers, approval workflow, fee posting, occupant management, rental alerts, metrics, and seed data with unit tests in `tests/test_sublets.py`.
+- [x] Task 1: Document v0.52.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/sublets.py` database schema, models, CRUD helpers, approval workflow, fee posting, occupant management, rental alerts, metrics, and seed data with unit tests in `tests/test_sublets.py`.
 - [ ] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_sublet_routes.py`.
 - [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
