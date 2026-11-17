@@ -4405,3 +4405,278 @@ class InsuranceMetricsResponse(BaseModel):
     total_estimated_loss: float = 0.0
 
 
+
+
+# ---------------------------------------------------------------------------
+# Resident Subletting, Lease Assignment & Guest Room Occupancy Schemas
+# ---------------------------------------------------------------------------
+
+
+class SubletCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1)
+    unit_id: str | None = None
+    subtenant_name: str = Field(..., min_length=2, max_length=150)
+    subtenant_email: str = Field(..., min_length=3, max_length=150)
+    subtenant_phone: str = Field(default="", max_length=50)
+    start_date: str = Field(..., min_length=4, max_length=30)
+    end_date: str = Field(..., min_length=4, max_length=30)
+    sublet_type: str = Field(default="full_unit")
+    monthly_rent: float = Field(default=0.0, ge=0.0)
+    administrative_fee: float = Field(default=150.0, ge=0.0)
+    reason: str = Field(default="", max_length=1000)
+    notes: str = Field(default="", max_length=1000)
+
+
+class SubletUpdateRequest(BaseModel):
+    subtenant_name: str | None = Field(default=None, min_length=2, max_length=150)
+    subtenant_email: str | None = Field(default=None, min_length=3, max_length=150)
+    subtenant_phone: str | None = Field(default=None, max_length=50)
+    start_date: str | None = Field(default=None, min_length=4, max_length=30)
+    end_date: str | None = Field(default=None, min_length=4, max_length=30)
+    sublet_type: str | None = None
+    status: str | None = None
+    monthly_rent: float | None = Field(default=None, ge=0.0)
+    administrative_fee: float | None = Field(default=None, ge=0.0)
+    reason: str | None = Field(default=None, max_length=1000)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class SubletApproveRequest(BaseModel):
+    reviewed_by: str = Field(..., min_length=2, max_length=100)
+    assess_fee: bool = Field(default=True)
+    fee_amount: float = Field(default=150.0, ge=0.0)
+    notes: str = Field(default="", max_length=1000)
+    auto_register_occupant: bool = Field(default=True)
+
+
+class SubletRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=1000)
+    reviewed_by: str = Field(..., min_length=2, max_length=100)
+
+
+class SubletFeeRequest(BaseModel):
+    fee_amount: float = Field(default=150.0, ge=0.0)
+
+
+class SubletItem(BaseModel):
+    id: str
+    tenant_id: str
+    unit_id: str
+    subtenant_name: str
+    subtenant_email: str
+    subtenant_phone: str = ""
+    start_date: str
+    end_date: str
+    sublet_type: str = "full_unit"
+    status: str = "pending"
+    monthly_rent: float = 0.0
+    administrative_fee: float = 150.0
+    fee_paid: int = 0
+    fee_transaction_id: str | None = None
+    reason: str = ""
+    notes: str = ""
+    reviewed_by: str = ""
+    reviewed_at: str | None = None
+    created_at: str
+    updated_at: str
+    first_name: str | None = None
+    last_name: str | None = None
+    unit_number: str | None = None
+    building_name: str | None = None
+
+
+class SubletResponse(BaseModel):
+    sublet: SubletItem
+    message: str = "Success"
+
+
+class SubletListResponse(BaseModel):
+    sublets: list[SubletItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class OccupantCreateRequest(BaseModel):
+    unit_id: str = Field(..., min_length=1)
+    tenant_id: str = Field(..., min_length=1)
+    full_name: str = Field(..., min_length=2, max_length=150)
+    check_in_date: str = Field(..., min_length=4, max_length=30)
+    sublet_id: str | None = None
+    email: str = Field(default="", max_length=150)
+    phone: str = Field(default="", max_length=50)
+    occupant_type: str = Field(default="subtenant")
+    relationship_to_tenant: str = Field(default="subtenant", max_length=100)
+    id_verified: int = Field(default=0, ge=0, le=1)
+    background_cleared: int = Field(default=0, ge=0, le=1)
+    expected_check_out_date: str = Field(default="", max_length=30)
+    emergency_contact: str = Field(default="", max_length=150)
+    notes: str = Field(default="", max_length=1000)
+
+
+class OccupantUpdateRequest(BaseModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=150)
+    email: str | None = Field(default=None, max_length=150)
+    phone: str | None = Field(default=None, max_length=50)
+    occupant_type: str | None = None
+    relationship_to_tenant: str | None = Field(default=None, max_length=100)
+    id_verified: int | None = Field(default=None, ge=0, le=1)
+    background_cleared: int | None = Field(default=None, ge=0, le=1)
+    check_in_date: str | None = Field(default=None, min_length=4, max_length=30)
+    expected_check_out_date: str | None = Field(default=None, max_length=30)
+    status: str | None = None
+    emergency_contact: str | None = Field(default=None, max_length=150)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class OccupantItem(BaseModel):
+    id: str
+    sublet_id: str | None = None
+    unit_id: str
+    tenant_id: str
+    full_name: str
+    email: str = ""
+    phone: str = ""
+    occupant_type: str = "subtenant"
+    relationship_to_tenant: str = "subtenant"
+    id_verified: int = 0
+    background_cleared: int = 0
+    check_in_date: str
+    expected_check_out_date: str = ""
+    status: str = "active"
+    emergency_contact: str = ""
+    notes: str = ""
+    created_at: str
+    updated_at: str
+    first_name: str | None = None
+    last_name: str | None = None
+    unit_number: str | None = None
+    building_name: str | None = None
+
+
+class OccupantResponse(BaseModel):
+    occupant: OccupantItem
+    message: str = "Success"
+
+
+class OccupantListResponse(BaseModel):
+    occupants: list[OccupantItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class UnitOccupancyResponse(BaseModel):
+    unit_id: str
+    unit_number: str
+    building_name: str = ""
+    estimated_bedrooms: int = 1
+    max_occupancy_limit: int
+    active_tenant_count: int
+    active_occupant_count: int
+    total_current_occupancy: int
+    is_over_capacity: bool
+    remaining_capacity: int
+
+
+class UnauthorizedRentalReportRequest(BaseModel):
+    unit_id: str = Field(..., min_length=1)
+    tenant_id: str = Field(..., min_length=1)
+    evidence_summary: str = Field(..., min_length=5, max_length=2000)
+    platform: str = Field(default="airbnb", max_length=50)
+    listing_url: str = Field(default="", max_length=500)
+    reported_by: str = Field(default="security_patrol", max_length=100)
+    status: str = Field(default="suspected")
+
+
+class UnauthorizedRentalUpdateRequest(BaseModel):
+    status: str | None = None
+    penalty_fee: float | None = Field(default=None, ge=0.0)
+    resolution_notes: str | None = Field(default=None, max_length=2000)
+    investigated_by: str | None = Field(default=None, max_length=100)
+    evidence_summary: str | None = Field(default=None, max_length=2000)
+
+
+class UnauthorizedRentalFineRequest(BaseModel):
+    fine_amount: float = Field(default=250.0, ge=0.0)
+
+
+class UnauthorizedRentalItem(BaseModel):
+    id: str
+    unit_id: str
+    tenant_id: str
+    platform: str = "airbnb"
+    listing_url: str = ""
+    reported_by: str = "security_patrol"
+    evidence_summary: str
+    status: str = "suspected"
+    penalty_fee: float = 0.0
+    fee_transaction_id: str | None = None
+    resolution_notes: str = ""
+    investigated_by: str = ""
+    created_at: str
+    updated_at: str
+    first_name: str | None = None
+    last_name: str | None = None
+    unit_number: str | None = None
+    building_name: str | None = None
+
+
+class UnauthorizedRentalResponse(BaseModel):
+    alert: UnauthorizedRentalItem
+    message: str = "Success"
+
+
+class UnauthorizedRentalListResponse(BaseModel):
+    alerts: list[UnauthorizedRentalItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class SubletMetricsResponse(BaseModel):
+    total_sublet_requests: int = 0
+    pending_requests: int = 0
+    approved_requests: int = 0
+    active_sublets: int = 0
+    completed_sublets: int = 0
+    rejected_requests: int = 0
+    sublets_by_status: dict[str, int] = Field(default_factory=dict)
+    sublets_by_type: dict[str, int] = Field(default_factory=dict)
+    total_registered_occupants: int = 0
+    active_occupants: int = 0
+    total_rental_alerts: int = 0
+    active_investigations: int = 0
+    confirmed_violations: int = 0
+    rental_alerts_by_status: dict[str, int] = Field(default_factory=dict)
+    total_administrative_fees_collected: float = 0.0
+
+
+class UnitSubletSummaryResponse(BaseModel):
+    unit_id: str
+    occupancy: UnitOccupancyResponse
+    active_sublet: SubletItem | None = None
+    total_sublet_requests: int = 0
+    sublets: list[SubletItem] = Field(default_factory=list)
+    registered_occupants: list[OccupantItem] = Field(default_factory=list)
+    rental_alerts: list[UnauthorizedRentalItem] = Field(default_factory=list)
+
+
+class TenantSubletSummaryResponse(BaseModel):
+    tenant_id: str
+    active_sublet: SubletItem | None = None
+    total_sublet_requests: int = 0
+    sublets: list[SubletItem] = Field(default_factory=list)
+    registered_occupants: list[OccupantItem] = Field(default_factory=list)
+    rental_alerts: list[UnauthorizedRentalItem] = Field(default_factory=list)
+
+
+class SessionSubmitSubletRequest(BaseModel):
+    subtenant_name: str = Field(..., min_length=2, max_length=150)
+    subtenant_email: str = Field(..., min_length=3, max_length=150)
+    start_date: str = Field(..., min_length=4, max_length=30)
+    end_date: str = Field(..., min_length=4, max_length=30)
+    subtenant_phone: str = Field(default="", max_length=50)
+    sublet_type: str = Field(default="full_unit")
+    monthly_rent: float = Field(default=0.0, ge=0.0)
+    reason: str = Field(default="", max_length=1000)
+
+
+class SessionReportRentalRequest(BaseModel):
+    platform: str = Field(default="airbnb", max_length=50)
+    evidence_summary: str = Field(..., min_length=5, max_length=2000)
+    listing_url: str = Field(default="", max_length=500)
