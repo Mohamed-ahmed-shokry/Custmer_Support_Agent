@@ -339,6 +339,12 @@ VALID_WEBHOOK_EVENTS = {
     "insurance.policy_expired",
     "insurance.fee_assessed",
     "insurance.claim_filed",
+    "sublet.requested",
+    "sublet.approved",
+    "sublet.rejected",
+    "sublet.cancelled",
+    "sublet.violation_detected",
+    "sublet.fee_assessed",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
