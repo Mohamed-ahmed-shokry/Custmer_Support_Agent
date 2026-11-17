@@ -6767,7 +6767,9 @@ def _render_sublet_requests_tab() -> None:
 
     st.caption(f"Showing **{len(requests_list)}** sublet requests.")
     for s in requests_list[:5]:
-        s_id = s.get("id")
+        s_id = str(s.get("id") or "")
+        if not s_id:
+            continue
         name = s.get("subtenant_name", "Unknown")
         sub_type = s.get("sublet_type", "full_unit")
         stat = str(s.get("status", "pending")).upper()
@@ -6812,7 +6814,9 @@ def _render_sublet_occupants_tab() -> None:
 
     st.caption(f"Showing **{len(occupants)}** active registered occupants.")
     for o in occupants[:5]:
-        o_id = o.get("id")
+        o_id = str(o.get("id") or "")
+        if not o_id:
+            continue
         name = o.get("full_name", "Unknown")
         occ_type = o.get("occupant_type", "subtenant")
         unit = o.get("unit_number") or o.get("unit_id")
@@ -6831,7 +6835,9 @@ def _render_sublet_alerts_tab() -> None:
     alerts = list_unauthorized_rental_alerts_api()
     st.caption(f"Showing **{len(alerts)}** short-term rental incident alerts.")
     for a in alerts[:5]:
-        a_id = a.get("id")
+        a_id = str(a.get("id") or "")
+        if not a_id:
+            continue
         platform = str(a.get("platform", "rental")).upper()
         unit = a.get("unit_number") or a.get("unit_id")
         stat = str(a.get("status", "suspected")).upper()
