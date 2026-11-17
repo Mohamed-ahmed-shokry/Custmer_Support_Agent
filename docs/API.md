@@ -1341,3 +1341,63 @@ The Resident Renters Insurance Compliance Engine automates proof-of-insurance re
   - `{insurance_claims_count}`: Number of claims filed by resident
   - `{insurance_latest_claim_number}`: Latest claim identifier (e.g. `CLM-202611-001`)
   - `{insurance_latest_claim_status}`: Latest claim status (`submitted`, `settled`, `none`)
+
+
+## Subletting, Roommate Replacement & Guest Room Occupancy (v0.52.0)
+
+### Sublet Requests & Approvals
+- `POST /sublets`: Submit a resident subletting or roommate replacement request (`tenant_id`, `unit_id`, `subtenant_name`, `subtenant_email`, `subtenant_phone`, `start_date`, `end_date`, `sublet_type`, `monthly_rent`, `reason`, `notes`). Dispatches `sublet.requested` webhook.
+- `GET /sublets`: List sublet requests with optional filtering by `tenant_id`, `unit_id`, `status`, and `sublet_type`.
+- `GET /sublets/{id}`: Retrieve detailed sublet request with joined tenant and unit data.
+- `PATCH /sublets/{id}`: Update terms, dates, or rent on a sublet request.
+- `POST /sublets/{id}/approve`: Approve sublet request, post administrative review fee ($150.00 default) directly to rent ledger, and optionally auto-register the occupant (`reviewed_by`, `assess_fee`, `fee_amount`, `notes`, `auto_register_occupant`). Dispatches `sublet.approved` and `sublet.fee_assessed` webhooks.
+- `POST /sublets/{id}/reject`: Reject sublet request with explanation (`reason`, `reviewed_by`). Dispatches `sublet.rejected` webhook.
+- `POST /sublets/{id}/assess-fee`: Post administrative review fee directly to resident rent ledger (`billing_transactions`). Dispatches `sublet.fee_assessed` webhook.
+
+### Registered Occupants & Guests
+- `POST /sublets/occupants`: Register an authorized subtenant, long-term guest, or roommate replacement (`unit_id`, `tenant_id`, `full_name`, `check_in_date`, `sublet_id`, `email`, `phone`, `occupant_type`, `relationship_to_tenant`, `id_verified`, `background_cleared`, `expected_check_out_date`, `emergency_contact`, `notes`).
+- `GET /sublets/occupants`: List registered occupants filtered by `unit_id`, `tenant_id`, `sublet_id`, `status`, and `occupant_type`.
+- `GET /sublets/occupants/{id}`: Retrieve details of a registered occupant.
+- `PATCH /sublets/occupants/{id}`: Update occupant details or mark departed (`status: departed`).
+- `GET /units/{id}/occupancy`: Calculate unit maximum occupancy limit (2 persons per bedroom + 1), count active primary leaseholders and registered occupants, and verify capacity compliance.
+
+### Unauthorized Short-Term Rental Alerts
+- `POST /sublets/unauthorized-alerts`: Report suspected unauthorized short-term rental activity (e.g. Airbnb, VRBO) (`unit_id`, `tenant_id`, `evidence_summary`, `platform`, `listing_url`, `reported_by`, `status`). Dispatches `sublet.violation_detected` webhook.
+- `GET /sublets/unauthorized-alerts`: List unauthorized rental alerts filtered by `unit_id`, `tenant_id`, and `status`.
+- `GET /sublets/unauthorized-alerts/{id}`: Retrieve details of a rental alert.
+- `PATCH /sublets/unauthorized-alerts/{id}`: Update investigation status, notes, or resolution on an alert.
+- `POST /sublets/unauthorized-alerts/{id}/assess-fine`: Post a short-term rental violation fine ($250.00 default) directly to tenant rent ledger. Dispatches `sublet.fee_assessed` webhook.
+
+### Summaries & Metrics
+- `GET /sublets/metrics`: Retrieve portfolio subletting, occupant, and rental alert KPIs.
+- `GET /units/{id}/sublet/summary`: Aggregated subletting, occupancy limits, registered occupants, and rental alerts for a unit.
+- `GET /tenants/{id}/sublet/summary`: Aggregated sublets, occupants, and alerts for a resident.
+
+### Support Session 1-Click Actions
+- `POST /sessions/{id}/submit-sublet-request`: 1-click sublet submission directly from active resident support session (`subtenant_name`, `subtenant_email`, `start_date`, `end_date`, `sublet_type`, `monthly_rent`, `reason`).
+- `POST /sessions/{id}/report-unauthorized-rental`: 1-click unauthorized rental report logged directly from chat (`platform`, `evidence_summary`, `listing_url`).
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**: Verified resident context automatically includes:
+  ```text
+  [RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]
+  - Occupancy Status: COMPLIANT (Current: 2 / Max Limit: 3 persons)
+  - Occupancy Breakdown: 1 leaseholder(s), 1 registered guest/subtenant occupant(s)
+  - Sublet Requests on File: 1
+    * Sublet sub_seed_101 (full_unit): Alex Rivera | Status: APPROVED | Dates: 2026-12-01 to 2027-03-01 | Rent: $1,850.00
+  - Registered Occupants & Guests: 1
+    * Alex Rivera (subtenant): Status: active | Stay: 2026-12-01 to 2027-03-01
+  [END RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]
+  ```
+- **Macro Template Variables**:
+  - `{sublet_status}`: Active or latest sublet status (`approved`, `pending`, `active`, `none`)
+  - `{sublet_start_date}`: Sublet start date (e.g. `2026-12-01`)
+  - `{sublet_end_date}`: Sublet end date (e.g. `2027-03-01`)
+  - `{subtenant_name}`: Name of subtenant or replacement roommate (e.g. `Alex Rivera`)
+  - `{sublet_type}`: Sublet classification (`full_unit`, `partial_room`, `roommate_replacement`, `none`)
+  - `{sublet_monthly_rent}`: Formatted sublet monthly rent (e.g. `$1,850.00`)
+  - `{sublet_fee}`: Sublet review fee assessed (e.g. `$150.00` or `$0.00`)
+  - `{max_occupancy_limit}`: Unit threshold (e.g. `3` or `5`)
+  - `{current_occupancy_count}`: Current registered occupants (e.g. `2`)
+  - `{registered_occupants_count}`: Number of guests and subtenants registered
+  - `{unauthorized_rental_alerts_count}`: Number of unauthorized rental alerts on record
