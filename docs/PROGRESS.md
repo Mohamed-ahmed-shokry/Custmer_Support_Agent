@@ -13,7 +13,7 @@ Complete resident subletting lifecycle, roommate replacement workflows, guest ro
   - RESTful endpoints for sublets, occupants, alerts, metrics, unit/tenant summaries, and 1-click session actions `POST /sessions/{id}/submit-sublet-request` and `POST /sessions/{id}/report-unauthorized-rental`.
 - [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
   - Context injection `[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]` and auto-resolution of `{sublet_status}`, `{sublet_start_date}`, `{sublet_end_date}`, `{subtenant_name}`, `{sublet_fee}`, `{max_occupancy_limit}`, `{current_occupancy_count}`.
-- [ ] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)**
+- [x] **AC5: Streamlit Client API Helpers (`app/api_utils.py`)** ✅
   - Typed client API wrappers with error handling, session header forwarding, and payload verification.
 - [ ] **AC6: Streamlit UI Subletting Board & Session Actions (`app/sidebar.py`)**
   - 4-tab sublet management board (`Sublet Requests`, `Guest Registry & Occupants`, `Unauthorized Rental Alerts`, `Occupancy KPIs`) and 1-click resident profile subletting actions.
@@ -31,7 +31,7 @@ Complete resident subletting lifecycle, roommate replacement workflows, guest ro
 - [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_sublet_routes.py`.
 - [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
-- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
 - [ ] Task 7: Implement Streamlit UI subletting board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
 - [ ] Task 8: Version bump to `0.52.0` and documentation updates in `docs/API.md` and `README.md`.
 - [ ] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
