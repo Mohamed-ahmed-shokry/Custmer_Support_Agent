@@ -1840,6 +1840,63 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.52.0 — Resident Subletting, Lease Assignment & Guest Room Occupancy Verification Engine (COMPLETED)
+
+Provide property managers, leasing coordinators, and residents with an end-to-end resident subletting lifecycle, roommate replacement workflows, guest room occupancy tracking, short-term rental / Airbnb violation detection, administrative fee assessment to rent ledgers, conversational RAG grounding, and Streamlit management operations hub. The system coordinates sublet requests (`sublet_requests` per tenant and unit with subtenant identity, sublet type [full_unit, partial_room, roommate_replacement], lease term, monthly rent, administrative review fee, approval status), registered occupants and temporary long-term guests (`sublet_occupants` tracking ID verification, background checks, check-in and check-out dates), short-term rental violation alerts (`unauthorized_rental_alerts`), administrative fee posting directly to resident rent ledgers (`billing_transactions`), grounds active sublet and occupancy status in conversational turns (`[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]`), and resolves canned template macros (`{sublet_status}`, `{sublet_start_date}`, `{sublet_end_date}`, `{subtenant_name}`, `{sublet_fee}`, `{max_occupancy_limit}`, `{current_occupancy_count}`). Real-time webhooks (`sublet.requested`, `sublet.approved`, `sublet.rejected`, `sublet.cancelled`, `sublet.violation_detected`, `sublet.fee_assessed`) keep property operations and leasing teams alerted.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers and residents can:
+1. Submit, view, verify, and process resident sublet requests (`sublets`) with sublet type (`full_unit`, `partial_room`, `roommate_replacement`), subtenant personal/contact info, proposed dates, and approval workflow (`pending`, `background_check`, `approved`, `rejected`, `active`, `completed`, `cancelled`).
+2. Register and track subtenants and long-term guests (`sublet_occupants`) with ID verification, background check status, relationship to leaseholder, check-in and check-out dates, and active occupancy counting.
+3. Automatically assess administrative review / lease assignment fees ($150.00 default) directly to resident rent ledgers (`billing_transactions` via `api/billing.py`) upon sublet authorization.
+4. Detect, investigate, and record unauthorized short-term rental listings (e.g. Airbnb, VRBO) with alert statuses (`suspected`, `investigating`, `confirmed_violation`, `cleared`) and violation fine assessments.
+5. Calculate unit occupancy thresholds (2 persons per bedroom + 1) and flag over-occupancy compliance risks.
+6. Ground active resident chat sessions with sublet and occupancy status and resolve `{sublet_status}`, `{sublet_start_date}`, `{sublet_end_date}`, `{subtenant_name}`, `{sublet_fee}`, `{max_occupancy_limit}`, `{current_occupancy_count}` macros.
+7. Manage sublet requests, registered occupants, unauthorized rental alerts, and occupancy KPIs in an interactive Streamlit operations board.
+
+### Scope
+- `api/sublets.py`:
+  - SQLite tables `sublet_requests`, `sublet_occupants`, and `unauthorized_rental_alerts` with indexes, foreign keys to `tenants` and `units`, and realistic seed records.
+  - Enums: `SubletType`, `SubletStatus`, `OccupantType`, `OccupantStatus`, `RentalAlertStatus`.
+  - CRUD operations, approval/rejection workflow, fee posting helper, occupant registration, occupancy limit calculation, and metrics summary `get_sublet_metrics_summary()`.
+- `api/pydantic_models.py`:
+  - Request/response schemas for sublets, occupants, alerts, session actions, and summary metrics.
+- `api/db_utils.py`:
+  - Webhook event types for sublet lifecycle, violations, and fee assessments.
+- `api/main.py`:
+  - REST endpoints for `/sublets`, `/sublets/{id}/approve`, `/sublets/{id}/reject`, `/sublets/{id}/occupants`, `/sublets/unauthorized-alerts`, `/sublets/metrics`, unit/tenant sublets, and 1-click session actions `POST /sessions/{id}/submit-sublet-request` and `POST /sessions/{id}/report-unauthorized-rental`.
+- `api/tenant_context.py`:
+  - RAG prompt grounding block `[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]` and macro variable resolution.
+- `app/api_utils.py`:
+  - Typed client API wrappers for subletting and occupancy endpoints.
+- `app/sidebar.py`:
+  - Streamlit `🤝 Subletting & Guest Occupancy` sidebar board with 4 tabs and resident profile quick subletting action widget.
+- Tests:
+  - Unit tests for engine, models, tenant context, routes, app client, and UI.
+
+### Acceptance Criteria
+- [x] AC1: Core SQLite database schema & migrations in `api/sublets.py` with foreign keys to `units` and `tenants` and seeds.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and webhook event definitions in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints in `api/main.py` including session 1-click sublet submission and rental report actions.
+- [x] AC4: Tenant RAG context prompt grounding and dynamic macro variable expansion in `api/tenant_context.py`.
+- [x] AC5: Streamlit API client utilities in `app/api_utils.py`.
+- [x] AC6: Streamlit UI components in `app/sidebar.py` (subletting board & session resident widget).
+- [x] AC7: Comprehensive unit and integration test suites passing with >= 80% coverage.
+- [x] AC8: Documentation updates in `docs/API.md`, `README.md`, `pyproject.toml`, `api/settings.py`, and `docs/PROGRESS.md`.
+- [x] AC9: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Execution Checklist
+- [x] Task 1: Document v0.52.0 scope, acceptance criteria, and checklist in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/sublets.py` database schema, models, CRUD helpers, approval workflow, fee posting, occupant management, rental alerts, metrics, and seed data with unit tests in `tests/test_sublets.py`.
+- [x] Task 3: Define Pydantic request/response schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with schema tests in `tests/test_models.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route tests in `tests/test_sublet_routes.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 7: Implement Streamlit UI subletting board and session resident widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.52.0` and documentation updates in `docs/API.md` and `README.md`.
+- [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
+
+
 ## v0.51.0 — Resident Renters Insurance Compliance, Policy Verification & Claims Engine (COMPLETED)
 
 Provide property managers, leasing staff, and residents with an end-to-end renters insurance compliance, COI policy verification, coverage lapse detection, automatic non-compliance fee assessment, resident claim filing, conversational RAG grounding, and Streamlit management operations hub. The system coordinates insurance policy records (`insurance_policies` per tenant and unit with liability coverage limit, personal property limit, carrier name, policy number, start/expiry dates, interested party verification), automated lapse detection, non-compliance fee assessment directly to resident rent ledgers (`billing_transactions`), insurance claim logging (`water_damage`, `fire_smoke`, `theft_burglary`, `liability`, `storm`, `other`), grounds active insurance compliance status in conversational turns (`[RESIDENT RENTERS INSURANCE & COVERAGE COMPLIANCE]`), and resolves canned template macros (`{insurance_policy_status}`, `{insurance_carrier}`, `{insurance_policy_number}`, `{insurance_liability_coverage}`, `{insurance_expiration_date}`, `{insurance_compliance_fee}`). Real-time webhooks (`insurance.policy_submitted`, `insurance.policy_verified`, `insurance.policy_expired`, `insurance.claim_filed`, `insurance.fee_assessed`) keep operations and residents alerted.

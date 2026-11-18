@@ -138,6 +138,11 @@ from api.pydantic_models import (
     MoveLogisticsMetricsResponse,
     MoveLogisticsResponse,
     MoveLogisticsUpdateRequest,
+    OccupantCreateRequest,
+    OccupantItem,
+    OccupantListResponse,
+    OccupantResponse,
+    OccupantUpdateRequest,
     PackageCarrier,
     PackageCreateRequest,
     PackageItem,
@@ -196,11 +201,13 @@ from api.pydantic_models import (
     SessionRecordMeterReadingRequest,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
+    SessionReportRentalRequest,
     SessionReportUtilityLeakRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSLAStatusResponse,
     SessionSubmitInsuranceRequest,
+    SessionSubmitSubletRequest,
     SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -214,6 +221,15 @@ from api.pydantic_models import (
     SLAPolicyResponse,
     SLAPolicyUpdateRequest,
     SourceInfo,
+    SubletApproveRequest,
+    SubletCreateRequest,
+    SubletFeeRequest,
+    SubletItem,
+    SubletListResponse,
+    SubletMetricsResponse,
+    SubletRejectRequest,
+    SubletResponse,
+    SubletUpdateRequest,
     SupportAgentCreateRequest,
     SupportAgentListResponse,
     SupportAgentResponse,
@@ -232,10 +248,17 @@ from api.pydantic_models import (
     TenantSupportHistorySessionItem,
     TenantUpdateRequest,
     TenantUtilitiesSummaryResponse,
+    UnauthorizedRentalFineRequest,
+    UnauthorizedRentalItem,
+    UnauthorizedRentalListResponse,
+    UnauthorizedRentalReportRequest,
+    UnauthorizedRentalResponse,
+    UnauthorizedRentalUpdateRequest,
     UnitCreateRequest,
     UnitInsuranceSummaryResponse,
     UnitItem,
     UnitListResponse,
+    UnitOccupancyResponse,
     UnitResponse,
     UnitUpdateRequest,
     UnitUtilitiesSummaryResponse,
@@ -3409,4 +3432,188 @@ def test_insurance_policy_and_claim_models():
     )
     assert metrics.compliance_rate_pct == expected_rate
 
+
+
+
+def test_subletting_models():
+    """Test validation and serialization for resident subletting schemas."""
+    expected_rent = 1800.0
+    expected_fee = 150.0
+
+    create_req = SubletCreateRequest(
+        tenant_id="tenant_101",
+        unit_id="unit_202",
+        subtenant_name="Jane Doe",
+        subtenant_email="jane@example.com",
+        subtenant_phone="(555) 123-4567",
+        start_date="2026-12-01",
+        end_date="2027-03-01",
+        sublet_type="full_unit",
+        monthly_rent=expected_rent,
+        administrative_fee=expected_fee,
+        reason="Semester abroad program",
+    )
+    assert create_req.subtenant_name == "Jane Doe"
+    assert create_req.monthly_rent == expected_rent
+
+    update_req = SubletUpdateRequest(
+        subtenant_name="Jane Doe Updated",
+        status="active",
+        monthly_rent=1900.0,
+    )
+    assert update_req.status == "active"
+
+    approve_req = SubletApproveRequest(
+        reviewed_by="Manager Bob",
+        assess_fee=True,
+        fee_amount=expected_fee,
+        notes="All background checks passed",
+    )
+    assert approve_req.assess_fee is True
+
+    reject_req = SubletRejectRequest(
+        reason="Over occupancy threshold",
+        reviewed_by="Manager Bob",
+    )
+    assert reject_req.reason == "Over occupancy threshold"
+
+    fee_req = SubletFeeRequest(fee_amount=expected_fee)
+    assert fee_req.fee_amount == expected_fee
+
+    sublet_item = SubletItem(
+        id="sub_test_101",
+        tenant_id="tenant_101",
+        unit_id="unit_202",
+        subtenant_name="Jane Doe",
+        subtenant_email="jane@example.com",
+        start_date="2026-12-01",
+        end_date="2027-03-01",
+        sublet_type="full_unit",
+        status="approved",
+        monthly_rent=expected_rent,
+        administrative_fee=expected_fee,
+        created_at="2026-11-17T00:00:00Z",
+        updated_at="2026-11-17T00:00:00Z",
+    )
+    assert sublet_item.id == "sub_test_101"
+
+    sublet_resp = SubletResponse(sublet=sublet_item)
+    assert sublet_resp.sublet.id == "sub_test_101"
+
+    sublet_list = SubletListResponse(sublets=[sublet_item], count=1)
+    assert sublet_list.count == 1
+
+    sess_sub = SessionSubmitSubletRequest(
+        subtenant_name="Jane Doe",
+        subtenant_email="jane@example.com",
+        start_date="2026-12-01",
+        end_date="2027-03-01",
+        sublet_type="full_unit",
+    )
+    assert sess_sub.subtenant_name == "Jane Doe"
+
+
+def test_occupants_and_rental_alerts_models():
+    """Test validation and serialization for occupant and unauthorized rental schemas."""
+    expected_fine = 250.0
+    expected_fees = 450.0
+
+    occ_create = OccupantCreateRequest(
+        unit_id="unit_202",
+        tenant_id="tenant_101",
+        full_name="Mark Smith",
+        check_in_date="2026-12-01",
+        email="mark@example.com",
+        occupant_type="temporary_guest",
+    )
+    assert occ_create.full_name == "Mark Smith"
+
+    occ_update = OccupantUpdateRequest(status="departed")
+    assert occ_update.status == "departed"
+
+    occ_item = OccupantItem(
+        id="occ_test_101",
+        unit_id="unit_202",
+        tenant_id="tenant_101",
+        full_name="Mark Smith",
+        check_in_date="2026-12-01",
+        created_at="2026-11-17T00:00:00Z",
+        updated_at="2026-11-17T00:00:00Z",
+    )
+    assert occ_item.full_name == "Mark Smith"
+
+    occ_resp = OccupantResponse(occupant=occ_item)
+    assert occ_resp.occupant.id == "occ_test_101"
+
+    occ_list = OccupantListResponse(occupants=[occ_item], count=1)
+    assert occ_list.count == 1
+
+    # Unit occupancy
+    unit_occ = UnitOccupancyResponse(
+        unit_id="unit_202",
+        unit_number="202",
+        estimated_bedrooms=2,
+        max_occupancy_limit=5,
+        active_tenant_count=1,
+        active_occupant_count=1,
+        total_current_occupancy=2,
+        is_over_capacity=False,
+        remaining_capacity=3,
+    )
+    assert unit_occ.is_over_capacity is False
+
+    # Rental alert schemas
+    alert_rep = UnauthorizedRentalReportRequest(
+        unit_id="unit_202",
+        tenant_id="tenant_101",
+        evidence_summary="Airbnb listing observed with photos of kitchen",
+        platform="airbnb",
+    )
+    assert alert_rep.platform == "airbnb"
+
+    alert_up = UnauthorizedRentalUpdateRequest(status="confirmed_violation")
+    assert alert_up.status == "confirmed_violation"
+
+    alert_fine = UnauthorizedRentalFineRequest(fine_amount=expected_fine)
+    assert alert_fine.fine_amount == expected_fine
+
+    alert_item = UnauthorizedRentalItem(
+        id="ura_test_101",
+        unit_id="unit_202",
+        tenant_id="tenant_101",
+        platform="airbnb",
+        evidence_summary="Airbnb listing observed with photos of kitchen",
+        status="suspected",
+        created_at="2026-11-17T00:00:00Z",
+        updated_at="2026-11-17T00:00:00Z",
+    )
+    assert alert_item.id == "ura_test_101"
+
+    alert_resp = UnauthorizedRentalResponse(alert=alert_item)
+    assert alert_resp.alert.id == "ura_test_101"
+
+    alert_list = UnauthorizedRentalListResponse(alerts=[alert_item], count=1)
+    assert alert_list.count == 1
+
+    sess_rep = SessionReportRentalRequest(
+        platform="vrbo",
+        evidence_summary="Guests asking for keylock box",
+    )
+    assert sess_rep.platform == "vrbo"
+
+    metrics = SubletMetricsResponse(
+        total_sublet_requests=5,
+        pending_requests=1,
+        approved_requests=3,
+        active_sublets=2,
+        completed_sublets=1,
+        rejected_requests=0,
+        total_registered_occupants=4,
+        active_occupants=3,
+        total_rental_alerts=1,
+        active_investigations=1,
+        confirmed_violations=0,
+        total_administrative_fees_collected=expected_fees,
+    )
+    assert metrics.total_administrative_fees_collected == expected_fees
 

@@ -33,6 +33,7 @@ from api import (
     parking,
     pets,
     sla,
+    sublets,
     tenant_context,
     utilities,
     vendors,
@@ -290,6 +291,11 @@ from api.pydantic_models import (
     MoveLogisticsMetricsResponse,
     MoveLogisticsResponse,
     MoveLogisticsUpdateRequest,
+    OccupantCreateRequest,
+    OccupantItem,
+    OccupantListResponse,
+    OccupantResponse,
+    OccupantUpdateRequest,
     PackageCreateRequest,
     PackageItem,
     PackageListResponse,
@@ -356,6 +362,7 @@ from api.pydantic_models import (
     SessionRecordMeterReadingRequest,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
+    SessionReportRentalRequest,
     SessionReportUtilityLeakRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
@@ -363,6 +370,7 @@ from api.pydantic_models import (
     SessionSearchResult,
     SessionSLAStatusResponse,
     SessionSubmitInsuranceRequest,
+    SessionSubmitSubletRequest,
     SessionSubmitViolationAppealRequest,
     SessionSummaryRequest,
     SessionSummaryResponse,
@@ -377,6 +385,15 @@ from api.pydantic_models import (
     SLAPolicyResponse,
     SLAPolicyUpdateRequest,
     StatsResponse,
+    SubletApproveRequest,
+    SubletCreateRequest,
+    SubletFeeRequest,
+    SubletItem,
+    SubletListResponse,
+    SubletMetricsResponse,
+    SubletRejectRequest,
+    SubletResponse,
+    SubletUpdateRequest,
     SupportAgentCreateRequest,
     SupportAgentListResponse,
     SupportAgentResponse,
@@ -391,15 +408,24 @@ from api.pydantic_models import (
     TenantPaymentRequest,
     TenantPaymentResponse,
     TenantResponse,
+    TenantSubletSummaryResponse,
     TenantSupportHistoryResponse,
     TenantSupportHistorySessionItem,
     TenantUpdateRequest,
     TenantUtilitiesSummaryResponse,
+    UnauthorizedRentalFineRequest,
+    UnauthorizedRentalItem,
+    UnauthorizedRentalListResponse,
+    UnauthorizedRentalReportRequest,
+    UnauthorizedRentalResponse,
+    UnauthorizedRentalUpdateRequest,
     UnitCreateRequest,
     UnitInsuranceSummaryResponse,
     UnitItem,
     UnitListResponse,
+    UnitOccupancyResponse,
     UnitResponse,
+    UnitSubletSummaryResponse,
     UnitUpdateRequest,
     UnitUtilitiesSummaryResponse,
     UpdateSessionRequest,
@@ -8164,3 +8190,518 @@ def session_file_insurance_claim_route(
         "claim": created,
         "message": f"Claim #{created['claim_number']} filed successfully.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Resident Subletting, Lease Assignment & Guest Room Occupancy Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/sublets/metrics", response_model=SubletMetricsResponse)
+def get_sublet_metrics_route():
+    """Retrieve portfolio resident subletting, occupant, and rental alert KPIs."""
+    metrics = sublets.get_sublet_metrics_summary()
+    return SubletMetricsResponse(**metrics)
+
+
+# Occupants & Occupancy Endpoints
+@app.post("/sublets/occupants", response_model=OccupantResponse, status_code=201)
+def register_occupant_route(request: OccupantCreateRequest):
+    """Register an authorized occupant, subtenant, or temporary guest."""
+    created = sublets.register_occupant(
+        unit_id=request.unit_id,
+        tenant_id=request.tenant_id,
+        full_name=request.full_name,
+        check_in_date=request.check_in_date,
+        sublet_id=request.sublet_id,
+        email=request.email,
+        phone=request.phone,
+        occupant_type=request.occupant_type,
+        relationship_to_tenant=request.relationship_to_tenant,
+        id_verified=request.id_verified,
+        background_cleared=request.background_cleared,
+        expected_check_out_date=request.expected_check_out_date,
+        emergency_contact=request.emergency_contact,
+        notes=request.notes,
+    )
+    return OccupantResponse(
+        occupant=OccupantItem(**created),
+        message="Occupant registered successfully.",
+    )
+
+
+@app.get("/sublets/occupants", response_model=OccupantListResponse)
+def list_occupants_route(  # noqa: PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    sublet_id: str | None = None,
+    status: str | None = None,
+    occupant_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List registered occupants and guests."""
+    results = sublets.list_occupants(
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        sublet_id=sublet_id,
+        status=status,
+        occupant_type=occupant_type,
+        limit=limit,
+        offset=offset,
+    )
+    return OccupantListResponse(
+        occupants=[OccupantItem(**r) for r in results],
+        count=len(results),
+    )
+
+
+@app.get("/sublets/occupants/{occupant_id}", response_model=OccupantResponse)
+def get_occupant_route(occupant_id: str):
+    """Retrieve details of a registered occupant."""
+    occ = sublets.get_occupant(occupant_id)
+    if not occ:
+        raise HTTPException(status_code=404, detail=f"Occupant '{occupant_id}' not found.")
+    return OccupantResponse(occupant=OccupantItem(**occ))
+
+
+@app.patch("/sublets/occupants/{occupant_id}", response_model=OccupantResponse)
+def update_occupant_route(occupant_id: str, request: OccupantUpdateRequest):
+    """Update fields on a registered occupant."""
+    updates = request.model_dump(exclude_unset=True)
+    updated = sublets.update_occupant(occupant_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Occupant '{occupant_id}' not found.")
+    return OccupantResponse(
+        occupant=OccupantItem(**updated),
+        message="Occupant updated successfully.",
+    )
+
+
+# Unauthorized Rental Alerts Endpoints
+@app.post(
+    "/sublets/unauthorized-alerts",
+    response_model=UnauthorizedRentalResponse,
+    status_code=201,
+)
+def report_unauthorized_rental_route(
+    request: UnauthorizedRentalReportRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Report suspected unauthorized short-term rental activity."""
+    created = sublets.report_unauthorized_rental(
+        unit_id=request.unit_id,
+        tenant_id=request.tenant_id,
+        evidence_summary=request.evidence_summary,
+        platform=request.platform,
+        listing_url=request.listing_url,
+        reported_by=request.reported_by,
+        status=request.status,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.violation_detected",
+        {
+            "alert_id": created["id"],
+            "unit_id": created["unit_id"],
+            "tenant_id": created["tenant_id"],
+            "platform": created["platform"],
+        },
+    )
+    return UnauthorizedRentalResponse(
+        alert=UnauthorizedRentalItem(**created),
+        message="Unauthorized rental alert logged successfully.",
+    )
+
+
+@app.get("/sublets/unauthorized-alerts", response_model=UnauthorizedRentalListResponse)
+def list_unauthorized_rental_alerts_route(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List unauthorized short-term rental alerts."""
+    results = sublets.list_unauthorized_rental_alerts(
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return UnauthorizedRentalListResponse(
+        alerts=[UnauthorizedRentalItem(**r) for r in results],
+        count=len(results),
+    )
+
+
+@app.get(
+    "/sublets/unauthorized-alerts/{alert_id}",
+    response_model=UnauthorizedRentalResponse,
+)
+def get_unauthorized_rental_alert_route(alert_id: str):
+    """Retrieve details of an unauthorized rental alert."""
+    alert = sublets.get_unauthorized_rental_alert(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found.")
+    return UnauthorizedRentalResponse(alert=UnauthorizedRentalItem(**alert))
+
+
+@app.patch(
+    "/sublets/unauthorized-alerts/{alert_id}",
+    response_model=UnauthorizedRentalResponse,
+)
+def update_unauthorized_rental_alert_route(
+    alert_id: str,
+    request: UnauthorizedRentalUpdateRequest,
+):
+    """Update status, resolution notes, or fine on an alert."""
+    updates = request.model_dump(exclude_unset=True)
+    updated = sublets.update_unauthorized_rental_alert(alert_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found.")
+    return UnauthorizedRentalResponse(
+        alert=UnauthorizedRentalItem(**updated),
+        message="Alert updated successfully.",
+    )
+
+
+@app.post("/sublets/unauthorized-alerts/{alert_id}/assess-fine", status_code=200)
+def assess_unauthorized_rental_fine_route(
+    alert_id: str,
+    request: UnauthorizedRentalFineRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Assess and post a violation penalty fine directly to resident rent ledger."""
+    res = sublets.assess_unauthorized_rental_fine(alert_id, fine_amount=request.fine_amount)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found.")
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.fee_assessed",
+        res,
+    )
+    return res
+
+
+# Sublet Requests Endpoints
+@app.post("/sublets", response_model=SubletResponse, status_code=201)
+def create_sublet_request_route(
+    request: SubletCreateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Submit a new sublet authorization request."""
+    unit_id = request.unit_id
+    if not unit_id:
+        tenant_sum = db_utils.get_tenant(request.tenant_id)
+        if tenant_sum and tenant_sum.get("unit_id"):
+            unit_id = tenant_sum["unit_id"]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tenant '{request.tenant_id}' has no assigned unit.",
+            )
+
+    created = sublets.create_sublet_request(
+        tenant_id=request.tenant_id,
+        unit_id=unit_id,
+        subtenant_name=request.subtenant_name,
+        subtenant_email=request.subtenant_email,
+        subtenant_phone=request.subtenant_phone,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        sublet_type=request.sublet_type,
+        monthly_rent=request.monthly_rent,
+        administrative_fee=request.administrative_fee,
+        reason=request.reason,
+        notes=request.notes,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.requested",
+        {
+            "sublet_id": created["id"],
+            "tenant_id": created["tenant_id"],
+            "unit_id": created["unit_id"],
+            "subtenant_name": created["subtenant_name"],
+            "sublet_type": created["sublet_type"],
+            "start_date": created["start_date"],
+            "end_date": created["end_date"],
+        },
+    )
+    return SubletResponse(
+        sublet=SubletItem(**created),
+        message="Sublet request submitted successfully.",
+    )
+
+
+@app.get("/sublets", response_model=SubletListResponse)
+def list_sublets_route(  # noqa: PLR0913, PLR0917
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    sublet_type: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """List sublet requests with optional filtering."""
+    results = sublets.list_sublet_requests(
+        tenant_id=tenant_id,
+        unit_id=unit_id,
+        status=status,
+        sublet_type=sublet_type,
+        limit=limit,
+        offset=offset,
+    )
+    return SubletListResponse(
+        sublets=[SubletItem(**r) for r in results],
+        count=len(results),
+    )
+
+
+@app.get("/sublets/{sublet_id}", response_model=SubletResponse)
+def get_sublet_request_route(sublet_id: str):
+    """Retrieve details of a single sublet request."""
+    sub = sublets.get_sublet_request(sublet_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail=f"Sublet request '{sublet_id}' not found.")
+    return SubletResponse(sublet=SubletItem(**sub))
+
+
+@app.patch("/sublets/{sublet_id}", response_model=SubletResponse)
+def update_sublet_request_route(
+    sublet_id: str,
+    request: SubletUpdateRequest,
+):
+    """Update fields on an existing sublet request."""
+    updates = request.model_dump(exclude_unset=True)
+    updated = sublets.update_sublet_request(sublet_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Sublet request '{sublet_id}' not found.")
+    return SubletResponse(
+        sublet=SubletItem(**updated),
+        message="Sublet request updated successfully.",
+    )
+
+
+@app.post("/sublets/{sublet_id}/approve", response_model=SubletResponse)
+def approve_sublet_request_route(
+    sublet_id: str,
+    request: SubletApproveRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Approve a sublet request, post review fee to ledger, and auto-register occupant."""
+    approved = sublets.approve_sublet_request(
+        sublet_id=sublet_id,
+        reviewed_by=request.reviewed_by,
+        assess_fee=request.assess_fee,
+        fee_amount=request.fee_amount,
+        notes=request.notes,
+        auto_register_occupant=request.auto_register_occupant,
+    )
+    if not approved:
+        raise HTTPException(status_code=404, detail=f"Sublet request '{sublet_id}' not found.")
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.approved",
+        {
+            "sublet_id": sublet_id,
+            "tenant_id": approved["tenant_id"],
+            "unit_id": approved["unit_id"],
+            "reviewed_by": request.reviewed_by,
+            "fee_assessed": request.assess_fee,
+        },
+    )
+    return SubletResponse(
+        sublet=SubletItem(**approved),
+        message="Sublet request approved successfully.",
+    )
+
+
+@app.post("/sublets/{sublet_id}/reject", response_model=SubletResponse)
+def reject_sublet_request_route(
+    sublet_id: str,
+    request: SubletRejectRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Reject a sublet request with recorded reason."""
+    rejected = sublets.reject_sublet_request(
+        sublet_id=sublet_id,
+        reason=request.reason,
+        reviewed_by=request.reviewed_by,
+    )
+    if not rejected:
+        raise HTTPException(status_code=404, detail=f"Sublet request '{sublet_id}' not found.")
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.rejected",
+        {
+            "sublet_id": sublet_id,
+            "tenant_id": rejected["tenant_id"],
+            "unit_id": rejected["unit_id"],
+            "reason": request.reason,
+            "reviewed_by": request.reviewed_by,
+        },
+    )
+    return SubletResponse(
+        sublet=SubletItem(**rejected),
+        message="Sublet request rejected.",
+    )
+
+
+@app.post("/sublets/{sublet_id}/assess-fee", status_code=200)
+def assess_sublet_fee_route(
+    sublet_id: str,
+    request: SubletFeeRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Assess and post administrative sublet review fee directly to rent ledger."""
+    res = sublets.assess_sublet_fee(sublet_id, fee_amount=request.fee_amount)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"Sublet request '{sublet_id}' not found.")
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.fee_assessed",
+        res,
+    )
+    return res
+
+
+# Unit & Tenant Sublet Summaries & Occupancy
+@app.get("/units/{unit_id}/occupancy", response_model=UnitOccupancyResponse)
+def get_unit_occupancy_route(unit_id: str):
+    """Calculate unit maximum occupancy limits and current registered load."""
+    calc = sublets.calculate_unit_occupancy(unit_id)
+    return UnitOccupancyResponse(**calc)
+
+
+@app.get("/units/{unit_id}/sublet/summary", response_model=UnitSubletSummaryResponse)
+def get_unit_sublet_summary_route(unit_id: str):
+    """Retrieve comprehensive subletting, occupancy, and alert summary for a unit."""
+    summary = sublets.get_unit_sublet_summary(unit_id)
+    active_sub = SubletItem(**summary["active_sublet"]) if summary.get("active_sublet") else None
+    return UnitSubletSummaryResponse(
+        unit_id=unit_id,
+        occupancy=UnitOccupancyResponse(**summary["occupancy"]),
+        active_sublet=active_sub,
+        total_sublet_requests=summary["total_sublet_requests"],
+        sublets=[SubletItem(**s) for s in summary.get("sublets", [])],
+        registered_occupants=[OccupantItem(**o) for o in summary.get("registered_occupants", [])],
+        rental_alerts=[UnauthorizedRentalItem(**a) for a in summary.get("rental_alerts", [])],
+    )
+
+
+@app.get("/tenants/{tenant_id}/sublet/summary", response_model=TenantSubletSummaryResponse)
+def get_tenant_sublet_summary_route(tenant_id: str):
+    """Retrieve comprehensive subletting, occupant, and alert summary for a resident."""
+    summary = sublets.get_tenant_sublet_summary(tenant_id)
+    active_sub = SubletItem(**summary["active_sublet"]) if summary.get("active_sublet") else None
+    return TenantSubletSummaryResponse(
+        tenant_id=tenant_id,
+        active_sublet=active_sub,
+        total_sublet_requests=summary["total_sublet_requests"],
+        sublets=[SubletItem(**s) for s in summary.get("sublets", [])],
+        registered_occupants=[OccupantItem(**o) for o in summary.get("registered_occupants", [])],
+        rental_alerts=[UnauthorizedRentalItem(**a) for a in summary.get("rental_alerts", [])],
+    )
+
+
+# 1-Click Session Actions
+@app.post("/sessions/{session_id}/submit-sublet-request", status_code=201)
+def session_submit_sublet_request_route(
+    session_id: str,
+    request: SessionSubmitSubletRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Submit a sublet request directly from active resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    unit_id = tenant.get("unit_id")
+    if not unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for subletting.",
+        )
+
+    created = sublets.create_sublet_request(
+        tenant_id=tenant["id"],
+        unit_id=unit_id,
+        subtenant_name=request.subtenant_name,
+        subtenant_email=request.subtenant_email,
+        subtenant_phone=request.subtenant_phone,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        sublet_type=request.sublet_type,
+        monthly_rent=request.monthly_rent,
+        reason=request.reason,
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.requested",
+        {
+            "session_id": session_id,
+            "sublet_id": created["id"],
+            "tenant_id": tenant["id"],
+            "unit_id": unit_id,
+            "subtenant_name": request.subtenant_name,
+        },
+    )
+    return {
+        "status": "submitted",
+        "sublet": created,
+        "message": f"Sublet request for {request.subtenant_name} submitted successfully.",
+    }
+
+
+@app.post("/sessions/{session_id}/report-unauthorized-rental", status_code=201)
+def session_report_unauthorized_rental_route(
+    session_id: str,
+    request: SessionReportRentalRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Report an unauthorized short-term rental listing from active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    unit_id = tenant.get("unit_id")
+    if not unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for rental reporting.",
+        )
+
+    created = sublets.report_unauthorized_rental(
+        unit_id=unit_id,
+        tenant_id=tenant["id"],
+        evidence_summary=request.evidence_summary,
+        platform=request.platform,
+        listing_url=request.listing_url,
+        reported_by=f"Resident Session {session_id}",
+    )
+    background_tasks.add_task(
+        webhooks.dispatch_event,
+        "sublet.violation_detected",
+        {
+            "session_id": session_id,
+            "alert_id": created["id"],
+            "tenant_id": tenant["id"],
+            "unit_id": unit_id,
+            "platform": request.platform,
+        },
+    )
+    return {
+        "status": "reported",
+        "alert": created,
+        "message": "Unauthorized rental report logged for management review.",
+    }
+

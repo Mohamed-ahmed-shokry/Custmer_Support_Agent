@@ -5313,3 +5313,120 @@ def test_session_insurance_widget_ui(monkeypatch):
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_insurance_widget("sess_test_1", tenant)
+
+
+
+def test_subletting_board_ui(monkeypatch):
+    """Test resident subletting operations board tabs rendering in sidebar."""
+    fake_st = FakeStreamlit(
+        values={
+            "sublet_board_tab_radio": "Sublet Requests",
+            "sublet_filter_status": "all",
+            "occupant_type_filter": "all",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    sublets_data = [
+        {
+            "id": "sub_1",
+            "subtenant_name": "Marcus Aurelius",
+            "sublet_type": "full_unit",
+            "status": "pending",
+            "monthly_rent": 1650.0,
+            "fee_paid": 0,
+            "start_date": "2026-12-01",
+            "end_date": "2027-02-28",
+            "unit_number": "101",
+        }
+    ]
+    occupants_data = [
+        {
+            "id": "occ_1",
+            "full_name": "Octavia Minor",
+            "occupant_type": "temporary_guest",
+            "unit_number": "101",
+            "check_in_date": "2026-11-20",
+            "id_verified": 1,
+            "status": "active",
+        }
+    ]
+    alerts_data = [
+        {
+            "id": "ura_1",
+            "platform": "airbnb",
+            "unit_number": "101",
+            "status": "suspected",
+            "evidence_summary": "Active listing with balcony view",
+            "penalty_fee": 0.0,
+        }
+    ]
+    metrics_data = {
+        "total_sublet_requests": 5,
+        "active_sublets": 2,
+        "total_registered_occupants": 3,
+        "pending_requests": 1,
+        "total_rental_alerts": 1,
+        "total_administrative_fees_collected": 300.0,
+    }
+
+    monkeypatch.setattr(sidebar, "list_sublet_requests_api", lambda **kw: sublets_data)
+    monkeypatch.setattr(sidebar, "list_occupants_api", lambda **kw: occupants_data)
+    monkeypatch.setattr(sidebar, "list_unauthorized_rental_alerts_api", lambda **kw: alerts_data)
+    monkeypatch.setattr(sidebar, "get_sublet_metrics_api", lambda: metrics_data)
+
+    # Test all 4 tabs
+    sidebar._render_sublet_requests_tab()
+    sidebar._render_sublet_occupants_tab()
+    sidebar._render_sublet_alerts_tab()
+    sidebar._render_sublet_kpis_tab()
+    sidebar._render_subletting_board()
+
+
+def test_session_sublets_widget_ui(monkeypatch):
+    """Test 1-click sublet submission and rental reporting in resident session card."""
+    fake_st = FakeStreamlit(
+        values={
+            "sess_sub_name_sess_test_1": "Marcus Aurelius",
+            "sess_sub_email_sess_test_1": "marcus@rome.example",
+            "sess_sub_phone_sess_test_1": "555-1234",
+            "sess_sub_start_sess_test_1": "2026-12-01",
+            "sess_sub_end_sess_test_1": "2027-02-01",
+            "sess_sub_type_sess_test_1": "full_unit",
+            "sess_sub_rent_sess_test_1": 1650.0,
+            "sess_sub_reason_sess_test_1": "Research assignment",
+            "sess_ura_platform_sess_test_1": "airbnb",
+            "sess_ura_url_sess_test_1": "https://airbnb.com/rooms/101",
+            "sess_ura_evidence_sess_test_1": "Guests observed at keypad",
+        }
+    )
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    summary_data = {
+        "tenant_id": "tenant_1",
+        "active_sublet": {
+            "id": "sub_101",
+            "subtenant_name": "Marcus Aurelius",
+            "status": "approved",
+            "start_date": "2026-12-01",
+            "end_date": "2027-02-01",
+        },
+    }
+
+    submitted = []
+    reported = []
+
+    monkeypatch.setattr(sidebar, "get_tenant_sublet_summary_api", lambda tid: summary_data)
+    monkeypatch.setattr(
+        sidebar,
+        "session_submit_sublet_api",
+        lambda sid, p: submitted.append((sid, p)) or {"sublet": {"id": "sub_new_1"}},
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "session_report_unauthorized_rental_api",
+        lambda sid, p: reported.append((sid, p)) or {"alert": {"id": "ura_new_1"}},
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_sublets_widget("sess_test_1", tenant)

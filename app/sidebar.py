@@ -11,7 +11,9 @@ from api.settings import settings
 from app.api_utils import (
     API_BASE_URL,
     apply_macro_to_session,
+    approve_sublet_request_api,
     assess_insurance_fee_api,
+    assess_unauthorized_rental_fine_api,
     assign_session,
     auto_assign_session,
     book_freight_elevator_api,
@@ -101,11 +103,13 @@ from app.api_utils import (
     get_session_tenant_context,
     get_sla_compliance_analytics,
     get_stats,
+    get_sublet_metrics_api,
     get_support_triage_analytics,
     get_tenant_inspections,
     get_tenant_insurance_summary_api,
     get_tenant_lease_renewals,
     get_tenant_ledger,
+    get_tenant_sublet_summary_api,
     get_tenant_support_history,
     get_tenant_utilities_summary_api,
     get_unit_insurance_summary_api,
@@ -139,6 +143,7 @@ from app.api_utils import (
     list_macros,
     list_meter_readings_api,
     list_move_events_api,
+    list_occupants_api,
     list_packages_api,
     list_parking_spots_api,
     list_parking_violations_api,
@@ -148,6 +153,7 @@ from app.api_utils import (
     list_reservations_api,
     list_sessions,
     list_sla_policies,
+    list_sublet_requests_api,
     list_support_agents,
     list_tenant_announcements_api,
     list_tenant_credentials_api,
@@ -158,6 +164,7 @@ from app.api_utils import (
     list_tenant_vehicles_api,
     list_tenant_violation_notices_api,
     list_tenants,
+    list_unauthorized_rental_alerts_api,
     list_units,
     list_utility_invoices_api,
     list_vehicles_api,
@@ -183,6 +190,7 @@ from app.api_utils import (
     record_session_payment,
     record_tenant_payment,
     register_vehicle_api,
+    reject_sublet_request_api,
     rename_collection,
     rename_session,
     render_macro,
@@ -198,11 +206,13 @@ from app.api_utils import (
     session_record_meter_reading_api,
     session_register_pet_api,
     session_report_lost_fob_api,
+    session_report_unauthorized_rental_api,
     session_report_utility_leak_api,
     session_request_concierge_api,
     session_reserve_elevator_api,
     session_schedule_move_api,
     session_submit_insurance_api,
+    session_submit_sublet_api,
     session_submit_violation_appeal_api,
     sign_lease_renewal,
     suggest_macros,
@@ -216,9 +226,11 @@ from app.api_utils import (
     update_insurance_claim_api,
     update_knowledge_gap,
     update_move_event_api,
+    update_occupant_api,
     update_reservation_api,
     update_session,
     update_support_agent,
+    update_unauthorized_rental_alert_api,
     update_vendor,
     update_violation_appeal_api,
     update_webhook,
@@ -1152,6 +1164,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_move_logistics_widget(selected, tenant)
     _render_session_utilities_widget(selected, tenant)
     _render_session_insurance_widget(selected, tenant)
+    _render_session_sublets_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6636,6 +6649,267 @@ def _render_insurance_compliance_board() -> None:
             st.caption(f"Insurance board temporarily unavailable: {e}")
 
 
+def _render_session_sublets_widget(  # noqa: PLR0915
+    session_id: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click sublet submission and rental report in resident session context."""
+    tenant_id = tenant.get("id")
+    if not tenant_id:
+        return
+
+    st.markdown("**🤝 Subletting & Occupancy**")
+    try:
+        summary = get_tenant_sublet_summary_api(tenant_id)
+        active_sub = summary.get("active_sublet") if summary else None
+        if active_sub:
+            sub_id = active_sub.get("id", "")
+            sub_name = active_sub.get("subtenant_name", "")
+            stat = str(active_sub.get("status", "")).upper()
+            dates = f"{active_sub.get('start_date', '')} to {active_sub.get('end_date', '')}"
+            st.caption(f"Active Sublet `{sub_id}`: **{sub_name}** [{stat}] ({dates})")
+        else:
+            st.caption("No active sublets on record for resident.")
+    except Exception:
+        st.caption("Sublet status unavailable.")
+
+    with st.expander("🤝 Request Sublet / Roommate"):
+        sub_name = st.text_input(
+            "Subtenant / Roommate Full Name", key=f"sess_sub_name_{session_id}"
+        )
+        sub_email = st.text_input("Subtenant Email", key=f"sess_sub_email_{session_id}")
+        sub_phone = st.text_input("Subtenant Phone", key=f"sess_sub_phone_{session_id}")
+        col_st1, col_st2 = st.columns(2)
+        with col_st1:
+            start_date = st.text_input(
+                "Start Date (YYYY-MM-DD)",
+                value=dt.now(UTC).date().isoformat(),
+                key=f"sess_sub_start_{session_id}",
+            )
+        with col_st2:
+            end_date = st.text_input(
+                "End Date (YYYY-MM-DD)",
+                value=(dt.now(UTC).date() + datetime.timedelta(days=90)).isoformat(),
+                key=f"sess_sub_end_{session_id}",
+            )
+        sub_type = st.selectbox(
+            "Sublet Type",
+            ["full_unit", "partial_room", "roommate_replacement", "lease_assignment"],
+            key=f"sess_sub_type_{session_id}",
+        )
+        proposed_rent = st.number_input(
+            "Proposed Monthly Rent ($)",
+            min_value=0.0,
+            value=float(tenant.get("monthly_rent") or 1500.0),
+            key=f"sess_sub_rent_{session_id}",
+        )
+        reason = st.text_area(
+            "Reason / Special Notes",
+            key=f"sess_sub_reason_{session_id}",
+        )
+        if st.button("Submit Sublet Request", key=f"btn_sess_sub_submit_{session_id}"):
+            if not sub_name or not sub_email:
+                st.error("Subtenant name and email are required.")
+            else:
+                payload = {
+                    "subtenant_name": sub_name,
+                    "subtenant_email": sub_email,
+                    "subtenant_phone": sub_phone,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "sublet_type": sub_type,
+                    "monthly_rent": proposed_rent,
+                    "reason": reason,
+                }
+                res = session_submit_sublet_api(session_id, payload)
+                if res:
+                    st.success(res.get("message", "Sublet request submitted!"))
+                    st.rerun()
+
+    with st.expander("🚨 Report Unauthorized Short-Term Rental"):
+        platform = st.selectbox(
+            "Platform / Type",
+            ["airbnb", "vrbo", "craigslist", "booking_com", "neighbor_report", "other"],
+            key=f"sess_ura_platform_{session_id}",
+        )
+        listing_url = st.text_input(
+            "Listing URL (optional)",
+            key=f"sess_ura_url_{session_id}",
+        )
+        evidence = st.text_area(
+            "Evidence / Description",
+            placeholder="Observed lockbox on door and weekend guests arriving with luggage...",
+            key=f"sess_ura_evidence_{session_id}",
+        )
+        if st.button("Log Unauthorized Rental Report", key=f"btn_sess_ura_submit_{session_id}"):
+            if not evidence:
+                st.error("Evidence description is required.")
+            else:
+                payload = {
+                    "platform": platform,
+                    "listing_url": listing_url,
+                    "evidence_summary": evidence,
+                }
+                res = session_report_unauthorized_rental_api(session_id, payload)
+                if res:
+                    st.success(res.get("message", "Report logged for management investigation!"))
+                    st.rerun()
+
+
+def _render_sublet_requests_tab() -> None:
+    """Render sublet requests list and review actions in sidebar."""
+    status_filter = st.selectbox(
+        "Filter Sublet Status",
+        ["all", "pending", "approved", "active", "completed", "rejected"],
+        key="sublet_filter_status",
+    )
+    stat_val = None if status_filter == "all" else status_filter
+    requests_list = list_sublet_requests_api(status=stat_val)
+
+    st.caption(f"Showing **{len(requests_list)}** sublet requests.")
+    for s in requests_list[:5]:
+        s_id = str(s.get("id") or "")
+        if not s_id:
+            continue
+        name = s.get("subtenant_name", "Unknown")
+        sub_type = s.get("sublet_type", "full_unit")
+        stat = str(s.get("status", "pending")).upper()
+        rent = s.get("monthly_rent", 0.0)
+        fee_paid = "✅ Fee Paid" if s.get("fee_paid") else "⚠️ Fee Unpaid"
+        dates = f"{s.get('start_date', '')} to {s.get('end_date', '')}"
+        unit = s.get("unit_number") or s.get("unit_id")
+        st.markdown(f"- **Unit {unit}** - {name} ({sub_type}) [{stat}] | ${rent:,.2f} | {fee_paid}")
+        st.caption(f"Dates: {dates}")
+
+        if s.get("status") in ("pending", "background_check"):
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Approve & Post Fee", key=f"btn_appr_sub_{s_id}"):
+                    res = approve_sublet_request_api(
+                        s_id, reviewed_by="Property Management", assess_fee=True
+                    )
+                    if res:
+                        st.success("Sublet approved!")
+                        st.rerun()
+            with c2:
+                if st.button("Reject Request", key=f"btn_rej_sub_{s_id}"):
+                    res = reject_sublet_request_api(
+                        s_id, reason="Policy limit reached", reviewed_by="Property Management"
+                    )
+                    if res:
+                        st.info("Sublet request rejected.")
+                        st.rerun()
+
+
+def _render_sublet_occupants_tab() -> None:
+    """Render registered occupants, guests, and check-in/out records."""
+    type_filter = st.selectbox(
+        "Occupant Type Filter",
+        ["all", "subtenant", "temporary_guest", "replacement_roommate", "permanent_occupant"],
+        key="occupant_type_filter",
+    )
+    type_val = None if type_filter == "all" else type_filter
+    occupants = list_occupants_api(status="active")
+    if type_val:
+        occupants = [o for o in occupants if o.get("occupant_type") == type_val]
+
+    st.caption(f"Showing **{len(occupants)}** active registered occupants.")
+    for o in occupants[:5]:
+        o_id = str(o.get("id") or "")
+        if not o_id:
+            continue
+        name = o.get("full_name", "Unknown")
+        occ_type = o.get("occupant_type", "subtenant")
+        unit = o.get("unit_number") or o.get("unit_id")
+        dates = f"Check-in: {o.get('check_in_date', '')}"
+        id_badge = "🪪 ID Verified" if o.get("id_verified") else "⚠️ Unverified ID"
+        st.markdown(f"- **Unit {unit}**: {name} ({occ_type}) | {id_badge} | {dates}")
+        if st.button("Mark Departed", key=f"btn_dep_occ_{o_id}"):
+            res = update_occupant_api(o_id, {"status": "departed"})
+            if res:
+                st.success(f"{name} marked as departed.")
+                st.rerun()
+
+
+def _render_sublet_alerts_tab() -> None:
+    """Render unauthorized short-term rental listings and fine assessments."""
+    alerts = list_unauthorized_rental_alerts_api()
+    st.caption(f"Showing **{len(alerts)}** short-term rental incident alerts.")
+    for a in alerts[:5]:
+        a_id = str(a.get("id") or "")
+        if not a_id:
+            continue
+        platform = str(a.get("platform", "rental")).upper()
+        unit = a.get("unit_number") or a.get("unit_id")
+        stat = str(a.get("status", "suspected")).upper()
+        evid = a.get("evidence_summary", "")
+        fine = a.get("penalty_fee", 0.0)
+        st.markdown(f"- **Unit {unit}** - [{platform}] [{stat}] | Fine: ${fine:,.2f}")
+        st.caption(f"Evidence: {evid[:90]}...")
+
+        if a.get("status") in ("suspected", "investigating"):
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Mark Investigated", key=f"btn_inv_ura_{a_id}"):
+                    res = update_unauthorized_rental_alert_api(
+                        a_id, {"status": "investigating", "investigated_by": "Compliance Lead"}
+                    )
+                    if res:
+                        st.info("Status updated to investigating.")
+                        st.rerun()
+            with c2:
+                if st.button("Confirm & Fine ($250)", key=f"btn_fine_ura_{a_id}"):
+                    res = assess_unauthorized_rental_fine_api(a_id, fine_amount=250.0)
+                    if res:
+                        st.warning("Violation fine assessed to tenant ledger!")
+                        st.rerun()
+
+
+def _render_sublet_kpis_tab() -> None:
+    """Render portfolio subletting, occupancy limits, and rental alert KPIs."""
+    metrics = get_sublet_metrics_api()
+    if metrics:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("Total Sublet Requests", metrics.get("total_sublet_requests", 0))
+            st.metric("Active Sublets", metrics.get("active_sublets", 0))
+            st.metric("Registered Occupants", metrics.get("total_registered_occupants", 0))
+        with c2:
+            st.metric("Pending Requests", metrics.get("pending_requests", 0))
+            st.metric("Rental Alerts", metrics.get("total_rental_alerts", 0))
+            st.metric(
+                "Admin Fees Collected",
+                f"${metrics.get('total_administrative_fees_collected', 0.0):,.2f}",
+            )
+    else:
+        st.info("Subletting metrics unavailable.")
+
+
+def _render_subletting_board() -> None:
+    """Render resident subletting, roommate replacement & occupancy operations board."""
+    with st.sidebar.expander("🤝 Subletting & Occupancy"):
+        try:
+            sub_tab = st.radio(
+                "Subletting View",
+                [
+                    "Sublet Requests",
+                    "Guest Registry",
+                    "Unauthorized Rental Alerts",
+                    "Occupancy KPIs",
+                ],
+                key="sublet_board_tab_radio",
+            )
+            if sub_tab == "Sublet Requests":
+                _render_sublet_requests_tab()
+            elif sub_tab == "Guest Registry":
+                _render_sublet_occupants_tab()
+            elif sub_tab == "Unauthorized Rental Alerts":
+                _render_sublet_alerts_tab()
+            else:
+                _render_sublet_kpis_tab()
+        except Exception as e:
+            st.caption(f"Subletting board temporarily unavailable: {e}")
+
+
 def display_sidebar():
     _init_config()
     st.sidebar.caption(f"API: {API_BASE_URL}")
@@ -6674,5 +6948,6 @@ def display_sidebar():
     _render_move_logistics_board()
     _render_utilities_board()
     _render_insurance_compliance_board()
+    _render_subletting_board()
     _render_knowledge_studio()
     _render_ops_metrics()

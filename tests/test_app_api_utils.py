@@ -3887,3 +3887,189 @@ def test_insurance_compliance_api_utils_errors(monkeypatch):
     assert api_utils.get_tenant_insurance_summary_api("fail") is None
     assert api_utils.session_submit_insurance_api("fail", {}) is None
     assert api_utils.session_file_insurance_claim_api("fail", {}) is None
+
+
+
+def test_sublet_client_api_utils_requests_success(monkeypatch):
+    """Verify success paths for sublet request client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # Metrics
+    metrics_payload = {"total_sublet_requests": 5, "active_sublets": 2}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=metrics_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_sublet_metrics_api() == metrics_payload
+
+    # Create sublet
+    sub_payload = {"sublet": {"id": "sub_1", "subtenant_name": "Marcus"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.create_sublet_request_api({"tenant_id": "t1", "subtenant_name": "Marcus"})
+        == sub_payload
+    )
+
+    # List sublets
+    list_payload = {"sublets": [sub_payload["sublet"]], "count": 1}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_sublet_requests_api(tenant_id="t1") == [sub_payload["sublet"]]
+
+    # Get sublet
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_sublet_request_api("sub_1") == sub_payload
+
+    # Update sublet
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.update_sublet_request_api("sub_1", {"monthly_rent": 1500.0}) == sub_payload
+
+    # Approve sublet
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.approve_sublet_request_api("sub_1", reviewed_by="Manager", assess_fee=True)
+        == sub_payload
+    )
+
+    # Reject sublet
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.reject_sublet_request_api("sub_1", "Over capacity", "Manager") == sub_payload
+
+    # Assess fee
+    fee_payload = {"status": "posted", "fee_amount": 150.0}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=fee_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.assess_sublet_fee_api("sub_1", 150.0) == fee_payload
+
+    # Session submit
+    sess_sub_payload = {"status": "submitted", "sublet": sub_payload["sublet"]}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=sess_sub_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_submit_sublet_api("sess_1", {"subtenant_name": "Marcus"})
+        == sess_sub_payload
+    )
+
+
+def test_occupants_and_alerts_client_api_utils_success(monkeypatch):
+    """Verify success paths for occupant, occupancy calculation, and rental alert client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    # Register occupant
+    occ_payload = {"occupant": {"id": "occ_1", "full_name": "Octavia"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=occ_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.register_occupant_api({"full_name": "Octavia", "unit_id": "u1"})
+        == occ_payload
+    )
+
+    # List occupants
+    occ_list_payload = {"occupants": [occ_payload["occupant"]], "count": 1}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=occ_list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_occupants_api(unit_id="u1") == [occ_payload["occupant"]]
+
+    # Get occupant
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=occ_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_occupant_api("occ_1") == occ_payload
+
+    # Update occupant
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=occ_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.update_occupant_api("occ_1", {"status": "departed"}) == occ_payload
+
+    # Unit occupancy calculation
+    calc_payload = {"unit_id": "u1", "max_occupancy_limit": 5, "total_current_occupancy": 2}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=calc_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_unit_occupancy_api("u1") == calc_payload
+
+    # Report unauthorized rental
+    alert_payload = {"alert": {"id": "ura_1", "platform": "airbnb"}}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=alert_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.report_unauthorized_rental_api({"platform": "airbnb", "unit_id": "u1"})
+        == alert_payload
+    )
+
+    # List rental alerts
+    alert_list_payload = {"alerts": [alert_payload["alert"]], "count": 1}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=alert_list_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.list_unauthorized_rental_alerts_api(unit_id="u1") == [alert_payload["alert"]]
+
+    # Get rental alert
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=alert_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_unauthorized_rental_alert_api("ura_1") == alert_payload
+
+    # Update rental alert
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=alert_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.update_unauthorized_rental_alert_api("ura_1", {"status": "investigating"})
+        == alert_payload
+    )
+
+    # Assess fine
+    fine_payload = {"status": "posted", "fine_amount": 250.0}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=fine_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.assess_unauthorized_rental_fine_api("ura_1", 250.0) == fine_payload
+
+    # Summaries
+    sum_payload = {"unit_id": "u1", "sublets": []}
+    fake_requests = FakeRequests(FakeResponse(status_code=200, payload=sum_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert api_utils.get_unit_sublet_summary_api("u1") == sum_payload
+    assert api_utils.get_tenant_sublet_summary_api("t1") == sum_payload
+
+    # Session report
+    sess_rep_payload = {"status": "reported", "alert": alert_payload["alert"]}
+    fake_requests = FakeRequests(FakeResponse(status_code=201, payload=sess_rep_payload))
+    monkeypatch.setattr(api_utils, "requests", fake_requests)
+    assert (
+        api_utils.session_report_unauthorized_rental_api("sess_1", {"platform": "airbnb"})
+        == sess_rep_payload
+    )
+
+
+def test_sublet_client_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in sublet client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_sublet_metrics_api() is None
+    assert api_utils.create_sublet_request_api({}) is None
+    assert api_utils.list_sublet_requests_api() == []
+    assert api_utils.get_sublet_request_api("fail") is None
+    assert api_utils.update_sublet_request_api("fail", {}) is None
+    assert api_utils.approve_sublet_request_api("fail", "PM") is None
+    assert api_utils.reject_sublet_request_api("fail", "r", "PM") is None
+    assert api_utils.assess_sublet_fee_api("fail") is None
+
+    assert api_utils.register_occupant_api({}) is None
+    assert api_utils.list_occupants_api() == []
+    assert api_utils.get_occupant_api("fail") is None
+    assert api_utils.update_occupant_api("fail", {}) is None
+    assert api_utils.get_unit_occupancy_api("fail") is None
+
+    assert api_utils.report_unauthorized_rental_api({}) is None
+    assert api_utils.list_unauthorized_rental_alerts_api() == []
+    assert api_utils.get_unauthorized_rental_alert_api("fail") is None
+    assert api_utils.update_unauthorized_rental_alert_api("fail", {}) is None
+    assert api_utils.assess_unauthorized_rental_fine_api("fail") is None
+
+    assert api_utils.get_unit_sublet_summary_api("fail") is None
+    assert api_utils.get_tenant_sublet_summary_api("fail") is None
+    assert api_utils.session_submit_sublet_api("fail", {}) is None
+    assert api_utils.session_report_unauthorized_rental_api("fail", {}) is None

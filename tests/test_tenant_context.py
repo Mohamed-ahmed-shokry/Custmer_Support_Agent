@@ -18,6 +18,7 @@ from api import (
     packages,
     parking,
     pets,
+    sublets,
     utilities,
     vendors,
 )
@@ -981,3 +982,56 @@ def test_render_template_with_insurance_variables():
     assert "Sarah Connor" in rendered
     assert "Lemonade" in rendered
     assert "active" in rendered
+
+
+
+def test_build_tenant_rag_context_with_sublets():
+    """Verify resident sublets, occupancy, and rental alerts are injected into RAG context."""
+    sid = "sess-sub-rag"
+    db_utils.insert_application_logs(sid, "Sublet query", "Need sublet approval", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    sublets.init_sublets_db()
+
+    block = build_tenant_rag_context(session_id=sid)
+    assert "[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]" in block
+    assert "Occupancy Status:" in block
+    assert "Occupancy Breakdown:" in block
+    assert "Sublet Requests on File:" in block
+    assert "[END RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]" in block
+
+
+def test_extract_tenant_macro_variables_with_sublets():
+    """Verify sublet macro variables are properly resolved from session context."""
+    sid = "sess-sub-macro"
+    db_utils.insert_application_logs(sid, "Sublet macro", "Checking sublet macros", "gpt-4o")
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    sublets.init_sublets_db()
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "sublet_status" in variables
+    assert "subtenant_name" in variables
+    assert "sublet_start_date" in variables
+    assert "sublet_end_date" in variables
+    assert "max_occupancy_limit" in variables
+    assert "current_occupancy_count" in variables
+    assert "sublet_fee" in variables
+
+
+def test_render_template_with_sublet_variables():
+    """Verify macro template rendering with sublet variables."""
+    sid = "sess-sub-render"
+    db_utils.insert_application_logs(
+        sid, "Sublet template", "Rendering sublet macros", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    sublets.init_sublets_db()
+
+    template = (
+        "Hello {customer_name}, your sublet request for {subtenant_name} is currently "
+        "{sublet_status}. Maximum unit occupancy is {max_occupancy_limit} persons."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
+    assert "Alex Rivera" in rendered
+    assert "approved" in rendered

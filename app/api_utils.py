@@ -5917,3 +5917,366 @@ def session_file_insurance_claim_api(
         "filing insurance claim from support session",
         json=payload,
     )
+
+
+# ---------------------------------------------------------------------------
+# Resident Subletting, Lease Assignment & Guest Room Occupancy Client Helpers
+# ---------------------------------------------------------------------------
+
+
+def _sublet_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Helper to execute sublet and occupancy API calls with consistent error handling."""
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_sublet_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio subletting, occupant, and rental alert KPIs."""
+    return _sublet_call(
+        "get",
+        "/sublets/metrics",
+        HTTP_OK,
+        "Failed to fetch subletting metrics",
+        "fetching subletting metrics",
+    )
+
+
+def create_sublet_request_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Submit a new sublet authorization request."""
+    return _sublet_call(
+        "post",
+        "/sublets",
+        HTTP_CREATED,
+        "Failed to submit sublet request",
+        "submitting sublet request",
+        json=payload,
+    )
+
+
+def list_sublet_requests_api(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    sublet_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """List sublet requests matching filters."""
+    params: dict[str, Any] = {}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    if sublet_type:
+        params["sublet_type"] = sublet_type
+
+    res = _sublet_call(
+        "get",
+        "/sublets",
+        HTTP_OK,
+        "Failed to list sublet requests",
+        "fetching sublet requests",
+        params=params,
+    )
+    return res.get("sublets", []) if res else []
+
+
+def get_sublet_request_api(sublet_id: str) -> dict[str, Any] | None:
+    """Retrieve details of a single sublet request."""
+    return _sublet_call(
+        "get",
+        f"/sublets/{sublet_id}",
+        HTTP_OK,
+        f"Failed to fetch sublet request '{sublet_id}'",
+        f"fetching sublet request '{sublet_id}'",
+    )
+
+
+def update_sublet_request_api(
+    sublet_id: str, updates: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update fields on a sublet request."""
+    return _sublet_call(
+        "patch",
+        f"/sublets/{sublet_id}",
+        HTTP_OK,
+        f"Failed to update sublet request '{sublet_id}'",
+        f"updating sublet request '{sublet_id}'",
+        json=updates,
+    )
+
+
+def approve_sublet_request_api(  # noqa: PLR0913, PLR0917
+    sublet_id: str,
+    reviewed_by: str,
+    assess_fee: bool = True,
+    fee_amount: float = 150.0,
+    notes: str = "",
+    auto_register_occupant: bool = True,
+) -> dict[str, Any] | None:
+    """Approve a sublet request, post review fee to ledger, and auto-register occupant."""
+    payload = {
+        "reviewed_by": reviewed_by,
+        "assess_fee": assess_fee,
+        "fee_amount": fee_amount,
+        "notes": notes,
+        "auto_register_occupant": auto_register_occupant,
+    }
+    return _sublet_call(
+        "post",
+        f"/sublets/{sublet_id}/approve",
+        HTTP_OK,
+        f"Failed to approve sublet request '{sublet_id}'",
+        f"approving sublet request '{sublet_id}'",
+        json=payload,
+    )
+
+
+def reject_sublet_request_api(
+    sublet_id: str, reason: str, reviewed_by: str
+) -> dict[str, Any] | None:
+    """Reject a sublet request with reason."""
+    payload = {"reason": reason, "reviewed_by": reviewed_by}
+    return _sublet_call(
+        "post",
+        f"/sublets/{sublet_id}/reject",
+        HTTP_OK,
+        f"Failed to reject sublet request '{sublet_id}'",
+        f"rejecting sublet request '{sublet_id}'",
+        json=payload,
+    )
+
+
+def assess_sublet_fee_api(
+    sublet_id: str, fee_amount: float = 150.0
+) -> dict[str, Any] | None:
+    """Assess and post administrative review fee to resident ledger."""
+    return _sublet_call(
+        "post",
+        f"/sublets/{sublet_id}/assess-fee",
+        HTTP_OK,
+        f"Failed to assess fee for sublet '{sublet_id}'",
+        f"assessing sublet fee for '{sublet_id}'",
+        json={"fee_amount": fee_amount},
+    )
+
+
+def register_occupant_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Register an authorized occupant or guest."""
+    return _sublet_call(
+        "post",
+        "/sublets/occupants",
+        HTTP_CREATED,
+        "Failed to register occupant",
+        "registering occupant",
+        json=payload,
+    )
+
+
+def list_occupants_api(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    sublet_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List registered occupants and guests."""
+    params: dict[str, Any] = {}
+    if unit_id:
+        params["unit_id"] = unit_id
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if sublet_id:
+        params["sublet_id"] = sublet_id
+    if status:
+        params["status"] = status
+
+    res = _sublet_call(
+        "get",
+        "/sublets/occupants",
+        HTTP_OK,
+        "Failed to list occupants",
+        "fetching occupants",
+        params=params,
+    )
+    return res.get("occupants", []) if res else []
+
+
+def get_occupant_api(occupant_id: str) -> dict[str, Any] | None:
+    """Retrieve details of a registered occupant."""
+    return _sublet_call(
+        "get",
+        f"/sublets/occupants/{occupant_id}",
+        HTTP_OK,
+        f"Failed to fetch occupant '{occupant_id}'",
+        f"fetching occupant '{occupant_id}'",
+    )
+
+
+def update_occupant_api(
+    occupant_id: str, updates: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update details of a registered occupant."""
+    return _sublet_call(
+        "patch",
+        f"/sublets/occupants/{occupant_id}",
+        HTTP_OK,
+        f"Failed to update occupant '{occupant_id}'",
+        f"updating occupant '{occupant_id}'",
+        json=updates,
+    )
+
+
+def get_unit_occupancy_api(unit_id: str) -> dict[str, Any] | None:
+    """Retrieve unit occupancy calculation and limit status."""
+    return _sublet_call(
+        "get",
+        f"/units/{unit_id}/occupancy",
+        HTTP_OK,
+        f"Failed to calculate occupancy for unit '{unit_id}'",
+        f"fetching occupancy for unit '{unit_id}'",
+    )
+
+
+def report_unauthorized_rental_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Report an unauthorized short-term rental activity."""
+    return _sublet_call(
+        "post",
+        "/sublets/unauthorized-alerts",
+        HTTP_CREATED,
+        "Failed to report unauthorized rental",
+        "logging unauthorized rental report",
+        json=payload,
+    )
+
+
+def list_unauthorized_rental_alerts_api(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List unauthorized short-term rental alerts."""
+    params: dict[str, Any] = {}
+    if unit_id:
+        params["unit_id"] = unit_id
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if status:
+        params["status"] = status
+
+    res = _sublet_call(
+        "get",
+        "/sublets/unauthorized-alerts",
+        HTTP_OK,
+        "Failed to list rental alerts",
+        "fetching rental alerts",
+        params=params,
+    )
+    return res.get("alerts", []) if res else []
+
+
+def get_unauthorized_rental_alert_api(alert_id: str) -> dict[str, Any] | None:
+    """Retrieve details of an unauthorized rental alert."""
+    return _sublet_call(
+        "get",
+        f"/sublets/unauthorized-alerts/{alert_id}",
+        HTTP_OK,
+        f"Failed to fetch rental alert '{alert_id}'",
+        f"fetching rental alert '{alert_id}'",
+    )
+
+
+def update_unauthorized_rental_alert_api(
+    alert_id: str, updates: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Update status, resolution notes, or fine on an alert."""
+    return _sublet_call(
+        "patch",
+        f"/sublets/unauthorized-alerts/{alert_id}",
+        HTTP_OK,
+        f"Failed to update rental alert '{alert_id}'",
+        f"updating rental alert '{alert_id}'",
+        json=updates,
+    )
+
+
+def assess_unauthorized_rental_fine_api(
+    alert_id: str, fine_amount: float = 250.0
+) -> dict[str, Any] | None:
+    """Assess and post a fine for an unauthorized rental violation."""
+    return _sublet_call(
+        "post",
+        f"/sublets/unauthorized-alerts/{alert_id}/assess-fine",
+        HTTP_OK,
+        f"Failed to assess fine for alert '{alert_id}'",
+        f"assessing fine for alert '{alert_id}'",
+        json={"fine_amount": fine_amount},
+    )
+
+
+def get_unit_sublet_summary_api(unit_id: str) -> dict[str, Any] | None:
+    """Fetch comprehensive subletting, occupancy, and alert summary for a unit."""
+    return _sublet_call(
+        "get",
+        f"/units/{unit_id}/sublet/summary",
+        HTTP_OK,
+        f"Failed to fetch sublet summary for unit '{unit_id}'",
+        f"fetching sublet summary for unit '{unit_id}'",
+    )
+
+
+def get_tenant_sublet_summary_api(tenant_id: str) -> dict[str, Any] | None:
+    """Fetch comprehensive subletting, occupant, and alert summary for a resident."""
+    return _sublet_call(
+        "get",
+        f"/tenants/{tenant_id}/sublet/summary",
+        HTTP_OK,
+        f"Failed to fetch sublet summary for resident '{tenant_id}'",
+        f"fetching sublet summary for resident '{tenant_id}'",
+    )
+
+
+def session_submit_sublet_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Submit a sublet request directly from active resident session."""
+    return _sublet_call(
+        "post",
+        f"/sessions/{session_id}/submit-sublet-request",
+        HTTP_CREATED,
+        f"Failed to submit sublet request for session '{session_id}'",
+        "submitting sublet request from support session",
+        json=payload,
+    )
+
+
+def session_report_unauthorized_rental_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Report an unauthorized rental directly from active resident session."""
+    return _sublet_call(
+        "post",
+        f"/sessions/{session_id}/report-unauthorized-rental",
+        HTTP_CREATED,
+        f"Failed to report rental for session '{session_id}'",
+        "reporting unauthorized rental from support session",
+        json=payload,
+    )

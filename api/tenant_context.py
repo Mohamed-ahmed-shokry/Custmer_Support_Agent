@@ -19,6 +19,7 @@ from api import (
     packages,
     parking,
     pets,
+    sublets,
     utilities,
     vendors,
 )
@@ -1200,6 +1201,113 @@ def _extract_insurance_vars(
     return vars_dict
 
 
+def _format_sublet_lines(
+    sublets_list: list[dict[str, Any]],
+    occupants_list: list[dict[str, Any]],
+    alerts_list: list[dict[str, Any]],
+    occupancy: dict[str, Any] | None,
+) -> list[str]:
+    """Format resident subletting, occupants, and occupancy limits for prompt grounding."""
+    if not sublets_list and not occupants_list and not alerts_list and not occupancy:
+        return []
+
+    lines = ["[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]"]
+
+    if occupancy:
+        over_str = "⚠️ OVER OCCUPANCY LIMIT" if occupancy.get("is_over_capacity") else "COMPLIANT"
+        lines.append(
+            f"- Occupancy Status: {over_str} "
+            f"(Current: {occupancy.get('total_current_occupancy', 0)} / "
+            f"Max Limit: {occupancy.get('max_occupancy_limit', 0)} persons)"
+        )
+        lines.append(
+            f"- Occupancy Breakdown: {occupancy.get('active_tenant_count', 0)} leaseholder(s), "
+            f"{occupancy.get('active_occupant_count', 0)} registered guest/subtenant occupant(s)"
+        )
+
+    if sublets_list:
+        lines.append(f"- Sublet Requests on File: {len(sublets_list)}")
+        for sub in sublets_list[:3]:
+            sub_id = sub.get("id", "")
+            sub_type = sub.get("sublet_type", "full_unit")
+            status = sub.get("status", "pending")
+            name = sub.get("subtenant_name", "Unknown")
+            start = sub.get("start_date", "")
+            end = sub.get("end_date", "")
+            rent = format_currency(sub.get("monthly_rent", 0.0))
+            lines.append(
+                f"  * Sublet {sub_id} ({sub_type}): {name} | Status: {status.upper()} | "
+                f"Dates: {start} to {end} | Rent: {rent}"
+            )
+
+    if occupants_list:
+        lines.append(f"- Registered Occupants & Guests: {len(occupants_list)}")
+        for occ in occupants_list[:3]:
+            occ_name = occ.get("full_name", "")
+            occ_type = occ.get("occupant_type", "guest")
+            occ_stat = occ.get("status", "active")
+            check_in = occ.get("check_in_date", "")
+            check_out = occ.get("expected_check_out_date") or "indefinite"
+            lines.append(
+                f"  * {occ_name} ({occ_type}): Status: {occ_stat} | "
+                f"Stay: {check_in} to {check_out}"
+            )
+
+    if alerts_list:
+        unresolved = [a for a in alerts_list if a.get("status") not in ("resolved", "cleared")]
+        if unresolved:
+            lines.append(f"- ⚠️ Unauthorized Short-Term Rental Alerts: {len(unresolved)}")
+            for al in unresolved[:2]:
+                platform = al.get("platform", "short-term rental").upper()
+                al_stat = al.get("status", "suspected")
+                summary = al.get("evidence_summary", "")[:80]
+                lines.append(f"  * [{platform}] {summary}... (Status: {al_stat})")
+
+    lines.append("[END RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]")
+    return lines
+
+
+def _extract_sublet_vars(
+    sublets_list: list[dict[str, Any]],
+    occupants_list: list[dict[str, Any]],
+    alerts_list: list[dict[str, Any]],
+    occupancy: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Extract template macro variables for resident subletting and guest room occupancy."""
+    vars_dict: dict[str, str] = {
+        "sublet_status": "none",
+        "sublet_start_date": "none",
+        "sublet_end_date": "none",
+        "subtenant_name": "none",
+        "sublet_fee": "$0.00",
+        "sublet_type": "none",
+        "sublet_monthly_rent": "$0.00",
+        "max_occupancy_limit": "0",
+        "current_occupancy_count": "0",
+        "registered_occupants_count": "0",
+        "unauthorized_rental_alerts_count": "0",
+    }
+
+    if occupancy:
+        vars_dict["max_occupancy_limit"] = str(occupancy.get("max_occupancy_limit", 0))
+        vars_dict["current_occupancy_count"] = str(occupancy.get("total_current_occupancy", 0))
+
+    if sublets_list:
+        primary = sublets_list[0]
+        vars_dict["sublet_status"] = str(primary.get("status", "pending"))
+        vars_dict["sublet_start_date"] = str(primary.get("start_date", "none"))
+        vars_dict["sublet_end_date"] = str(primary.get("end_date", "none"))
+        vars_dict["subtenant_name"] = str(primary.get("subtenant_name", "none"))
+        vars_dict["sublet_type"] = str(primary.get("sublet_type", "full_unit"))
+        vars_dict["sublet_monthly_rent"] = format_currency(primary.get("monthly_rent", 0.0))
+        vars_dict["sublet_fee"] = format_currency(primary.get("administrative_fee", 150.0))
+
+    vars_dict["registered_occupants_count"] = str(len(occupants_list))
+    vars_dict["unauthorized_rental_alerts_count"] = str(len(alerts_list))
+
+    return vars_dict
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -1213,6 +1321,7 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     include_parking: bool = True,
     include_pets: bool = True,
     include_insurance: bool = True,
+    include_sublets: bool = True,
 ) -> str:
     """Build structured Markdown block of resident, unit, work orders, billing, and renewals."""
     tenant, unit = _resolve_tenant_and_unit(session_id, tenant_id, unit_id)
@@ -1359,6 +1468,24 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             insurance_claims = insurance.list_insurance_claims(unit_id=resolved_unit_id)
             insurance_summary = insurance.get_unit_insurance_summary(resolved_unit_id)
 
+    sublet_requests: list[dict[str, Any]] = []
+    sublet_occupants: list[dict[str, Any]] = []
+    sublet_alerts: list[dict[str, Any]] = []
+    unit_occupancy: dict[str, Any] | None = None
+    if include_sublets:
+        if resolved_tenant_id:
+            sublet_requests = sublets.list_sublet_requests(tenant_id=resolved_tenant_id)
+            sublet_occupants = sublets.list_occupants(tenant_id=resolved_tenant_id)
+            sublet_alerts = sublets.list_unauthorized_rental_alerts(tenant_id=resolved_tenant_id)
+        if resolved_unit_id:
+            unit_occupancy = sublets.calculate_unit_occupancy(resolved_unit_id)
+            if not sublet_requests:
+                sublet_requests = sublets.list_sublet_requests(unit_id=resolved_unit_id)
+            if not sublet_occupants:
+                sublet_occupants = sublets.list_occupants(unit_id=resolved_unit_id)
+            if not sublet_alerts:
+                sublet_alerts = sublets.list_unauthorized_rental_alerts(unit_id=resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -1464,6 +1591,13 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             lines.append("")
         lines.extend(
             _format_insurance_lines(insurance_policies, insurance_claims, insurance_summary)
+        )
+
+    if sublet_requests or sublet_occupants or sublet_alerts or unit_occupancy:
+        if lines:
+            lines.append("")
+        lines.extend(
+            _format_sublet_lines(sublet_requests, sublet_occupants, sublet_alerts, unit_occupancy)
         )
 
     return "\n".join(lines)
@@ -1794,5 +1928,24 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
         t_ins_summary = insurance.get_unit_insurance_summary(resolved_unit_id)
 
     variables.update(_extract_insurance_vars(t_policies, t_claims, t_ins_summary))
+
+    t_sublets: list[dict[str, Any]] = []
+    t_occupants: list[dict[str, Any]] = []
+    t_alerts: list[dict[str, Any]] = []
+    t_occupancy: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        t_sublets = sublets.list_sublet_requests(tenant_id=resolved_tenant_id)
+        t_occupants = sublets.list_occupants(tenant_id=resolved_tenant_id)
+        t_alerts = sublets.list_unauthorized_rental_alerts(tenant_id=resolved_tenant_id)
+    if resolved_unit_id:
+        t_occupancy = sublets.calculate_unit_occupancy(resolved_unit_id)
+        if not t_sublets:
+            t_sublets = sublets.list_sublet_requests(unit_id=resolved_unit_id)
+        if not t_occupants:
+            t_occupants = sublets.list_occupants(unit_id=resolved_unit_id)
+        if not t_alerts:
+            t_alerts = sublets.list_unauthorized_rental_alerts(unit_id=resolved_unit_id)
+
+    variables.update(_extract_sublet_vars(t_sublets, t_occupants, t_alerts, t_occupancy))
 
     return variables
