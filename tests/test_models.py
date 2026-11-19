@@ -179,6 +179,14 @@ from api.pydantic_models import (
     PetPolicyUpdateRequest,
     PetResponse,
     PetUpdateRequest,
+    PMComplianceSummaryResponse,
+    PMEntryNoticeRequest,
+    PMMetricsResponse,
+    PMScheduleCreateRequest,
+    PMScheduleItem,
+    PMTaskCompleteRequest,
+    PMTaskCreateRequest,
+    PMTaskItem,
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
@@ -205,6 +213,8 @@ from api.pydantic_models import (
     SessionReportUtilityLeakRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
+    SessionSchedulePMTaskRequest,
+    SessionSendPMEntryNoticeRequest,
     SessionSLAStatusResponse,
     SessionSubmitInsuranceRequest,
     SessionSubmitSubletRequest,
@@ -3617,3 +3627,67 @@ def test_occupants_and_rental_alerts_models():
     )
     assert metrics.total_administrative_fees_collected == expected_fees
 
+
+def test_preventative_maintenance_models():
+    """Verify preventative maintenance Pydantic models validation."""
+    expected_notice_hours = 24
+    expected_pass_rate = 95.0
+
+    sched = PMScheduleCreateRequest(
+        title="Quarterly HVAC Filter Change",
+        category="hvac_filter",
+        frequency="quarterly",
+        next_run_date="2027-01-10",
+    )
+    assert sched.notice_hours_required == expected_notice_hours
+
+    sched_item = PMScheduleItem(
+        id="pms_1",
+        title=sched.title,
+        category=sched.category,
+        frequency=sched.frequency,
+        next_run_date=sched.next_run_date,
+        created_at="2026-11-19T00:00:00Z",
+        updated_at="2026-11-19T00:00:00Z",
+    )
+    assert sched_item.is_active is True
+
+    task_req = PMTaskCreateRequest(
+        schedule_id="pms_1",
+        unit_id="unit_101",
+        scheduled_date="2027-01-10",
+    )
+    assert task_req.unit_id == "unit_101"
+
+    notice_req = PMEntryNoticeRequest(consent_status="granted")
+    assert notice_req.consent_status == "granted"
+
+    comp_req = PMTaskCompleteRequest(passed=False, inspection_notes="Filter clogged")
+    assert comp_req.auto_create_work_order is True
+
+    task_item = PMTaskItem(
+        id="pmt_1",
+        schedule_id="pms_1",
+        unit_id="unit_101",
+        category="hvac_filter",
+        status="scheduled",
+        scheduled_date="2027-01-10",
+        created_at="2026-11-19T00:00:00Z",
+        updated_at="2026-11-19T00:00:00Z",
+    )
+    summary = PMComplianceSummaryResponse(
+        unit_id="unit_101",
+        compliance_status="scheduled",
+        total_tasks=1,
+        tasks=[task_item],
+    )
+    assert summary.total_tasks == 1
+
+    metrics = PMMetricsResponse(total_schedules=2, total_tasks=4, pass_rate_pct=95.0)
+    assert metrics.pass_rate_pct == expected_pass_rate
+
+    sess_notice = SessionSendPMEntryNoticeRequest(task_id="pmt_1")
+    assert sess_notice.consent_status == "granted"
+
+    sess_sched = SessionSchedulePMTaskRequest(schedule_id="pms_1", scheduled_date="2027-02-01")
+    assert sess_sched.schedule_id == "pms_1"
