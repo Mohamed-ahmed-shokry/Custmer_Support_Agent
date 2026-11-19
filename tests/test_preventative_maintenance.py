@@ -53,10 +53,12 @@ def memory_db():
         """
     )
     cursor.execute(
-        "INSERT INTO units (id, unit_number, building_name) VALUES ('unit_101', '101', 'Main Tower')"
+        "INSERT INTO units (id, unit_number, building_name) "
+        "VALUES ('unit_101', '101', 'Main Tower')"
     )
     cursor.execute(
-        "INSERT INTO units (id, unit_number, building_name) VALUES ('unit_202', '202', 'Main Tower')"
+        "INSERT INTO units (id, unit_number, building_name) "
+        "VALUES ('unit_202', '202', 'Main Tower')"
     )
     cursor.execute(
         "INSERT INTO tenants (id, first_name, last_name, email, unit_id) VALUES "
