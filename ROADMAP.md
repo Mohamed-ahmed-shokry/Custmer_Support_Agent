@@ -1840,6 +1840,60 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.53.0 — Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance Engine (IN PROGRESS)
+
+Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, and deliver an end-to-end Preventative Maintenance, Seasonal HVAC/Fire Safety Inspections & Unit Compliance Engine (`api/preventative_maintenance.py`). The system manages recurring property-wide and unit-level preventative maintenance programs (HVAC filter replacements, smoke/CO detector testing, fire sprinkler/extinguisher checks, water heater flushes, seasonal winterization), scheduled unit inspection tasks (`pm_schedules`, `pm_tasks`), formal 24h/48h legal Notice of Entry tracking (`entry_notice_sent`, `entry_notice_at`, `resident_consent_status`), automatic conversion of failed inspections into maintenance work orders (`work_orders`), conversational RAG grounding (`[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]`), template macro resolution (`{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, `{pm_overdue_count}`), real-time webhooks (`pm.schedule_created`, `pm.task_scheduled`, `pm.entry_notice_sent`, `pm.task_completed`, `pm.task_failed`, `pm.compliance_overdue`), and a Streamlit operations board with 1-click resident entry notice & scheduling actions.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers, maintenance supervisors, and residents can:
+1. Run a 100% green, date-deterministic CI baseline (fixing the `tests/test_move_logistics.py` seed date collision).
+2. Create and manage preventative maintenance programs (`pm_schedules`) by category (`hvac_filter`, `smoke_co_detector`, `fire_safety`, `plumbing_flush`, `winterization`, `pest_prevention`, `appliance_check`) and frequency (`monthly`, `quarterly`, `semi_annual`, `annual`).
+3. Generate, assign, and track unit-level preventative maintenance tasks (`pm_tasks`) with status workflows (`scheduled`, `notice_sent`, `in_progress`, `passed`, `failed`, `deferred`, `cancelled`), technician assignment, and checklist results.
+4. Issue formal 24h/48h legal Notices of Entry and track resident consent (`pending`, `granted`, `reschedule_requested`, `denied`).
+5. Automatically escalate failed safety/HVAC inspections into persistent maintenance `work_orders` and dispatch webhooks.
+6. Ground active resident chat sessions with preventative maintenance & safety compliance context and auto-resolve `{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, and `{pm_overdue_count}` macros.
+7. Manage schedules, unit compliance tasks, entry notices, and safety KPIs in an interactive Streamlit operations board.
+
+### Scope
+- **CI Baseline Repair**: Fix `tests/test_move_logistics.py` hardcoded date collision with dynamic seed date.
+- `api/preventative_maintenance.py`: SQLite tables `pm_schedules` and `pm_tasks` with indexes, foreign keys to `units` and `tenants`, seed data, CRUD helpers, entry notice workflow, inspection pass/fail + work order escalation, and `get_pm_metrics_summary()`.
+- `api/pydantic_models.py` & `api/db_utils.py`: Request/response schemas, enums, and 6 new `pm.*` webhook event types.
+- `api/main.py`: REST endpoints for `/pm/schedules*`, `/pm/tasks*`, `/pm/metrics`, `/units/{id}/pm/summary`, `/tenants/{id}/pm/summary`, and 1-click session actions `POST /sessions/{id}/send-pm-entry-notice` and `POST /sessions/{id}/schedule-pm-task`.
+- `api/tenant_context.py`: RAG prompt grounding block `[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]` and 5 macro variables.
+- `app/api_utils.py` & `app/sidebar.py`: Typed client API wrappers, 4-tab `🔧 Preventative Maintenance` sidebar board, and 1-click resident profile PM action widget.
+- Tests: `tests/test_preventative_maintenance.py`, `tests/test_pm_routes.py`, plus updates to `tests/test_models.py`, `tests/test_tenant_context.py`, `tests/test_app_api_utils.py`, `tests/test_app_ui.py`.
+
+### Validation & CI Plan
+- Local CI-parity: `python -m ruff check api/ app/ tests/ scripts/`, `python -m mypy api/ app/ scripts/`, secret scan, and `python -m pytest --cov=api --cov=app tests/ -q` (>= 80% coverage).
+- Remote CI: GitHub Actions `test` and `e2e` jobs 100% green on `phase/v0.53.0-preventative-maintenance-compliance`.
+
+### Exclusions
+- Automated SMS/email delivery via external Twilio/SendGrid gateways (handled via webhook payload dispatch; out of scope for local-first core).
+- IoT smart thermostat telemetry ingestion (covered separately by `api/utilities.py` submetering).
+
+### Acceptance Criteria
+- [ ] AC1: Baseline CI failure in `tests/test_move_logistics.py` fixed and verified deterministic across all dates.
+- [ ] AC2: Core SQLite schema, enums, CRUD, entry notice, work-order escalation, metrics, and seeds in `api/preventative_maintenance.py`.
+- [ ] AC3: Pydantic schemas in `api/pydantic_models.py` and webhook event types in `api/db_utils.py`.
+- [ ] AC4: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
+- [ ] AC5: RAG prompt grounding and macro variable resolution in `api/tenant_context.py`.
+- [ ] AC6: Streamlit API client wrappers in `app/api_utils.py`.
+- [ ] AC7: Streamlit UI Preventative Maintenance board and 1-click resident widget in `app/sidebar.py`.
+- [ ] AC8: Comprehensive unit and integration tests passing with >= 80% coverage.
+- [ ] AC9: Version bump to `0.53.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [ ] AC10: All local CI-parity checks and remote CI workflow runs pass 100%.
+
+### Micro-Task Breakdown
+- [ ] Task 1: Fix flaky date collision in `tests/test_move_logistics.py` to restore 100% green baseline CI.
+- [ ] Task 2: Implement `api/preventative_maintenance.py` schema, enums, seeds, CRUD, entry notice, fail-to-work-order escalation, and metrics in atomic micro-commits with tests in `tests/test_preventative_maintenance.py`.
+- [ ] Task 3: Add Pydantic schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with tests in `tests/test_models.py`.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with tests in `tests/test_pm_routes.py`.
+- [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [ ] Task 8: Version bump to `0.53.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
+
 ## v0.52.0 — Resident Subletting, Lease Assignment & Guest Room Occupancy Verification Engine (COMPLETED)
 
 Provide property managers, leasing coordinators, and residents with an end-to-end resident subletting lifecycle, roommate replacement workflows, guest room occupancy tracking, short-term rental / Airbnb violation detection, administrative fee assessment to rent ledgers, conversational RAG grounding, and Streamlit management operations hub. The system coordinates sublet requests (`sublet_requests` per tenant and unit with subtenant identity, sublet type [full_unit, partial_room, roommate_replacement], lease term, monthly rent, administrative review fee, approval status), registered occupants and temporary long-term guests (`sublet_occupants` tracking ID verification, background checks, check-in and check-out dates), short-term rental violation alerts (`unauthorized_rental_alerts`), administrative fee posting directly to resident rent ledgers (`billing_transactions`), grounds active sublet and occupancy status in conversational turns (`[RESIDENT SUBLETTING, LEASE ASSIGNMENT & GUEST OCCUPANCY]`), and resolves canned template macros (`{sublet_status}`, `{sublet_start_date}`, `{sublet_end_date}`, `{subtenant_name}`, `{sublet_fee}`, `{max_occupancy_limit}`, `{current_occupancy_count}`). Real-time webhooks (`sublet.requested`, `sublet.approved`, `sublet.rejected`, `sublet.cancelled`, `sublet.violation_detected`, `sublet.fee_assessed`) keep property operations and leasing teams alerted.
