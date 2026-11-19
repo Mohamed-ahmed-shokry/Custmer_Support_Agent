@@ -19,6 +19,7 @@ from api import (
     packages,
     parking,
     pets,
+    preventative_maintenance,
     sublets,
     utilities,
     vendors,
@@ -1308,6 +1309,64 @@ def _extract_sublet_vars(
     return vars_dict
 
 
+def _format_pm_lines(pm_summary: dict[str, Any] | None) -> list[str]:
+    """Format preventative maintenance & safety compliance context for RAG prompts."""
+    if not pm_summary:
+        return []
+
+    tasks = pm_summary.get("tasks", [])
+    if not tasks and pm_summary.get("compliance_status") == "compliant":
+        return []
+
+    lines: list[str] = ["[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]"]
+    status = str(pm_summary.get("compliance_status", "compliant")).upper()
+    overdue = pm_summary.get("overdue_count", 0)
+    lines.append(f"- Unit PM Compliance Status: {status} (Overdue tasks: {overdue})")
+
+    next_task = pm_summary.get("next_scheduled_task")
+    if next_task:
+        cat = str(next_task.get("category", "inspection")).replace("_", " ").title()
+        s_date = next_task.get("scheduled_date", "N/A")
+        notice = "Notice Sent" if next_task.get("entry_notice_sent") else "Notice Pending"
+        consent = str(next_task.get("resident_consent_status", "pending")).upper()
+        lines.append(f"- Next Inspection: {cat} on {s_date} ({notice} | Consent: {consent})")
+
+    for t in tasks[:3]:
+        t_cat = str(t.get("category", "pm")).replace("_", " ")
+        t_stat = str(t.get("status", "scheduled")).upper()
+        t_date = t.get("scheduled_date", "N/A")
+        lines.append(f"  * Task {t.get('id')} ({t_cat}): {t_stat} | Date: {t_date}")
+
+    lines.append("[END PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]")
+    return lines
+
+
+def _extract_pm_vars(pm_summary: dict[str, Any] | None) -> dict[str, str]:
+    """Extract preventative maintenance macro variables from a unit/tenant PM summary."""
+    vars_dict: dict[str, str] = {
+        "pm_next_inspection_date": "none",
+        "pm_schedule_type": "none",
+        "pm_compliance_status": "compliant",
+        "pm_entry_notice_status": "not_sent",
+        "pm_overdue_count": "0",
+    }
+    if not pm_summary:
+        return vars_dict
+
+    vars_dict["pm_compliance_status"] = str(pm_summary.get("compliance_status", "compliant"))
+    vars_dict["pm_overdue_count"] = str(pm_summary.get("overdue_count", 0))
+
+    next_task = pm_summary.get("next_scheduled_task")
+    if next_task:
+        vars_dict["pm_next_inspection_date"] = str(next_task.get("scheduled_date", "none"))
+        vars_dict["pm_schedule_type"] = str(next_task.get("category", "none"))
+        vars_dict["pm_entry_notice_status"] = (
+            "sent" if next_task.get("entry_notice_sent") else "pending"
+        )
+
+    return vars_dict
+
+
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     tenant_id: str | None = None,
     unit_id: str | None = None,
@@ -1486,6 +1545,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             if not sublet_alerts:
                 sublet_alerts = sublets.list_unauthorized_rental_alerts(unit_id=resolved_unit_id)
 
+    pm_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        pm_summary = preventative_maintenance.get_unit_pm_summary(resolved_unit_id)
+    elif resolved_tenant_id:
+        pm_summary = preventative_maintenance.get_tenant_pm_summary(resolved_tenant_id)
+
     if (
         not tenant
         and not unit
@@ -1599,6 +1664,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         lines.extend(
             _format_sublet_lines(sublet_requests, sublet_occupants, sublet_alerts, unit_occupancy)
         )
+
+    pm_lines = _format_pm_lines(pm_summary)
+    if pm_lines:
+        if lines:
+            lines.append("")
+        lines.extend(pm_lines)
 
     return "\n".join(lines)
 
@@ -1947,5 +2018,12 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
             t_alerts = sublets.list_unauthorized_rental_alerts(unit_id=resolved_unit_id)
 
     variables.update(_extract_sublet_vars(t_sublets, t_occupants, t_alerts, t_occupancy))
+
+    t_pm_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        t_pm_summary = preventative_maintenance.get_unit_pm_summary(resolved_unit_id)
+    elif resolved_tenant_id:
+        t_pm_summary = preventative_maintenance.get_tenant_pm_summary(resolved_tenant_id)
+    variables.update(_extract_pm_vars(t_pm_summary))
 
     return variables
