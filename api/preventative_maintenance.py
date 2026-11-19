@@ -687,3 +687,163 @@ def update_pm_task(
     finally:
         if close_conn:
             conn.close()
+
+
+def send_pm_entry_notice(
+    task_id: str,
+    notice_notes: str = "",
+    consent_status: str = ConsentStatus.PENDING.value,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Send a formal Notice of Entry for a scheduled preventative maintenance task."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        existing = get_pm_task(task_id, conn=conn)
+        if not existing:
+            return None
+
+        now_iso = _now_iso()
+        new_notes = existing["inspection_notes"]
+        if notice_notes:
+            new_notes = f"{new_notes} | Notice: {notice_notes}".strip(" |")
+
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE pm_tasks
+            SET entry_notice_sent = 1,
+                entry_notice_at = ?,
+                status = CASE WHEN status = 'scheduled' THEN 'notice_sent' ELSE status END,
+                resident_consent_status = ?,
+                inspection_notes = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now_iso, consent_status, new_notes, now_iso, task_id),
+        )
+        conn.commit()
+        updated = get_pm_task(task_id, conn=conn)
+        assert updated is not None
+        webhooks.dispatch_event(
+            "pm.entry_notice_sent",
+            {
+                "task_id": task_id,
+                "unit_id": updated["unit_id"],
+                "tenant_id": updated["tenant_id"],
+                "scheduled_date": updated["scheduled_date"],
+                "consent_status": consent_status,
+            },
+        )
+        return updated
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def _create_escalation_work_order(
+    cursor: sqlite3.Cursor,
+    task: dict[str, Any],
+    notes: str,
+    now_iso: str,
+) -> str | None:
+    """Create a linked work order in `work_orders` if the table is present."""
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='work_orders'"
+    )
+    if not cursor.fetchone():
+        return None
+
+    wo_id = f"wo_{secrets.token_hex(4)}"
+    cat_map = {
+        PMCategory.HVAC_FILTER.value: "hvac",
+        PMCategory.PLUMBING_FLUSH.value: "plumbing",
+        PMCategory.APPLIANCE_CHECK.value: "appliance",
+        PMCategory.PEST_PREVENTION.value: "pest_control",
+    }
+    wo_category = cat_map.get(task["category"], "general")
+    title = f"PM Failed: {task['category'].replace('_', ' ').title()} ({task['unit_id']})"
+    desc = notes or f"Preventative maintenance task {task['id']} failed inspection."
+
+    cursor.execute(
+        """
+        INSERT INTO work_orders (
+            id, unit_id, tenant_id, title, description, category,
+            priority, status, entry_permission, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'high', 'submitted', 'permission_granted', ?, ?)
+        """,
+        (wo_id, task["unit_id"], task["tenant_id"], title, desc, wo_category, now_iso, now_iso),
+    )
+    return wo_id
+
+
+def complete_pm_task(
+    task_id: str,
+    passed: bool,
+    inspection_notes: str = "",
+    auto_create_work_order: bool = True,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Mark a preventative maintenance task passed or failed, escalating failures."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        existing = get_pm_task(task_id, conn=conn)
+        if not existing:
+            return None
+
+        now_iso = _now_iso()
+        new_status = PMTaskStatus.PASSED.value if passed else PMTaskStatus.FAILED.value
+        cursor = conn.cursor()
+
+        wo_id: str | None = existing.get("work_order_id")
+        if not passed and auto_create_work_order and not wo_id:
+            wo_id = _create_escalation_work_order(cursor, existing, inspection_notes, now_iso)
+
+        cursor.execute(
+            """
+            UPDATE pm_tasks
+            SET status = ?,
+                checklist_passed = ?,
+                completed_at = ?,
+                inspection_notes = ?,
+                work_order_id = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                new_status,
+                1 if passed else 0,
+                now_iso,
+                inspection_notes or existing["inspection_notes"],
+                wo_id,
+                now_iso,
+                task_id,
+            ),
+        )
+        conn.commit()
+        updated = get_pm_task(task_id, conn=conn)
+        assert updated is not None
+        event_type = "pm.task_completed" if passed else "pm.task_failed"
+        webhooks.dispatch_event(
+            event_type,
+            {
+                "task_id": task_id,
+                "unit_id": updated["unit_id"],
+                "tenant_id": updated["tenant_id"],
+                "passed": passed,
+                "work_order_id": wo_id,
+            },
+        )
+        return updated
+    finally:
+        if close_conn:
+            conn.close()
