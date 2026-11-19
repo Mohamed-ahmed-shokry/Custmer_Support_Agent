@@ -19,6 +19,7 @@ from app.api_utils import (
     book_freight_elevator_api,
     cancel_freight_elevator_booking_api,
     complete_inspection,
+    complete_pm_task_api,
     complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
     create_access_credential_api,
@@ -36,6 +37,7 @@ from app.api_utils import (
     create_parking_spot_api,
     create_pet_api,
     create_pet_policy_api,
+    create_pm_schedule_api,
     create_reservation_api,
     create_session_inspection,
     create_session_lease_renewal,
@@ -95,6 +97,7 @@ from app.api_utils import (
     get_package_metrics_api,
     get_parking_metrics_api,
     get_pet_metrics_api,
+    get_pm_metrics_api,
     get_quota,
     get_session_assignment_history,
     get_session_history,
@@ -152,6 +155,7 @@ from app.api_utils import (
     list_pet_policies_api,
     list_pets_api,
     list_pm_schedules_api,
+    list_pm_tasks_api,
     list_reservations_api,
     list_sessions,
     list_sla_policies,
@@ -198,6 +202,7 @@ from app.api_utils import (
     render_macro,
     scan_knowledge_gaps,
     search_sessions,
+    send_pm_entry_notice_api,
     session_acknowledge_alert_api,
     session_create_reservation_api,
     session_file_insurance_claim_api,
@@ -231,6 +236,7 @@ from app.api_utils import (
     update_knowledge_gap,
     update_move_event_api,
     update_occupant_api,
+    update_pm_schedule_api,
     update_reservation_api,
     update_session,
     update_support_agent,
@@ -6954,6 +6960,7 @@ def display_sidebar():
     _render_utilities_board()
     _render_insurance_compliance_board()
     _render_subletting_board()
+    _render_pm_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
@@ -7023,3 +7030,147 @@ def _render_session_pm_widget(
                     st.rerun()
         else:
             st.caption("No active PM programs available.")
+
+
+def _render_pm_schedules_tab() -> None:
+    """Render preventative maintenance programs and quick program creator."""
+    schedules = list_pm_schedules_api()
+    st.caption(f"Showing **{len(schedules)}** preventative maintenance programs.")
+    for s in schedules[:5]:
+        s_id = str(s.get("id") or "")
+        if not s_id:
+            continue
+        title = s.get("title", "PM Program")
+        cat = str(s.get("category", "hvac_filter")).replace("_", " ").title()
+        freq = str(s.get("frequency", "quarterly")).upper()
+        active_badge = "🟢 Active" if s.get("is_active") else "⏸️ Paused"
+        st.markdown(f"- **{title}** ({cat}) [{freq}] | {active_badge}")
+        st.caption(
+            f"Next Run: {s.get('next_run_date', 'N/A')} | "
+            f"Vendor: {s.get('assigned_vendor', 'Internal')}"
+        )
+        if s.get("is_active") and st.button("Pause Program", key=f"btn_pause_pm_{s_id}"):
+            res = update_pm_schedule_api(s_id, {"is_active": False})
+            if res:
+                st.info("PM schedule paused.")
+                st.rerun()
+
+    st.divider()
+    st.caption("Create New PM Program")
+    new_title = st.text_input("Program Title", key="pm_new_sched_title")
+    new_cat = st.selectbox(
+        "Category",
+        [
+            "hvac_filter",
+            "smoke_co_detector",
+            "fire_safety",
+            "plumbing_flush",
+            "winterization",
+            "pest_prevention",
+            "appliance_check",
+        ],
+        key="pm_new_sched_cat",
+    )
+    new_freq = st.selectbox(
+        "Frequency", ["monthly", "quarterly", "semi_annual", "annual"], key="pm_new_sched_freq"
+    )
+    default_run = (datetime.datetime.now(UTC).date() + datetime.timedelta(days=14)).isoformat()
+    new_date = st.text_input("Next Run Date", value=default_run, key="pm_new_sched_date")
+    if st.button("Create PM Program", key="btn_create_pm_sched") and new_title.strip():
+        created = create_pm_schedule_api(
+            {
+                "title": new_title.strip(),
+                "category": new_cat,
+                "frequency": new_freq,
+                "next_run_date": new_date,
+            }
+        )
+        if created:
+            st.success("PM program created!")
+            st.rerun()
+
+
+def _render_pm_tasks_tab() -> None:
+    """Render unit-level preventative maintenance tasks with notice and pass/fail actions."""
+    status_filter = st.selectbox(
+        "Filter Task Status",
+        ["all", "scheduled", "notice_sent", "in_progress", "passed", "failed"],
+        key="pm_task_status_filter",
+    )
+    stat_val = None if status_filter == "all" else status_filter
+    tasks = list_pm_tasks_api(status=stat_val)
+    st.caption(f"Showing **{len(tasks)}** unit preventative maintenance tasks.")
+
+    for t in tasks[:5]:
+        t_id = str(t.get("id") or "")
+        if not t_id:
+            continue
+        unit = t.get("unit_number") or t.get("unit_id")
+        cat = str(t.get("category", "pm")).replace("_", " ").title()
+        stat = str(t.get("status", "scheduled")).upper()
+        notice_badge = "📩 Notice Sent" if t.get("entry_notice_sent") else "⏳ Notice Pending"
+        st.markdown(f"- **Unit {unit}** - {cat} [{stat}] | {notice_badge}")
+        st.caption(
+            f"Scheduled: {t.get('scheduled_date', 'N/A')} | "
+            f"Tech: {t.get('assigned_technician', 'Unassigned')}"
+        )
+
+        if t.get("status") in ("scheduled", "notice_sent", "in_progress"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if not t.get("entry_notice_sent") and st.button(
+                    "Send Notice", key=f"btn_pm_notice_{t_id}"
+                ):
+                    res = send_pm_entry_notice_api(t_id, notice_notes="Issued from PM board")
+                    if res:
+                        st.success("Notice sent!")
+                        st.rerun()
+            with c2:
+                if st.button("Pass", key=f"btn_pm_pass_{t_id}"):
+                    res = complete_pm_task_api(
+                        t_id, passed=True, inspection_notes="Passed PM check"
+                    )
+                    if res:
+                        st.success("Marked Passed!")
+                        st.rerun()
+            with c3:
+                if st.button("Fail -> WO", key=f"btn_pm_fail_{t_id}"):
+                    res = complete_pm_task_api(
+                        t_id,
+                        passed=False,
+                        inspection_notes="Failed PM check; escalated to work order.",
+                        auto_create_work_order=True,
+                    )
+                    if res:
+                        st.warning("Marked Failed & Work Order Created!")
+                        st.rerun()
+
+
+def _render_pm_kpis_tab() -> None:
+    """Render portfolio preventative maintenance & safety compliance KPIs."""
+    metrics = get_pm_metrics_api()
+    if metrics:
+        c1, c2 = st.columns(2)
+        c1.metric("Active Programs", metrics.get("active_schedules", 0))
+        c2.metric("Total Unit Tasks", metrics.get("total_tasks", 0))
+        c3, c4 = st.columns(2)
+        c3.metric("Overdue Tasks", metrics.get("overdue_tasks", 0))
+        c4.metric("Pass Rate", f"{metrics.get('pass_rate_pct', 100.0)}%")
+        st.caption(
+            f"Scheduled: {metrics.get('scheduled_tasks', 0)} | "
+            f"Notice Sent: {metrics.get('notice_sent_tasks', 0)} | "
+            f"Passed: {metrics.get('passed_tasks', 0)} | "
+            f"Failed: {metrics.get('failed_tasks', 0)}"
+        )
+
+
+def _render_pm_board() -> None:
+    """Render sidebar expander for Preventative Maintenance & Safety Compliance."""
+    with st.expander("🔧 Preventative Maintenance & Safety", expanded=False):
+        tab1, tab2, tab3 = st.tabs(["Programs", "Unit Tasks", "Safety KPIs"])
+        with tab1:
+            _render_pm_schedules_tab()
+        with tab2:
+            _render_pm_tasks_tab()
+        with tab3:
+            _render_pm_kpis_tab()
