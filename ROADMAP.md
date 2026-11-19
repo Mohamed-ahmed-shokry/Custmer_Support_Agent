@@ -1840,7 +1840,7 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
-## v0.53.0 — Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance Engine (IN PROGRESS)
+## v0.53.0 — Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance Engine (COMPLETED)
 
 Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, and deliver an end-to-end Preventative Maintenance, Seasonal HVAC/Fire Safety Inspections & Unit Compliance Engine (`api/preventative_maintenance.py`). The system manages recurring property-wide and unit-level preventative maintenance programs (HVAC filter replacements, smoke/CO detector testing, fire sprinkler/extinguisher checks, water heater flushes, seasonal winterization), scheduled unit inspection tasks (`pm_schedules`, `pm_tasks`), formal 24h/48h legal Notice of Entry tracking (`entry_notice_sent`, `entry_notice_at`, `resident_consent_status`), automatic conversion of failed inspections into maintenance work orders (`work_orders`), conversational RAG grounding (`[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]`), template macro resolution (`{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, `{pm_overdue_count}`), real-time webhooks (`pm.schedule_created`, `pm.task_scheduled`, `pm.entry_notice_sent`, `pm.task_completed`, `pm.task_failed`, `pm.compliance_overdue`), and a Streamlit operations board with 1-click resident entry notice & scheduling actions.
 
@@ -1872,27 +1872,27 @@ Via the API and Streamlit UI, property managers, maintenance supervisors, and re
 - IoT smart thermostat telemetry ingestion (covered separately by `api/utilities.py` submetering).
 
 ### Acceptance Criteria
-- [ ] AC1: Baseline CI failure in `tests/test_move_logistics.py` fixed and verified deterministic across all dates.
-- [ ] AC2: Core SQLite schema, enums, CRUD, entry notice, work-order escalation, metrics, and seeds in `api/preventative_maintenance.py`.
-- [ ] AC3: Pydantic schemas in `api/pydantic_models.py` and webhook event types in `api/db_utils.py`.
-- [ ] AC4: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
-- [ ] AC5: RAG prompt grounding and macro variable resolution in `api/tenant_context.py`.
-- [ ] AC6: Streamlit API client wrappers in `app/api_utils.py`.
-- [ ] AC7: Streamlit UI Preventative Maintenance board and 1-click resident widget in `app/sidebar.py`.
-- [ ] AC8: Comprehensive unit and integration tests passing with >= 80% coverage.
-- [ ] AC9: Version bump to `0.53.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] AC10: All local CI-parity checks and remote CI workflow runs pass 100%.
+- [x] AC1: Baseline CI failure in `tests/test_move_logistics.py` fixed and verified deterministic across all dates.
+- [x] AC2: Core SQLite schema, enums, CRUD, entry notice, work-order escalation, metrics, and seeds in `api/preventative_maintenance.py`.
+- [x] AC3: Pydantic schemas in `api/pydantic_models.py` and webhook event types in `api/db_utils.py`.
+- [x] AC4: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
+- [x] AC5: RAG prompt grounding and macro variable resolution in `api/tenant_context.py`.
+- [x] AC6: Streamlit API client wrappers in `app/api_utils.py`.
+- [x] AC7: Streamlit UI Preventative Maintenance board and 1-click resident widget in `app/sidebar.py`.
+- [x] AC8: Comprehensive unit and integration tests passing with >= 80% coverage.
+- [x] AC9: Version bump to `0.53.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] AC10: All local CI-parity checks and remote CI workflow runs pass 100%.
 
 ### Micro-Task Breakdown
-- [ ] Task 1: Fix flaky date collision in `tests/test_move_logistics.py` to restore 100% green baseline CI.
-- [ ] Task 2: Implement `api/preventative_maintenance.py` schema, enums, seeds, CRUD, entry notice, fail-to-work-order escalation, and metrics in atomic micro-commits with tests in `tests/test_preventative_maintenance.py`.
-- [ ] Task 3: Add Pydantic schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with tests in `tests/test_models.py`.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with tests in `tests/test_pm_routes.py`.
-- [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
-- [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
-- [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
-- [ ] Task 8: Version bump to `0.53.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
+- [x] Task 1: Fix flaky date collision in `tests/test_move_logistics.py` to restore 100% green baseline CI.
+- [x] Task 2: Implement `api/preventative_maintenance.py` schema, enums, seeds, CRUD, entry notice, fail-to-work-order escalation, and metrics in atomic micro-commits with tests in `tests/test_preventative_maintenance.py`.
+- [x] Task 3: Add Pydantic schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py` with tests in `tests/test_models.py`.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with tests in `tests/test_pm_routes.py`.
+- [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests in `tests/test_tenant_context.py`.
+- [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests in `tests/test_app_api_utils.py`.
+- [x] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with tests in `tests/test_app_ui.py`.
+- [x] Task 8: Version bump to `0.53.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## v0.52.0 — Resident Subletting, Lease Assignment & Guest Room Occupancy Verification Engine (COMPLETED)
 
