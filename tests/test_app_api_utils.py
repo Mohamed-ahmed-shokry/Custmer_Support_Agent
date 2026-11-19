@@ -4110,7 +4110,8 @@ def test_pm_client_api_utils_success(monkeypatch):
 
     monkeypatch.setattr(api_utils, "requests", PMRouter())
 
-    assert api_utils.get_pm_metrics_api()["total_schedules"] == 2
+    expected_schedules = 2
+    assert api_utils.get_pm_metrics_api()["total_schedules"] == expected_schedules
     assert api_utils.create_pm_schedule_api({"title": "HVAC"})["id"] == "pms_new"
     assert len(api_utils.list_pm_schedules_api(category="hvac_filter")) == 1
     assert api_utils.update_pm_schedule_api("pms_1", {"is_active": False})["is_active"] is False
