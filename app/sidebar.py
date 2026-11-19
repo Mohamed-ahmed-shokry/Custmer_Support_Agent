@@ -109,6 +109,7 @@ from app.api_utils import (
     get_tenant_insurance_summary_api,
     get_tenant_lease_renewals,
     get_tenant_ledger,
+    get_tenant_pm_summary_api,
     get_tenant_sublet_summary_api,
     get_tenant_support_history,
     get_tenant_utilities_summary_api,
@@ -150,6 +151,7 @@ from app.api_utils import (
     list_pet_incidents_api,
     list_pet_policies_api,
     list_pets_api,
+    list_pm_schedules_api,
     list_reservations_api,
     list_sessions,
     list_sla_policies,
@@ -212,6 +214,8 @@ from app.api_utils import (
     session_reserve_elevator_api,
     session_schedule_move_api,
     session_submit_insurance_api,
+    session_schedule_pm_task_api,
+    session_send_pm_entry_notice_api,
     session_submit_sublet_api,
     session_submit_violation_appeal_api,
     sign_lease_renewal,
@@ -1165,6 +1169,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_utilities_widget(selected, tenant)
     _render_session_insurance_widget(selected, tenant)
     _render_session_sublets_widget(selected, tenant)
+    _render_session_pm_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6951,3 +6956,65 @@ def display_sidebar():
     _render_subletting_board()
     _render_knowledge_studio()
     _render_ops_metrics()
+
+
+def _render_session_pm_widget(
+    session_id: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click preventative maintenance & Notice of Entry widget for a resident session."""
+    tenant_id = str(tenant.get("id") or "")
+    if not tenant_id:
+        return
+
+    with st.expander("🔧 Preventative Maintenance & Entry Notice", expanded=False):
+        summary = get_tenant_pm_summary_api(tenant_id)
+        if summary:
+            status = str(summary.get("compliance_status", "compliant")).upper()
+            overdue = summary.get("overdue_count", 0)
+            st.markdown(f"**Compliance:** `{status}` | **Overdue:** `{overdue}`")
+            next_task = summary.get("next_scheduled_task")
+            if next_task:
+                t_id = str(next_task.get("id") or "")
+                cat = str(next_task.get("category", "pm")).replace("_", " ").title()
+                s_date = next_task.get("scheduled_date", "N/A")
+                sent = "✅ Sent" if next_task.get("entry_notice_sent") else "⏳ Pending"
+                st.caption(f"Next: {cat} on {s_date} (Notice: {sent})")
+                if t_id and not next_task.get("entry_notice_sent"):
+                    if st.button("Send 24h Entry Notice", key=f"btn_sess_pm_notice_{session_id}"):
+                        res = session_send_pm_entry_notice_api(
+                            session_id,
+                            {
+                                "task_id": t_id,
+                                "notice_notes": "Dispatched from resident support session.",
+                                "consent_status": "granted",
+                            },
+                        )
+                        if res:
+                            st.success("24h Notice of Entry dispatched!")
+                            st.rerun()
+
+        st.divider()
+        st.caption("Quick Schedule PM Inspection")
+        schedules = list_pm_schedules_api(is_active=True)
+        sched_options = {s["id"]: s["title"] for s in schedules if s.get("id")}
+        if sched_options:
+            sel_sched = st.selectbox(
+                "PM Program",
+                list(sched_options.keys()),
+                format_func=lambda x: sched_options.get(x, x),
+                key=f"sess_pm_sched_{session_id}",
+            )
+            default_date = (datetime.datetime.now(UTC).date() + datetime.timedelta(days=7)).isoformat()
+            sched_date = st.text_input(
+                "Scheduled Date", value=default_date, key=f"sess_pm_date_{session_id}"
+            )
+            if st.button("Schedule PM Task", key=f"btn_sess_pm_sched_{session_id}"):
+                res = session_schedule_pm_task_api(
+                    session_id,
+                    {"schedule_id": sel_sched, "scheduled_date": sched_date},
+                )
+                if res:
+                    st.success("PM inspection task scheduled!")
+                    st.rerun()
+        else:
+            st.caption("No active PM programs available.")
