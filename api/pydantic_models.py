@@ -4734,3 +4734,100 @@ class PMScheduleResponse(BaseModel):
 class PMScheduleListResponse(BaseModel):
     schedules: list[PMScheduleItem] = Field(default_factory=list)
     total: int = 0
+
+
+class PMTaskCreateRequest(BaseModel):
+    schedule_id: str = Field(..., min_length=2, max_length=80)
+    unit_id: str = Field(..., min_length=1, max_length=80)
+    scheduled_date: str = Field(..., min_length=4, max_length=30)
+    tenant_id: str | None = Field(default=None, max_length=80)
+    category: str | None = Field(default=None, max_length=60)
+    assigned_technician: str | None = Field(default=None, max_length=120)
+    inspection_notes: str = Field(default="", max_length=2000)
+
+
+class PMTaskUpdateRequest(BaseModel):
+    status: str | None = Field(default=None, max_length=40)
+    scheduled_date: str | None = Field(default=None, max_length=30)
+    assigned_technician: str | None = Field(default=None, max_length=120)
+    resident_consent_status: str | None = Field(default=None, max_length=40)
+    inspection_notes: str | None = Field(default=None, max_length=2000)
+
+
+class PMEntryNoticeRequest(BaseModel):
+    notice_notes: str = Field(default="", max_length=1000)
+    consent_status: str = Field(default="pending", max_length=40)
+
+
+class PMTaskCompleteRequest(BaseModel):
+    passed: bool = Field(...)
+    inspection_notes: str = Field(default="", max_length=2000)
+    auto_create_work_order: bool = Field(default=True)
+
+
+class PMTaskItem(BaseModel):
+    id: str
+    schedule_id: str
+    unit_id: str
+    tenant_id: str | None = None
+    category: str
+    status: str
+    scheduled_date: str
+    assigned_technician: str | None = None
+    entry_notice_sent: bool = False
+    entry_notice_at: str | None = None
+    resident_consent_status: str = "pending"
+    completed_at: str | None = None
+    inspection_notes: str = ""
+    checklist_passed: bool | None = None
+    work_order_id: str | None = None
+    created_at: str
+    updated_at: str
+    unit_number: str | None = None
+    tenant_name: str | None = None
+
+
+class PMTaskResponse(BaseModel):
+    task: PMTaskItem
+
+
+class PMTaskListResponse(BaseModel):
+    tasks: list[PMTaskItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class PMComplianceSummaryResponse(BaseModel):
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    compliance_status: str
+    total_tasks: int = 0
+    overdue_count: int = 0
+    passed_count: int = 0
+    failed_count: int = 0
+    next_scheduled_task: PMTaskItem | None = None
+    tasks: list[PMTaskItem] = Field(default_factory=list)
+
+
+class PMMetricsResponse(BaseModel):
+    total_schedules: int = 0
+    active_schedules: int = 0
+    total_tasks: int = 0
+    scheduled_tasks: int = 0
+    notice_sent_tasks: int = 0
+    passed_tasks: int = 0
+    failed_tasks: int = 0
+    overdue_tasks: int = 0
+    pass_rate_pct: float = 100.0
+
+
+class SessionSendPMEntryNoticeRequest(BaseModel):
+    task_id: str = Field(..., min_length=2, max_length=80)
+    notice_notes: str = Field(default="Notice sent during live resident support session.", max_length=1000)
+    consent_status: str = Field(default="granted", max_length=40)
+
+
+class SessionSchedulePMTaskRequest(BaseModel):
+    schedule_id: str = Field(..., min_length=2, max_length=80)
+    scheduled_date: str = Field(..., min_length=4, max_length=30)
+    assigned_technician: str | None = Field(default=None, max_length=120)
+    inspection_notes: str = Field(default="", max_length=2000)
