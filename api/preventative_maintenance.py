@@ -271,7 +271,7 @@ def _row_to_schedule(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-def create_pm_schedule(
+def create_pm_schedule(  # noqa: PLR0913, PLR0917
     title: str,
     category: str,
     frequency: str,
