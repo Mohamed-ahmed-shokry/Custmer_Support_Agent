@@ -331,6 +331,7 @@ from api.pydantic_models import (
     PetPolicyUpdateRequest,
     PetResponse,
     PetUpdateRequest,
+    PMComplianceSummaryResponse,
     PMEntryNoticeRequest,
     PMMetricsResponse,
     PMScheduleCreateRequest,
@@ -380,8 +381,10 @@ from api.pydantic_models import (
     SessionReportUtilityLeakRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
+    SessionSchedulePMTaskRequest,
     SessionSearchResponse,
     SessionSearchResult,
+    SessionSendPMEntryNoticeRequest,
     SessionSLAStatusResponse,
     SessionSubmitInsuranceRequest,
     SessionSubmitSubletRequest,
@@ -8870,3 +8873,102 @@ def complete_pm_task_route(task_id: str, request: PMTaskCompleteRequest):
     if not updated:
         raise HTTPException(status_code=404, detail=f"PM task not found: {task_id}")
     return PMTaskResponse(task=PMTaskItem(**updated))
+
+
+@app.get("/units/{unit_id}/pm/summary", response_model=PMComplianceSummaryResponse)
+def get_unit_pm_summary_route(unit_id: str):
+    """Retrieve preventative maintenance compliance summary for a unit."""
+    summary = preventative_maintenance.get_unit_pm_summary(unit_id)
+    next_task = (
+        PMTaskItem(**summary["next_scheduled_task"])
+        if summary.get("next_scheduled_task")
+        else None
+    )
+    return PMComplianceSummaryResponse(
+        unit_id=unit_id,
+        compliance_status=summary["compliance_status"],
+        total_tasks=summary["total_tasks"],
+        overdue_count=summary["overdue_count"],
+        passed_count=summary["passed_count"],
+        failed_count=summary["failed_count"],
+        next_scheduled_task=next_task,
+        tasks=[PMTaskItem(**t) for t in summary.get("tasks", [])],
+    )
+
+
+@app.get("/tenants/{tenant_id}/pm/summary", response_model=PMComplianceSummaryResponse)
+def get_tenant_pm_summary_route(tenant_id: str):
+    """Retrieve preventative maintenance compliance summary for a resident."""
+    summary = preventative_maintenance.get_tenant_pm_summary(tenant_id)
+    next_task = (
+        PMTaskItem(**summary["next_scheduled_task"])
+        if summary.get("next_scheduled_task")
+        else None
+    )
+    return PMComplianceSummaryResponse(
+        tenant_id=tenant_id,
+        compliance_status=summary["compliance_status"],
+        total_tasks=summary["total_tasks"],
+        overdue_count=summary["overdue_count"],
+        passed_count=summary["passed_count"],
+        failed_count=summary["failed_count"],
+        next_scheduled_task=next_task,
+        tasks=[PMTaskItem(**t) for t in summary.get("tasks", [])],
+    )
+
+
+@app.post("/sessions/{session_id}/send-pm-entry-notice", response_model=PMTaskResponse)
+def session_send_pm_entry_notice_route(
+    session_id: str,
+    request: SessionSendPMEntryNoticeRequest,
+):
+    """1-click Notice of Entry dispatch directly from an active resident support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+
+    updated = preventative_maintenance.send_pm_entry_notice(
+        task_id=request.task_id,
+        notice_notes=request.notice_notes,
+        consent_status=request.consent_status,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"PM task not found: {request.task_id}")
+    return PMTaskResponse(task=PMTaskItem(**updated))
+
+
+@app.post("/sessions/{session_id}/schedule-pm-task", response_model=PMTaskResponse, status_code=201)
+def session_schedule_pm_task_route(
+    session_id: str,
+    request: SessionSchedulePMTaskRequest,
+):
+    """1-click preventative maintenance task scheduling directly from a support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    unit_id = tenant.get("unit_id")
+    if not unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Resident '{tenant['id']}' has no assigned unit for PM scheduling.",
+        )
+
+    try:
+        created = preventative_maintenance.create_pm_task(
+            schedule_id=request.schedule_id,
+            unit_id=unit_id,
+            tenant_id=tenant["id"],
+            scheduled_date=request.scheduled_date,
+            assigned_technician=request.assigned_technician,
+            inspection_notes=request.inspection_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PMTaskResponse(task=PMTaskItem(**created))
