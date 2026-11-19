@@ -847,3 +847,108 @@ def complete_pm_task(
     finally:
         if close_conn:
             conn.close()
+
+
+def _compute_compliance_status(tasks: list[dict[str, Any]], today_str: str) -> tuple[str, int]:
+    """Compute overall compliance label and overdue open task count."""
+    open_statuses = {
+        PMTaskStatus.SCHEDULED.value,
+        PMTaskStatus.NOTICE_SENT.value,
+        PMTaskStatus.IN_PROGRESS.value,
+    }
+    overdue_count = sum(
+        1 for t in tasks if t["status"] in open_statuses and t["scheduled_date"] < today_str
+    )
+    failed_count = sum(1 for t in tasks if t["status"] == PMTaskStatus.FAILED.value)
+    if failed_count > 0:
+        return "action_required", overdue_count
+    if overdue_count > 0:
+        return "overdue", overdue_count
+    if any(t["status"] in open_statuses for t in tasks):
+        return "scheduled", overdue_count
+    return "compliant", 0
+
+
+def get_unit_pm_summary(
+    unit_id: str,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Retrieve preventative maintenance compliance summary for a unit."""
+    tasks = list_pm_tasks(unit_id=unit_id, conn=conn)
+    today_str = datetime.datetime.now(UTC).strftime("%Y-%m-%d")
+    status, overdue_count = _compute_compliance_status(tasks, today_str)
+    upcoming = [
+        t
+        for t in tasks
+        if t["status"]
+        in (
+            PMTaskStatus.SCHEDULED.value,
+            PMTaskStatus.NOTICE_SENT.value,
+            PMTaskStatus.IN_PROGRESS.value,
+        )
+    ]
+    return {
+        "unit_id": unit_id,
+        "compliance_status": status,
+        "total_tasks": len(tasks),
+        "overdue_count": overdue_count,
+        "passed_count": sum(1 for t in tasks if t["status"] == PMTaskStatus.PASSED.value),
+        "failed_count": sum(1 for t in tasks if t["status"] == PMTaskStatus.FAILED.value),
+        "next_scheduled_task": upcoming[0] if upcoming else None,
+        "tasks": tasks,
+    }
+
+
+def get_tenant_pm_summary(
+    tenant_id: str,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Retrieve preventative maintenance compliance summary for a resident."""
+    tasks = list_pm_tasks(tenant_id=tenant_id, conn=conn)
+    today_str = datetime.datetime.now(UTC).strftime("%Y-%m-%d")
+    status, overdue_count = _compute_compliance_status(tasks, today_str)
+    upcoming = [
+        t
+        for t in tasks
+        if t["status"]
+        in (
+            PMTaskStatus.SCHEDULED.value,
+            PMTaskStatus.NOTICE_SENT.value,
+            PMTaskStatus.IN_PROGRESS.value,
+        )
+    ]
+    return {
+        "tenant_id": tenant_id,
+        "compliance_status": status,
+        "total_tasks": len(tasks),
+        "overdue_count": overdue_count,
+        "passed_count": sum(1 for t in tasks if t["status"] == PMTaskStatus.PASSED.value),
+        "failed_count": sum(1 for t in tasks if t["status"] == PMTaskStatus.FAILED.value),
+        "next_scheduled_task": upcoming[0] if upcoming else None,
+        "tasks": tasks,
+    }
+
+
+def get_pm_metrics_summary(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Retrieve portfolio-wide preventative maintenance & safety KPIs."""
+    schedules = list_pm_schedules(conn=conn)
+    tasks = list_pm_tasks(conn=conn)
+    today_str = datetime.datetime.now(UTC).strftime("%Y-%m-%d")
+    _, overdue_count = _compute_compliance_status(tasks, today_str)
+
+    passed_count = sum(1 for t in tasks if t["status"] == PMTaskStatus.PASSED.value)
+    failed_count = sum(1 for t in tasks if t["status"] == PMTaskStatus.FAILED.value)
+    completed_total = passed_count + failed_count
+    pass_rate_pct = round((passed_count / completed_total) * 100.0, 1) if completed_total else 100.0
+
+    return {
+        "total_schedules": len(schedules),
+        "active_schedules": sum(1 for s in schedules if s["is_active"]),
+        "total_tasks": len(tasks),
+        "scheduled_tasks": sum(1 for t in tasks if t["status"] == PMTaskStatus.SCHEDULED.value),
+        "notice_sent_tasks": sum(1 for t in tasks if t["status"] == PMTaskStatus.NOTICE_SENT.value),
+        "passed_tasks": passed_count,
+        "failed_tasks": failed_count,
+        "overdue_tasks": overdue_count,
+        "pass_rate_pct": pass_rate_pct,
+    }
