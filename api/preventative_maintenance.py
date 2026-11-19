@@ -462,6 +462,10 @@ def update_pm_schedule(
             conn.close()
 
 
+_UNIT_NUM_IDX = 17
+_TENANT_NAME_IDX = 18
+
+
 def _row_to_task(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
@@ -481,8 +485,8 @@ def _row_to_task(row: tuple[Any, ...]) -> dict[str, Any]:
         "work_order_id": row[14],
         "created_at": row[15],
         "updated_at": row[16],
-        "unit_number": row[17] if len(row) > 17 else None,
-        "tenant_name": row[18] if len(row) > 18 else None,
+        "unit_number": row[_UNIT_NUM_IDX] if len(row) > _UNIT_NUM_IDX else None,
+        "tenant_name": row[_TENANT_NAME_IDX] if len(row) > _TENANT_NAME_IDX else None,
     }
 
 
