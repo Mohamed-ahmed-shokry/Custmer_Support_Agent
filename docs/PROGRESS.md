@@ -5,8 +5,8 @@ Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, an
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: Fix Baseline CI Failure (`tests/test_move_logistics.py`)**
-  - Replace hardcoded `2026-11-25` date in `test_book_freight_elevator_and_collision_prevention` with a deterministic non-colliding date.
+- [x] **AC1: Fix Baseline CI Failure (`tests/test_move_logistics.py`)** ✅
+  - Replace hardcoded `2026-11-25` date in `test_book_freight_elevator_and_collision_prevention` with `2099-06-15`.
 - [ ] **AC2: Core Engine & SQLite Schema (`api/preventative_maintenance.py`)**
   - Tables `pm_schedules` and `pm_tasks` with indexes, foreign keys, seeds, CRUD, entry notices, fail-to-work-order escalation, and KPI metrics.
 - [ ] **AC3: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)**
@@ -28,7 +28,7 @@ Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, an
 
 ## Micro-Task Execution Checklist
 
-- [ ] Task 1: Fix flaky date collision in `tests/test_move_logistics.py` to restore 100% green baseline CI.
+- [x] Task 1: Fix flaky date collision in `tests/test_move_logistics.py` to restore 100% green baseline CI.
 - [ ] Task 2: Implement `api/preventative_maintenance.py` schema, enums, seeds, CRUD, entry notice, fail-to-work-order escalation, and metrics.
 - [ ] Task 3: Add Pydantic schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py`.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py`.
