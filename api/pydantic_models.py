@@ -4680,3 +4680,57 @@ class SessionReportRentalRequest(BaseModel):
     platform: str = Field(default="airbnb", max_length=50)
     evidence_summary: str = Field(..., min_length=5, max_length=2000)
     listing_url: str = Field(default="", max_length=500)
+
+
+# --- Preventative Maintenance & Compliance Schemas (v0.53.0) ---
+
+
+class PMScheduleCreateRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=200)
+    category: str = Field(..., min_length=2, max_length=60)
+    frequency: str = Field(default="quarterly", min_length=2, max_length=40)
+    next_run_date: str = Field(..., min_length=4, max_length=30)
+    building_name: str | None = Field(default=None, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    assigned_vendor: str | None = Field(default=None, max_length=120)
+    estimated_duration_minutes: int = Field(default=30, ge=5, le=480)
+    notice_hours_required: int = Field(default=24, ge=0, le=168)
+    is_active: bool = Field(default=True)
+
+
+class PMScheduleUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=200)
+    category: str | None = Field(default=None, min_length=2, max_length=60)
+    frequency: str | None = Field(default=None, min_length=2, max_length=40)
+    next_run_date: str | None = Field(default=None, min_length=4, max_length=30)
+    building_name: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    assigned_vendor: str | None = Field(default=None, max_length=120)
+    estimated_duration_minutes: int | None = Field(default=None, ge=5, le=480)
+    notice_hours_required: int | None = Field(default=None, ge=0, le=168)
+    is_active: bool | None = Field(default=None)
+
+
+class PMScheduleItem(BaseModel):
+    id: str
+    title: str
+    category: str
+    frequency: str
+    building_name: str | None = None
+    description: str = ""
+    assigned_vendor: str | None = None
+    estimated_duration_minutes: int = 30
+    notice_hours_required: int = 24
+    is_active: bool = True
+    next_run_date: str
+    created_at: str
+    updated_at: str
+
+
+class PMScheduleResponse(BaseModel):
+    schedule: PMScheduleItem
+
+
+class PMScheduleListResponse(BaseModel):
+    schedules: list[PMScheduleItem] = Field(default_factory=list)
+    total: int = 0
