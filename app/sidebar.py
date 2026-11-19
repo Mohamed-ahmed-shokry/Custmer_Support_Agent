@@ -213,9 +213,9 @@ from app.api_utils import (
     session_request_concierge_api,
     session_reserve_elevator_api,
     session_schedule_move_api,
-    session_submit_insurance_api,
     session_schedule_pm_task_api,
     session_send_pm_entry_notice_api,
+    session_submit_insurance_api,
     session_submit_sublet_api,
     session_submit_violation_appeal_api,
     sign_lease_renewal,
@@ -6979,19 +6979,22 @@ def _render_session_pm_widget(
                 s_date = next_task.get("scheduled_date", "N/A")
                 sent = "✅ Sent" if next_task.get("entry_notice_sent") else "⏳ Pending"
                 st.caption(f"Next: {cat} on {s_date} (Notice: {sent})")
-                if t_id and not next_task.get("entry_notice_sent"):
-                    if st.button("Send 24h Entry Notice", key=f"btn_sess_pm_notice_{session_id}"):
-                        res = session_send_pm_entry_notice_api(
-                            session_id,
-                            {
-                                "task_id": t_id,
-                                "notice_notes": "Dispatched from resident support session.",
-                                "consent_status": "granted",
-                            },
-                        )
-                        if res:
-                            st.success("24h Notice of Entry dispatched!")
-                            st.rerun()
+                if (
+                    t_id
+                    and not next_task.get("entry_notice_sent")
+                    and st.button("Send 24h Entry Notice", key=f"btn_sess_pm_notice_{session_id}")
+                ):
+                    res = session_send_pm_entry_notice_api(
+                        session_id,
+                        {
+                            "task_id": t_id,
+                            "notice_notes": "Dispatched from resident support session.",
+                            "consent_status": "granted",
+                        },
+                    )
+                    if res:
+                        st.success("24h Notice of Entry dispatched!")
+                        st.rerun()
 
         st.divider()
         st.caption("Quick Schedule PM Inspection")
@@ -7004,7 +7007,9 @@ def _render_session_pm_widget(
                 format_func=lambda x: sched_options.get(x, x),
                 key=f"sess_pm_sched_{session_id}",
             )
-            default_date = (datetime.datetime.now(UTC).date() + datetime.timedelta(days=7)).isoformat()
+            default_date = (
+                datetime.datetime.now(UTC).date() + datetime.timedelta(days=7)
+            ).isoformat()
             sched_date = st.text_input(
                 "Scheduled Date", value=default_date, key=f"sess_pm_date_{session_id}"
             )
