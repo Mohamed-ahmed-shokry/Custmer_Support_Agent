@@ -331,12 +331,19 @@ from api.pydantic_models import (
     PetPolicyUpdateRequest,
     PetResponse,
     PetUpdateRequest,
+    PMEntryNoticeRequest,
     PMMetricsResponse,
     PMScheduleCreateRequest,
     PMScheduleItem,
     PMScheduleListResponse,
     PMScheduleResponse,
     PMScheduleUpdateRequest,
+    PMTaskCompleteRequest,
+    PMTaskCreateRequest,
+    PMTaskItem,
+    PMTaskListResponse,
+    PMTaskResponse,
+    PMTaskUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -8777,3 +8784,89 @@ def update_pm_schedule_route(schedule_id: str, request: PMScheduleUpdateRequest)
     if not updated:
         raise HTTPException(status_code=404, detail=f"PM schedule not found: {schedule_id}")
     return PMScheduleResponse(schedule=PMScheduleItem(**updated))
+
+
+@app.post("/pm/tasks", response_model=PMTaskResponse, status_code=201)
+def create_pm_task_route(request: PMTaskCreateRequest):
+    """Schedule a preventative maintenance task for a unit."""
+    try:
+        created = preventative_maintenance.create_pm_task(
+            schedule_id=request.schedule_id,
+            unit_id=request.unit_id,
+            scheduled_date=request.scheduled_date,
+            tenant_id=request.tenant_id,
+            category=request.category,
+            assigned_technician=request.assigned_technician,
+            inspection_notes=request.inspection_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PMTaskResponse(task=PMTaskItem(**created))
+
+
+@app.get("/pm/tasks", response_model=PMTaskListResponse)
+def list_pm_tasks_route(  # noqa: PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    schedule_id: str | None = None,
+    status: str | None = None,
+    category: str | None = None,
+):
+    """List preventative maintenance tasks with optional filters."""
+    results = preventative_maintenance.list_pm_tasks(
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        schedule_id=schedule_id,
+        status=status,
+        category=category,
+    )
+    return PMTaskListResponse(
+        tasks=[PMTaskItem(**t) for t in results],
+        total=len(results),
+    )
+
+
+@app.get("/pm/tasks/{task_id}", response_model=PMTaskResponse)
+def get_pm_task_route(task_id: str):
+    """Retrieve a preventative maintenance task by ID."""
+    task = preventative_maintenance.get_pm_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"PM task not found: {task_id}")
+    return PMTaskResponse(task=PMTaskItem(**task))
+
+
+@app.patch("/pm/tasks/{task_id}", response_model=PMTaskResponse)
+def update_pm_task_route(task_id: str, request: PMTaskUpdateRequest):
+    """Update fields on an existing preventative maintenance task."""
+    updates = request.model_dump(exclude_unset=True)
+    updated = preventative_maintenance.update_pm_task(task_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"PM task not found: {task_id}")
+    return PMTaskResponse(task=PMTaskItem(**updated))
+
+
+@app.post("/pm/tasks/{task_id}/entry-notice", response_model=PMTaskResponse)
+def send_pm_entry_notice_route(task_id: str, request: PMEntryNoticeRequest):
+    """Issue a formal Notice of Entry for a preventative maintenance task."""
+    updated = preventative_maintenance.send_pm_entry_notice(
+        task_id=task_id,
+        notice_notes=request.notice_notes,
+        consent_status=request.consent_status,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"PM task not found: {task_id}")
+    return PMTaskResponse(task=PMTaskItem(**updated))
+
+
+@app.post("/pm/tasks/{task_id}/complete", response_model=PMTaskResponse)
+def complete_pm_task_route(task_id: str, request: PMTaskCompleteRequest):
+    """Complete a preventative maintenance task as passed or failed."""
+    updated = preventative_maintenance.complete_pm_task(
+        task_id=task_id,
+        passed=request.passed,
+        inspection_notes=request.inspection_notes,
+        auto_create_work_order=request.auto_create_work_order,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"PM task not found: {task_id}")
+    return PMTaskResponse(task=PMTaskItem(**updated))
