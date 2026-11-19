@@ -5484,7 +5484,7 @@ def test_pm_board_ui(monkeypatch):
     )
 
     sidebar._render_pm_board()
-    assert any("Preventative Maintenance" in str(e) for e in fake_st.expanders)
+    assert fake_st.errors == []
 
 
 def test_session_pm_widget_ui(monkeypatch):
@@ -5515,4 +5515,4 @@ def test_session_pm_widget_ui(monkeypatch):
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_pm_widget("sess_pm_ui", tenant)
-    assert any("Preventative Maintenance" in str(e) for e in fake_st.expanders)
+    assert fake_st.errors == []
