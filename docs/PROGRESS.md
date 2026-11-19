@@ -15,7 +15,7 @@ Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, an
   - Endpoints for `/pm/schedules*`, `/pm/tasks*`, `/pm/metrics`, `/units/{id}/pm/summary`, `/tenants/{id}/pm/summary`, and 1-click session actions.
 - [x] **AC5: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
   - Context block `[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]` and 5 macro variables (`{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, `{pm_overdue_count}`).
-- [ ] **AC6: Streamlit API Client Helpers (`app/api_utils.py`)**
+- [x] **AC6: Streamlit API Client Helpers (`app/api_utils.py`)** ✅
   - Typed client API wrappers for all PM endpoints.
 - [ ] **AC7: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)**
   - 4-tab `🔧 Preventative Maintenance` sidebar expander and 1-click resident profile action widget.
@@ -33,7 +33,7 @@ Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, an
 - [x] Task 3: Add Pydantic schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py`.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py`.
 - [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py`.
-- [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py`.
+- [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py`.
 - [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py`.
 - [ ] Task 8: Version bump to `0.53.0` and update documentation.
 - [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
