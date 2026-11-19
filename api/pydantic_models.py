@@ -4822,7 +4822,9 @@ class PMMetricsResponse(BaseModel):
 
 class SessionSendPMEntryNoticeRequest(BaseModel):
     task_id: str = Field(..., min_length=2, max_length=80)
-    notice_notes: str = Field(default="Notice sent during live resident support session.", max_length=1000)
+    notice_notes: str = Field(
+        default="Notice sent during live resident support session.", max_length=1000
+    )
     consent_status: str = Field(default="granted", max_length=40)
 
 
