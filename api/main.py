@@ -32,6 +32,7 @@ from api import (
     packages,
     parking,
     pets,
+    preventative_maintenance,
     sla,
     sublets,
     tenant_context,
@@ -330,6 +331,12 @@ from api.pydantic_models import (
     PetPolicyUpdateRequest,
     PetResponse,
     PetUpdateRequest,
+    PMMetricsResponse,
+    PMScheduleCreateRequest,
+    PMScheduleItem,
+    PMScheduleListResponse,
+    PMScheduleResponse,
+    PMScheduleUpdateRequest,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -8705,3 +8712,68 @@ def session_report_unauthorized_rental_route(
         "message": "Unauthorized rental report logged for management review.",
     }
 
+
+
+# --- Preventative Maintenance & Compliance Routes (v0.53.0) ---
+
+
+@app.get("/pm/metrics", response_model=PMMetricsResponse)
+def get_pm_metrics_route():
+    """Retrieve portfolio preventative maintenance & safety compliance KPIs."""
+    metrics = preventative_maintenance.get_pm_metrics_summary()
+    return PMMetricsResponse(**metrics)
+
+
+@app.post("/pm/schedules", response_model=PMScheduleResponse, status_code=201)
+def create_pm_schedule_route(request: PMScheduleCreateRequest):
+    """Create a recurring preventative maintenance schedule."""
+    created = preventative_maintenance.create_pm_schedule(
+        title=request.title,
+        category=request.category,
+        frequency=request.frequency,
+        next_run_date=request.next_run_date,
+        building_name=request.building_name,
+        description=request.description,
+        assigned_vendor=request.assigned_vendor,
+        estimated_duration_minutes=request.estimated_duration_minutes,
+        notice_hours_required=request.notice_hours_required,
+        is_active=request.is_active,
+    )
+    return PMScheduleResponse(schedule=PMScheduleItem(**created))
+
+
+@app.get("/pm/schedules", response_model=PMScheduleListResponse)
+def list_pm_schedules_route(
+    category: str | None = None,
+    frequency: str | None = None,
+    is_active: bool | None = None,
+):
+    """List preventative maintenance schedules with optional filtering."""
+    results = preventative_maintenance.list_pm_schedules(
+        category=category,
+        frequency=frequency,
+        is_active=is_active,
+    )
+    return PMScheduleListResponse(
+        schedules=[PMScheduleItem(**s) for s in results],
+        total=len(results),
+    )
+
+
+@app.get("/pm/schedules/{schedule_id}", response_model=PMScheduleResponse)
+def get_pm_schedule_route(schedule_id: str):
+    """Retrieve a preventative maintenance schedule by ID."""
+    sched = preventative_maintenance.get_pm_schedule(schedule_id)
+    if not sched:
+        raise HTTPException(status_code=404, detail=f"PM schedule not found: {schedule_id}")
+    return PMScheduleResponse(schedule=PMScheduleItem(**sched))
+
+
+@app.patch("/pm/schedules/{schedule_id}", response_model=PMScheduleResponse)
+def update_pm_schedule_route(schedule_id: str, request: PMScheduleUpdateRequest):
+    """Update fields on an existing preventative maintenance schedule."""
+    updates = request.model_dump(exclude_unset=True)
+    updated = preventative_maintenance.update_pm_schedule(schedule_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"PM schedule not found: {schedule_id}")
+    return PMScheduleResponse(schedule=PMScheduleItem(**updated))
