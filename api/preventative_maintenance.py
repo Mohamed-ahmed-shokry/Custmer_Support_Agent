@@ -460,3 +460,226 @@ def update_pm_schedule(
     finally:
         if close_conn:
             conn.close()
+
+
+def _row_to_task(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "schedule_id": row[1],
+        "unit_id": row[2],
+        "tenant_id": row[3],
+        "category": row[4],
+        "status": row[5],
+        "scheduled_date": row[6],
+        "assigned_technician": row[7],
+        "entry_notice_sent": bool(row[8]),
+        "entry_notice_at": row[9],
+        "resident_consent_status": row[10],
+        "completed_at": row[11],
+        "inspection_notes": row[12] or "",
+        "checklist_passed": bool(row[13]) if row[13] is not None else None,
+        "work_order_id": row[14],
+        "created_at": row[15],
+        "updated_at": row[16],
+        "unit_number": row[17] if len(row) > 17 else None,
+        "tenant_name": row[18] if len(row) > 18 else None,
+    }
+
+
+_TASK_SELECT = """
+    SELECT t.id, t.schedule_id, t.unit_id, t.tenant_id, t.category, t.status,
+           t.scheduled_date, t.assigned_technician, t.entry_notice_sent,
+           t.entry_notice_at, t.resident_consent_status, t.completed_at,
+           t.inspection_notes, t.checklist_passed, t.work_order_id,
+           t.created_at, t.updated_at,
+           u.unit_number,
+           CASE WHEN tn.id IS NOT NULL THEN tn.first_name || ' ' || tn.last_name ELSE NULL END
+    FROM pm_tasks t
+    LEFT JOIN units u ON t.unit_id = u.id
+    LEFT JOIN tenants tn ON t.tenant_id = tn.id
+"""
+
+
+def create_pm_task(  # noqa: PLR0913, PLR0917
+    schedule_id: str,
+    unit_id: str,
+    scheduled_date: str,
+    tenant_id: str | None = None,
+    category: str | None = None,
+    assigned_technician: str | None = None,
+    inspection_notes: str = "",
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Create a preventative maintenance task for a specific unit."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        sched = get_pm_schedule(schedule_id, conn=conn)
+        if not sched:
+            raise ValueError(f"PM schedule not found: {schedule_id}")
+
+        resolved_category = category or sched["category"]
+        resolved_tech = assigned_technician or sched.get("assigned_vendor")
+        task_id = _generate_task_id()
+        now_iso = _now_iso()
+
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO pm_tasks (
+                id, schedule_id, unit_id, tenant_id, category, status,
+                scheduled_date, assigned_technician, entry_notice_sent,
+                resident_consent_status, inspection_notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+            """,
+            (
+                task_id,
+                schedule_id,
+                unit_id,
+                tenant_id,
+                resolved_category,
+                PMTaskStatus.SCHEDULED.value,
+                scheduled_date,
+                resolved_tech,
+                ConsentStatus.PENDING.value,
+                inspection_notes,
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        created = get_pm_task(task_id, conn=conn)
+        assert created is not None
+        webhooks.dispatch_event(
+            "pm.task_scheduled",
+            {
+                "task_id": task_id,
+                "schedule_id": schedule_id,
+                "unit_id": unit_id,
+                "tenant_id": tenant_id,
+                "category": resolved_category,
+                "scheduled_date": scheduled_date,
+            },
+        )
+        return created
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def list_pm_tasks(  # noqa: PLR0913, PLR0917
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    schedule_id: str | None = None,
+    status: str | None = None,
+    category: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    """List preventative maintenance tasks with optional filters."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        query = f"{_TASK_SELECT} WHERE 1=1"
+        params: list[Any] = []
+        if unit_id:
+            query += " AND t.unit_id = ?"
+            params.append(unit_id)
+        if tenant_id:
+            query += " AND t.tenant_id = ?"
+            params.append(tenant_id)
+        if schedule_id:
+            query += " AND t.schedule_id = ?"
+            params.append(schedule_id)
+        if status:
+            query += " AND t.status = ?"
+            params.append(status)
+        if category:
+            query += " AND t.category = ?"
+            params.append(category)
+        query += " ORDER BY t.scheduled_date ASC, t.created_at DESC"
+
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return [_row_to_task(r) for r in cursor.fetchall()]
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def get_pm_task(
+    task_id: str,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Retrieve a preventative maintenance task by ID."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        cursor = conn.cursor()
+        cursor.execute(f"{_TASK_SELECT} WHERE t.id = ?", (task_id,))
+        row = cursor.fetchone()
+        return _row_to_task(row) if row else None
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def update_pm_task(
+    task_id: str,
+    updates: dict[str, Any],
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Update fields on an existing preventative maintenance task."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        existing = get_pm_task(task_id, conn=conn)
+        if not existing:
+            return None
+
+        allowed = {
+            "status",
+            "scheduled_date",
+            "assigned_technician",
+            "resident_consent_status",
+            "inspection_notes",
+        }
+        set_clauses: list[str] = []
+        params: list[Any] = []
+        for k, v in updates.items():
+            if k in allowed:
+                set_clauses.append(f"{k} = ?")
+                params.append(v)
+
+        if not set_clauses:
+            return existing
+
+        set_clauses.append("updated_at = ?")
+        params.append(_now_iso())
+        params.append(task_id)
+
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE pm_tasks SET {', '.join(set_clauses)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+        return get_pm_task(task_id, conn=conn)
+    finally:
+        if close_conn:
+            conn.close()
