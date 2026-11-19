@@ -6285,7 +6285,7 @@ def session_report_unauthorized_rental_api(
 # --- Preventative Maintenance & Compliance API Helpers (v0.53.0) ---
 
 
-def _pm_call(
+def _pm_call(  # noqa: PLR0913, PLR0917
     method: str,
     path: str,
     ok_status: int | tuple[int, ...],
@@ -6296,12 +6296,12 @@ def _pm_call(
     """Shared request helper for preventative maintenance endpoints."""
     try:
         resp = getattr(requests, method)(
-            f"{API_URL}{path}", headers=_api_headers(), timeout=15, **kwargs
+            f"{API_BASE_URL}{path}", headers=_request_headers(), timeout=15, **kwargs
         )
         valid = ok_status if isinstance(ok_status, tuple) else (ok_status,)
         if resp.status_code in valid:
-            return resp.json()
-        st.error(f"{err_prefix}: {_error_detail(resp)}")
+            return cast(dict[str, Any], resp.json())
+        show_api_error(err_prefix, resp)
         return None
     except Exception as exc:
         st.error(f"Error {exc_action}: {exc}")
