@@ -7,8 +7,9 @@ import secrets
 import sqlite3
 from datetime import UTC
 from enum import StrEnum
+from typing import Any
 
-from api import db_utils
+from api import db_utils, webhooks
 
 
 class PMCategory(StrEnum):
@@ -250,3 +251,212 @@ def _seed_pm_data(cursor: sqlite3.Cursor) -> None:
                     now_iso,
                 ),
             )
+
+
+def _row_to_schedule(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "title": row[1],
+        "category": row[2],
+        "frequency": row[3],
+        "building_name": row[4],
+        "description": row[5],
+        "assigned_vendor": row[6],
+        "estimated_duration_minutes": row[7],
+        "notice_hours_required": row[8],
+        "is_active": bool(row[9]),
+        "next_run_date": row[10],
+        "created_at": row[11],
+        "updated_at": row[12],
+    }
+
+
+def create_pm_schedule(
+    title: str,
+    category: str,
+    frequency: str,
+    next_run_date: str,
+    building_name: str | None = None,
+    description: str = "",
+    assigned_vendor: str | None = None,
+    estimated_duration_minutes: int = 30,
+    notice_hours_required: int = 24,
+    is_active: bool = True,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Create a recurring preventative maintenance program schedule."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        schedule_id = _generate_schedule_id()
+        now_iso = _now_iso()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO pm_schedules (
+                id, title, category, frequency, building_name, description,
+                assigned_vendor, estimated_duration_minutes, notice_hours_required,
+                is_active, next_run_date, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                schedule_id,
+                title,
+                category,
+                frequency,
+                building_name,
+                description,
+                assigned_vendor,
+                estimated_duration_minutes,
+                notice_hours_required,
+                1 if is_active else 0,
+                next_run_date,
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        created = get_pm_schedule(schedule_id, conn=conn)
+        assert created is not None
+        webhooks.dispatch_event(
+            "pm.schedule_created",
+            {
+                "schedule_id": schedule_id,
+                "title": title,
+                "category": category,
+                "frequency": frequency,
+                "next_run_date": next_run_date,
+            },
+        )
+        return created
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def list_pm_schedules(
+    category: str | None = None,
+    frequency: str | None = None,
+    is_active: bool | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    """List preventative maintenance schedules with optional filters."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        query = (
+            "SELECT id, title, category, frequency, building_name, description, "
+            "assigned_vendor, estimated_duration_minutes, notice_hours_required, "
+            "is_active, next_run_date, created_at, updated_at "
+            "FROM pm_schedules WHERE 1=1"
+        )
+        params: list[Any] = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if frequency:
+            query += " AND frequency = ?"
+            params.append(frequency)
+        if is_active is not None:
+            query += " AND is_active = ?"
+            params.append(1 if is_active else 0)
+        query += " ORDER BY next_run_date ASC, created_at DESC"
+
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return [_row_to_schedule(r) for r in cursor.fetchall()]
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def get_pm_schedule(
+    schedule_id: str,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Retrieve a preventative maintenance schedule by ID."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, title, category, frequency, building_name, description,
+                   assigned_vendor, estimated_duration_minutes, notice_hours_required,
+                   is_active, next_run_date, created_at, updated_at
+            FROM pm_schedules WHERE id = ?
+            """,
+            (schedule_id,),
+        )
+        row = cursor.fetchone()
+        return _row_to_schedule(row) if row else None
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def update_pm_schedule(
+    schedule_id: str,
+    updates: dict[str, Any],
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Update fields on an existing preventative maintenance schedule."""
+    close_conn = False
+    if conn is None:
+        conn = db_utils.get_db_connection()
+        close_conn = True
+
+    try:
+        init_preventative_maintenance_db(conn)
+        existing = get_pm_schedule(schedule_id, conn=conn)
+        if not existing:
+            return None
+
+        allowed = {
+            "title",
+            "category",
+            "frequency",
+            "building_name",
+            "description",
+            "assigned_vendor",
+            "estimated_duration_minutes",
+            "notice_hours_required",
+            "is_active",
+            "next_run_date",
+        }
+        set_clauses: list[str] = []
+        params: list[Any] = []
+        for k, v in updates.items():
+            if k in allowed:
+                set_clauses.append(f"{k} = ?")
+                params.append((1 if v else 0) if k == "is_active" else v)
+
+        if not set_clauses:
+            return existing
+
+        set_clauses.append("updated_at = ?")
+        params.append(_now_iso())
+        params.append(schedule_id)
+
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE pm_schedules SET {', '.join(set_clauses)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+        return get_pm_schedule(schedule_id, conn=conn)
+    finally:
+        if close_conn:
+            conn.close()
