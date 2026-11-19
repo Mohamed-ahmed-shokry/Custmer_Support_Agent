@@ -6280,3 +6280,226 @@ def session_report_unauthorized_rental_api(
         "reporting unauthorized rental from support session",
         json=payload,
     )
+
+
+# --- Preventative Maintenance & Compliance API Helpers (v0.53.0) ---
+
+
+def _pm_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    ok_status: int | tuple[int, ...],
+    err_prefix: str,
+    exc_action: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Shared request helper for preventative maintenance endpoints."""
+    try:
+        resp = getattr(requests, method)(
+            f"{API_BASE_URL}{path}", headers=_request_headers(), timeout=15, **kwargs
+        )
+        valid = ok_status if isinstance(ok_status, tuple) else (ok_status,)
+        if resp.status_code in valid:
+            return cast(dict[str, Any], resp.json())
+        show_api_error(err_prefix, resp)
+        return None
+    except Exception as exc:
+        st.error(f"Error {exc_action}: {exc}")
+        return None
+
+
+def get_pm_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio preventative maintenance & compliance KPIs."""
+    return _pm_call(
+        "get",
+        "/pm/metrics",
+        HTTP_OK,
+        "Failed to load PM metrics",
+        "loading PM metrics",
+    )
+
+
+def create_pm_schedule_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a recurring preventative maintenance schedule."""
+    data = _pm_call(
+        "post",
+        "/pm/schedules",
+        HTTP_CREATED,
+        "Failed to create PM schedule",
+        "creating PM schedule",
+        json=payload,
+    )
+    return data.get("schedule") if data else None
+
+
+def list_pm_schedules_api(
+    category: str | None = None,
+    frequency: str | None = None,
+    is_active: bool | None = None,
+) -> list[dict[str, Any]]:
+    """List preventative maintenance schedules with optional filters."""
+    params: dict[str, Any] = {}
+    if category:
+        params["category"] = category
+    if frequency:
+        params["frequency"] = frequency
+    if is_active is not None:
+        params["is_active"] = is_active
+    data = _pm_call(
+        "get",
+        "/pm/schedules",
+        HTTP_OK,
+        "Failed to list PM schedules",
+        "listing PM schedules",
+        params=params,
+    )
+    return data.get("schedules", []) if data else []
+
+
+def update_pm_schedule_api(schedule_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update a preventative maintenance schedule."""
+    data = _pm_call(
+        "patch",
+        f"/pm/schedules/{schedule_id}",
+        HTTP_OK,
+        f"Failed to update PM schedule '{schedule_id}'",
+        "updating PM schedule",
+        json=payload,
+    )
+    return data.get("schedule") if data else None
+
+
+def create_pm_task_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Schedule a preventative maintenance task."""
+    data = _pm_call(
+        "post",
+        "/pm/tasks",
+        HTTP_CREATED,
+        "Failed to schedule PM task",
+        "scheduling PM task",
+        json=payload,
+    )
+    return data.get("task") if data else None
+
+
+def list_pm_tasks_api(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    schedule_id: str | None = None,
+    status: str | None = None,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """List preventative maintenance tasks with optional filters."""
+    params: dict[str, Any] = {}
+    if unit_id:
+        params["unit_id"] = unit_id
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if schedule_id:
+        params["schedule_id"] = schedule_id
+    if status:
+        params["status"] = status
+    if category:
+        params["category"] = category
+    data = _pm_call(
+        "get",
+        "/pm/tasks",
+        HTTP_OK,
+        "Failed to list PM tasks",
+        "listing PM tasks",
+        params=params,
+    )
+    return data.get("tasks", []) if data else []
+
+
+def send_pm_entry_notice_api(
+    task_id: str,
+    notice_notes: str = "",
+    consent_status: str = "pending",
+) -> dict[str, Any] | None:
+    """Issue a formal Notice of Entry for a PM task."""
+    data = _pm_call(
+        "post",
+        f"/pm/tasks/{task_id}/entry-notice",
+        HTTP_OK,
+        f"Failed to send entry notice for '{task_id}'",
+        "sending PM entry notice",
+        json={"notice_notes": notice_notes, "consent_status": consent_status},
+    )
+    return data.get("task") if data else None
+
+
+def complete_pm_task_api(
+    task_id: str,
+    passed: bool,
+    inspection_notes: str = "",
+    auto_create_work_order: bool = True,
+) -> dict[str, Any] | None:
+    """Mark a preventative maintenance task passed or failed."""
+    data = _pm_call(
+        "post",
+        f"/pm/tasks/{task_id}/complete",
+        HTTP_OK,
+        f"Failed to complete PM task '{task_id}'",
+        "completing PM task",
+        json={
+            "passed": passed,
+            "inspection_notes": inspection_notes,
+            "auto_create_work_order": auto_create_work_order,
+        },
+    )
+    return data.get("task") if data else None
+
+
+def get_unit_pm_summary_api(unit_id: str) -> dict[str, Any] | None:
+    """Fetch preventative maintenance compliance summary for a unit."""
+    return _pm_call(
+        "get",
+        f"/units/{unit_id}/pm/summary",
+        HTTP_OK,
+        f"Failed to fetch PM summary for unit '{unit_id}'",
+        "fetching unit PM summary",
+    )
+
+
+def get_tenant_pm_summary_api(tenant_id: str) -> dict[str, Any] | None:
+    """Fetch preventative maintenance compliance summary for a resident."""
+    return _pm_call(
+        "get",
+        f"/tenants/{tenant_id}/pm/summary",
+        HTTP_OK,
+        f"Failed to fetch PM summary for resident '{tenant_id}'",
+        "fetching resident PM summary",
+    )
+
+
+def session_send_pm_entry_notice_api(
+    session_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """1-click Notice of Entry dispatch directly from an active session."""
+    data = _pm_call(
+        "post",
+        f"/sessions/{session_id}/send-pm-entry-notice",
+        HTTP_OK,
+        f"Failed to send PM entry notice for session '{session_id}'",
+        "sending PM entry notice from session",
+        json=payload,
+    )
+    return data.get("task") if data else None
+
+
+def session_schedule_pm_task_api(
+    session_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """1-click PM task scheduling directly from an active session."""
+    data = _pm_call(
+        "post",
+        f"/sessions/{session_id}/schedule-pm-task",
+        HTTP_CREATED,
+        f"Failed to schedule PM task for session '{session_id}'",
+        "scheduling PM task from session",
+        json=payload,
+    )
+    return data.get("task") if data else None

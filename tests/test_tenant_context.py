@@ -18,6 +18,7 @@ from api import (
     packages,
     parking,
     pets,
+    preventative_maintenance,
     sublets,
     utilities,
     vendors,
@@ -1035,3 +1036,33 @@ def test_render_template_with_sublet_variables():
     assert "Sarah Connor" in rendered
     assert "Alex Rivera" in rendered
     assert "approved" in rendered
+
+
+def test_preventative_maintenance_rag_context_and_macros():
+    """Verify preventative maintenance RAG context injection and macro resolution."""
+    sid = "sess-pm-context"
+    db_utils.insert_application_logs(
+        sid, "PM status", "Checking upcoming HVAC filter change", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    preventative_maintenance.init_preventative_maintenance_db()
+
+    context = build_tenant_rag_context(session_id=sid)
+    assert "[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]" in context
+    assert "Unit PM Compliance Status" in context
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "pm_compliance_status" in variables
+    assert "pm_next_inspection_date" in variables
+    assert "pm_schedule_type" in variables
+    assert "pm_entry_notice_status" in variables
+    assert "pm_overdue_count" in variables
+
+    template = (
+        "Hi {customer_name}, your unit PM status is {pm_compliance_status}. "
+        "Next inspection ({pm_schedule_type}) is on {pm_next_inspection_date} "
+        "with notice status {pm_entry_notice_status}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered

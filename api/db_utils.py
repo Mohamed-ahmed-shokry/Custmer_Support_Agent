@@ -345,6 +345,12 @@ VALID_WEBHOOK_EVENTS = {
     "sublet.cancelled",
     "sublet.violation_detected",
     "sublet.fee_assessed",
+    "pm.schedule_created",
+    "pm.task_scheduled",
+    "pm.entry_notice_sent",
+    "pm.task_completed",
+    "pm.task_failed",
+    "pm.compliance_overdue",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

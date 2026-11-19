@@ -5430,3 +5430,89 @@ def test_session_sublets_widget_ui(monkeypatch):
 
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_sublets_widget("sess_test_1", tenant)
+
+
+def test_pm_board_ui(monkeypatch):
+    """Verify rendering of Preventative Maintenance & Safety sidebar board."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_pm_schedules_api",
+        lambda **kw: [
+            {
+                "id": "pms_1",
+                "title": "Quarterly HVAC Filter",
+                "category": "hvac_filter",
+                "frequency": "quarterly",
+                "is_active": True,
+                "next_run_date": "2027-01-15",
+                "assigned_vendor": "Apex HVAC",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_pm_tasks_api",
+        lambda **kw: [
+            {
+                "id": "pmt_1",
+                "unit_id": "unit_101",
+                "unit_number": "101",
+                "category": "hvac_filter",
+                "status": "scheduled",
+                "scheduled_date": "2027-01-15",
+                "assigned_technician": "Carlos",
+                "entry_notice_sent": False,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "get_pm_metrics_api",
+        lambda: {
+            "active_schedules": 2,
+            "total_tasks": 5,
+            "overdue_tasks": 0,
+            "pass_rate_pct": 100.0,
+            "scheduled_tasks": 3,
+            "notice_sent_tasks": 1,
+            "passed_tasks": 1,
+            "failed_tasks": 0,
+        },
+    )
+
+    sidebar._render_pm_board()
+    assert fake_st.errors == []
+
+
+def test_session_pm_widget_ui(monkeypatch):
+    """Verify rendering of 1-click resident session PM widget."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_tenant_pm_summary_api",
+        lambda tid: {
+            "tenant_id": tid,
+            "compliance_status": "scheduled",
+            "overdue_count": 0,
+            "next_scheduled_task": {
+                "id": "pmt_101",
+                "category": "hvac_filter",
+                "scheduled_date": "2027-02-01",
+                "entry_notice_sent": False,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_pm_schedules_api",
+        lambda **kw: [{"id": "pms_1", "title": "Quarterly HVAC Filter"}],
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_pm_widget("sess_pm_ui", tenant)
+    assert fake_st.errors == []

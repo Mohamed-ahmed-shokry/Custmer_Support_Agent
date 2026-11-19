@@ -4073,3 +4073,74 @@ def test_sublet_client_api_utils_errors(monkeypatch):
     assert api_utils.get_tenant_sublet_summary_api("fail") is None
     assert api_utils.session_submit_sublet_api("fail", {}) is None
     assert api_utils.session_report_unauthorized_rental_api("fail", {}) is None
+
+
+def test_pm_client_api_utils_success(monkeypatch):
+    """Verify happy-path behavior of preventative maintenance client API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    class PMRouter:
+        def get(self, url, **kwargs):
+            if url.endswith("/pm/metrics"):
+                return FakeResponse(200, {"total_schedules": 2, "pass_rate_pct": 100.0})
+            if url.endswith("/pm/schedules"):
+                return FakeResponse(200, {"schedules": [{"id": "pms_1"}], "total": 1})
+            if url.endswith("/pm/tasks"):
+                return FakeResponse(200, {"tasks": [{"id": "pmt_1"}], "total": 1})
+            if url.endswith("/pm/summary"):
+                return FakeResponse(200, {"compliance_status": "scheduled", "total_tasks": 1})
+            return FakeResponse(404, {"detail": "Not found"})
+
+        def post(self, url, **kwargs):
+            if url.endswith("/pm/schedules"):
+                return FakeResponse(201, {"schedule": {"id": "pms_new"}})
+            if url.endswith("/pm/tasks") or url.endswith("/schedule-pm-task"):
+                return FakeResponse(201, {"task": {"id": "pmt_new"}})
+            if url.endswith("/entry-notice") or url.endswith("/complete") or url.endswith(
+                "/send-pm-entry-notice"
+            ):
+                return FakeResponse(200, {"task": {"id": "pmt_upd", "entry_notice_sent": True}})
+            return FakeResponse(400, {"detail": "Bad request"})
+
+        def patch(self, url, **kwargs):
+            if "/pm/schedules/" in url:
+                return FakeResponse(200, {"schedule": {"id": "pms_1", "is_active": False}})
+            return FakeResponse(404, {"detail": "Not found"})
+
+    monkeypatch.setattr(api_utils, "requests", PMRouter())
+
+    expected_schedules = 2
+    assert api_utils.get_pm_metrics_api()["total_schedules"] == expected_schedules
+    assert api_utils.create_pm_schedule_api({"title": "HVAC"})["id"] == "pms_new"
+    assert len(api_utils.list_pm_schedules_api(category="hvac_filter")) == 1
+    assert api_utils.update_pm_schedule_api("pms_1", {"is_active": False})["is_active"] is False
+
+    assert api_utils.create_pm_task_api({"schedule_id": "pms_1"})["id"] == "pmt_new"
+    assert len(api_utils.list_pm_tasks_api(unit_id="unit_101", status="scheduled")) == 1
+    assert api_utils.send_pm_entry_notice_api("pmt_1")["entry_notice_sent"] is True
+    assert api_utils.complete_pm_task_api("pmt_1", passed=True)["id"] == "pmt_upd"
+    assert api_utils.get_unit_pm_summary_api("unit_101")["compliance_status"] == "scheduled"
+    assert api_utils.get_tenant_pm_summary_api("tenant_1")["compliance_status"] == "scheduled"
+    assert api_utils.session_send_pm_entry_notice_api("s1", {"task_id": "pmt_1"})["id"] == "pmt_upd"
+    assert api_utils.session_schedule_pm_task_api("s1", {"schedule_id": "pms_1"})["id"] == "pmt_new"
+
+
+def test_pm_client_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in preventative maintenance client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_pm_metrics_api() is None
+    assert api_utils.create_pm_schedule_api({}) is None
+    assert api_utils.list_pm_schedules_api() == []
+    assert api_utils.update_pm_schedule_api("pms_1", {}) is None
+    assert api_utils.create_pm_task_api({}) is None
+    assert api_utils.list_pm_tasks_api() == []
+    assert api_utils.send_pm_entry_notice_api("pmt_1") is None
+    assert api_utils.complete_pm_task_api("pmt_1", passed=False) is None
+    assert api_utils.get_unit_pm_summary_api("unit_101") is None
+    assert api_utils.get_tenant_pm_summary_api("tenant_1") is None
+    assert api_utils.session_send_pm_entry_notice_api("s1", {}) is None
+    assert api_utils.session_schedule_pm_task_api("s1", {}) is None
