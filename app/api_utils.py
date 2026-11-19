@@ -6280,3 +6280,90 @@ def session_report_unauthorized_rental_api(
         "reporting unauthorized rental from support session",
         json=payload,
     )
+
+
+# --- Preventative Maintenance & Compliance API Helpers (v0.53.0) ---
+
+
+def _pm_call(
+    method: str,
+    path: str,
+    ok_status: int | tuple[int, ...],
+    err_prefix: str,
+    exc_action: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    """Shared request helper for preventative maintenance endpoints."""
+    try:
+        resp = getattr(requests, method)(
+            f"{API_URL}{path}", headers=_api_headers(), timeout=15, **kwargs
+        )
+        valid = ok_status if isinstance(ok_status, tuple) else (ok_status,)
+        if resp.status_code in valid:
+            return resp.json()
+        st.error(f"{err_prefix}: {_error_detail(resp)}")
+        return None
+    except Exception as exc:
+        st.error(f"Error {exc_action}: {exc}")
+        return None
+
+
+def get_pm_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio preventative maintenance & compliance KPIs."""
+    return _pm_call(
+        "get",
+        "/pm/metrics",
+        HTTP_OK,
+        "Failed to load PM metrics",
+        "loading PM metrics",
+    )
+
+
+def create_pm_schedule_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a recurring preventative maintenance schedule."""
+    data = _pm_call(
+        "post",
+        "/pm/schedules",
+        HTTP_CREATED,
+        "Failed to create PM schedule",
+        "creating PM schedule",
+        json=payload,
+    )
+    return data.get("schedule") if data else None
+
+
+def list_pm_schedules_api(
+    category: str | None = None,
+    frequency: str | None = None,
+    is_active: bool | None = None,
+) -> list[dict[str, Any]]:
+    """List preventative maintenance schedules with optional filters."""
+    params: dict[str, Any] = {}
+    if category:
+        params["category"] = category
+    if frequency:
+        params["frequency"] = frequency
+    if is_active is not None:
+        params["is_active"] = is_active
+    data = _pm_call(
+        "get",
+        "/pm/schedules",
+        HTTP_OK,
+        "Failed to list PM schedules",
+        "listing PM schedules",
+        params=params,
+    )
+    return data.get("schedules", []) if data else []
+
+
+def update_pm_schedule_api(schedule_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Update a preventative maintenance schedule."""
+    data = _pm_call(
+        "patch",
+        f"/pm/schedules/{schedule_id}",
+        HTTP_OK,
+        f"Failed to update PM schedule '{schedule_id}'",
+        "updating PM schedule",
+        json=payload,
+    )
+    return data.get("schedule") if data else None
