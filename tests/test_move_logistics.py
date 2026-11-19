@@ -132,7 +132,7 @@ def test_update_move_event_and_checklist(memory_db):
 
 def test_book_freight_elevator_and_collision_prevention(memory_db):
     """Test elevator booking and collision prevention."""
-    booking_date = "2026-11-25"
+    booking_date = "2099-06-15"
     slot = ElevatorSlot.SLOT_MORNING_08_12.value
 
     b1 = move_logistics.book_freight_elevator(
