@@ -6973,7 +6973,7 @@ def _render_session_pm_widget(
     if not tenant_id:
         return
 
-    with st.expander("🔧 Preventative Maintenance & Entry Notice", expanded=False):
+    with st.expander("🔧 Preventative Maintenance & Entry Notice"):
         summary = get_tenant_pm_summary_api(tenant_id)
         if summary:
             status = str(summary.get("compliance_status", "compliant")).upper()
@@ -7166,7 +7166,7 @@ def _render_pm_kpis_tab() -> None:
 
 def _render_pm_board() -> None:
     """Render sidebar expander for Preventative Maintenance & Safety Compliance."""
-    with st.expander("🔧 Preventative Maintenance & Safety", expanded=False):
+    with st.expander("🔧 Preventative Maintenance & Safety"):
         tab1, tab2, tab3 = st.tabs(["Programs", "Unit Tasks", "Safety KPIs"])
         with tab1:
             _render_pm_schedules_tab()
