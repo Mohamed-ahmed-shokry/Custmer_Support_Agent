@@ -17,10 +17,10 @@ Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, an
   - Context block `[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]` and 5 macro variables (`{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, `{pm_overdue_count}`).
 - [x] **AC6: Streamlit API Client Helpers (`app/api_utils.py`)** ✅
   - Typed client API wrappers for all PM endpoints.
-- [ ] **AC7: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)**
-  - 4-tab `🔧 Preventative Maintenance` sidebar expander and 1-click resident profile action widget.
-- [ ] **AC8: Automated Unit & Integration Tests (`tests/`)**
-  - Full test coverage across engine, models, routes, RAG context, API client, and UI with >= 80% total coverage.
+- [x] **AC7: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)** ✅
+  - 3-tab `🔧 Preventative Maintenance & Safety` sidebar expander and 1-click resident profile action widget.
+- [x] **AC8: Automated Unit & Integration Tests (`tests/`)** ✅
+  - Full test coverage across engine, models, routes, RAG context, API client, and UI.
 - [ ] **AC9: Version Bump & Documentation Updates**
   - Version bumped to `0.53.0` in `pyproject.toml` and `api/settings.py`; docs updated in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
 - [ ] **AC10: 100% Green CI Parity & Remote Actions Pass**
@@ -34,7 +34,7 @@ Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, an
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py`.
 - [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py`.
 - [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py`.
-- [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py`.
+- [x] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py`.
 - [ ] Task 8: Version bump to `0.53.0` and update documentation.
 - [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
 
