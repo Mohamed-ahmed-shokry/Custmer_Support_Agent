@@ -1401,3 +1401,42 @@ The Resident Renters Insurance Compliance Engine automates proof-of-insurance re
   - `{current_occupancy_count}`: Current registered occupants (e.g. `2`)
   - `{registered_occupants_count}`: Number of guests and subtenants registered
   - `{unauthorized_rental_alerts_count}`: Number of unauthorized rental alerts on record
+
+
+## Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance (v0.53.0)
+
+### Maintenance Programs & Schedules
+- `POST /pm/schedules`: Create a recurring preventative maintenance schedule (`title`, `category`, `frequency`, `next_run_date`, `building_name`, `description`, `assigned_vendor`, `estimated_duration_minutes`, `notice_hours_required`, `is_active`). Dispatches `pm.schedule_created` webhook.
+- `GET /pm/schedules`: List preventative maintenance programs filtered by `category`, `frequency`, and `is_active`.
+- `GET /pm/schedules/{id}`: Retrieve details of a PM schedule.
+- `PATCH /pm/schedules/{id}`: Update program fields or pause/activate a schedule.
+
+### Unit Tasks, Legal Entry Notices & Escalation
+- `POST /pm/tasks`: Schedule a unit-level preventative maintenance inspection (`schedule_id`, `unit_id`, `scheduled_date`, `tenant_id`, `category`, `assigned_technician`, `inspection_notes`). Dispatches `pm.task_scheduled` webhook.
+- `GET /pm/tasks`: List PM tasks filtered by `unit_id`, `tenant_id`, `schedule_id`, `status`, and `category`.
+- `GET /pm/tasks/{id}`: Retrieve a PM task with joined unit number and resident name.
+- `PATCH /pm/tasks/{id}`: Update task status, scheduled date, technician, consent, or notes.
+- `POST /pm/tasks/{id}/entry-notice`: Issue a formal 24h/48h legal Notice of Entry (`notice_notes`, `consent_status`). Transitions `scheduled` -> `notice_sent` and dispatches `pm.entry_notice_sent` webhook.
+- `POST /pm/tasks/{id}/complete`: Complete a PM inspection (`passed`, `inspection_notes`, `auto_create_work_order`). Failed inspections automatically create a linked high-priority repair `work_orders` record and dispatch `pm.task_failed` (or `pm.task_completed` when passed).
+
+### Summaries, KPIs & 1-Click Session Actions
+- `GET /pm/metrics`: Portfolio preventative maintenance KPIs (`active_schedules`, `total_tasks`, `overdue_tasks`, `pass_rate_pct`).
+- `GET /units/{id}/pm/summary`: Unit-level PM compliance status, overdue count, next scheduled inspection, and tasks.
+- `GET /tenants/{id}/pm/summary`: Resident-level PM compliance status and upcoming inspections.
+- `POST /sessions/{id}/send-pm-entry-notice`: 1-click Notice of Entry dispatch directly from an active support session (`task_id`, `notice_notes`, `consent_status`).
+- `POST /sessions/{id}/schedule-pm-task`: 1-click PM inspection scheduling directly from an active support session (`schedule_id`, `scheduled_date`, `assigned_technician`, `inspection_notes`).
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**:
+  ```text
+  [PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]
+  - Unit PM Compliance Status: SCHEDULED (Overdue tasks: 0)
+  - Next Inspection: Hvac Filter on 2026-11-29 (Notice Sent | Consent: GRANTED)
+  [END PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]
+  ```
+- **Macro Template Variables**:
+  - `{pm_next_inspection_date}`: Next scheduled PM inspection date
+  - `{pm_schedule_type}`: Category of the next inspection (`hvac_filter`, `smoke_co_detector`, etc.)
+  - `{pm_compliance_status}`: Compliance status (`compliant`, `scheduled`, `overdue`, `action_required`)
+  - `{pm_entry_notice_status}`: Notice of Entry status (`sent`, `pending`, `not_sent`)
+  - `{pm_overdue_count}`: Number of overdue open PM tasks
