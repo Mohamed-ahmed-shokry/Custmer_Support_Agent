@@ -33,6 +33,7 @@ from api import (
     parking,
     pets,
     preventative_maintenance,
+    security_deposits,
     sla,
     sublets,
     tenant_context,
@@ -199,6 +200,10 @@ from api.pydantic_models import (
     DeleteDocumentResponse,
     DeleteFileRequest,
     DeleteSessionResponse,
+    DepositDeductionCreateRequest,
+    DepositDeductionItem,
+    DepositDeductionListResponse,
+    DepositMetricsResponse,
     DocumentChunkInfo,
     DocumentDetailResponse,
     DocumentInfo,
@@ -359,6 +364,10 @@ from api.pydantic_models import (
     ReservationUpdateRequest,
     SearchInput,
     SearchResponse,
+    SecurityDepositCreateRequest,
+    SecurityDepositItem,
+    SecurityDepositListResponse,
+    SecurityDepositUpdateRequest,
     SessionAcknowledgeAlertRequest,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
@@ -8972,3 +8981,121 @@ def session_schedule_pm_task_route(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PMTaskResponse(task=PMTaskItem(**created))
+
+
+# --- Security Deposit Escrow, Deductions & Dispute Routes (v0.54.0) ---
+
+
+@app.get("/deposits/metrics", response_model=DepositMetricsResponse)
+def get_deposit_metrics_route():
+    """Portfolio-wide security deposit escrow and statutory compliance metrics."""
+    metrics = security_deposits.get_deposit_metrics_summary()
+    return DepositMetricsResponse(**metrics)
+
+
+@app.post("/deposits", response_model=SecurityDepositItem, status_code=201)
+def create_deposit_route(request: SecurityDepositCreateRequest):
+    """Create a new security deposit escrow record."""
+    try:
+        created = security_deposits.create_deposit(
+            unit_id=request.unit_id,
+            principal_amount=request.principal_amount,
+            tenant_id=request.tenant_id,
+            deposit_type=request.deposit_type,
+            accrued_interest=request.accrued_interest,
+            escrow_account_ref=request.escrow_account_ref,
+            received_date=request.received_date,
+            move_out_date=request.move_out_date,
+            statutory_deadline_date=request.statutory_deadline_date,
+            forwarding_address=request.forwarding_address,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SecurityDepositItem(**created)
+
+
+@app.get("/deposits", response_model=SecurityDepositListResponse)
+def list_deposits_route(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    deposit_type: str | None = None,
+):
+    """List security deposits with optional unit, tenant, status, or type filters."""
+    results = security_deposits.list_deposits(
+        unit_id=unit_id,
+        tenant_id=tenant_id,
+        status=status,
+        deposit_type=deposit_type,
+    )
+    return SecurityDepositListResponse(
+        deposits=[SecurityDepositItem(**d) for d in results],
+        total=len(results),
+    )
+
+
+@app.get("/deposits/{deposit_id}", response_model=SecurityDepositItem)
+def get_deposit_route(deposit_id: str):
+    """Retrieve a single security deposit with deductions and disputes."""
+    dep = security_deposits.get_deposit(deposit_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail=f"Security deposit not found: {deposit_id}")
+    return SecurityDepositItem(**dep)
+
+
+@app.patch("/deposits/{deposit_id}", response_model=SecurityDepositItem)
+def update_deposit_route(deposit_id: str, request: SecurityDepositUpdateRequest):
+    """Update mutable metadata on a security deposit."""
+    updates = request.model_dump(exclude_none=True)
+    try:
+        updated = security_deposits.update_deposit(deposit_id, updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Security deposit not found: {deposit_id}")
+    return SecurityDepositItem(**updated)
+
+
+@app.post(
+    "/deposits/{deposit_id}/deductions",
+    response_model=DepositDeductionItem,
+    status_code=201,
+)
+def add_deposit_deduction_route(deposit_id: str, request: DepositDeductionCreateRequest):
+    """Add an itemized move-out deduction to a security deposit."""
+    try:
+        ded = security_deposits.add_deduction(
+            deposit_id=deposit_id,
+            category=request.category,
+            description=request.description,
+            amount=request.amount,
+            evidence_ref=request.evidence_ref,
+            approved=request.approved,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return DepositDeductionItem(**ded)
+
+
+@app.get("/deposits/{deposit_id}/deductions", response_model=DepositDeductionListResponse)
+def list_deposit_deductions_route(deposit_id: str):
+    """List all itemized deductions for a security deposit."""
+    dep = security_deposits.get_deposit(deposit_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail=f"Security deposit not found: {deposit_id}")
+    deds = security_deposits.list_deductions(deposit_id)
+    return DepositDeductionListResponse(
+        deductions=[DepositDeductionItem(**d) for d in deds],
+        total=len(deds),
+    )
+
+
+@app.delete("/deposits/deductions/{deduction_id}")
+def delete_deposit_deduction_route(deduction_id: str):
+    """Remove an itemized deduction by ID."""
+    deleted = security_deposits.delete_deduction(deduction_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Deduction not found: {deduction_id}")
+    return {"deleted": True, "deduction_id": deduction_id}
