@@ -794,3 +794,162 @@ def issue_refund(
     webhooks.dispatch_event("deposit.refund_issued", updated)
     return updated
 
+
+def open_dispute(
+    deposit_id: str,
+    disputed_amount: float,
+    reason: str,
+    *,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """Open a formal resident dispute against security deposit deductions."""
+    if disputed_amount <= 0:
+        raise ValueError("disputed_amount must be greater than 0")
+    if not reason or not reason.strip():
+        raise ValueError("reason is required")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM security_deposits WHERE id = ?", (deposit_id,))
+        dep_row = cursor.fetchone()
+        if dep_row is None:
+            raise ValueError(f"Security deposit '{deposit_id}' not found")
+
+        resolved_tenant = tenant_id or dep_row["tenant_id"]
+        dsp_id = _generate_dispute_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO deposit_disputes (
+                id, deposit_id, tenant_id, disputed_amount, reason, status,
+                resolution_notes, opened_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                dsp_id,
+                deposit_id,
+                resolved_tenant,
+                round(float(disputed_amount), 2),
+                reason.strip(),
+                DisputeStatus.OPEN.value,
+                "",
+                now_iso,
+                now_iso,
+            ),
+        )
+        cursor.execute(
+            "UPDATE security_deposits SET status = ?, updated_at = ? WHERE id = ?",
+            (DepositStatus.DISPUTED.value, now_iso, deposit_id),
+        )
+        conn.commit()
+
+        cursor.execute("SELECT * FROM deposit_disputes WHERE id = ?", (dsp_id,))
+        dispute = _row_to_dispute(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("deposit.dispute_opened", dispute)
+    return dispute
+
+
+def list_disputes(
+    deposit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List deposit disputes with optional deposit or status filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM deposit_disputes WHERE 1=1"
+        params: list[Any] = []
+        if deposit_id:
+            query += " AND deposit_id = ?"
+            params.append(deposit_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY opened_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_dispute(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def resolve_dispute(
+    dispute_id: str,
+    status: str,
+    resolution_notes: str = "",
+    *,
+    adjusted_refund_amount: float | None = None,
+) -> dict[str, Any] | None:
+    """Resolve an open deposit dispute and optionally adjust the deposit refund."""
+    valid_resolutions = {
+        DisputeStatus.UNDER_REVIEW.value,
+        DisputeStatus.RESOLVED_ADJUSTED.value,
+        DisputeStatus.RESOLVED_UPHELD.value,
+    }
+    if status not in valid_resolutions:
+        raise ValueError(f"Invalid dispute resolution status '{status}'")
+    if adjusted_refund_amount is not None and adjusted_refund_amount < 0:
+        raise ValueError("adjusted_refund_amount cannot be negative")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM deposit_disputes WHERE id = ?", (dispute_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        is_final = status in (
+            DisputeStatus.RESOLVED_ADJUSTED.value,
+            DisputeStatus.RESOLVED_UPHELD.value,
+        )
+        resolved_at = now_iso if is_final else None
+        adj_val = (
+            round(float(adjusted_refund_amount), 2)
+            if adjusted_refund_amount is not None
+            else row["adjusted_refund_amount"]
+        )
+
+        cursor.execute(
+            """
+            UPDATE deposit_disputes
+            SET status = ?, resolution_notes = ?, adjusted_refund_amount = ?,
+                resolved_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (status, resolution_notes.strip(), adj_val, resolved_at, now_iso, dispute_id),
+        )
+
+        if resolved_at is not None:
+            deposit_id = row["deposit_id"]
+            if adj_val is not None:
+                cursor.execute(
+                    """
+                    UPDATE security_deposits
+                    SET status = ?, refund_amount = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (DepositStatus.ITEMIZED_PENDING.value, adj_val, now_iso, deposit_id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE security_deposits SET status = ?, updated_at = ? WHERE id = ?",
+                    (DepositStatus.ITEMIZED_PENDING.value, now_iso, deposit_id),
+                )
+
+        conn.commit()
+        cursor.execute("SELECT * FROM deposit_disputes WHERE id = ?", (dispute_id,))
+        updated = _row_to_dispute(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("deposit.dispute_resolved", updated)
+    return updated
+
