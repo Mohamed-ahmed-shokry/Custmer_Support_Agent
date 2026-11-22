@@ -1,44 +1,50 @@
-# Phase Execution Progress: v0.53.0
+# Phase Execution Progress: v0.54.0
 
-## Phase Scope: Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance Engine
-Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, and deliver an end-to-end Preventative Maintenance, Seasonal HVAC/Fire Safety Inspections & Unit Compliance Engine (`api/preventative_maintenance.py`).
+## Phase Scope: Security Deposit Escrow, Itemized Deductions, Statutory Disposition & Dispute Resolution Engine
+Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Return Deadline Compliance & Resident Dispute Resolution Engine (`api/security_deposits.py`) integrated with FastAPI, conversational RAG grounding, template macros, real-time webhooks, and the Streamlit operations hub.
 
 ## Acceptance Criteria Status
 
-- [x] **AC1: Fix Baseline CI Failure (`tests/test_move_logistics.py`)** ✅
-  - Replace hardcoded `2026-11-25` date in `test_book_freight_elevator_and_collision_prevention` with `2099-06-15`.
-- [x] **AC2: Core Engine & SQLite Schema (`api/preventative_maintenance.py`)** ✅
-  - Tables `pm_schedules` and `pm_tasks` with indexes, foreign keys, seeds, CRUD, entry notices, fail-to-work-order escalation, and KPI metrics.
-- [x] **AC3: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)** ✅
-  - Request/response models for PM schedules, tasks, entry notices, completion/failure, summaries, and 6 `pm.*` webhook events.
-- [x] **AC4: FastAPI Endpoints & 1-Click Session Actions (`api/main.py`)** ✅
-  - Endpoints for `/pm/schedules*`, `/pm/tasks*`, `/pm/metrics`, `/units/{id}/pm/summary`, `/tenants/{id}/pm/summary`, and 1-click session actions.
-- [x] **AC5: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
-  - Context block `[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]` and 5 macro variables (`{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, `{pm_overdue_count}`).
-- [x] **AC6: Streamlit API Client Helpers (`app/api_utils.py`)** ✅
-  - Typed client API wrappers for all PM endpoints.
-- [x] **AC7: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)** ✅
-  - 3-tab `🔧 Preventative Maintenance & Safety` sidebar expander and 1-click resident profile action widget.
-- [x] **AC8: Automated Unit & Integration Tests (`tests/`)** ✅
-  - Full test coverage across engine, models, routes, RAG context, API client, and UI.
-- [x] **AC9: Version Bump & Documentation Updates** ✅
-  - Version bumped to `0.53.0` in `pyproject.toml` and `api/settings.py`; docs updated in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [x] **AC10: 100% Green CI Parity & Remote Actions Pass** ✅
+- [ ] **AC1: Core Engine & SQLite Schema (`api/security_deposits.py`)**
+  - Tables `security_deposits`, `deposit_deductions`, and `deposit_disputes` with indexes, foreign keys, enums, seeds, CRUD, itemized statements, refunds, disputes, summaries, and KPI metrics.
+- [ ] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)**
+  - Request/response models for deposits, deductions, statements, refunds, disputes, summaries, metrics, and 6 `deposit.*` webhook events.
+- [ ] **AC3: FastAPI Endpoints & 1-Click Session Actions (`api/main.py`)**
+  - Endpoints for `/deposits*`, `/units/{id}/deposits/summary`, `/tenants/{id}/deposits/summary`, and 1-click session actions.
+- [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
+  - Context block `[SECURITY DEPOSIT & REFUND DISPOSITION]` and 5 macro variables (`{deposit_amount}`, `{deposit_status}`, `{deposit_deductions_total}`, `{deposit_net_refund}`, `{deposit_deadline_date}`).
+- [ ] **AC5: Streamlit API Client Helpers (`app/api_utils.py`)**
+  - Typed client API wrappers for all security deposit endpoints.
+- [ ] **AC6: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)**
+  - 3-tab `🏦 Security Deposits & Refunds` sidebar expander and 1-click resident profile action widget.
+- [ ] **AC7: Automated Unit & Integration Tests (`tests/`)**
+  - Full test coverage across engine, models, routes, RAG context, API client, and UI with >= 80% total coverage.
+- [ ] **AC8: Version Bump & Documentation Updates**
+  - Version bumped to `0.54.0` in `pyproject.toml` and `api/settings.py`; docs updated in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [ ] **AC9: 100% Green CI Parity & Remote Actions Pass**
   - Ruff, mypy, secret scan, pytest coverage, and remote GitHub Actions CI green.
 
 ## Micro-Task Execution Checklist
 
-- [x] Task 1: Fix flaky date collision in `tests/test_move_logistics.py` to restore 100% green baseline CI.
-- [x] Task 2: Implement `api/preventative_maintenance.py` schema, enums, seeds, CRUD, entry notice, fail-to-work-order escalation, and metrics.
-- [x] Task 3: Add Pydantic schemas in `api/pydantic_models.py` and webhook events in `api/db_utils.py`.
-- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py`.
-- [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py`.
-- [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py`.
-- [x] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py`.
-- [x] Task 8: Version bump to `0.53.0` and update documentation.
-- [x] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
+- [x] Task 1: Define v0.54.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [ ] Task 2: Implement `api/security_deposits.py` (enums, schema, seeds, CRUD, deductions, disposition statements, refunds, disputes, summaries, metrics) with unit tests.
+- [ ] Task 3: Register `deposit.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
+- [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
+- [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
+- [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
+- [ ] Task 8: Version bump to `0.54.0` and update documentation.
+- [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## Decision Log
-- **D1: Dedicated Preventative Maintenance Module (`api/preventative_maintenance.py`)**: Follows the modular architecture pattern of `api/sublets.py` and `api/insurance.py` for clean isolation.
-- **D2: Deterministic Future Date for Move Logistics Test**: Use `2099-06-15` in `test_book_freight_elevator_and_collision_prevention` so it never collides with dynamic `now_utc + 7/21 days` seed bookings.
-- **D3: Automatic Work Order Escalation on Failed PM Task**: When a preventative maintenance task fails (`status='failed'`), optionally auto-create a linked `work_orders` record (`work_order_id`) so repairs are tracked seamlessly.
+- **D1: Dedicated Security Deposits Module (`api/security_deposits.py`)**: Follows the modular architecture pattern of `api/preventative_maintenance.py`, `api/sublets.py`, and `api/insurance.py` with self-initializing SQLite tables and foreign keys to `units` and `tenants`.
+- **D2: Deterministic Future-Proof Statutory Deadlines in Seeds**: Use relative UTC dates (`+21 days` / `+30 days`) for seeded deposits so tests never flake as calendar dates advance.
+- **D3: Computed Net Refundable Balance**: `net_refundable = max(0.0, round(principal_amount + accrued_interest - total_deductions, 2))` is dynamically computed from `deposit_deductions` so itemized adjustments and dispute resolutions remain strictly consistent.
+- **D4: Explicit Interest Accrual vs. Jurisdiction Tables**: Track `accrued_interest` explicitly per deposit record rather than embedding hard-coded state-by-state legal tables, keeping the model flexible across jurisdictions.
+
+## CI & Validation Log
+- Baseline (`origin/main` @ `7c26fac`):
+  - `python -m ruff check api/ app/ tests/ scripts/` → exit 0 ✅
+  - `python -m mypy api/ app/ scripts/` → exit 0 (45 source files) ✅
+  - `python -m pytest -q --no-cov` → 1128 passed, 0 failed ✅
+  - Remote GitHub Actions CI (`main`, run `44634911037`) → success ✅
