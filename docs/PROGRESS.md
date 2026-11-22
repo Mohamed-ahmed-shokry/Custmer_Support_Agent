@@ -11,7 +11,7 @@ Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Re
   - Request/response models for deposits, deductions, statements, refunds, disputes, summaries, metrics, and 6 `deposit.*` webhook events.
 - [x] **AC3: FastAPI Endpoints & 1-Click Session Actions (`api/main.py`)** ✅
   - Endpoints for `/deposits*`, `/units/{id}/deposits/summary`, `/tenants/{id}/deposits/summary`, and 1-click session actions.
-- [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
+- [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
   - Context block `[SECURITY DEPOSIT & REFUND DISPOSITION]` and 5 macro variables (`{deposit_amount}`, `{deposit_status}`, `{deposit_deductions_total}`, `{deposit_net_refund}`, `{deposit_deadline_date}`).
 - [ ] **AC5: Streamlit API Client Helpers (`app/api_utils.py`)**
   - Typed client API wrappers for all security deposit endpoints.
@@ -30,7 +30,7 @@ Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Re
 - [x] Task 2: Implement `api/security_deposits.py` (enums, schema, seeds, CRUD, deductions, disposition statements, refunds, disputes, summaries, metrics) with unit tests.
 - [x] Task 3: Register `deposit.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
-- [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
+- [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
 - [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
 - [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
 - [ ] Task 8: Version bump to `0.54.0` and update documentation.
