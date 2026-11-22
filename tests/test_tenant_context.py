@@ -19,6 +19,7 @@ from api import (
     parking,
     pets,
     preventative_maintenance,
+    security_deposits,
     sublets,
     utilities,
     vendors,
@@ -1066,3 +1067,34 @@ def test_preventative_maintenance_rag_context_and_macros():
     rendered, unresolved = render_template(template, session_id=sid)
     assert unresolved == []
     assert "Sarah Connor" in rendered
+
+
+def test_security_deposit_rag_context_and_macros():
+    """Verify security deposit RAG context injection and macro resolution."""
+    sid = "sess-deposit-context"
+    db_utils.insert_application_logs(
+        sid, "Deposit status", "Checking my security deposit refund", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    security_deposits.init_security_deposits_db()
+
+    context = build_tenant_rag_context(session_id=sid)
+    assert "[SECURITY DEPOSIT & REFUND DISPOSITION]" in context
+    assert "Total Escrow Principal:" in context
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "deposit_amount" in variables
+    assert "deposit_status" in variables
+    assert "deposit_deductions_total" in variables
+    assert "deposit_net_refund" in variables
+    assert "deposit_deadline_date" in variables
+
+    template = (
+        "Hi {customer_name}, your deposit of {deposit_amount} is currently {deposit_status}. "
+        "Total deductions: {deposit_deductions_total}; net refundable: {deposit_net_refund} "
+        "(statutory deadline: {deposit_deadline_date})."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
+    assert "$2,400.00" in rendered
