@@ -953,3 +953,97 @@ def resolve_dispute(
     webhooks.dispatch_event("deposit.dispute_resolved", updated)
     return updated
 
+
+def _build_entity_summary(
+    entity_key: str, entity_id: str, deposits: list[dict[str, Any]]
+) -> dict[str, Any]:
+    total_principal = round(sum(d["principal_amount"] for d in deposits), 2)
+    total_interest = round(sum(d["accrued_interest"] for d in deposits), 2)
+    total_deductions = round(sum(d["total_deductions"] for d in deposits), 2)
+    total_net_refundable = round(sum(d["net_refundable"] for d in deposits), 2)
+    open_disputes = sum(
+        1
+        for d in deposits
+        for dsp in d["disputes"]
+        if dsp["status"] in (DisputeStatus.OPEN.value, DisputeStatus.UNDER_REVIEW.value)
+    )
+    overdue_count = sum(1 for d in deposits if d["is_overdue"])
+    primary = deposits[0] if deposits else None
+    return {
+        entity_key: entity_id,
+        "total_deposits": len(deposits),
+        "total_principal": total_principal,
+        "total_interest": total_interest,
+        "total_deductions": total_deductions,
+        "total_net_refundable": total_net_refundable,
+        "open_disputes_count": open_disputes,
+        "overdue_deadlines_count": overdue_count,
+        "primary_deposit": primary,
+        "deposits": deposits,
+    }
+
+
+def get_unit_deposit_summary(unit_id: str) -> dict[str, Any]:
+    """Summarize all security deposits, deductions, and disputes for a unit."""
+    deposits = list_deposits(unit_id=unit_id)
+    return _build_entity_summary("unit_id", unit_id, deposits)
+
+
+def get_tenant_deposit_summary(tenant_id: str) -> dict[str, Any]:
+    """Summarize all security deposits, deductions, and disputes for a tenant."""
+    deposits = list_deposits(tenant_id=tenant_id)
+    return _build_entity_summary("tenant_id", tenant_id, deposits)
+
+
+def get_deposit_metrics_summary() -> dict[str, Any]:
+    """Compute portfolio-wide security deposit escrow and statutory compliance KPIs."""
+    deposits = list_deposits()
+    disputes = list_disputes()
+
+    total_deposits = len(deposits)
+    held_count = sum(1 for d in deposits if d["status"] == DepositStatus.HELD.value)
+    itemized_pending_count = sum(
+        1 for d in deposits if d["status"] == DepositStatus.ITEMIZED_PENDING.value
+    )
+    refunded_count = sum(
+        1
+        for d in deposits
+        if d["status"] in (DepositStatus.REFUNDED.value, DepositStatus.PARTIAL_REFUND.value)
+    )
+    disputed_count = sum(1 for d in deposits if d["status"] == DepositStatus.DISPUTED.value)
+    overdue_deadlines_count = sum(1 for d in deposits if d["is_overdue"])
+    open_disputes_count = sum(
+        1
+        for dsp in disputes
+        if dsp["status"] in (DisputeStatus.OPEN.value, DisputeStatus.UNDER_REVIEW.value)
+    )
+
+    total_escrow_principal = round(sum(d["principal_amount"] for d in deposits), 2)
+    total_accrued_interest = round(sum(d["accrued_interest"] for d in deposits), 2)
+    total_deductions_assessed = round(sum(d["total_deductions"] for d in deposits), 2)
+    total_refunded_amount = round(
+        sum(d["refund_amount"] for d in deposits if d["refund_amount"] is not None), 2
+    )
+
+    with_deadlines = [d for d in deposits if d["statutory_deadline_date"]]
+    if with_deadlines:
+        on_time = len(with_deadlines) - overdue_deadlines_count
+        statutory_compliance_rate = round((on_time / len(with_deadlines)) * 100.0, 2)
+    else:
+        statutory_compliance_rate = 100.0
+
+    return {
+        "total_deposits": total_deposits,
+        "held_count": held_count,
+        "itemized_pending_count": itemized_pending_count,
+        "refunded_count": refunded_count,
+        "disputed_count": disputed_count,
+        "overdue_deadlines_count": overdue_deadlines_count,
+        "open_disputes_count": open_disputes_count,
+        "total_escrow_principal": total_escrow_principal,
+        "total_accrued_interest": total_accrued_interest,
+        "total_deductions_assessed": total_deductions_assessed,
+        "total_refunded_amount": total_refunded_amount,
+        "statutory_compliance_rate": statutory_compliance_rate,
+    }
+
