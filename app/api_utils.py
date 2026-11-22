@@ -6382,6 +6382,7 @@ def create_pm_task_api(payload: dict[str, Any]) -> dict[str, Any] | None:
     return data.get("task") if data else None
 
 
+
 def list_pm_tasks_api(
     unit_id: str | None = None,
     tenant_id: str | None = None,
@@ -6429,6 +6430,7 @@ def send_pm_entry_notice_api(
     return data.get("task") if data else None
 
 
+
 def complete_pm_task_api(
     task_id: str,
     passed: bool,
@@ -6449,6 +6451,7 @@ def complete_pm_task_api(
         },
     )
     return data.get("task") if data else None
+
 
 
 def get_unit_pm_summary_api(unit_id: str) -> dict[str, Any] | None:
@@ -6489,6 +6492,7 @@ def session_send_pm_entry_notice_api(
     return data.get("task") if data else None
 
 
+
 def session_schedule_pm_task_api(
     session_id: str,
     payload: dict[str, Any],
@@ -6503,3 +6507,233 @@ def session_schedule_pm_task_api(
         json=payload,
     )
     return data.get("task") if data else None
+
+
+# --- Security Deposit Escrow, Deductions & Dispute API Client (v0.54.0) ---
+
+
+def _deposit_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_deposit_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio-wide security deposit escrow and statutory compliance KPIs."""
+    return _deposit_call(
+        "get",
+        "/deposits/metrics",
+        HTTP_OK,
+        "Failed to fetch security deposit metrics",
+        "fetching security deposit metrics",
+    )
+
+
+def create_deposit_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a new security deposit escrow record."""
+    return _deposit_call(
+        "post",
+        "/deposits",
+        HTTP_CREATED,
+        "Failed to create security deposit",
+        "creating security deposit",
+        json=payload,
+    )
+
+
+def list_deposits_api(
+    unit_id: str | None = None,
+    tenant_id: str | None = None,
+    status: str | None = None,
+    deposit_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """List security deposits with optional filters."""
+    params: dict[str, Any] = {}
+    if unit_id:
+        params["unit_id"] = unit_id
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if status:
+        params["status"] = status
+    if deposit_type:
+        params["deposit_type"] = deposit_type
+    data = _deposit_call(
+        "get",
+        "/deposits",
+        HTTP_OK,
+        "Failed to list security deposits",
+        "listing security deposits",
+        params=params,
+    )
+    return list(data.get("deposits", [])) if data else []
+
+
+def get_deposit_api(deposit_id: str) -> dict[str, Any] | None:
+    """Fetch details for a specific security deposit."""
+    return _deposit_call(
+        "get",
+        f"/deposits/{deposit_id}",
+        HTTP_OK,
+        f"Failed to fetch security deposit '{deposit_id}'",
+        "fetching security deposit",
+    )
+
+
+def add_deposit_deduction_api(
+    deposit_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Add an itemized move-out deduction to a security deposit."""
+    return _deposit_call(
+        "post",
+        f"/deposits/{deposit_id}/deductions",
+        HTTP_CREATED,
+        f"Failed to add deduction to deposit '{deposit_id}'",
+        "adding deposit deduction",
+        json=payload,
+    )
+
+
+def delete_deposit_deduction_api(deduction_id: str) -> bool:
+    """Delete an itemized deposit deduction by ID."""
+    res = _deposit_call(
+        "delete",
+        f"/deposits/deductions/{deduction_id}",
+        HTTP_OK,
+        f"Failed to delete deduction '{deduction_id}'",
+        "deleting deposit deduction",
+    )
+    return res is not None
+
+
+def issue_deposit_statement_api(
+    deposit_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Issue a statutory itemized disposition statement for a security deposit."""
+    return _deposit_call(
+        "post",
+        f"/deposits/{deposit_id}/statement",
+        HTTP_OK,
+        f"Failed to issue disposition statement for '{deposit_id}'",
+        "issuing deposit disposition statement",
+        json=payload or {},
+    )
+
+
+def issue_deposit_refund_api(
+    deposit_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Record refund disbursement for a security deposit."""
+    return _deposit_call(
+        "post",
+        f"/deposits/{deposit_id}/refund",
+        HTTP_OK,
+        f"Failed to issue refund for deposit '{deposit_id}'",
+        "issuing deposit refund",
+        json=payload,
+    )
+
+
+def list_deposit_disputes_api(
+    deposit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List security deposit disputes."""
+    params: dict[str, Any] = {}
+    if deposit_id:
+        params["deposit_id"] = deposit_id
+    if status:
+        params["status"] = status
+    data = _deposit_call(
+        "get",
+        "/deposits/disputes",
+        HTTP_OK,
+        "Failed to list deposit disputes",
+        "listing deposit disputes",
+        params=params,
+    )
+    return list(data.get("disputes", [])) if data else []
+
+
+def open_deposit_dispute_api(
+    deposit_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Open a resident dispute against security deposit deductions."""
+    return _deposit_call(
+        "post",
+        f"/deposits/{deposit_id}/disputes",
+        HTTP_CREATED,
+        f"Failed to open dispute for deposit '{deposit_id}'",
+        "opening deposit dispute",
+        json=payload,
+    )
+
+
+def resolve_deposit_dispute_api(
+    dispute_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Resolve an open security deposit dispute."""
+    return _deposit_call(
+        "post",
+        f"/deposits/disputes/{dispute_id}/resolve",
+        HTTP_OK,
+        f"Failed to resolve deposit dispute '{dispute_id}'",
+        "resolving deposit dispute",
+        json=payload,
+    )
+
+
+def get_tenant_deposit_summary_api(tenant_id: str) -> dict[str, Any] | None:
+    """Fetch security deposit summary for a resident."""
+    return _deposit_call(
+        "get",
+        f"/tenants/{tenant_id}/deposits/summary",
+        HTTP_OK,
+        f"Failed to fetch deposit summary for resident '{tenant_id}'",
+        "fetching resident deposit summary",
+    )
+
+
+def session_add_deposit_deduction_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """1-click deposit deduction directly from an active session."""
+    return _deposit_call(
+        "post",
+        f"/sessions/{session_id}/deposits/add-deduction",
+        HTTP_CREATED,
+        f"Failed to add deposit deduction for session '{session_id}'",
+        "adding deposit deduction from session",
+        json=payload,
+    )
+
+
+def session_open_deposit_dispute_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """1-click deposit dispute filing directly from an active session."""
+    return _deposit_call(
+        "post",
+        f"/sessions/{session_id}/deposits/open-dispute",
+        HTTP_CREATED,
+        f"Failed to open deposit dispute for session '{session_id}'",
+        "opening deposit dispute from session",
+        json=payload,
+    )
