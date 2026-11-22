@@ -1840,6 +1840,63 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.54.0 — Security Deposit Escrow, Itemized Deductions, Statutory Disposition & Dispute Resolution Engine (IN PROGRESS)
+
+Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Return Deadline Compliance & Resident Dispute Resolution Engine (`api/security_deposits.py`). The system manages security deposits (`security_deposits` per unit and tenant across `standard_security`, `pet_deposit`, `key_deposit`, and `last_month_rent`), tracks escrow references, accrued statutory interest, move-out dates, and statutory return deadlines, itemizes move-out deductions (`deposit_deductions` with category, amount, and optional inspection/work-order evidence reference), generates formatted statutory itemized disposition statements, records refund disbursements (`check`, `ach`, `direct_deposit`, `applied_to_balance`), manages formal resident deposit disputes (`deposit_disputes`), grounds deposit balances in conversational RAG context (`[SECURITY DEPOSIT & REFUND DISPOSITION]`), resolves template macros (`{deposit_amount}`, `{deposit_status}`, `{deposit_deductions_total}`, `{deposit_net_refund}`, `{deposit_deadline_date}`), dispatches real-time webhooks (`deposit.created`, `deposit.deduction_added`, `deposit.statement_issued`, `deposit.refund_issued`, `deposit.dispute_opened`, `deposit.dispute_resolved`), and provides a 3-tab Streamlit operations board plus 1-click resident session actions.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, property managers, accounting staff, and residents can:
+1. Record and manage security deposits in escrow with principal, accrued interest, move-out date, and statutory return deadline tracking.
+2. Add, list, and remove itemized move-out deductions linked to optional inspection or work-order evidence references.
+3. Generate statutory itemized disposition statements (with formatted Markdown summary) and disburse net refunds while tracking overdue statutory deadlines.
+4. Open, review, and resolve resident deposit disputes with optional refund adjustments and full audit trail.
+5. Ground active resident support sessions with deposit escrow status, deductions, net refundable amount, and statutory deadline, and auto-resolve 5 deposit macro variables.
+6. Manage deposits, itemized deductions, and disputes in an interactive Streamlit sidebar operations board with 1-click session actions.
+
+### Scope
+- `api/security_deposits.py`: SQLite tables `security_deposits`, `deposit_deductions`, and `deposit_disputes` with indexes, foreign keys, enums, seeds, CRUD, disposition statements, refund disbursement, dispute resolution, summaries, and portfolio KPI metrics.
+- `api/pydantic_models.py`: Request/response Pydantic models for deposits, deductions, statements, refunds, disputes, session actions, summaries, and metrics.
+- `api/db_utils.py`: Register 6 `deposit.*` webhook event types.
+- `api/main.py`: REST endpoints for `/deposits/*`, `/units/{id}/deposits/summary`, `/tenants/{id}/deposits/summary`, and 1-click session actions.
+- `api/tenant_context.py`: RAG prompt grounding block `[SECURITY DEPOSIT & REFUND DISPOSITION]` and 5 macro variables.
+- `app/api_utils.py`: Typed Streamlit API client wrappers for all deposit endpoints.
+- `app/sidebar.py`: 3-tab `🏦 Security Deposits & Refunds` sidebar board and 1-click resident session action widget.
+- Tests & Docs: Unit/integration tests across engine, models, routes, RAG context, API client, and UI; version bump to `0.54.0`; updated `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+
+### Exclusions
+- Live bank ACH/wire disbursement gateway integration (simulated via disbursement record and reference tracking).
+- State-by-state statutory interest rate tables (interest is tracked explicitly per deposit record).
+
+### Acceptance Criteria
+- [ ] AC1: Core SQLite schema, enums, seeds, CRUD, deductions, disposition statements, refunds, disputes, summaries, and metrics in `api/security_deposits.py`.
+- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and 6 `deposit.*` webhook events in `api/db_utils.py`.
+- [ ] AC3: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
+- [ ] AC4: Conversational RAG grounding and 5 macro variables in `api/tenant_context.py`.
+- [ ] AC5: Typed Streamlit API client helpers in `app/api_utils.py`.
+- [ ] AC6: Streamlit 3-tab Security Deposits board and 1-click resident session widget in `app/sidebar.py`.
+- [ ] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
+- [ ] AC8: Version bump to `0.54.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [ ] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
+
+### Validation & CI Plan
+- Local CI-parity commands:
+  - `python -m pytest` (includes >= 80% coverage gate)
+  - `python -m ruff check api/ app/ tests/ scripts/`
+  - `python -m mypy api/ app/ scripts/`
+  - Secret scan regex matching `.github/workflows/ci.yml`
+- End-to-end verification: Exercise full deposit -> deduction -> statement -> dispute -> resolution -> refund lifecycle via FastAPI TestClient and Streamlit FakeStreamlit harness.
+
+### Micro-Task Breakdown
+- [ ] Task 1: Define v0.54.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [ ] Task 2: Implement `api/security_deposits.py` (enums, schema, seeds, deposit CRUD, deductions, disposition statements, refunds, disputes, summaries, metrics) with unit tests.
+- [ ] Task 3: Register `deposit.*` webhook events in `api/db_utils.py` and add Pydantic models in `api/pydantic_models.py` with tests.
+- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
+- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests.
+- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
+- [ ] Task 7: Implement Streamlit 3-tab operations board and resident session widget in `app/sidebar.py` with UI tests.
+- [ ] Task 8: Bump version to `0.54.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [ ] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
+
 ## v0.53.0 — Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance Engine (COMPLETED)
 
 Fix the date-dependent baseline CI failure in `tests/test_move_logistics.py`, and deliver an end-to-end Preventative Maintenance, Seasonal HVAC/Fire Safety Inspections & Unit Compliance Engine (`api/preventative_maintenance.py`). The system manages recurring property-wide and unit-level preventative maintenance programs (HVAC filter replacements, smoke/CO detector testing, fire sprinkler/extinguisher checks, water heater flushes, seasonal winterization), scheduled unit inspection tasks (`pm_schedules`, `pm_tasks`), formal 24h/48h legal Notice of Entry tracking (`entry_notice_sent`, `entry_notice_at`, `resident_consent_status`), automatic conversion of failed inspections into maintenance work orders (`work_orders`), conversational RAG grounding (`[PREVENTATIVE MAINTENANCE & SAFETY COMPLIANCE]`), template macro resolution (`{pm_next_inspection_date}`, `{pm_schedule_type}`, `{pm_compliance_status}`, `{pm_entry_notice_status}`, `{pm_overdue_count}`), real-time webhooks (`pm.schedule_created`, `pm.task_scheduled`, `pm.entry_notice_sent`, `pm.task_completed`, `pm.task_failed`, `pm.compliance_overdue`), and a Streamlit operations board with 1-click resident entry notice & scheduling actions.
