@@ -1876,7 +1876,7 @@ Via the API and Streamlit UI, property managers, accounting staff, and residents
 - [x] AC6: Streamlit 3-tab Security Deposits board and 1-click resident session widget in `app/sidebar.py`.
 - [x] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
 - [x] AC8: Version bump to `0.54.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
+- [x] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
 
 ### Validation & CI Plan
 - Local CI-parity commands:
@@ -1895,7 +1895,7 @@ Via the API and Streamlit UI, property managers, accounting staff, and residents
 - [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
 - [x] Task 7: Implement Streamlit 3-tab operations board and resident session widget in `app/sidebar.py` with UI tests.
 - [x] Task 8: Bump version to `0.54.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
+- [x] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## v0.53.0 — Preventative Maintenance, Seasonal HVAC/Fire Safety & Unit Compliance Engine (COMPLETED)
 
