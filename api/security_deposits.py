@@ -634,3 +634,163 @@ def delete_deduction(deduction_id: str) -> bool:
     finally:
         conn.close()
 
+
+def render_disposition_markdown(deposit: dict[str, Any]) -> str:
+    """Render a statutory itemized security deposit disposition statement in Markdown."""
+    lines = [
+        f"# Security Deposit Itemized Disposition Statement ({deposit['id']})",
+        "",
+        f"- **Unit:** {deposit['unit_id']}",
+        f"- **Tenant:** {deposit.get('tenant_id') or 'N/A'}",
+        f"- **Escrow Reference:** {deposit.get('escrow_account_ref') or 'N/A'}",
+        f"- **Deposit Principal:** ${deposit['principal_amount']:,.2f}",
+        f"- **Accrued Interest:** ${deposit['accrued_interest']:,.2f}",
+        f"- **Total Approved Deductions:** ${deposit['total_deductions']:,.2f}",
+        f"- **Net Refundable Amount:** ${deposit['net_refundable']:,.2f}",
+        f"- **Statutory Deadline:** {deposit.get('statutory_deadline_date') or 'N/A'}",
+        "",
+        "## Itemized Deductions",
+    ]
+    deductions = deposit.get("deductions") or []
+    if not deductions:
+        lines.append("- None ($0.00)")
+    else:
+        for ded in deductions:
+            ev = f" (Ref: {ded['evidence_ref']})" if ded.get("evidence_ref") else ""
+            lines.append(
+                f"- **{ded['category']}**: {ded['description']} — ${ded['amount']:,.2f}{ev}"
+            )
+    if deposit.get("forwarding_address"):
+        lines.extend(["", f"**Forwarding Address:** {deposit['forwarding_address']}"])
+    return "\n".join(lines)
+
+
+def issue_disposition_statement(
+    deposit_id: str,
+    *,
+    move_out_date: str | None = None,
+    forwarding_address: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Issue a statutory itemized disposition statement for a security deposit."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM security_deposits WHERE id = ?", (deposit_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        resolved_move_out = move_out_date or row["move_out_date"] or _today_str()
+        deadline = row["statutory_deadline_date"] or _compute_deadline(resolved_move_out)
+        fwd = (
+            forwarding_address.strip()
+            if forwarding_address is not None
+            else (row["forwarding_address"] or "")
+        )
+        updated_notes = notes.strip() if notes is not None else (row["notes"] or "")
+
+        hydrated = _hydrate_deposit(cursor, row)
+        next_status = (
+            DepositStatus.FORFEITED.value
+            if hydrated["net_refundable"] <= 0 and hydrated["total_deductions"] > 0
+            else DepositStatus.ITEMIZED_PENDING.value
+        )
+
+        cursor.execute(
+            """
+            UPDATE security_deposits
+            SET status = ?, move_out_date = ?, statutory_deadline_date = ?,
+                statement_issued_at = ?, forwarding_address = ?, notes = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                next_status,
+                resolved_move_out,
+                deadline,
+                now_iso,
+                fwd,
+                updated_notes,
+                now_iso,
+                deposit_id,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM security_deposits WHERE id = ?", (deposit_id,))
+        updated = _hydrate_deposit(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
+    statement_md = render_disposition_markdown(updated)
+    result = {**updated, "statement_markdown": statement_md}
+    webhooks.dispatch_event("deposit.statement_issued", updated)
+    return result
+
+
+def issue_refund(
+    deposit_id: str,
+    refund_method: str,
+    *,
+    forwarding_address: str | None = None,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Record security deposit refund disbursement and finalize deposit status."""
+    valid_methods = {m.value for m in RefundMethod}
+    if refund_method not in valid_methods:
+        raise ValueError(f"Invalid refund_method '{refund_method}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM security_deposits WHERE id = ?", (deposit_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        hydrated = _hydrate_deposit(cursor, row)
+        net_refund = hydrated["net_refundable"]
+        if net_refund <= 0:
+            next_status = DepositStatus.FORFEITED.value
+        elif hydrated["total_deductions"] > 0:
+            next_status = DepositStatus.PARTIAL_REFUND.value
+        else:
+            next_status = DepositStatus.REFUNDED.value
+
+        now_iso = _now_iso()
+        fwd = (
+            forwarding_address.strip()
+            if forwarding_address is not None
+            else (row["forwarding_address"] or "")
+        )
+        updated_notes = notes.strip() if notes is not None else (row["notes"] or "")
+
+        cursor.execute(
+            """
+            UPDATE security_deposits
+            SET status = ?, refund_amount = ?, refund_method = ?,
+                refund_issued_at = ?, forwarding_address = ?, notes = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                next_status,
+                net_refund,
+                refund_method,
+                now_iso,
+                fwd,
+                updated_notes,
+                now_iso,
+                deposit_id,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM security_deposits WHERE id = ?", (deposit_id,))
+        updated = _hydrate_deposit(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("deposit.refund_issued", updated)
+    return updated
+
