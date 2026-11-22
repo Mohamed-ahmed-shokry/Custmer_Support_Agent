@@ -5,7 +5,7 @@ Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Re
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: Core Engine & SQLite Schema (`api/security_deposits.py`)**
+- [x] **AC1: Core Engine & SQLite Schema (`api/security_deposits.py`)** ✅
   - Tables `security_deposits`, `deposit_deductions`, and `deposit_disputes` with indexes, foreign keys, enums, seeds, CRUD, itemized statements, refunds, disputes, summaries, and KPI metrics.
 - [ ] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)**
   - Request/response models for deposits, deductions, statements, refunds, disputes, summaries, metrics, and 6 `deposit.*` webhook events.
@@ -27,7 +27,7 @@ Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Re
 ## Micro-Task Execution Checklist
 
 - [x] Task 1: Define v0.54.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/security_deposits.py` (enums, schema, seeds, CRUD, deductions, disposition statements, refunds, disputes, summaries, metrics) with unit tests.
+- [x] Task 2: Implement `api/security_deposits.py` (enums, schema, seeds, CRUD, deductions, disposition statements, refunds, disputes, summaries, metrics) with unit tests.
 - [ ] Task 3: Register `deposit.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
 - [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
