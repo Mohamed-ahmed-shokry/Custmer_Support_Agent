@@ -533,3 +533,104 @@ def update_deposit(deposit_id: str, updates: dict[str, Any]) -> dict[str, Any] |
     finally:
         conn.close()
 
+
+def add_deduction(  # noqa: PLR0913
+    deposit_id: str,
+    category: str,
+    description: str,
+    amount: float,
+    *,
+    evidence_ref: str = "",
+    approved: bool = True,
+) -> dict[str, Any]:
+    """Attach an itemized move-out deduction to a security deposit."""
+    if amount <= 0:
+        raise ValueError("amount must be greater than 0")
+    if not description or not description.strip():
+        raise ValueError("description is required")
+
+    valid_categories = {c.value for c in DeductionCategory}
+    if category not in valid_categories:
+        raise ValueError(f"Invalid deduction category '{category}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM security_deposits WHERE id = ?", (deposit_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Security deposit '{deposit_id}' not found")
+
+        ded_id = _generate_deduction_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO deposit_deductions (
+                id, deposit_id, category, description, amount, evidence_ref, approved, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ded_id,
+                deposit_id,
+                category,
+                description.strip(),
+                round(float(amount), 2),
+                evidence_ref.strip(),
+                1 if approved else 0,
+                now_iso,
+            ),
+        )
+        cursor.execute(
+            "UPDATE security_deposits SET updated_at = ? WHERE id = ?",
+            (now_iso, deposit_id),
+        )
+        conn.commit()
+
+        cursor.execute("SELECT * FROM deposit_deductions WHERE id = ?", (ded_id,))
+        deduction = _row_to_deduction(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("deposit.deduction_added", deduction)
+    return deduction
+
+
+def list_deductions(deposit_id: str) -> list[dict[str, Any]]:
+    """List itemized deductions for a security deposit."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM deposit_deductions WHERE deposit_id = ? ORDER BY created_at ASC",
+            (deposit_id,),
+        )
+        return [_row_to_deduction(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def delete_deduction(deduction_id: str) -> bool:
+    """Delete an itemized deduction by ID."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_security_deposits_db(conn)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT deposit_id FROM deposit_deductions WHERE id = ?",
+            (deduction_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return False
+        deposit_id = row["deposit_id"]
+        cursor.execute("DELETE FROM deposit_deductions WHERE id = ?", (deduction_id,))
+        cursor.execute(
+            "UPDATE security_deposits SET updated_at = ? WHERE id = ?",
+            (_now_iso(), deposit_id),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
