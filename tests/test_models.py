@@ -50,6 +50,13 @@ from api.pydantic_models import (
     ConciergeRequestUpdateRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
+    DepositDeductionCreateRequest,
+    DepositDisputeCreateRequest,
+    DepositDisputeResolveRequest,
+    DepositEntitySummaryResponse,
+    DepositMetricsResponse,
+    DepositRefundRequest,
+    DepositStatementRequest,
     DocumentDetailResponse,
     DocumentRechunkItem,
     FeedbackReviewItemResponse,
@@ -193,7 +200,10 @@ from api.pydantic_models import (
     ReservationCreateRequest,
     ReservationItem,
     ReservationResponse,
+    SecurityDepositCreateRequest,
+    SecurityDepositItem,
     SessionAcknowledgeAlertRequest,
+    SessionAddDepositDeductionRequest,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
@@ -206,6 +216,7 @@ from api.pydantic_models import (
     SessionIntakePackageRequest,
     SessionIssueViolationNoticeRequest,
     SessionMacroSuggestionsResponse,
+    SessionOpenDepositDisputeRequest,
     SessionRecordMeterReadingRequest,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
@@ -3691,3 +3702,61 @@ def test_preventative_maintenance_models():
 
     sess_sched = SessionSchedulePMTaskRequest(schedule_id="pms_1", scheduled_date="2027-02-01")
     assert sess_sched.schedule_id == "pms_1"
+
+
+def test_security_deposit_models():
+    """Verify security deposit Pydantic models validation."""
+    expected_principal = 2000.0
+    expected_deduction = 125.0
+    expected_compliance = 98.5
+
+    create_req = SecurityDepositCreateRequest(unit_id="unit_101", principal_amount=2000.0)
+    assert create_req.principal_amount == expected_principal
+    assert create_req.deposit_type == "standard_security"
+
+    ded_req = DepositDeductionCreateRequest(
+        category="cleaning", description="Oven cleaning", amount=125.0
+    )
+    assert ded_req.amount == expected_deduction
+
+    stmt_req = DepositStatementRequest(move_out_date="2099-05-01")
+    assert stmt_req.move_out_date == "2099-05-01"
+
+    ref_req = DepositRefundRequest(refund_method="ach")
+    assert ref_req.refund_method == "ach"
+
+    dsp_req = DepositDisputeCreateRequest(
+        disputed_amount=125.0, reason="Oven was cleaned prior to key handover"
+    )
+    assert dsp_req.disputed_amount == expected_deduction
+
+    res_req = DepositDisputeResolveRequest(
+        status="resolved_adjusted", adjusted_refund_amount=1950.0
+    )
+    assert res_req.status == "resolved_adjusted"
+
+    item = SecurityDepositItem(
+        id="dep_1",
+        unit_id="unit_101",
+        deposit_type="standard_security",
+        principal_amount=2000.0,
+        status="held",
+        received_date="2026-01-01",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    summary = DepositEntitySummaryResponse(unit_id="unit_101", total_deposits=1, deposits=[item])
+    assert summary.total_deposits == 1
+
+    metrics = DepositMetricsResponse(total_deposits=2, statutory_compliance_rate=98.5)
+    assert metrics.statutory_compliance_rate == expected_compliance
+
+    sess_ded = SessionAddDepositDeductionRequest(
+        deposit_id="dep_1", description="Key replacement", amount=50.0
+    )
+    assert sess_ded.deposit_id == "dep_1"
+
+    sess_dsp = SessionOpenDepositDisputeRequest(
+        deposit_id="dep_1", disputed_amount=50.0, reason="Returned all keys to leasing office"
+    )
+    assert sess_dsp.deposit_id == "dep_1"
