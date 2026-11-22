@@ -203,7 +203,14 @@ from api.pydantic_models import (
     DepositDeductionCreateRequest,
     DepositDeductionItem,
     DepositDeductionListResponse,
+    DepositDisputeCreateRequest,
+    DepositDisputeItem,
+    DepositDisputeListResponse,
+    DepositDisputeResolveRequest,
+    DepositEntitySummaryResponse,
     DepositMetricsResponse,
+    DepositRefundRequest,
+    DepositStatementRequest,
     DocumentChunkInfo,
     DocumentDetailResponse,
     DocumentInfo,
@@ -367,8 +374,10 @@ from api.pydantic_models import (
     SecurityDepositCreateRequest,
     SecurityDepositItem,
     SecurityDepositListResponse,
+    SecurityDepositStatementResponse,
     SecurityDepositUpdateRequest,
     SessionAcknowledgeAlertRequest,
+    SessionAddDepositDeductionRequest,
     SessionAssignmentHistoryResponse,
     SessionAssignmentRecord,
     SessionAssignmentRequest,
@@ -383,6 +392,7 @@ from api.pydantic_models import (
     SessionIssueViolationNoticeRequest,
     SessionIssueVisitorPassRequest,
     SessionMacroSuggestionsResponse,
+    SessionOpenDepositDisputeRequest,
     SessionRecordMeterReadingRequest,
     SessionRegisterPetRequest,
     SessionReportLostFobRequest,
@@ -8993,6 +9003,19 @@ def get_deposit_metrics_route():
     return DepositMetricsResponse(**metrics)
 
 
+@app.get("/deposits/disputes", response_model=DepositDisputeListResponse)
+def list_deposit_disputes_route(
+    deposit_id: str | None = None,
+    status: str | None = None,
+):
+    """List security deposit disputes with optional filters."""
+    results = security_deposits.list_disputes(deposit_id=deposit_id, status=status)
+    return DepositDisputeListResponse(
+        disputes=[DepositDisputeItem(**d) for d in results],
+        total=len(results),
+    )
+
+
 @app.post("/deposits", response_model=SecurityDepositItem, status_code=201)
 def create_deposit_route(request: SecurityDepositCreateRequest):
     """Create a new security deposit escrow record."""
@@ -9099,3 +9122,141 @@ def delete_deposit_deduction_route(deduction_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Deduction not found: {deduction_id}")
     return {"deleted": True, "deduction_id": deduction_id}
+
+
+@app.post("/deposits/{deposit_id}/statement", response_model=SecurityDepositStatementResponse)
+def issue_deposit_statement_route(deposit_id: str, request: DepositStatementRequest):
+    """Issue a statutory itemized disposition statement for a security deposit."""
+    result = security_deposits.issue_disposition_statement(
+        deposit_id=deposit_id,
+        move_out_date=request.move_out_date,
+        forwarding_address=request.forwarding_address,
+        notes=request.notes,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Security deposit not found: {deposit_id}")
+    return SecurityDepositStatementResponse(**result)
+
+
+@app.post("/deposits/{deposit_id}/refund", response_model=SecurityDepositItem)
+def issue_deposit_refund_route(deposit_id: str, request: DepositRefundRequest):
+    """Record security deposit refund disbursement."""
+    try:
+        updated = security_deposits.issue_refund(
+            deposit_id=deposit_id,
+            refund_method=request.refund_method,
+            forwarding_address=request.forwarding_address,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Security deposit not found: {deposit_id}")
+    return SecurityDepositItem(**updated)
+
+
+@app.post("/deposits/{deposit_id}/disputes", response_model=DepositDisputeItem, status_code=201)
+def open_deposit_dispute_route(deposit_id: str, request: DepositDisputeCreateRequest):
+    """Open a resident dispute against security deposit deductions."""
+    try:
+        dispute = security_deposits.open_dispute(
+            deposit_id=deposit_id,
+            disputed_amount=request.disputed_amount,
+            reason=request.reason,
+            tenant_id=request.tenant_id,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return DepositDisputeItem(**dispute)
+
+
+@app.post("/deposits/disputes/{dispute_id}/resolve", response_model=DepositDisputeItem)
+def resolve_deposit_dispute_route(dispute_id: str, request: DepositDisputeResolveRequest):
+    """Resolve an open security deposit dispute."""
+    try:
+        resolved = security_deposits.resolve_dispute(
+            dispute_id=dispute_id,
+            status=request.status,
+            resolution_notes=request.resolution_notes,
+            adjusted_refund_amount=request.adjusted_refund_amount,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"Deposit dispute not found: {dispute_id}")
+    return DepositDisputeItem(**resolved)
+
+
+@app.get("/units/{unit_id}/deposits/summary", response_model=DepositEntitySummaryResponse)
+def get_unit_deposit_summary_route(unit_id: str):
+    """Retrieve security deposit escrow summary for a unit."""
+    summary = security_deposits.get_unit_deposit_summary(unit_id)
+    return DepositEntitySummaryResponse(**summary)
+
+
+@app.get("/tenants/{tenant_id}/deposits/summary", response_model=DepositEntitySummaryResponse)
+def get_tenant_deposit_summary_route(tenant_id: str):
+    """Retrieve security deposit escrow summary for a resident."""
+    summary = security_deposits.get_tenant_deposit_summary(tenant_id)
+    return DepositEntitySummaryResponse(**summary)
+
+
+@app.post(
+    "/sessions/{session_id}/deposits/add-deduction",
+    response_model=DepositDeductionItem,
+    status_code=201,
+)
+def session_add_deposit_deduction_route(
+    session_id: str,
+    request: SessionAddDepositDeductionRequest,
+):
+    """1-click itemized deposit deduction directly from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    try:
+        ded = security_deposits.add_deduction(
+            deposit_id=request.deposit_id,
+            category=request.category,
+            description=request.description,
+            amount=request.amount,
+            evidence_ref=request.evidence_ref,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return DepositDeductionItem(**ded)
+
+
+@app.post(
+    "/sessions/{session_id}/deposits/open-dispute",
+    response_model=DepositDisputeItem,
+    status_code=201,
+)
+def session_open_deposit_dispute_route(
+    session_id: str,
+    request: SessionOpenDepositDisputeRequest,
+):
+    """1-click resident deposit dispute filing directly from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to any verified resident profile.",
+        )
+    tenant = context["tenant"]
+    try:
+        dispute = security_deposits.open_dispute(
+            deposit_id=request.deposit_id,
+            disputed_amount=request.disputed_amount,
+            reason=request.reason,
+            tenant_id=tenant["id"],
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return DepositDisputeItem(**dispute)
