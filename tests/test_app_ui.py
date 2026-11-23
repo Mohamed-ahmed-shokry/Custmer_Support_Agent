@@ -5595,3 +5595,90 @@ def test_session_deposit_widget_ui(monkeypatch):
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_deposit_widget("sess_dep_ui", tenant)
     assert fake_st.errors == []
+
+
+def test_leasing_crm_board_ui(monkeypatch):
+    """Verify rendering of Leasing CRM & Applications sidebar board."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_leasing_metrics_api",
+        lambda: {
+            "total_prospects": 3,
+            "approval_rate_pct": 100.0,
+            "scheduled_tours": 1,
+            "pending_screening": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_leasing_prospects_api",
+        lambda **kw: [
+            {
+                "id": "prs_1",
+                "full_name": "Maya Lin",
+                "stage": "tour_scheduled",
+                "lead_source": "zillow",
+                "max_budget": 2800.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_leasing_tours_api",
+        lambda **kw: [
+            {
+                "id": "tur_1",
+                "unit_id": "unit_101",
+                "status": "scheduled",
+                "scheduled_date": "2099-07-01",
+                "scheduled_time": "14:00",
+                "tour_type": "in_person",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_rental_applications_api",
+        lambda **kw: [
+            {
+                "id": "app_1",
+                "unit_id": "unit_101",
+                "status": "submitted",
+                "income_to_rent_ratio": 3.5,
+                "credit_score": 730,
+                "recommended_decision": "approved",
+            }
+        ],
+    )
+
+    sidebar._render_leasing_crm_board()
+    assert fake_st.errors == []
+
+
+def test_session_leasing_widget_ui(monkeypatch):
+    """Verify rendering of 1-click resident session leasing pipeline widget."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_unit_leasing_summary_api",
+        lambda uid: {
+            "unit_id": uid,
+            "demand_status": "high_demand",
+            "prospect_count": 2,
+            "active_applications_count": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_leasing_prospects_api",
+        lambda **kw: [{"id": "prs_1", "full_name": "Maya Lin"}],
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_leasing_widget("sess_lease_ui", tenant)
+    assert fake_st.errors == []
