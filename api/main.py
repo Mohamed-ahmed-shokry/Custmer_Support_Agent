@@ -374,6 +374,11 @@ from api.pydantic_models import (
     RechunkDocumentRequest,
     RenameCollectionRequest,
     RenameCollectionResponse,
+    RentalApplicationCreateRequest,
+    RentalApplicationDecisionRequest,
+    RentalApplicationItem,
+    RentalApplicationListResponse,
+    RentalApplicationScreenRequest,
     ReservationCreateRequest,
     ReservationItem,
     ReservationListResponse,
@@ -411,10 +416,12 @@ from api.pydantic_models import (
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSchedulePMTaskRequest,
+    SessionScheduleTourRequest,
     SessionSearchResponse,
     SessionSearchResult,
     SessionSendPMEntryNoticeRequest,
     SessionSLAStatusResponse,
+    SessionSubmitApplicationRequest,
     SessionSubmitInsuranceRequest,
     SessionSubmitSubletRequest,
     SessionSubmitViolationAppealRequest,
@@ -468,6 +475,7 @@ from api.pydantic_models import (
     UnitCreateRequest,
     UnitInsuranceSummaryResponse,
     UnitItem,
+    UnitLeasingSummaryResponse,
     UnitListResponse,
     UnitOccupancyResponse,
     UnitResponse,
@@ -9393,3 +9401,148 @@ def cancel_leasing_tour_route(tour_id: str):
     if not updated:
         raise HTTPException(status_code=404, detail=f"Tour not found: {tour_id}")
     return PropertyTourItem(**updated)
+
+
+@app.post("/leasing/applications", response_model=RentalApplicationItem, status_code=201)
+def submit_rental_application_route(request: RentalApplicationCreateRequest):
+    """Submit a formal rental application for a prospect and unit."""
+    try:
+        created = leasing_crm.submit_application(
+            prospect_id=request.prospect_id,
+            unit_id=request.unit_id,
+            monthly_income=request.monthly_income,
+            target_rent=request.target_rent,
+            credit_score=request.credit_score,
+            desired_move_in_date=request.desired_move_in_date,
+            lease_term_months=request.lease_term_months,
+            application_fee=request.application_fee,
+            fee_paid=request.fee_paid,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return RentalApplicationItem(**created)
+
+
+@app.get("/leasing/applications", response_model=RentalApplicationListResponse)
+def list_rental_applications_route(
+    prospect_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+):
+    """List rental applications with optional prospect, unit, or status filters."""
+    rows = leasing_crm.list_applications(prospect_id=prospect_id, unit_id=unit_id, status=status)
+    return RentalApplicationListResponse(
+        applications=[RentalApplicationItem(**r) for r in rows], total=len(rows)
+    )
+
+
+@app.get("/leasing/applications/{application_id}", response_model=RentalApplicationItem)
+def get_rental_application_route(application_id: str):
+    """Retrieve a single rental application by ID."""
+    row = leasing_crm.get_application(application_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Application not found: {application_id}")
+    return RentalApplicationItem(**row)
+
+
+@app.post("/leasing/applications/{application_id}/screen", response_model=RentalApplicationItem)
+def screen_rental_application_route(
+    application_id: str, request: RentalApplicationScreenRequest
+):
+    """Record credit/background screening and compute automated recommendation."""
+    try:
+        updated = leasing_crm.screen_application(
+            application_id,
+            credit_score=request.credit_score,
+            background_status=request.background_status,
+            eviction_history_clear=request.eviction_history_clear,
+            decision_notes=request.decision_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Application not found: {application_id}")
+    return RentalApplicationItem(**updated)
+
+
+@app.post("/leasing/applications/{application_id}/decision", response_model=RentalApplicationItem)
+def decide_rental_application_route(
+    application_id: str, request: RentalApplicationDecisionRequest
+):
+    """Approve, conditionally approve, deny, or withdraw a rental application."""
+    try:
+        updated = leasing_crm.decide_application(
+            application_id,
+            request.decision,
+            decision_notes=request.decision_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Application not found: {application_id}")
+    return RentalApplicationItem(**updated)
+
+
+@app.get("/units/{unit_id}/leasing/summary", response_model=UnitLeasingSummaryResponse)
+def get_unit_leasing_summary_route(unit_id: str):
+    """Retrieve leasing demand, tours, and applications summary for a unit."""
+    return UnitLeasingSummaryResponse(**leasing_crm.get_unit_leasing_summary(unit_id))
+
+
+@app.post(
+    "/sessions/{session_id}/leasing/schedule-tour",
+    response_model=PropertyTourItem,
+    status_code=201,
+)
+def session_schedule_tour_route(session_id: str, request: SessionScheduleTourRequest):
+    """1-click unit tour scheduling directly from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant") or not context["tenant"].get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to a resident with an assigned unit.",
+        )
+    unit_id = str(context["tenant"]["unit_id"])
+    try:
+        tour = leasing_crm.schedule_tour(
+            prospect_id=request.prospect_id,
+            unit_id=unit_id,
+            scheduled_date=request.scheduled_date,
+            scheduled_time=request.scheduled_time,
+            tour_type=request.tour_type,
+            leasing_agent=request.leasing_agent,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return PropertyTourItem(**tour)
+
+
+@app.post(
+    "/sessions/{session_id}/leasing/submit-application",
+    response_model=RentalApplicationItem,
+    status_code=201,
+)
+def session_submit_application_route(session_id: str, request: SessionSubmitApplicationRequest):
+    """1-click rental application submission directly from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant") or not context["tenant"].get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to a resident with an assigned unit.",
+        )
+    unit_id = str(context["tenant"]["unit_id"])
+    try:
+        created = leasing_crm.submit_application(
+            prospect_id=request.prospect_id,
+            unit_id=unit_id,
+            monthly_income=request.monthly_income,
+            credit_score=request.credit_score,
+            desired_move_in_date=request.desired_move_in_date,
+            lease_term_months=request.lease_term_months,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return RentalApplicationItem(**created)
