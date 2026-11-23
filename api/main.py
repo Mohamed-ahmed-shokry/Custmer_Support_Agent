@@ -26,6 +26,7 @@ from api import (
     insurance,
     knowledge_base,
     lease_renewals,
+    leasing_crm,
     macro_suggestions,
     macros,
     move_logistics,
@@ -282,6 +283,11 @@ from api.pydantic_models import (
     LeaseRenewalResponse,
     LeaseRenewalSignRequest,
     LeaseRenewalUpdateRequest,
+    LeasingMetricsResponse,
+    LeasingProspectCreateRequest,
+    LeasingProspectItem,
+    LeasingProspectListResponse,
+    LeasingProspectUpdateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -357,6 +363,10 @@ from api.pydantic_models import (
     PMTaskListResponse,
     PMTaskResponse,
     PMTaskUpdateRequest,
+    PropertyTourCompleteRequest,
+    PropertyTourCreateRequest,
+    PropertyTourItem,
+    PropertyTourListResponse,
     PruneSessionsResponse,
     QueryInput,
     QueryResponse,
@@ -9171,6 +9181,8 @@ def open_deposit_dispute_route(deposit_id: str, request: DepositDisputeCreateReq
     return DepositDisputeItem(**dispute)
 
 
+
+
 @app.post("/deposits/disputes/{dispute_id}/resolve", response_model=DepositDisputeItem)
 def resolve_deposit_dispute_route(dispute_id: str, request: DepositDisputeResolveRequest):
     """Resolve an open security deposit dispute."""
@@ -9260,3 +9272,124 @@ def session_open_deposit_dispute_route(
         status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return DepositDisputeItem(**dispute)
+
+
+# --- Prospective Leasing CRM, Tours & Rental Applications Routes (v0.55.0) ---
+
+
+@app.get("/leasing/metrics", response_model=LeasingMetricsResponse)
+def get_leasing_metrics_route():
+    """Portfolio-wide leasing funnel and applicant screening KPIs."""
+    return LeasingMetricsResponse(**leasing_crm.get_leasing_metrics_summary())
+
+
+@app.post("/leasing/prospects", response_model=LeasingProspectItem, status_code=201)
+def create_leasing_prospect_route(request: LeasingProspectCreateRequest):
+    """Create a new prospective renter lead."""
+    try:
+        created = leasing_crm.create_prospect(
+            full_name=request.full_name,
+            email=request.email,
+            phone=request.phone,
+            lead_source=request.lead_source,
+            desired_unit_id=request.desired_unit_id,
+            desired_bedrooms=request.desired_bedrooms,
+            max_budget=request.max_budget,
+            target_move_in_date=request.target_move_in_date,
+            assigned_agent=request.assigned_agent,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return LeasingProspectItem(**created)
+
+
+@app.get("/leasing/prospects", response_model=LeasingProspectListResponse)
+def list_leasing_prospects_route(
+    stage: str | None = None,
+    lead_source: str | None = None,
+    desired_unit_id: str | None = None,
+):
+    """List leasing prospects with optional stage, source, or unit filters."""
+    rows = leasing_crm.list_prospects(
+        stage=stage, lead_source=lead_source, desired_unit_id=desired_unit_id
+    )
+    return LeasingProspectListResponse(
+        prospects=[LeasingProspectItem(**r) for r in rows], total=len(rows)
+    )
+
+
+@app.get("/leasing/prospects/{prospect_id}", response_model=LeasingProspectItem)
+def get_leasing_prospect_route(prospect_id: str):
+    """Retrieve a single leasing prospect by ID."""
+    row = leasing_crm.get_prospect(prospect_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Prospect not found: {prospect_id}")
+    return LeasingProspectItem(**row)
+
+
+@app.patch("/leasing/prospects/{prospect_id}", response_model=LeasingProspectItem)
+def update_leasing_prospect_route(prospect_id: str, request: LeasingProspectUpdateRequest):
+    """Update mutable fields on a leasing prospect."""
+    try:
+        updated = leasing_crm.update_prospect(prospect_id, request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Prospect not found: {prospect_id}")
+    return LeasingProspectItem(**updated)
+
+
+@app.post("/leasing/tours", response_model=PropertyTourItem, status_code=201)
+def schedule_leasing_tour_route(request: PropertyTourCreateRequest):
+    """Schedule a unit tour for a prospective renter."""
+    try:
+        tour = leasing_crm.schedule_tour(
+            prospect_id=request.prospect_id,
+            unit_id=request.unit_id,
+            scheduled_date=request.scheduled_date,
+            scheduled_time=request.scheduled_time,
+            tour_type=request.tour_type,
+            leasing_agent=request.leasing_agent,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return PropertyTourItem(**tour)
+
+
+@app.get("/leasing/tours", response_model=PropertyTourListResponse)
+def list_leasing_tours_route(
+    prospect_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+):
+    """List scheduled and completed property tours."""
+    rows = leasing_crm.list_tours(prospect_id=prospect_id, unit_id=unit_id, status=status)
+    return PropertyTourListResponse(tours=[PropertyTourItem(**r) for r in rows], total=len(rows))
+
+
+@app.post("/leasing/tours/{tour_id}/complete", response_model=PropertyTourItem)
+def complete_leasing_tour_route(tour_id: str, request: PropertyTourCompleteRequest):
+    """Mark a property tour completed or no-show with optional feedback."""
+    try:
+        updated = leasing_crm.complete_tour(
+            tour_id,
+            feedback_rating=request.feedback_rating,
+            feedback_notes=request.feedback_notes,
+            no_show=request.no_show,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Tour not found: {tour_id}")
+    return PropertyTourItem(**updated)
+
+
+@app.post("/leasing/tours/{tour_id}/cancel", response_model=PropertyTourItem)
+def cancel_leasing_tour_route(tour_id: str):
+    """Cancel a scheduled property tour."""
+    updated = leasing_crm.cancel_tour(tour_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Tour not found: {tour_id}")
+    return PropertyTourItem(**updated)
