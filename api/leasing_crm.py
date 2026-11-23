@@ -960,3 +960,98 @@ def decide_application(
     elif decision == ApplicationStatus.DENIED.value:
         webhooks.dispatch_event("leasing.application_denied", updated)
     return updated
+
+
+def get_unit_leasing_summary(unit_id: str) -> dict[str, Any]:
+    """Summarize leasing demand, scheduled tours, and active applications for a unit."""
+    prospects = list_prospects(desired_unit_id=unit_id)
+    tours = list_tours(unit_id=unit_id)
+    apps = list_applications(unit_id=unit_id)
+
+    scheduled_tours = [t for t in tours if t["status"] == TourStatus.SCHEDULED.value]
+    next_tour = scheduled_tours[0] if scheduled_tours else None
+    active_apps = [
+        a
+        for a in apps
+        if a["status"]
+        in (
+            ApplicationStatus.SUBMITTED.value,
+            ApplicationStatus.SCREENING.value,
+            ApplicationStatus.CONDITIONALLY_APPROVED.value,
+        )
+    ]
+
+    conn = db_utils.get_db_connection()
+    try:
+        row = conn.execute("SELECT monthly_rent FROM units WHERE id = ?", (unit_id,)).fetchone()
+        monthly_rent = float(row["monthly_rent"] or 0.0) if row else 0.0
+    finally:
+        conn.close()
+
+    min_monthly_income = round(monthly_rent * MIN_INCOME_RATIO, 2)
+    high_demand_threshold = 2
+    if len(active_apps) >= 1 or len(scheduled_tours) >= high_demand_threshold:
+        demand_status = "high_demand"
+    elif prospects or scheduled_tours:
+        demand_status = "active_interest"
+    else:
+        demand_status = "available"
+
+    return {
+        "unit_id": unit_id,
+        "monthly_rent": round(monthly_rent, 2),
+        "min_monthly_income": min_monthly_income,
+        "demand_status": demand_status,
+        "prospect_count": len(prospects),
+        "scheduled_tours_count": len(scheduled_tours),
+        "active_applications_count": len(active_apps),
+        "next_tour": next_tour,
+        "prospects": prospects,
+        "tours": tours,
+        "applications": apps,
+    }
+
+
+def get_leasing_metrics_summary() -> dict[str, Any]:
+    """Compute portfolio-wide leasing funnel and applicant screening KPIs."""
+    prospects = list_prospects()
+    tours = list_tours()
+    apps = list_applications()
+
+    total_prospects = len(prospects)
+    total_tours = len(tours)
+    scheduled_tours = sum(1 for t in tours if t["status"] == TourStatus.SCHEDULED.value)
+    completed_tours = sum(1 for t in tours if t["status"] == TourStatus.COMPLETED.value)
+    total_applications = len(apps)
+    pending_screening = sum(
+        1
+        for a in apps
+        if a["status"] in (ApplicationStatus.SUBMITTED.value, ApplicationStatus.SCREENING.value)
+    )
+    approved_apps = sum(
+        1
+        for a in apps
+        if a["status"]
+        in (ApplicationStatus.APPROVED.value, ApplicationStatus.CONDITIONALLY_APPROVED.value)
+    )
+    denied_apps = sum(1 for a in apps if a["status"] == ApplicationStatus.DENIED.value)
+    decided = approved_apps + denied_apps
+    approval_rate_pct = round((approved_apps / decided) * 100.0, 2) if decided > 0 else 100.0
+    conversion_rate_pct = (
+        round((approved_apps / total_prospects) * 100.0, 2) if total_prospects > 0 else 0.0
+    )
+    total_app_fees = round(sum(a["application_fee"] for a in apps if a["fee_paid"]), 2)
+
+    return {
+        "total_prospects": total_prospects,
+        "total_tours": total_tours,
+        "scheduled_tours": scheduled_tours,
+        "completed_tours": completed_tours,
+        "total_applications": total_applications,
+        "pending_screening": pending_screening,
+        "approved_applications": approved_apps,
+        "denied_applications": denied_apps,
+        "approval_rate_pct": approval_rate_pct,
+        "lead_to_approval_rate_pct": conversion_rate_pct,
+        "total_application_fees_collected": total_app_fees,
+    }
