@@ -14,6 +14,7 @@ from api import (
     db_utils,
     incidents,
     insurance,
+    leasing_crm,
     move_logistics,
     packages,
     parking,
@@ -1098,3 +1099,33 @@ def test_security_deposit_rag_context_and_macros():
     assert unresolved == []
     assert "Sarah Connor" in rendered
     assert "$2,400.00" in rendered
+
+
+def test_leasing_crm_rag_context_and_macros():
+    """Verify leasing CRM RAG context injection and macro resolution."""
+    sid = "sess-leasing-context"
+    db_utils.insert_application_logs(
+        sid, "Leasing demand", "Checking tours and applications for unit", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    leasing_crm.init_leasing_crm_db()
+
+    context = build_tenant_rag_context(session_id=sid)
+    assert "[PROSPECTIVE LEASING, TOURS & APPLICATIONS]" in context
+    assert "Unit Leasing Demand:" in context
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "leasing_prospect_count" in variables
+    assert "leasing_active_applications" in variables
+    assert "leasing_next_tour_date" in variables
+    assert "leasing_unit_demand_status" in variables
+    assert "leasing_income_requirement" in variables
+
+    template = (
+        "Hi {customer_name}, unit demand is {leasing_unit_demand_status} with "
+        "{leasing_prospect_count} prospect(s), {leasing_active_applications} application(s), "
+        "next tour on {leasing_next_tour_date}, 3x income {leasing_income_requirement}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
