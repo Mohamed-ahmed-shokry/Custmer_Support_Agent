@@ -5006,3 +5006,183 @@ class SessionOpenDepositDisputeRequest(BaseModel):
     deposit_id: str = Field(..., min_length=2, max_length=80)
     disputed_amount: float = Field(..., gt=0.0)
     reason: str = Field(..., min_length=5, max_length=2000)
+
+
+# --- Prospective Leasing CRM, Tours & Rental Applications Schemas (v0.55.0) ---
+
+
+class LeasingProspectCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=150)
+    email: str = Field(..., min_length=3, max_length=150)
+    phone: str = Field(default="", max_length=50)
+    lead_source: str = Field(default="website", max_length=40)
+    desired_unit_id: str | None = Field(default=None, max_length=80)
+    desired_bedrooms: int = Field(default=1, ge=0, le=10)
+    max_budget: float = Field(default=2500.0, gt=0.0)
+    target_move_in_date: str | None = Field(default=None, max_length=30)
+    assigned_agent: str = Field(default="", max_length=120)
+    notes: str = Field(default="", max_length=2000)
+
+
+class LeasingProspectUpdateRequest(BaseModel):
+    phone: str | None = Field(default=None, max_length=50)
+    stage: str | None = Field(default=None, max_length=40)
+    desired_unit_id: str | None = Field(default=None, max_length=80)
+    desired_bedrooms: int | None = Field(default=None, ge=0, le=10)
+    max_budget: float | None = Field(default=None, gt=0.0)
+    target_move_in_date: str | None = Field(default=None, max_length=30)
+    assigned_agent: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class LeasingProspectItem(BaseModel):
+    id: str
+    full_name: str
+    email: str
+    phone: str = ""
+    lead_source: str
+    stage: str
+    desired_unit_id: str | None = None
+    desired_bedrooms: int = 1
+    max_budget: float = 2500.0
+    target_move_in_date: str | None = None
+    assigned_agent: str = ""
+    notes: str = ""
+    created_at: str
+    updated_at: str
+
+
+class LeasingProspectListResponse(BaseModel):
+    prospects: list[LeasingProspectItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class PropertyTourCreateRequest(BaseModel):
+    prospect_id: str = Field(..., min_length=2, max_length=80)
+    unit_id: str = Field(..., min_length=1, max_length=80)
+    scheduled_date: str = Field(..., min_length=4, max_length=30)
+    scheduled_time: str = Field(default="14:00", max_length=20)
+    tour_type: str = Field(default="in_person", max_length=40)
+    leasing_agent: str = Field(default="", max_length=120)
+
+
+class PropertyTourCompleteRequest(BaseModel):
+    feedback_rating: int | None = Field(default=None, ge=1, le=5)
+    feedback_notes: str = Field(default="", max_length=2000)
+    no_show: bool = Field(default=False)
+
+
+class PropertyTourItem(BaseModel):
+    id: str
+    prospect_id: str
+    unit_id: str
+    tour_type: str
+    scheduled_date: str
+    scheduled_time: str
+    leasing_agent: str = ""
+    status: str
+    feedback_rating: int | None = None
+    feedback_notes: str = ""
+    completed_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class PropertyTourListResponse(BaseModel):
+    tours: list[PropertyTourItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class RentalApplicationCreateRequest(BaseModel):
+    prospect_id: str = Field(..., min_length=2, max_length=80)
+    unit_id: str = Field(..., min_length=1, max_length=80)
+    monthly_income: float = Field(..., gt=0.0)
+    target_rent: float | None = Field(default=None, gt=0.0)
+    credit_score: int | None = Field(default=None, ge=300, le=850)
+    desired_move_in_date: str | None = Field(default=None, max_length=30)
+    lease_term_months: int = Field(default=12, ge=1, le=60)
+    application_fee: float = Field(default=55.0, ge=0.0)
+    fee_paid: bool = Field(default=True)
+
+
+class RentalApplicationScreenRequest(BaseModel):
+    credit_score: int = Field(..., ge=300, le=850)
+    background_status: str = Field(default="passed", max_length=40)
+    eviction_history_clear: bool = Field(default=True)
+    decision_notes: str = Field(default="", max_length=2000)
+
+
+class RentalApplicationDecisionRequest(BaseModel):
+    decision: str = Field(..., min_length=3, max_length=40)
+    decision_notes: str = Field(default="", max_length=2000)
+
+
+class RentalApplicationItem(BaseModel):
+    id: str
+    prospect_id: str
+    unit_id: str
+    monthly_income: float
+    target_rent: float
+    income_to_rent_ratio: float
+    credit_score: int | None = None
+    background_status: str
+    eviction_history_clear: bool = True
+    recommended_decision: str
+    status: str
+    application_fee: float = 55.0
+    fee_paid: bool = True
+    desired_move_in_date: str | None = None
+    lease_term_months: int = 12
+    decision_notes: str = ""
+    decided_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class RentalApplicationListResponse(BaseModel):
+    applications: list[RentalApplicationItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class UnitLeasingSummaryResponse(BaseModel):
+    unit_id: str
+    monthly_rent: float = 0.0
+    min_monthly_income: float = 0.0
+    demand_status: str = "available"
+    prospect_count: int = 0
+    scheduled_tours_count: int = 0
+    active_applications_count: int = 0
+    next_tour: PropertyTourItem | None = None
+    prospects: list[LeasingProspectItem] = Field(default_factory=list)
+    tours: list[PropertyTourItem] = Field(default_factory=list)
+    applications: list[RentalApplicationItem] = Field(default_factory=list)
+
+
+class LeasingMetricsResponse(BaseModel):
+    total_prospects: int = 0
+    total_tours: int = 0
+    scheduled_tours: int = 0
+    completed_tours: int = 0
+    total_applications: int = 0
+    pending_screening: int = 0
+    approved_applications: int = 0
+    denied_applications: int = 0
+    approval_rate_pct: float = 100.0
+    lead_to_approval_rate_pct: float = 0.0
+    total_application_fees_collected: float = 0.0
+
+
+class SessionScheduleTourRequest(BaseModel):
+    prospect_id: str = Field(..., min_length=2, max_length=80)
+    scheduled_date: str = Field(..., min_length=4, max_length=30)
+    scheduled_time: str = Field(default="14:00", max_length=20)
+    tour_type: str = Field(default="in_person", max_length=40)
+    leasing_agent: str = Field(default="", max_length=120)
+
+
+class SessionSubmitApplicationRequest(BaseModel):
+    prospect_id: str = Field(..., min_length=2, max_length=80)
+    monthly_income: float = Field(..., gt=0.0)
+    credit_score: int | None = Field(default=None, ge=300, le=850)
+    desired_move_in_date: str | None = Field(default=None, max_length=30)
+    lease_term_months: int = Field(default=12, ge=1, le=60)
