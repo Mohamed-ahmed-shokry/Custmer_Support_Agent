@@ -7,8 +7,9 @@ import secrets
 import sqlite3
 from datetime import UTC
 from enum import StrEnum
+from typing import Any
 
-from api import db_utils
+from api import db_utils, webhooks
 
 
 class LeadSource(StrEnum):
@@ -305,3 +306,216 @@ def _seed_leasing_data(cursor: sqlite3.Cursor) -> None:
             now_iso,
         ),
     )
+
+
+def _row_to_prospect(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "full_name": row["full_name"],
+        "email": row["email"],
+        "phone": row["phone"] or "",
+        "lead_source": row["lead_source"],
+        "stage": row["stage"],
+        "desired_unit_id": row["desired_unit_id"],
+        "desired_bedrooms": int(row["desired_bedrooms"]),
+        "max_budget": round(float(row["max_budget"]), 2),
+        "target_move_in_date": row["target_move_in_date"],
+        "assigned_agent": row["assigned_agent"] or "",
+        "notes": row["notes"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _row_to_tour(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "prospect_id": row["prospect_id"],
+        "unit_id": row["unit_id"],
+        "tour_type": row["tour_type"],
+        "scheduled_date": row["scheduled_date"],
+        "scheduled_time": row["scheduled_time"],
+        "leasing_agent": row["leasing_agent"] or "",
+        "status": row["status"],
+        "feedback_rating": (
+            int(row["feedback_rating"]) if row["feedback_rating"] is not None else None
+        ),
+        "feedback_notes": row["feedback_notes"] or "",
+        "completed_at": row["completed_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _row_to_application(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "prospect_id": row["prospect_id"],
+        "unit_id": row["unit_id"],
+        "monthly_income": round(float(row["monthly_income"]), 2),
+        "target_rent": round(float(row["target_rent"]), 2),
+        "income_to_rent_ratio": round(float(row["income_to_rent_ratio"]), 2),
+        "credit_score": int(row["credit_score"]) if row["credit_score"] is not None else None,
+        "background_status": row["background_status"],
+        "eviction_history_clear": bool(row["eviction_history_clear"]),
+        "recommended_decision": row["recommended_decision"],
+        "status": row["status"],
+        "application_fee": round(float(row["application_fee"]), 2),
+        "fee_paid": bool(row["fee_paid"]),
+        "desired_move_in_date": row["desired_move_in_date"],
+        "lease_term_months": int(row["lease_term_months"]),
+        "decision_notes": row["decision_notes"] or "",
+        "decided_at": row["decided_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def create_prospect(  # noqa: PLR0913
+    full_name: str,
+    email: str,
+    *,
+    phone: str = "",
+    lead_source: str = LeadSource.WEBSITE.value,
+    desired_unit_id: str | None = None,
+    desired_bedrooms: int = 1,
+    max_budget: float = 2500.0,
+    target_move_in_date: str | None = None,
+    assigned_agent: str = "",
+    notes: str = "",
+) -> dict[str, Any]:
+    """Create a new prospective renter lead."""
+    if not full_name or not full_name.strip():
+        raise ValueError("full_name is required")
+    if not email or "@" not in email:
+        raise ValueError("Valid email is required")
+    if max_budget <= 0:
+        raise ValueError("max_budget must be greater than 0")
+    if lead_source not in {s.value for s in LeadSource}:
+        raise ValueError(f"Invalid lead_source '{lead_source}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        if desired_unit_id:
+            cursor.execute("SELECT id FROM units WHERE id = ?", (desired_unit_id,))
+            if cursor.fetchone() is None:
+                raise ValueError(f"Unit '{desired_unit_id}' not found")
+
+        pid = _generate_prospect_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO leasing_prospects (
+                id, full_name, email, phone, lead_source, stage, desired_unit_id,
+                desired_bedrooms, max_budget, target_move_in_date, assigned_agent,
+                notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                pid,
+                full_name.strip(),
+                email.strip().lower(),
+                phone.strip(),
+                lead_source,
+                ProspectStage.NEW.value,
+                desired_unit_id,
+                max(0, int(desired_bedrooms)),
+                round(float(max_budget), 2),
+                target_move_in_date,
+                assigned_agent.strip(),
+                notes.strip(),
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM leasing_prospects WHERE id = ?", (pid,))
+        record = _row_to_prospect(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("leasing.prospect_created", record)
+    return record
+
+
+def get_prospect(prospect_id: str) -> dict[str, Any] | None:
+    """Retrieve a single leasing prospect by ID."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leasing_prospects WHERE id = ?", (prospect_id,))
+        row = cursor.fetchone()
+        return _row_to_prospect(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_prospects(
+    stage: str | None = None,
+    lead_source: str | None = None,
+    desired_unit_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List leasing prospects with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM leasing_prospects WHERE 1=1"
+        params: list[Any] = []
+        if stage:
+            query += " AND stage = ?"
+            params.append(stage)
+        if lead_source:
+            query += " AND lead_source = ?"
+            params.append(lead_source)
+        if desired_unit_id:
+            query += " AND desired_unit_id = ?"
+            params.append(desired_unit_id)
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_prospect(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_prospect(prospect_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """Update mutable fields on a leasing prospect."""
+    allowed = {
+        "phone",
+        "stage",
+        "desired_unit_id",
+        "desired_bedrooms",
+        "max_budget",
+        "target_move_in_date",
+        "assigned_agent",
+        "notes",
+    }
+    filtered = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    if "stage" in filtered and filtered["stage"] not in {s.value for s in ProspectStage}:
+        raise ValueError(f"Invalid prospect stage '{filtered['stage']}'")
+    if "max_budget" in filtered and float(filtered["max_budget"]) <= 0:
+        raise ValueError("max_budget must be greater than 0")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leasing_prospects WHERE id = ?", (prospect_id,))
+        existing = cursor.fetchone()
+        if existing is None:
+            return None
+        if not filtered:
+            return _row_to_prospect(existing)
+
+        filtered["updated_at"] = _now_iso()
+        set_clause = ", ".join(f"{k} = ?" for k in filtered)
+        params = list(filtered.values()) + [prospect_id]
+        cursor.execute(f"UPDATE leasing_prospects SET {set_clause} WHERE id = ?", params)
+        conn.commit()
+        cursor.execute("SELECT * FROM leasing_prospects WHERE id = ?", (prospect_id,))
+        return _row_to_prospect(cursor.fetchone())
+    finally:
+        conn.close()
