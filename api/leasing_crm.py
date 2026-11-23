@@ -685,3 +685,278 @@ def cancel_tour(tour_id: str) -> dict[str, Any] | None:
         return _row_to_tour(cursor.fetchone())
     finally:
         conn.close()
+
+
+def evaluate_screening(
+    income_ratio: float,
+    credit_score: int | None,
+    background_status: str,
+    eviction_history_clear: bool,
+) -> str:
+    """Compute automated underwriting recommendation from income, credit, and background."""
+    if not eviction_history_clear or background_status == BackgroundCheckStatus.FAILED.value:
+        return ApplicationStatus.DENIED.value
+    if credit_score is None or background_status == BackgroundCheckStatus.PENDING.value:
+        return ApplicationStatus.SCREENING.value
+    if (
+        income_ratio >= MIN_INCOME_RATIO
+        and credit_score >= MIN_CREDIT_SCORE
+        and background_status == BackgroundCheckStatus.PASSED.value
+    ):
+        return ApplicationStatus.APPROVED.value
+    if (
+        income_ratio >= CONDITIONAL_INCOME_RATIO
+        and credit_score >= CONDITIONAL_CREDIT_SCORE
+        and background_status in (
+            BackgroundCheckStatus.PASSED.value,
+            BackgroundCheckStatus.FLAGGED.value,
+        )
+    ):
+        return ApplicationStatus.CONDITIONALLY_APPROVED.value
+    return ApplicationStatus.DENIED.value
+
+
+def submit_application(  # noqa: PLR0913
+    prospect_id: str,
+    unit_id: str,
+    monthly_income: float,
+    *,
+    target_rent: float | None = None,
+    credit_score: int | None = None,
+    desired_move_in_date: str | None = None,
+    lease_term_months: int = 12,
+    application_fee: float = DEFAULT_APPLICATION_FEE,
+    fee_paid: bool = True,
+) -> dict[str, Any]:
+    """Submit a formal rental application for a prospect and unit."""
+    if monthly_income <= 0:
+        raise ValueError("monthly_income must be greater than 0")
+    if lease_term_months <= 0:
+        raise ValueError("lease_term_months must be greater than 0")
+    min_credit, max_credit = 300, 850
+    if credit_score is not None and not (min_credit <= credit_score <= max_credit):
+        raise ValueError("credit_score must be between 300 and 850")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM leasing_prospects WHERE id = ?", (prospect_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Prospect '{prospect_id}' not found")
+        cursor.execute("SELECT id, monthly_rent FROM units WHERE id = ?", (unit_id,))
+        unit_row = cursor.fetchone()
+        if unit_row is None:
+            raise ValueError(f"Unit '{unit_id}' not found")
+
+        resolved_rent = (
+            round(float(target_rent), 2)
+            if target_rent is not None and target_rent > 0
+            else round(float(unit_row["monthly_rent"] or 2000.0), 2)
+        )
+        ratio = round(float(monthly_income) / resolved_rent, 2) if resolved_rent > 0 else 0.0
+        rec = evaluate_screening(ratio, credit_score, BackgroundCheckStatus.PENDING.value, True)
+
+        aid = _generate_application_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO rental_applications (
+                id, prospect_id, unit_id, monthly_income, target_rent, income_to_rent_ratio,
+                credit_score, background_status, eviction_history_clear, recommended_decision,
+                status, application_fee, fee_paid, desired_move_in_date, lease_term_months,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                aid,
+                prospect_id,
+                unit_id,
+                round(float(monthly_income), 2),
+                resolved_rent,
+                ratio,
+                credit_score,
+                BackgroundCheckStatus.PENDING.value,
+                1,
+                rec,
+                ApplicationStatus.SUBMITTED.value,
+                round(float(application_fee), 2),
+                1 if fee_paid else 0,
+                desired_move_in_date,
+                int(lease_term_months),
+                now_iso,
+                now_iso,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE leasing_prospects
+            SET stage = ?, desired_unit_id = ?, updated_at = ?
+            WHERE id = ? AND stage NOT IN ('approved', 'leased')
+            """,
+            (ProspectStage.APPLIED.value, unit_id, now_iso, prospect_id),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM rental_applications WHERE id = ?", (aid,))
+        app_record = _row_to_application(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("leasing.application_submitted", app_record)
+    return app_record
+
+
+def get_application(application_id: str) -> dict[str, Any] | None:
+    """Retrieve a single rental application by ID."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM rental_applications WHERE id = ?", (application_id,))
+        row = cursor.fetchone()
+        return _row_to_application(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_applications(
+    prospect_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List rental applications with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM rental_applications WHERE 1=1"
+        params: list[Any] = []
+        if prospect_id:
+            query += " AND prospect_id = ?"
+            params.append(prospect_id)
+        if unit_id:
+            query += " AND unit_id = ?"
+            params.append(unit_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_application(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def screen_application(
+    application_id: str,
+    *,
+    credit_score: int,
+    background_status: str = BackgroundCheckStatus.PASSED.value,
+    eviction_history_clear: bool = True,
+    decision_notes: str = "",
+) -> dict[str, Any] | None:
+    """Record credit and background screening results and compute recommendation."""
+    min_credit, max_credit = 300, 850
+    if not (min_credit <= credit_score <= max_credit):
+        raise ValueError("credit_score must be between 300 and 850")
+    if background_status not in {b.value for b in BackgroundCheckStatus}:
+        raise ValueError(f"Invalid background_status '{background_status}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM rental_applications WHERE id = ?", (application_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        ratio = float(row["income_to_rent_ratio"])
+        rec = evaluate_screening(ratio, credit_score, background_status, eviction_history_clear)
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            UPDATE rental_applications
+            SET credit_score = ?, background_status = ?, eviction_history_clear = ?,
+                recommended_decision = ?, status = ?, decision_notes = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                int(credit_score),
+                background_status,
+                1 if eviction_history_clear else 0,
+                rec,
+                ApplicationStatus.SCREENING.value,
+                decision_notes.strip(),
+                now_iso,
+                application_id,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM rental_applications WHERE id = ?", (application_id,))
+        return _row_to_application(cursor.fetchone())
+    finally:
+        conn.close()
+
+
+def decide_application(
+    application_id: str,
+    decision: str,
+    *,
+    decision_notes: str = "",
+) -> dict[str, Any] | None:
+    """Approve, conditionally approve, deny, or withdraw a rental application."""
+    valid_decisions = {
+        ApplicationStatus.APPROVED.value,
+        ApplicationStatus.CONDITIONALLY_APPROVED.value,
+        ApplicationStatus.DENIED.value,
+        ApplicationStatus.WITHDRAWN.value,
+    }
+    if decision not in valid_decisions:
+        raise ValueError(f"Invalid application decision '{decision}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM rental_applications WHERE id = ?", (application_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            UPDATE rental_applications
+            SET status = ?, decision_notes = ?, decided_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (decision, decision_notes.strip(), now_iso, now_iso, application_id),
+        )
+        if decision in (
+            ApplicationStatus.APPROVED.value,
+            ApplicationStatus.CONDITIONALLY_APPROVED.value,
+        ):
+            cursor.execute(
+                "UPDATE leasing_prospects SET stage = ?, updated_at = ? WHERE id = ?",
+                (ProspectStage.APPROVED.value, now_iso, row["prospect_id"]),
+            )
+        elif decision == ApplicationStatus.DENIED.value:
+            cursor.execute(
+                "UPDATE leasing_prospects SET stage = ?, updated_at = ? WHERE id = ?",
+                (ProspectStage.LOST.value, now_iso, row["prospect_id"]),
+            )
+        conn.commit()
+        cursor.execute("SELECT * FROM rental_applications WHERE id = ?", (application_id,))
+        updated = _row_to_application(cursor.fetchone())
+    finally:
+        conn.close()
+
+    if decision in (
+        ApplicationStatus.APPROVED.value,
+        ApplicationStatus.CONDITIONALLY_APPROVED.value,
+    ):
+        webhooks.dispatch_event("leasing.application_approved", updated)
+    elif decision == ApplicationStatus.DENIED.value:
+        webhooks.dispatch_event("leasing.application_denied", updated)
+    return updated
