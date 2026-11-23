@@ -6737,3 +6737,241 @@ def session_open_deposit_dispute_api(
         "opening deposit dispute from session",
         json=payload,
     )
+
+
+# --- Prospective Leasing CRM, Tours & Applications API Client (v0.55.0) ---
+
+
+def _leasing_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_leasing_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio-wide leasing funnel and screening KPIs."""
+    return _leasing_call(
+        "get",
+        "/leasing/metrics",
+        HTTP_OK,
+        "Failed to fetch leasing CRM metrics",
+        "fetching leasing CRM metrics",
+    )
+
+
+def create_leasing_prospect_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a new prospective renter lead."""
+    return _leasing_call(
+        "post",
+        "/leasing/prospects",
+        HTTP_CREATED,
+        "Failed to create leasing prospect",
+        "creating leasing prospect",
+        json=payload,
+    )
+
+
+def list_leasing_prospects_api(
+    stage: str | None = None,
+    lead_source: str | None = None,
+    desired_unit_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List leasing prospects with optional filters."""
+    params: dict[str, Any] = {}
+    if stage:
+        params["stage"] = stage
+    if lead_source:
+        params["lead_source"] = lead_source
+    if desired_unit_id:
+        params["desired_unit_id"] = desired_unit_id
+    data = _leasing_call(
+        "get",
+        "/leasing/prospects",
+        HTTP_OK,
+        "Failed to list leasing prospects",
+        "listing leasing prospects",
+        params=params,
+    )
+    return list(data.get("prospects", [])) if data else []
+
+
+def schedule_leasing_tour_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Schedule a property tour for a prospect."""
+    return _leasing_call(
+        "post",
+        "/leasing/tours",
+        HTTP_CREATED,
+        "Failed to schedule property tour",
+        "scheduling property tour",
+        json=payload,
+    )
+
+
+def list_leasing_tours_api(
+    prospect_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List scheduled and past property tours."""
+    params: dict[str, Any] = {}
+    if prospect_id:
+        params["prospect_id"] = prospect_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    data = _leasing_call(
+        "get",
+        "/leasing/tours",
+        HTTP_OK,
+        "Failed to list property tours",
+        "listing property tours",
+        params=params,
+    )
+    return list(data.get("tours", [])) if data else []
+
+
+def complete_leasing_tour_api(
+    tour_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Mark a property tour completed or no-show."""
+    return _leasing_call(
+        "post",
+        f"/leasing/tours/{tour_id}/complete",
+        HTTP_OK,
+        f"Failed to complete tour '{tour_id}'",
+        "completing property tour",
+        json=payload or {},
+    )
+
+
+def cancel_leasing_tour_api(tour_id: str) -> dict[str, Any] | None:
+    """Cancel a scheduled property tour."""
+    return _leasing_call(
+        "post",
+        f"/leasing/tours/{tour_id}/cancel",
+        HTTP_OK,
+        f"Failed to cancel tour '{tour_id}'",
+        "cancelling property tour",
+    )
+
+
+def submit_rental_application_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Submit a formal rental application."""
+    return _leasing_call(
+        "post",
+        "/leasing/applications",
+        HTTP_CREATED,
+        "Failed to submit rental application",
+        "submitting rental application",
+        json=payload,
+    )
+
+
+def list_rental_applications_api(
+    prospect_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List rental applications with optional filters."""
+    params: dict[str, Any] = {}
+    if prospect_id:
+        params["prospect_id"] = prospect_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    data = _leasing_call(
+        "get",
+        "/leasing/applications",
+        HTTP_OK,
+        "Failed to list rental applications",
+        "listing rental applications",
+        params=params,
+    )
+    return list(data.get("applications", [])) if data else []
+
+
+def screen_rental_application_api(
+    application_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Record credit/background screening results for a rental application."""
+    return _leasing_call(
+        "post",
+        f"/leasing/applications/{application_id}/screen",
+        HTTP_OK,
+        f"Failed to screen application '{application_id}'",
+        "screening rental application",
+        json=payload,
+    )
+
+
+def decide_rental_application_api(
+    application_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Approve, conditionally approve, deny, or withdraw a rental application."""
+    return _leasing_call(
+        "post",
+        f"/leasing/applications/{application_id}/decision",
+        HTTP_OK,
+        f"Failed to record decision for application '{application_id}'",
+        "deciding rental application",
+        json=payload,
+    )
+
+
+def get_unit_leasing_summary_api(unit_id: str) -> dict[str, Any] | None:
+    """Fetch leasing demand summary for a unit."""
+    return _leasing_call(
+        "get",
+        f"/units/{unit_id}/leasing/summary",
+        HTTP_OK,
+        f"Failed to fetch leasing summary for unit '{unit_id}'",
+        "fetching unit leasing summary",
+    )
+
+
+def session_schedule_tour_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """1-click tour scheduling directly from an active session."""
+    return _leasing_call(
+        "post",
+        f"/sessions/{session_id}/leasing/schedule-tour",
+        HTTP_CREATED,
+        f"Failed to schedule tour for session '{session_id}'",
+        "scheduling tour from session",
+        json=payload,
+    )
+
+
+def session_submit_application_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """1-click rental application submission directly from an active session."""
+    return _leasing_call(
+        "post",
+        f"/sessions/{session_id}/leasing/submit-application",
+        HTTP_CREATED,
+        f"Failed to submit application for session '{session_id}'",
+        "submitting application from session",
+        json=payload,
+    )
