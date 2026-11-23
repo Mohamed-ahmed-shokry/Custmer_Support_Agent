@@ -1481,3 +1481,42 @@ The Resident Renters Insurance Compliance Engine automates proof-of-insurance re
   - `{deposit_deductions_total}`: Total approved itemized deductions
   - `{deposit_net_refund}`: Net refundable balance (`principal + interest - deductions`)
   - `{deposit_deadline_date}`: Statutory deposit return deadline date
+
+
+## Prospective Leasing CRM, Property Tours & Rental Applications (v0.55.0)
+
+### Prospective Renter Leads & Property Tours
+- `POST /leasing/prospects`: Capture a new prospective renter lead (`full_name`, `email`, `phone`, `lead_source`, `desired_unit_id`, `desired_bedrooms`, `max_budget`, `target_move_in_date`, `assigned_agent`, `notes`). Dispatches `leasing.prospect_created` webhook.
+- `GET /leasing/prospects`: List prospects filtered by `stage`, `lead_source`, and `desired_unit_id`.
+- `GET /leasing/prospects/{id}` / `PATCH /leasing/prospects/{id}`: Retrieve or update a prospect record and funnel stage (`new`, `contacted`, `tour_scheduled`, `toured`, `applied`, `approved`, `leased`, `lost`).
+- `POST /leasing/tours`: Schedule an `in_person`, `virtual`, or `self_guided` unit tour (`prospect_id`, `unit_id`, `scheduled_date`, `scheduled_time`, `tour_type`, `leasing_agent`). Advances prospect stage to `tour_scheduled` and dispatches `leasing.tour_scheduled` webhook.
+- `GET /leasing/tours`: List tours filtered by `prospect_id`, `unit_id`, and `status`.
+- `POST /leasing/tours/{id}/complete`: Record tour completion or no-show with optional 1-5 rating and feedback notes. Dispatches `leasing.tour_completed` webhook.
+- `POST /leasing/tours/{id}/cancel`: Cancel a scheduled unit tour.
+
+### Rental Applications, Screening & Decisions
+- `POST /leasing/applications`: Submit a rental application (`prospect_id`, `unit_id`, `monthly_income`, `target_rent`, `credit_score`, `desired_move_in_date`, `lease_term_months`, `application_fee`, `fee_paid`). Automatically computes `income_to_rent_ratio` and dispatches `leasing.application_submitted` webhook.
+- `GET /leasing/applications` / `GET /leasing/applications/{id}`: List or inspect rental applications.
+- `POST /leasing/applications/{id}/screen`: Record credit score, background status (`passed`, `flagged`, `failed`), and eviction history clearance; computes automated underwriting recommendation (`approved` >= 3.0x income & >= 650 credit, `conditionally_approved` >= 2.5x & >= 600 credit, or `denied`).
+- `POST /leasing/applications/{id}/decision`: Record final decision (`approved`, `conditionally_approved`, `denied`, `withdrawn`), advance prospect stage, and dispatch `leasing.application_approved` or `leasing.application_denied` webhook.
+
+### Summaries, KPIs & 1-Click Session Actions
+- `GET /leasing/metrics`: Portfolio leasing funnel KPIs (`total_prospects`, `scheduled_tours`, `completed_tours`, `pending_screening`, `approved_applications`, `approval_rate_pct`, `lead_to_approval_rate_pct`, `total_application_fees_collected`).
+- `GET /units/{id}/leasing/summary`: Unit-level demand status (`available`, `active_interest`, `high_demand`), 3.0x minimum qualifying monthly income, prospects, tours, and applications.
+- `POST /sessions/{id}/leasing/schedule-tour`: 1-click unit tour scheduling from an active support session.
+- `POST /sessions/{id}/leasing/submit-application`: 1-click rental application submission from an active support session.
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**:
+  ```text
+  [PROSPECTIVE LEASING, TOURS & APPLICATIONS]
+  Unit Leasing Demand: ACTIVE_INTEREST | Prospects: 1 | Scheduled Tours: 1 | Active Applications: 0
+  Minimum Qualifying Monthly Income (3.0x): $6,600.00
+  [END PROSPECTIVE LEASING, TOURS & APPLICATIONS]
+  ```
+- **Macro Template Variables**:
+  - `{leasing_prospect_count}`: Number of active prospects interested in the unit
+  - `{leasing_active_applications}`: Count of active rental applications for the unit
+  - `{leasing_next_tour_date}`: Next scheduled tour date for the unit
+  - `{leasing_unit_demand_status}`: Unit demand level (`available`, `active_interest`, `high_demand`)
+  - `{leasing_income_requirement}`: 3.0x minimum monthly qualifying income for the unit
