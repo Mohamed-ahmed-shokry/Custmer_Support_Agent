@@ -4231,3 +4231,83 @@ def test_deposit_client_api_utils_errors(monkeypatch):
     assert api_utils.get_tenant_deposit_summary_api("tenant_1") is None
     assert api_utils.session_add_deposit_deduction_api("s1", {}) is None
     assert api_utils.session_open_deposit_dispute_api("s1", {}) is None
+
+
+def test_leasing_crm_client_api_utils(monkeypatch):
+    """Verify leasing CRM, tour, and rental application API client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    class LeasingRouter:
+        def get(self, url, **kwargs):
+            routes = [
+                ("/leasing/metrics", 200, {"total_prospects": 2, "approval_rate_pct": 100.0}),
+                ("/leasing/prospects", 200, {"prospects": [{"id": "prs_1"}], "total": 1}),
+                ("/leasing/tours", 200, {"tours": [{"id": "tur_1"}], "total": 1}),
+                ("/leasing/applications", 200, {"applications": [{"id": "app_1"}], "total": 1}),
+                ("/leasing/summary", 200, {"unit_id": "unit_101", "demand_status": "high_demand"}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(404, {"detail": "Not found"})
+
+        def post(self, url, **kwargs):
+            routes = [
+                ("/leasing/prospects", 201, {"id": "prs_new"}),
+                ("/leasing/tours", 201, {"id": "tur_new"}),
+                ("/schedule-tour", 201, {"id": "tur_sess"}),
+                ("/leasing/applications", 201, {"id": "app_new"}),
+                ("/submit-application", 201, {"id": "app_sess"}),
+                ("/complete", 200, {"id": "tur_1", "status": "completed"}),
+                ("/cancel", 200, {"id": "tur_1", "status": "cancelled"}),
+                ("/screen", 200, {"id": "app_1", "recommended_decision": "approved"}),
+                ("/decision", 200, {"id": "app_1", "status": "approved"}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(400, {"detail": "Bad request"})
+
+    monkeypatch.setattr(api_utils, "requests", LeasingRouter())
+
+    expected_prospects = 2
+    assert api_utils.get_leasing_metrics_api()["total_prospects"] == expected_prospects
+    assert api_utils.create_leasing_prospect_api({"full_name": "Test"})["id"] == "prs_new"
+    assert len(api_utils.list_leasing_prospects_api(stage="new")) == 1
+    assert api_utils.schedule_leasing_tour_api({"prospect_id": "prs_1"})["id"] == "tur_new"
+    assert len(api_utils.list_leasing_tours_api(unit_id="unit_101")) == 1
+    assert api_utils.complete_leasing_tour_api("tur_1")["status"] == "completed"
+    assert api_utils.cancel_leasing_tour_api("tur_1")["status"] == "cancelled"
+    assert api_utils.submit_rental_application_api({"prospect_id": "prs_1"})["id"] == "app_new"
+    assert len(api_utils.list_rental_applications_api(status="submitted")) == 1
+    scr = api_utils.screen_rental_application_api("app_1", {"credit_score": 720})
+    assert scr["recommended_decision"] == "approved"
+    dec = api_utils.decide_rental_application_api("app_1", {"decision": "approved"})
+    assert dec["status"] == "approved"
+    assert api_utils.get_unit_leasing_summary_api("unit_101")["demand_status"] == "high_demand"
+    assert api_utils.session_schedule_tour_api("s1", {"prospect_id": "prs_1"})["id"] == "tur_sess"
+    sess_app = api_utils.session_submit_application_api("s1", {"prospect_id": "prs_1"})
+    assert sess_app["id"] == "app_sess"
+
+
+def test_leasing_crm_client_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in leasing CRM API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_leasing_metrics_api() is None
+    assert api_utils.create_leasing_prospect_api({}) is None
+    assert api_utils.list_leasing_prospects_api() == []
+    assert api_utils.schedule_leasing_tour_api({}) is None
+    assert api_utils.list_leasing_tours_api() == []
+    assert api_utils.complete_leasing_tour_api("tur_1") is None
+    assert api_utils.cancel_leasing_tour_api("tur_1") is None
+    assert api_utils.submit_rental_application_api({}) is None
+    assert api_utils.list_rental_applications_api() == []
+    assert api_utils.screen_rental_application_api("app_1", {}) is None
+    assert api_utils.decide_rental_application_api("app_1", {}) is None
+    assert api_utils.get_unit_leasing_summary_api("unit_101") is None
+    assert api_utils.session_schedule_tour_api("s1", {}) is None
+    assert api_utils.session_submit_application_api("s1", {}) is None
