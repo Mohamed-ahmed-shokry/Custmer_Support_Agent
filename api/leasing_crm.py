@@ -519,3 +519,169 @@ def update_prospect(prospect_id: str, updates: dict[str, Any]) -> dict[str, Any]
         return _row_to_prospect(cursor.fetchone())
     finally:
         conn.close()
+
+
+def schedule_tour(  # noqa: PLR0913
+    prospect_id: str,
+    unit_id: str,
+    scheduled_date: str,
+    *,
+    scheduled_time: str = "14:00",
+    tour_type: str = TourType.IN_PERSON.value,
+    leasing_agent: str = "",
+) -> dict[str, Any]:
+    """Schedule a property tour for a prospect and advance prospect stage."""
+    if tour_type not in {t.value for t in TourType}:
+        raise ValueError(f"Invalid tour_type '{tour_type}'")
+    if not scheduled_date or not scheduled_date.strip():
+        raise ValueError("scheduled_date is required")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM leasing_prospects WHERE id = ?", (prospect_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Prospect '{prospect_id}' not found")
+        cursor.execute("SELECT id FROM units WHERE id = ?", (unit_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Unit '{unit_id}' not found")
+
+        tid = _generate_tour_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO property_tours (
+                id, prospect_id, unit_id, tour_type, scheduled_date, scheduled_time,
+                leasing_agent, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tid,
+                prospect_id,
+                unit_id,
+                tour_type,
+                scheduled_date.strip(),
+                scheduled_time.strip(),
+                leasing_agent.strip(),
+                TourStatus.SCHEDULED.value,
+                now_iso,
+                now_iso,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE leasing_prospects
+            SET stage = ?, desired_unit_id = COALESCE(desired_unit_id, ?), updated_at = ?
+            WHERE id = ? AND stage IN ('new', 'contacted')
+            """,
+            (ProspectStage.TOUR_SCHEDULED.value, unit_id, now_iso, prospect_id),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM property_tours WHERE id = ?", (tid,))
+        tour = _row_to_tour(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("leasing.tour_scheduled", tour)
+    return tour
+
+
+def list_tours(
+    prospect_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List scheduled and past property tours with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM property_tours WHERE 1=1"
+        params: list[Any] = []
+        if prospect_id:
+            query += " AND prospect_id = ?"
+            params.append(prospect_id)
+        if unit_id:
+            query += " AND unit_id = ?"
+            params.append(unit_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY scheduled_date ASC, scheduled_time ASC"
+        cursor.execute(query, params)
+        return [_row_to_tour(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def complete_tour(
+    tour_id: str,
+    *,
+    feedback_rating: int | None = None,
+    feedback_notes: str = "",
+    no_show: bool = False,
+) -> dict[str, Any] | None:
+    """Mark a property tour completed or no-show and update prospect stage."""
+    max_rating = 5
+    if feedback_rating is not None and not (1 <= feedback_rating <= max_rating):
+        raise ValueError("feedback_rating must be between 1 and 5")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM property_tours WHERE id = ?", (tour_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        next_status = TourStatus.NO_SHOW.value if no_show else TourStatus.COMPLETED.value
+        cursor.execute(
+            """
+            UPDATE property_tours
+            SET status = ?, feedback_rating = ?, feedback_notes = ?,
+                completed_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (next_status, feedback_rating, feedback_notes.strip(), now_iso, now_iso, tour_id),
+        )
+        if not no_show:
+            cursor.execute(
+                """
+                UPDATE leasing_prospects
+                SET stage = ?, updated_at = ?
+                WHERE id = ? AND stage IN ('new', 'contacted', 'tour_scheduled')
+                """,
+                (ProspectStage.TOURED.value, now_iso, row["prospect_id"]),
+            )
+        conn.commit()
+        cursor.execute("SELECT * FROM property_tours WHERE id = ?", (tour_id,))
+        updated = _row_to_tour(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("leasing.tour_completed", updated)
+    return updated
+
+
+def cancel_tour(tour_id: str) -> dict[str, Any] | None:
+    """Cancel a scheduled property tour."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_leasing_crm_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM property_tours WHERE id = ?", (tour_id,))
+        if cursor.fetchone() is None:
+            return None
+        now_iso = _now_iso()
+        cursor.execute(
+            "UPDATE property_tours SET status = ?, updated_at = ? WHERE id = ?",
+            (TourStatus.CANCELLED.value, now_iso, tour_id),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM property_tours WHERE id = ?", (tour_id,))
+        return _row_to_tour(cursor.fetchone())
+    finally:
+        conn.close()
