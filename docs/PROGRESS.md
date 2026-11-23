@@ -5,7 +5,7 @@ Deliver an end-to-end Prospective Leasing CRM, Property Tour Scheduling, Rental 
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: Core Engine & SQLite Schema (`api/leasing_crm.py`)**
+- [x] **AC1: Core Engine & SQLite Schema (`api/leasing_crm.py`)** ✅
   - Tables `leasing_prospects`, `property_tours`, and `rental_applications` with indexes, foreign keys, enums, seeds, prospect CRUD, tour lifecycle, application screening/decisioning, unit summaries, and funnel KPIs.
 - [ ] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)**
   - Request/response models for prospects, tours, applications, screening, decisions, summaries, metrics, and 6 `leasing.*` webhook events.
@@ -27,7 +27,7 @@ Deliver an end-to-end Prospective Leasing CRM, Property Tour Scheduling, Rental 
 ## Micro-Task Execution Checklist
 
 - [x] Task 1: Define v0.55.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/leasing_crm.py` (enums, schema, seeds, prospects, tours, applications, screening, decisioning, summaries, KPIs) with unit tests.
+- [x] Task 2: Implement `api/leasing_crm.py` (enums, schema, seeds, prospects, tours, applications, screening, decisioning, summaries, KPIs) with unit tests.
 - [ ] Task 3: Register `leasing.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
 - [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
