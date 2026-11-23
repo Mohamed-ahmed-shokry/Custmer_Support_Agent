@@ -4144,3 +4144,90 @@ def test_pm_client_api_utils_errors(monkeypatch):
     assert api_utils.get_tenant_pm_summary_api("tenant_1") is None
     assert api_utils.session_send_pm_entry_notice_api("s1", {}) is None
     assert api_utils.session_schedule_pm_task_api("s1", {}) is None
+
+
+def test_deposit_client_api_utils(monkeypatch):
+    """Verify security deposit API client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    class DepositRouter:
+        def get(self, url, **kwargs):
+            if url.endswith("/deposits/metrics"):
+                return FakeResponse(200, {"total_deposits": 2, "statutory_compliance_rate": 100.0})
+            if url.endswith("/deposits/disputes"):
+                return FakeResponse(200, {"disputes": [{"id": "dsp_1"}], "total": 1})
+            if url.endswith("/deposits"):
+                return FakeResponse(200, {"deposits": [{"id": "dep_1"}], "total": 1})
+            if url.endswith("/deposits/dep_1"):
+                return FakeResponse(200, {"id": "dep_1", "status": "held"})
+            if url.endswith("/tenants/tenant_1/deposits/summary"):
+                return FakeResponse(200, {"tenant_id": "tenant_1", "total_deposits": 1})
+            return FakeResponse(404, {"detail": "Not found"})
+
+        def post(self, url, **kwargs):
+            routes = [
+                ("/deposits", 201, {"id": "dep_new"}),
+                ("/deductions", 201, {"id": "ded_new"}),
+                ("/add-deduction", 201, {"id": "ded_new"}),
+                ("/disputes", 201, {"id": "dsp_new"}),
+                ("/open-dispute", 201, {"id": "dsp_new"}),
+                ("/statement", 200, {"id": "dep_1", "statement_markdown": "# Statement"}),
+                ("/refund", 200, {"id": "dep_1", "status": "refunded"}),
+                ("/resolve", 200, {"id": "dsp_1", "status": "resolved_adjusted"}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(400, {"detail": "Bad request"})
+
+        def delete(self, url, **kwargs):
+            if "/deposits/deductions/" in url:
+                return FakeResponse(200, {"deleted": True})
+            return FakeResponse(404, {"detail": "Not found"})
+
+    monkeypatch.setattr(api_utils, "requests", DepositRouter())
+
+    expected_count = 2
+    assert api_utils.get_deposit_metrics_api()["total_deposits"] == expected_count
+    assert api_utils.create_deposit_api({"unit_id": "unit_101"})["id"] == "dep_new"
+    assert len(api_utils.list_deposits_api(unit_id="unit_101", status="held")) == 1
+    assert api_utils.get_deposit_api("dep_1")["status"] == "held"
+    assert api_utils.add_deposit_deduction_api("dep_1", {"amount": 50.0})["id"] == "ded_new"
+    assert api_utils.delete_deposit_deduction_api("ded_new") is True
+    assert api_utils.issue_deposit_statement_api("dep_1")["statement_markdown"] == "# Statement"
+    ref = api_utils.issue_deposit_refund_api("dep_1", {"refund_method": "ach"})
+    assert ref["status"] == "refunded"
+    assert len(api_utils.list_deposit_disputes_api(deposit_id="dep_1")) == 1
+    assert api_utils.open_deposit_dispute_api("dep_1", {"disputed_amount": 50.0})["id"] == "dsp_new"
+    assert (
+        api_utils.resolve_deposit_dispute_api("dsp_1", {"status": "resolved_adjusted"})["status"]
+        == "resolved_adjusted"
+    )
+    assert api_utils.get_tenant_deposit_summary_api("tenant_1")["total_deposits"] == 1
+    sess_ded = api_utils.session_add_deposit_deduction_api("s1", {"deposit_id": "dep_1"})
+    assert sess_ded["id"] == "ded_new"
+    sess_dsp = api_utils.session_open_deposit_dispute_api("s1", {"deposit_id": "dep_1"})
+    assert sess_dsp["id"] == "dsp_new"
+
+
+def test_deposit_client_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in deposit API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_deposit_metrics_api() is None
+    assert api_utils.create_deposit_api({}) is None
+    assert api_utils.list_deposits_api() == []
+    assert api_utils.get_deposit_api("dep_1") is None
+    assert api_utils.add_deposit_deduction_api("dep_1", {}) is None
+    assert api_utils.delete_deposit_deduction_api("ded_1") is False
+    assert api_utils.issue_deposit_statement_api("dep_1") is None
+    assert api_utils.issue_deposit_refund_api("dep_1", {}) is None
+    assert api_utils.list_deposit_disputes_api() == []
+    assert api_utils.open_deposit_dispute_api("dep_1", {}) is None
+    assert api_utils.resolve_deposit_dispute_api("dsp_1", {}) is None
+    assert api_utils.get_tenant_deposit_summary_api("tenant_1") is None
+    assert api_utils.session_add_deposit_deduction_api("s1", {}) is None
+    assert api_utils.session_open_deposit_dispute_api("s1", {}) is None

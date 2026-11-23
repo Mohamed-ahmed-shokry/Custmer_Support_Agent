@@ -20,6 +20,7 @@ from api import (
     parking,
     pets,
     preventative_maintenance,
+    security_deposits,
     sublets,
     utilities,
     vendors,
@@ -588,6 +589,7 @@ def _extract_pet_vars(
 
 
 
+
 def _format_access_control_lines(
     credentials: list[dict[str, Any]],
     guest_passes: list[dict[str, Any]],
@@ -896,6 +898,7 @@ def _extract_move_logistics_vars(
 
     return vars_dict
 
+
 def _format_announcements_lines(
     announcements_list: list[dict[str, Any]],
     concierge_requests: list[dict[str, Any]],
@@ -1107,6 +1110,7 @@ def _extract_utility_vars(
     return vars_dict
 
 
+
 def _format_insurance_lines(
     policies: list[dict[str, Any]],
     claims: list[dict[str, Any]],
@@ -1200,6 +1204,7 @@ def _extract_insurance_vars(
         vars_dict["insurance_latest_claim_status"] = str(latest.get("status", "none"))
 
     return vars_dict
+
 
 
 def _format_sublet_lines(
@@ -1309,6 +1314,7 @@ def _extract_sublet_vars(
     return vars_dict
 
 
+
 def _format_pm_lines(pm_summary: dict[str, Any] | None) -> list[str]:
     """Format preventative maintenance & safety compliance context for RAG prompts."""
     if not pm_summary:
@@ -1353,6 +1359,7 @@ def _extract_pm_vars(pm_summary: dict[str, Any] | None) -> dict[str, str]:
     if not pm_summary:
         return vars_dict
 
+
     vars_dict["pm_compliance_status"] = str(pm_summary.get("compliance_status", "compliant"))
     vars_dict["pm_overdue_count"] = str(pm_summary.get("overdue_count", 0))
 
@@ -1365,6 +1372,7 @@ def _extract_pm_vars(pm_summary: dict[str, Any] | None) -> dict[str, str]:
         )
 
     return vars_dict
+
 
 
 def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
@@ -1551,6 +1559,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     elif resolved_tenant_id:
         pm_summary = preventative_maintenance.get_tenant_pm_summary(resolved_tenant_id)
 
+    deposit_summary: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        deposit_summary = security_deposits.get_tenant_deposit_summary(resolved_tenant_id)
+    elif resolved_unit_id:
+        deposit_summary = security_deposits.get_unit_deposit_summary(resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -1671,6 +1685,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
             lines.append("")
         lines.extend(pm_lines)
 
+    deposit_lines = _format_deposit_lines(deposit_summary)
+    if deposit_lines:
+        if lines:
+            lines.append("")
+        lines.extend(deposit_lines)
+
     return "\n".join(lines)
 
 
@@ -1724,6 +1744,7 @@ def _extract_tenant_vars(tenant: dict[str, Any]) -> dict[str, str]:
     return vars_dict
 
 
+
 def _extract_unit_vars(unit: dict[str, Any]) -> dict[str, str]:
     """Extract string variables from unit profile dictionary."""
     vars_dict: dict[str, str] = {}
@@ -1745,6 +1766,60 @@ def _extract_unit_vars(unit: dict[str, Any]) -> dict[str, str]:
         vars_dict["access_code"] = gate
     if unit.get("trash_day"):
         vars_dict["trash_day"] = unit["trash_day"]
+    return vars_dict
+
+
+def _format_deposit_lines(deposit_summary: dict[str, Any] | None) -> list[str]:
+    """Format security deposit escrow & refund disposition lines for prompt grounding."""
+    if not deposit_summary or not deposit_summary.get("total_deposits"):
+        return []
+    lines = ["[SECURITY DEPOSIT & REFUND DISPOSITION]"]
+    lines.append(
+        f"Total Escrow Principal: ${deposit_summary.get('total_principal', 0.0):,.2f} "
+        f"| Accrued Interest: ${deposit_summary.get('total_interest', 0.0):,.2f} "
+        f"| Deductions: ${deposit_summary.get('total_deductions', 0.0):,.2f} "
+        f"| Net Refundable: ${deposit_summary.get('total_net_refundable', 0.0):,.2f}"
+    )
+    primary = deposit_summary.get("primary_deposit")
+    if primary:
+        deadline = primary.get("statutory_deadline_date") or "N/A"
+        lines.append(
+            f"Primary Deposit ({primary.get('id')}): type={primary.get('deposit_type')}, "
+            f"status={primary.get('status')}, statutory_deadline={deadline}"
+        )
+        for ded in (primary.get("deductions") or [])[:5]:
+            lines.append(
+                f"  - Deduction ({ded.get('category')}): {ded.get('description')} "
+                f"(${ded.get('amount', 0.0):,.2f})"
+            )
+    if deposit_summary.get("open_disputes_count"):
+        lines.append(f"Open Deposit Disputes: {deposit_summary['open_disputes_count']}")
+    lines.append("[END SECURITY DEPOSIT & REFUND DISPOSITION]")
+    return lines
+
+
+def _extract_deposit_vars(deposit_summary: dict[str, Any] | None) -> dict[str, str]:
+    """Extract security deposit macro variables from a unit/tenant deposit summary."""
+    vars_dict: dict[str, str] = {
+        "deposit_amount": "$0.00",
+        "deposit_status": "none",
+        "deposit_deductions_total": "$0.00",
+        "deposit_net_refund": "$0.00",
+        "deposit_deadline_date": "none",
+    }
+    if not deposit_summary or not deposit_summary.get("total_deposits"):
+        return vars_dict
+
+    vars_dict["deposit_amount"] = f"${deposit_summary.get('total_principal', 0.0):,.2f}"
+    vars_dict["deposit_deductions_total"] = f"${deposit_summary.get('total_deductions', 0.0):,.2f}"
+    vars_dict["deposit_net_refund"] = f"${deposit_summary.get('total_net_refundable', 0.0):,.2f}"
+
+    primary = deposit_summary.get("primary_deposit")
+    if primary:
+        vars_dict["deposit_status"] = str(primary.get("status", "none"))
+        vars_dict["deposit_deadline_date"] = str(
+            primary.get("statutory_deadline_date") or "none"
+        )
     return vars_dict
 
 
@@ -2025,5 +2100,12 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     elif resolved_tenant_id:
         t_pm_summary = preventative_maintenance.get_tenant_pm_summary(resolved_tenant_id)
     variables.update(_extract_pm_vars(t_pm_summary))
+
+    t_deposit_summary: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        t_deposit_summary = security_deposits.get_tenant_deposit_summary(resolved_tenant_id)
+    elif resolved_unit_id:
+        t_deposit_summary = security_deposits.get_unit_deposit_summary(resolved_unit_id)
+    variables.update(_extract_deposit_vars(t_deposit_summary))
 
     return variables

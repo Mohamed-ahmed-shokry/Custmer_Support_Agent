@@ -4833,3 +4833,176 @@ class SessionSchedulePMTaskRequest(BaseModel):
     scheduled_date: str = Field(..., min_length=4, max_length=30)
     assigned_technician: str | None = Field(default=None, max_length=120)
     inspection_notes: str = Field(default="", max_length=2000)
+
+
+# --- Security Deposit Escrow, Deductions & Dispute Schemas (v0.54.0) ---
+
+
+class SecurityDepositCreateRequest(BaseModel):
+    unit_id: str = Field(..., min_length=1, max_length=80)
+    principal_amount: float = Field(..., gt=0.0)
+    tenant_id: str | None = Field(default=None, max_length=80)
+    deposit_type: str = Field(default="standard_security", max_length=40)
+    accrued_interest: float = Field(default=0.0, ge=0.0)
+    escrow_account_ref: str = Field(default="", max_length=120)
+    received_date: str | None = Field(default=None, max_length=30)
+    move_out_date: str | None = Field(default=None, max_length=30)
+    statutory_deadline_date: str | None = Field(default=None, max_length=30)
+    forwarding_address: str = Field(default="", max_length=300)
+    notes: str = Field(default="", max_length=2000)
+
+
+class SecurityDepositUpdateRequest(BaseModel):
+    accrued_interest: float | None = Field(default=None, ge=0.0)
+    escrow_account_ref: str | None = Field(default=None, max_length=120)
+    status: str | None = Field(default=None, max_length=40)
+    move_out_date: str | None = Field(default=None, max_length=30)
+    statutory_deadline_date: str | None = Field(default=None, max_length=30)
+    forwarding_address: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class DepositDeductionCreateRequest(BaseModel):
+    category: str = Field(..., min_length=2, max_length=40)
+    description: str = Field(..., min_length=3, max_length=1000)
+    amount: float = Field(..., gt=0.0)
+    evidence_ref: str = Field(default="", max_length=120)
+    approved: bool = Field(default=True)
+
+
+class DepositDeductionItem(BaseModel):
+    id: str
+    deposit_id: str
+    category: str
+    description: str
+    amount: float
+    evidence_ref: str = ""
+    approved: bool = True
+    created_at: str
+
+
+class DepositDisputeCreateRequest(BaseModel):
+    disputed_amount: float = Field(..., gt=0.0)
+    reason: str = Field(..., min_length=5, max_length=2000)
+    tenant_id: str | None = Field(default=None, max_length=80)
+
+
+class DepositDisputeResolveRequest(BaseModel):
+    status: str = Field(..., min_length=3, max_length=40)
+    resolution_notes: str = Field(default="", max_length=2000)
+    adjusted_refund_amount: float | None = Field(default=None, ge=0.0)
+
+
+class DepositDisputeItem(BaseModel):
+    id: str
+    deposit_id: str
+    tenant_id: str | None = None
+    disputed_amount: float
+    reason: str
+    status: str
+    resolution_notes: str = ""
+    adjusted_refund_amount: float | None = None
+    opened_at: str
+    resolved_at: str | None = None
+    updated_at: str
+
+
+class DepositStatementRequest(BaseModel):
+    move_out_date: str | None = Field(default=None, max_length=30)
+    forwarding_address: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class DepositRefundRequest(BaseModel):
+    refund_method: str = Field(default="ach", max_length=40)
+    forwarding_address: str | None = Field(default=None, max_length=300)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class SecurityDepositItem(BaseModel):
+    id: str
+    unit_id: str
+    tenant_id: str | None = None
+    deposit_type: str
+    principal_amount: float
+    accrued_interest: float = 0.0
+    total_deductions: float = 0.0
+    net_refundable: float = 0.0
+    escrow_account_ref: str = ""
+    status: str
+    received_date: str
+    move_out_date: str | None = None
+    statutory_deadline_date: str | None = None
+    is_overdue: bool = False
+    statement_issued_at: str | None = None
+    refund_amount: float | None = None
+    refund_method: str | None = None
+    refund_issued_at: str | None = None
+    forwarding_address: str = ""
+    notes: str = ""
+    deductions: list[DepositDeductionItem] = Field(default_factory=list)
+    disputes: list[DepositDisputeItem] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class SecurityDepositStatementResponse(SecurityDepositItem):
+    statement_markdown: str = ""
+
+
+class SecurityDepositListResponse(BaseModel):
+    deposits: list[SecurityDepositItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class DepositDeductionListResponse(BaseModel):
+    deductions: list[DepositDeductionItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class DepositDisputeListResponse(BaseModel):
+    disputes: list[DepositDisputeItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class DepositEntitySummaryResponse(BaseModel):
+    unit_id: str | None = None
+    tenant_id: str | None = None
+    total_deposits: int = 0
+    total_principal: float = 0.0
+    total_interest: float = 0.0
+    total_deductions: float = 0.0
+    total_net_refundable: float = 0.0
+    open_disputes_count: int = 0
+    overdue_deadlines_count: int = 0
+    primary_deposit: SecurityDepositItem | None = None
+    deposits: list[SecurityDepositItem] = Field(default_factory=list)
+
+
+class DepositMetricsResponse(BaseModel):
+    total_deposits: int = 0
+    held_count: int = 0
+    itemized_pending_count: int = 0
+    refunded_count: int = 0
+    disputed_count: int = 0
+    overdue_deadlines_count: int = 0
+    open_disputes_count: int = 0
+    total_escrow_principal: float = 0.0
+    total_accrued_interest: float = 0.0
+    total_deductions_assessed: float = 0.0
+    total_refunded_amount: float = 0.0
+    statutory_compliance_rate: float = 100.0
+
+
+class SessionAddDepositDeductionRequest(BaseModel):
+    deposit_id: str = Field(..., min_length=2, max_length=80)
+    category: str = Field(default="cleaning", max_length=40)
+    description: str = Field(..., min_length=3, max_length=1000)
+    amount: float = Field(..., gt=0.0)
+    evidence_ref: str = Field(default="", max_length=120)
+
+
+class SessionOpenDepositDisputeRequest(BaseModel):
+    deposit_id: str = Field(..., min_length=2, max_length=80)
+    disputed_amount: float = Field(..., gt=0.0)
+    reason: str = Field(..., min_length=5, max_length=2000)

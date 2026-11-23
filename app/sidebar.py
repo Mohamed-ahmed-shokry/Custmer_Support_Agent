@@ -10,6 +10,7 @@ from api.settings import settings
 
 from app.api_utils import (
     API_BASE_URL,
+    add_deposit_deduction_api,
     apply_macro_to_session,
     approve_sublet_request_api,
     assess_insurance_fee_api,
@@ -25,6 +26,7 @@ from app.api_utils import (
     create_access_credential_api,
     create_announcement_api,
     create_billing_transaction,
+    create_deposit_api,
     create_guest_pass_api,
     create_incident_api,
     create_inspection,
@@ -55,6 +57,7 @@ from app.api_utils import (
     delete_billing_transaction,
     delete_collection,
     delete_concierge_request_api,
+    delete_deposit_deduction_api,
     delete_document,
     delete_documents,
     delete_inspection,
@@ -84,6 +87,7 @@ from app.api_utils import (
     get_collections_details,
     get_config,
     get_csat_summary,
+    get_deposit_metrics_api,
     get_document_details,
     get_feedback_analytics,
     get_health,
@@ -108,6 +112,7 @@ from app.api_utils import (
     get_stats,
     get_sublet_metrics_api,
     get_support_triage_analytics,
+    get_tenant_deposit_summary_api,
     get_tenant_inspections,
     get_tenant_insurance_summary_api,
     get_tenant_lease_renewals,
@@ -122,6 +127,8 @@ from app.api_utils import (
     get_utility_metrics_api,
     get_vendor_metrics,
     get_work_order_metrics,
+    issue_deposit_refund_api,
+    issue_deposit_statement_api,
     issue_visitor_pass_api,
     link_session_tenant,
     list_access_credentials_api,
@@ -130,6 +137,8 @@ from app.api_utils import (
     list_billing_transactions,
     list_collections,
     list_concierge_requests_api,
+    list_deposit_disputes_api,
+    list_deposits_api,
     list_documents,
     list_feedback,
     list_feedback_review_queue,
@@ -182,6 +191,7 @@ from app.api_utils import (
     list_webhooks,
     list_work_order_dispatches,
     list_work_orders,
+    open_deposit_dispute_api,
     pickup_package_api,
     ping_webhook,
     post_utility_invoice_to_ledger_api,
@@ -200,16 +210,19 @@ from app.api_utils import (
     rename_collection,
     rename_session,
     render_macro,
+    resolve_deposit_dispute_api,
     scan_knowledge_gaps,
     search_sessions,
     send_pm_entry_notice_api,
     session_acknowledge_alert_api,
+    session_add_deposit_deduction_api,
     session_create_reservation_api,
     session_file_insurance_claim_api,
     session_generate_guest_pass_api,
     session_intake_package_api,
     session_issue_violation_notice_api,
     session_issue_visitor_pass_api,
+    session_open_deposit_dispute_api,
     session_record_meter_reading_api,
     session_register_pet_api,
     session_report_lost_fob_api,
@@ -1176,6 +1189,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_insurance_widget(selected, tenant)
     _render_session_sublets_widget(selected, tenant)
     _render_session_pm_widget(selected, tenant)
+    _render_session_deposit_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6961,6 +6975,7 @@ def display_sidebar():
     _render_insurance_compliance_board()
     _render_subletting_board()
     _render_pm_board()
+    _render_security_deposits_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
@@ -7174,3 +7189,261 @@ def _render_pm_board() -> None:
             _render_pm_tasks_tab()
         with tab3:
             _render_pm_kpis_tab()
+
+
+def _render_session_deposit_widget(
+    session_id: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click security deposit deduction and dispute widget for a resident session."""
+    tenant_id = str(tenant.get("id") or "")
+    if not tenant_id:
+        return
+
+    with st.expander("🏦 Security Deposit Quick Actions"):
+        summary = get_tenant_deposit_summary_api(tenant_id)
+        primary = summary.get("primary_deposit") if summary else None
+        if summary and primary:
+            dep_id = str(primary.get("id") or "")
+            principal = summary.get("total_principal", 0.0)
+            net_ref = summary.get("total_net_refundable", 0.0)
+            status = str(primary.get("status", "held")).upper()
+            st.markdown(
+                f"**Deposit:** `{dep_id}` (`{status}`) | "
+                f"**Escrow:** `${principal:,.2f}` | **Net Refund:** `${net_ref:,.2f}`"
+            )
+            action = st.selectbox(
+                "Action",
+                ["Log Itemized Deduction", "Open Resident Dispute"],
+                key=f"sess_dep_action_{session_id}",
+            )
+            if action == "Log Itemized Deduction":
+                cat = st.selectbox(
+                    "Category",
+                    [
+                        "cleaning",
+                        "damage_repair",
+                        "unpaid_rent",
+                        "key_replacement",
+                        "utility_balance",
+                        "lease_break_fee",
+                        "other",
+                    ],
+                    key=f"sess_dep_cat_{session_id}",
+                )
+                amt = st.number_input(
+                    "Amount ($)",
+                    min_value=1.0,
+                    value=75.0,
+                    step=5.0,
+                    key=f"sess_dep_amt_{session_id}",
+                )
+                desc = st.text_input(
+                    "Description",
+                    value="Move-out cleaning / repair item",
+                    key=f"sess_dep_desc_{session_id}",
+                )
+                if st.button("Add Deduction", key=f"btn_sess_dep_ded_{session_id}"):
+                    res = session_add_deposit_deduction_api(
+                        session_id,
+                        {
+                            "deposit_id": dep_id,
+                            "category": cat,
+                            "description": desc,
+                            "amount": float(amt),
+                        },
+                    )
+                    if res:
+                        st.success("Itemized deposit deduction logged!")
+                        st.rerun()
+            else:
+                dsp_amt = st.number_input(
+                    "Disputed Amount ($)",
+                    min_value=1.0,
+                    value=100.0,
+                    step=10.0,
+                    key=f"sess_dep_dsp_amt_{session_id}",
+                )
+                dsp_reason = st.text_input(
+                    "Dispute Reason",
+                    value="Resident disputes move-out deduction assessment.",
+                    key=f"sess_dep_dsp_reason_{session_id}",
+                )
+                if st.button("Open Deposit Dispute", key=f"btn_sess_dep_dsp_{session_id}"):
+                    res = session_open_deposit_dispute_api(
+                        session_id,
+                        {
+                            "deposit_id": dep_id,
+                            "disputed_amount": float(dsp_amt),
+                            "reason": dsp_reason,
+                        },
+                    )
+                    if res:
+                        st.success("Deposit dispute opened!")
+                        st.rerun()
+        else:
+            st.caption("No security deposit records linked to this resident.")
+
+
+def _render_deposits_ledger_tab() -> None:
+    """Render portfolio deposit KPIs, escrow ledger, statement/refund actions, and creator."""
+    metrics = get_deposit_metrics_api()
+    if metrics:
+        c1, c2 = st.columns(2)
+        c1.metric("Escrow Principal", f"${metrics.get('total_escrow_principal', 0.0):,.2f}")
+        c2.metric("Compliance Rate", f"{metrics.get('statutory_compliance_rate', 100.0)}%")
+        c3, c4 = st.columns(2)
+        c3.metric("Open Disputes", metrics.get("open_disputes_count", 0))
+        c4.metric("Overdue Deadlines", metrics.get("overdue_deadlines_count", 0))
+
+    status_filter = st.selectbox(
+        "Filter Deposit Status",
+        ["all", "held", "itemized_pending", "refunded", "partial_refund", "disputed", "forfeited"],
+        key="dep_status_filter",
+    )
+    deposits = list_deposits_api(status=None if status_filter == "all" else status_filter)
+    st.caption(f"Showing **{len(deposits)}** security deposit records.")
+    for dep in deposits[:15]:
+        dep_id = str(dep.get("id") or "")
+        st.markdown(
+            f"**{dep_id}** (Unit `{dep.get('unit_id')}`) — `{dep.get('status')}` | "
+            f"Principal `${dep.get('principal_amount', 0.0):,.2f}` | "
+            f"Deductions `${dep.get('total_deductions', 0.0):,.2f}` | "
+            f"Net `${dep.get('net_refundable', 0.0):,.2f}`"
+        )
+        b1, b2 = st.columns(2)
+        if b1.button("Issue Statement", key=f"btn_dep_stmt_{dep_id}"):
+            stmt = issue_deposit_statement_api(dep_id)
+            if stmt:
+                st.success(f"Disposition statement issued for {dep_id}.")
+                st.rerun()
+        if b2.button("Issue ACH Refund", key=f"btn_dep_ref_{dep_id}"):
+            ref = issue_deposit_refund_api(dep_id, {"refund_method": "ach"})
+            if ref:
+                st.success(f"Refund recorded for {dep_id}!")
+                st.rerun()
+
+    st.divider()
+    st.caption("Record New Security Deposit")
+    new_unit = st.text_input("Unit ID", value="unit_101", key="dep_new_unit")
+    new_principal = st.number_input(
+        "Principal ($)", min_value=50.0, value=2000.0, step=100.0, key="dep_new_principal"
+    )
+    new_ref = st.text_input("Escrow Ref", value="ESC-2026-NEW", key="dep_new_ref")
+    if st.button("Create Deposit Record", key="btn_dep_create"):
+        created = create_deposit_api(
+            {
+                "unit_id": new_unit,
+                "principal_amount": float(new_principal),
+                "escrow_account_ref": new_ref,
+            }
+        )
+        if created:
+            st.success(f"Created security deposit {created.get('id')}.")
+            st.rerun()
+
+
+def _render_deposits_deductions_tab() -> None:
+    """Render itemized move-out deductions manager for security deposits."""
+    deposits = list_deposits_api()
+    if not deposits:
+        st.caption("No security deposits available.")
+        return
+    dep_ids = [str(d["id"]) for d in deposits if d.get("id")]
+    sel_dep = st.selectbox("Select Deposit", dep_ids, key="dep_ded_select")
+    selected_obj = next((d for d in deposits if str(d.get("id")) == sel_dep), None)
+    if selected_obj:
+        for ded in selected_obj.get("deductions", []):
+            d_id = str(ded.get("id") or "")
+            st.markdown(
+                f"- `{ded.get('category')}`: {ded.get('description')} "
+                f"(**${ded.get('amount', 0.0):,.2f}**)"
+            )
+            if (
+                d_id
+                and st.button("Remove", key=f"btn_del_ded_{d_id}")
+                and delete_deposit_deduction_api(d_id)
+            ):
+                st.success(f"Removed deduction {d_id}.")
+                st.rerun()
+
+    st.divider()
+    cat = st.selectbox(
+        "Deduction Category",
+        ["cleaning", "damage_repair", "unpaid_rent", "key_replacement", "utility_balance", "other"],
+        key="dep_ded_cat",
+    )
+    desc = st.text_input("Item Description", value="Move-out repair item", key="dep_ded_desc")
+    amt = st.number_input("Deduction Amount ($)", min_value=1.0, value=120.0, key="dep_ded_amt")
+    ev_ref = st.text_input("Evidence Ref (Inspection/WO)", value="", key="dep_ded_ev")
+    if st.button("Log Deduction", key="btn_dep_add_ded"):
+        added = add_deposit_deduction_api(
+            sel_dep,
+            {
+                "category": cat,
+                "description": desc,
+                "amount": float(amt),
+                "evidence_ref": ev_ref,
+            },
+        )
+        if added:
+            st.success("Deduction added to deposit.")
+            st.rerun()
+
+
+def _render_deposits_disputes_tab() -> None:
+    """Render deposit disputes queue, opener, and resolution actions."""
+    disputes = list_deposit_disputes_api()
+    st.caption(f"Showing **{len(disputes)}** security deposit disputes.")
+    for dsp in disputes[:15]:
+        dsp_id = str(dsp.get("id") or "")
+        st.markdown(
+            f"**{dsp_id}** (`{dsp.get('deposit_id')}`) — `{dsp.get('status')}` | "
+            f"Disputed `${dsp.get('disputed_amount', 0.0):,.2f}`: {dsp.get('reason')}"
+        )
+        if dsp.get("status") in ("open", "under_review"):
+            c1, c2 = st.columns(2)
+            if c1.button("Resolve (Upheld)", key=f"btn_dsp_uphold_{dsp_id}"):
+                res = resolve_deposit_dispute_api(
+                    dsp_id,
+                    {"status": "resolved_upheld", "resolution_notes": "Deductions upheld."},
+                )
+                if res:
+                    st.success(f"Dispute {dsp_id} upheld.")
+                    st.rerun()
+            if c2.button("Resolve (Adjusted)", key=f"btn_dsp_adj_{dsp_id}"):
+                res = resolve_deposit_dispute_api(
+                    dsp_id,
+                    {"status": "resolved_adjusted", "resolution_notes": "Refund adjusted."},
+                )
+                if res:
+                    st.success(f"Dispute {dsp_id} resolved with adjustment.")
+                    st.rerun()
+
+    st.divider()
+    deposits = list_deposits_api()
+    if deposits:
+        dep_ids = [str(d["id"]) for d in deposits if d.get("id")]
+        sel_dep = st.selectbox("Deposit for Dispute", dep_ids, key="dep_dsp_select")
+        dsp_amt = st.number_input("Disputed ($)", min_value=1.0, value=100.0, key="dep_dsp_amt")
+        dsp_reason = st.text_input(
+            "Reason", value="Disputing cleaning charge", key="dep_dsp_reason"
+        )
+        if st.button("Open Dispute", key="btn_dep_open_dsp"):
+            opened = open_deposit_dispute_api(
+                sel_dep, {"disputed_amount": float(dsp_amt), "reason": dsp_reason}
+            )
+            if opened:
+                st.success(f"Opened dispute {opened.get('id')}.")
+                st.rerun()
+
+
+def _render_security_deposits_board() -> None:
+    """Render sidebar expander for Security Deposit Escrow, Deductions & Disputes."""
+    with st.expander("🏦 Security Deposits & Refunds"):
+        tab1, tab2, tab3 = st.tabs(["Escrow Ledger", "Deductions", "Disputes"])
+        with tab1:
+            _render_deposits_ledger_tab()
+        with tab2:
+            _render_deposits_deductions_tab()
+        with tab3:
+            _render_deposits_disputes_tab()

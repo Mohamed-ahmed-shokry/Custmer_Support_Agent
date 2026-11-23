@@ -351,6 +351,12 @@ VALID_WEBHOOK_EVENTS = {
     "pm.task_completed",
     "pm.task_failed",
     "pm.compliance_overdue",
+    "deposit.created",
+    "deposit.deduction_added",
+    "deposit.statement_issued",
+    "deposit.refund_issued",
+    "deposit.dispute_opened",
+    "deposit.dispute_resolved",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

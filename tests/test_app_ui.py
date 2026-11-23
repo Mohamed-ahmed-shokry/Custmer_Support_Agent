@@ -5516,3 +5516,82 @@ def test_session_pm_widget_ui(monkeypatch):
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_pm_widget("sess_pm_ui", tenant)
     assert fake_st.errors == []
+
+
+def test_security_deposits_board_ui(monkeypatch):
+    """Verify rendering of Security Deposits & Refunds sidebar board."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_deposit_metrics_api",
+        lambda: {
+            "total_escrow_principal": 4200.0,
+            "statutory_compliance_rate": 100.0,
+            "open_disputes_count": 1,
+            "overdue_deadlines_count": 0,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_deposits_api",
+        lambda **kw: [
+            {
+                "id": "dep_101",
+                "unit_id": "unit_101",
+                "status": "itemized_pending",
+                "principal_amount": 2400.0,
+                "total_deductions": 185.0,
+                "net_refundable": 2215.0,
+                "deductions": [
+                    {
+                        "id": "ded_1",
+                        "category": "cleaning",
+                        "description": "Oven cleaning",
+                        "amount": 185.0,
+                    }
+                ],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_deposit_disputes_api",
+        lambda **kw: [
+            {
+                "id": "dsp_1",
+                "deposit_id": "dep_101",
+                "status": "open",
+                "disputed_amount": 185.0,
+                "reason": "Oven was clean at move-out",
+            }
+        ],
+    )
+
+    sidebar._render_security_deposits_board()
+    assert fake_st.errors == []
+
+
+def test_session_deposit_widget_ui(monkeypatch):
+    """Verify rendering of 1-click resident session security deposit widget."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_tenant_deposit_summary_api",
+        lambda tid: {
+            "tenant_id": tid,
+            "total_principal": 2400.0,
+            "total_net_refundable": 2400.0,
+            "primary_deposit": {
+                "id": "dep_101",
+                "status": "held",
+            },
+        },
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_deposit_widget("sess_dep_ui", tenant)
+    assert fake_st.errors == []

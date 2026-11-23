@@ -1440,3 +1440,44 @@ The Resident Renters Insurance Compliance Engine automates proof-of-insurance re
   - `{pm_compliance_status}`: Compliance status (`compliant`, `scheduled`, `overdue`, `action_required`)
   - `{pm_entry_notice_status}`: Notice of Entry status (`sent`, `pending`, `not_sent`)
   - `{pm_overdue_count}`: Number of overdue open PM tasks
+
+
+## Security Deposit Escrow, Itemized Deductions & Dispute Resolution (v0.54.0)
+
+### Escrow Deposits & Itemized Deductions
+- `POST /deposits`: Create a security deposit escrow record (`unit_id`, `principal_amount`, `tenant_id`, `deposit_type`, `accrued_interest`, `escrow_account_ref`, `received_date`, `move_out_date`, `statutory_deadline_date`, `forwarding_address`, `notes`). Dispatches `deposit.created` webhook.
+- `GET /deposits`: List security deposits filtered by `unit_id`, `tenant_id`, `status`, and `deposit_type`.
+- `GET /deposits/{id}`: Retrieve a deposit with computed `total_deductions`, `net_refundable`, `is_overdue`, itemized `deductions`, and `disputes`.
+- `PATCH /deposits/{id}`: Update accrued interest, escrow reference, move-out date, statutory deadline, forwarding address, status, or notes.
+- `POST /deposits/{id}/deductions`: Attach an itemized move-out deduction (`category`, `description`, `amount`, `evidence_ref`, `approved`). Dispatches `deposit.deduction_added` webhook.
+- `GET /deposits/{id}/deductions`: List all itemized deductions for a deposit.
+- `DELETE /deposits/deductions/{deduction_id}`: Remove an itemized deduction by ID.
+
+### Statutory Disposition Statements, Refunds & Disputes
+- `POST /deposits/{id}/statement`: Generate a formatted Markdown statutory itemized disposition statement (`move_out_date`, `forwarding_address`, `notes`). Dispatches `deposit.statement_issued` webhook.
+- `POST /deposits/{id}/refund`: Record deposit refund disbursement (`refund_method`: `check`, `ach`, `direct_deposit`, `applied_to_balance`) and transition status (`refunded`, `partial_refund`, or `forfeited`). Dispatches `deposit.refund_issued` webhook.
+- `POST /deposits/{id}/disputes`: Open a formal resident dispute against deductions (`disputed_amount`, `reason`, `tenant_id`). Dispatches `deposit.dispute_opened` webhook.
+- `GET /deposits/disputes`: List deposit disputes filtered by `deposit_id` and `status`.
+- `POST /deposits/disputes/{dispute_id}/resolve`: Resolve an open dispute (`status`: `under_review`, `resolved_adjusted`, `resolved_upheld`; `resolution_notes`, `adjusted_refund_amount`). Dispatches `deposit.dispute_resolved` webhook.
+
+### Summaries, KPIs & 1-Click Session Actions
+- `GET /deposits/metrics`: Portfolio security deposit KPIs (`total_deposits`, `total_escrow_principal`, `total_deductions_assessed`, `total_refunded_amount`, `open_disputes_count`, `overdue_deadlines_count`, `statutory_compliance_rate`).
+- `GET /units/{id}/deposits/summary`: Unit-level deposit escrow summary and itemized balances.
+- `GET /tenants/{id}/deposits/summary`: Resident-level deposit escrow summary and primary deposit details.
+- `POST /sessions/{id}/deposits/add-deduction`: 1-click itemized deduction directly from an active support session.
+- `POST /sessions/{id}/deposits/open-dispute`: 1-click resident deposit dispute filing directly from an active support session.
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**:
+  ```text
+  [SECURITY DEPOSIT & REFUND DISPOSITION]
+  Total Escrow Principal: $2,400.00 | Accrued Interest: $18.50 | Deductions: $0.00 | Net Refundable: $2,418.50
+  Primary Deposit (dep_seed_101): type=standard_security, status=held, statutory_deadline=N/A
+  [END SECURITY DEPOSIT & REFUND DISPOSITION]
+  ```
+- **Macro Template Variables**:
+  - `{deposit_amount}`: Total security deposit principal held in escrow
+  - `{deposit_status}`: Primary deposit status (`held`, `itemized_pending`, `refunded`, `partial_refund`, `disputed`, `forfeited`)
+  - `{deposit_deductions_total}`: Total approved itemized deductions
+  - `{deposit_net_refund}`: Net refundable balance (`principal + interest - deductions`)
+  - `{deposit_deadline_date}`: Statutory deposit return deadline date
