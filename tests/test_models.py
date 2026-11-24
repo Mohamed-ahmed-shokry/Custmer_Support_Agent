@@ -121,6 +121,8 @@ from api.pydantic_models import (
     LeaseRenewalResponse,
     LeaseRenewalSignRequest,
     LeaseRenewalUpdateRequest,
+    LeasingMetricsResponse,
+    LeasingProspectCreateRequest,
     MacroApplyRequest,
     MacroApplyResponse,
     MacroCategoriesResponse,
@@ -194,9 +196,14 @@ from api.pydantic_models import (
     PMTaskCompleteRequest,
     PMTaskCreateRequest,
     PMTaskItem,
+    PropertyTourCompleteRequest,
+    PropertyTourCreateRequest,
     QueryInput,
     QueryResponse,
     RechunkDocumentRequest,
+    RentalApplicationCreateRequest,
+    RentalApplicationDecisionRequest,
+    RentalApplicationScreenRequest,
     ReservationCreateRequest,
     ReservationItem,
     ReservationResponse,
@@ -225,8 +232,10 @@ from api.pydantic_models import (
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSchedulePMTaskRequest,
+    SessionScheduleTourRequest,
     SessionSendPMEntryNoticeRequest,
     SessionSLAStatusResponse,
+    SessionSubmitApplicationRequest,
     SessionSubmitInsuranceRequest,
     SessionSubmitSubletRequest,
     SessionSubmitViolationAppealRequest,
@@ -278,6 +287,7 @@ from api.pydantic_models import (
     UnitCreateRequest,
     UnitInsuranceSummaryResponse,
     UnitItem,
+    UnitLeasingSummaryResponse,
     UnitListResponse,
     UnitOccupancyResponse,
     UnitResponse,
@@ -3760,3 +3770,48 @@ def test_security_deposit_models():
         deposit_id="dep_1", disputed_amount=50.0, reason="Returned all keys to leasing office"
     )
     assert sess_dsp.deposit_id == "dep_1"
+
+
+def test_leasing_crm_models():
+    """Verify leasing CRM, tour, and rental application Pydantic models validation."""
+    expected_budget = 2600.0
+    expected_income = 8000.0
+    expected_credit = 710
+    expected_approval = 85.0
+
+    p_req = LeasingProspectCreateRequest(
+        full_name="Jordan Taylor", email="jordan@example.com", max_budget=expected_budget
+    )
+    assert p_req.max_budget == expected_budget
+    assert p_req.lead_source == "website"
+
+    t_req = PropertyTourCreateRequest(
+        prospect_id="prs_1", unit_id="unit_101", scheduled_date="2099-07-01"
+    )
+    assert t_req.tour_type == "in_person"
+
+    tc_req = PropertyTourCompleteRequest(feedback_rating=5, feedback_notes="Great layout")
+    assert tc_req.no_show is False
+
+    a_req = RentalApplicationCreateRequest(
+        prospect_id="prs_1", unit_id="unit_101", monthly_income=expected_income
+    )
+    assert a_req.monthly_income == expected_income
+
+    s_req = RentalApplicationScreenRequest(credit_score=expected_credit)
+    assert s_req.credit_score == expected_credit
+
+    d_req = RentalApplicationDecisionRequest(decision="approved", decision_notes="Clean file")
+    assert d_req.decision == "approved"
+
+    summary = UnitLeasingSummaryResponse(unit_id="unit_101", demand_status="high_demand")
+    assert summary.demand_status == "high_demand"
+
+    metrics = LeasingMetricsResponse(total_prospects=4, approval_rate_pct=expected_approval)
+    assert metrics.approval_rate_pct == expected_approval
+
+    sess_tour = SessionScheduleTourRequest(prospect_id="prs_1", scheduled_date="2099-07-02")
+    assert sess_tour.prospect_id == "prs_1"
+
+    sess_app = SessionSubmitApplicationRequest(prospect_id="prs_1", monthly_income=expected_income)
+    assert sess_app.monthly_income == expected_income

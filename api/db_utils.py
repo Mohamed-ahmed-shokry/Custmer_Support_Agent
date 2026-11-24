@@ -357,6 +357,12 @@ VALID_WEBHOOK_EVENTS = {
     "deposit.refund_issued",
     "deposit.dispute_opened",
     "deposit.dispute_resolved",
+    "leasing.prospect_created",
+    "leasing.tour_scheduled",
+    "leasing.tour_completed",
+    "leasing.application_submitted",
+    "leasing.application_approved",
+    "leasing.application_denied",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

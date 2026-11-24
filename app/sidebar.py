@@ -19,7 +19,9 @@ from app.api_utils import (
     auto_assign_session,
     book_freight_elevator_api,
     cancel_freight_elevator_booking_api,
+    cancel_leasing_tour_api,
     complete_inspection,
+    complete_leasing_tour_api,
     complete_pm_task_api,
     complete_vendor_dispatch,
     convert_inspection_item_to_work_order,
@@ -34,6 +36,7 @@ from app.api_utils import (
     create_insurance_policy_api,
     create_intercom_entry_api,
     create_lease_renewal,
+    create_leasing_prospect_api,
     create_macro,
     create_package_api,
     create_parking_spot_api,
@@ -53,6 +56,7 @@ from app.api_utils import (
     create_webhook,
     create_work_order,
     create_work_order_from_session,
+    decide_rental_application_api,
     delete_announcement_api,
     delete_billing_transaction,
     delete_collection,
@@ -96,6 +100,7 @@ from app.api_utils import (
     get_insurance_metrics_api,
     get_knowledge_analytics,
     get_lease_renewal_metrics,
+    get_leasing_metrics_api,
     get_metrics,
     get_move_logistics_metrics_api,
     get_package_metrics_api,
@@ -122,6 +127,7 @@ from app.api_utils import (
     get_tenant_support_history,
     get_tenant_utilities_summary_api,
     get_unit_insurance_summary_api,
+    get_unit_leasing_summary_api,
     get_unit_utilities_summary_api,
     get_unit_work_orders,
     get_utility_metrics_api,
@@ -152,6 +158,8 @@ from app.api_utils import (
     list_knowledge_articles,
     list_knowledge_gaps,
     list_lease_renewals,
+    list_leasing_prospects_api,
+    list_leasing_tours_api,
     list_macro_categories,
     list_macros,
     list_meter_readings_api,
@@ -165,6 +173,7 @@ from app.api_utils import (
     list_pets_api,
     list_pm_schedules_api,
     list_pm_tasks_api,
+    list_rental_applications_api,
     list_reservations_api,
     list_sessions,
     list_sla_policies,
@@ -212,6 +221,8 @@ from app.api_utils import (
     render_macro,
     resolve_deposit_dispute_api,
     scan_knowledge_gaps,
+    schedule_leasing_tour_api,
+    screen_rental_application_api,
     search_sessions,
     send_pm_entry_notice_api,
     session_acknowledge_alert_api,
@@ -232,11 +243,14 @@ from app.api_utils import (
     session_reserve_elevator_api,
     session_schedule_move_api,
     session_schedule_pm_task_api,
+    session_schedule_tour_api,
     session_send_pm_entry_notice_api,
+    session_submit_application_api,
     session_submit_insurance_api,
     session_submit_sublet_api,
     session_submit_violation_appeal_api,
     sign_lease_renewal,
+    submit_rental_application_api,
     suggest_macros,
     summarize_session,
     toggle_move_checklist_api,
@@ -1145,7 +1159,7 @@ def _render_session_package_intake_widget(selected: str, tenant: dict):
         st.sidebar.caption(f"Package intake unavailable: {e}")
 
 
-def _render_linked_tenant_details(selected, tenant, unit):
+def _render_linked_tenant_details(selected, tenant, unit):  # noqa: PLR0915
     t_name = f"{tenant.get('first_name', '')} {tenant.get('last_name', '')}".strip()
     st.sidebar.markdown(f"**Resident:** {t_name}")
     st.sidebar.caption(f"📧 {tenant.get('email', 'N/A')} | 📞 {tenant.get('phone', 'N/A')}")
@@ -1190,6 +1204,7 @@ def _render_linked_tenant_details(selected, tenant, unit):
     _render_session_sublets_widget(selected, tenant)
     _render_session_pm_widget(selected, tenant)
     _render_session_deposit_widget(selected, tenant)
+    _render_session_leasing_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6976,6 +6991,7 @@ def display_sidebar():
     _render_subletting_board()
     _render_pm_board()
     _render_security_deposits_board()
+    _render_leasing_crm_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
@@ -7447,3 +7463,252 @@ def _render_security_deposits_board() -> None:
             _render_deposits_deductions_tab()
         with tab3:
             _render_deposits_disputes_tab()
+
+
+def _render_session_leasing_widget(
+    session_id: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click unit tour scheduling and application intake widget for a session."""
+    unit_id = str(tenant.get("unit_id") or "")
+    if not unit_id:
+        return
+
+    with st.expander("🏢 Leasing Pipeline Quick Actions"):
+        summary = get_unit_leasing_summary_api(unit_id)
+        if summary:
+            demand = str(summary.get("demand_status", "available")).upper()
+            p_cnt = summary.get("prospect_count", 0)
+            a_cnt = summary.get("active_applications_count", 0)
+            st.markdown(
+                f"**Unit Demand:** `{demand}` | **Prospects:** `{p_cnt}` | "
+                f"**Active Apps:** `{a_cnt}`"
+            )
+        prospects = list_leasing_prospects_api()
+        p_options = {
+            str(p["id"]): str(p.get("full_name", p["id"])) for p in prospects if p.get("id")
+        }
+        if p_options:
+            sel_prospect = st.selectbox(
+                "Prospect",
+                list(p_options.keys()),
+                format_func=lambda x: p_options.get(x, x),
+                key=f"sess_lease_prospect_{session_id}",
+            )
+            action = st.selectbox(
+                "Leasing Action",
+                ["Schedule Unit Tour", "Submit Rental Application"],
+                key=f"sess_lease_action_{session_id}",
+            )
+            if action == "Schedule Unit Tour":
+                t_date = st.text_input(
+                    "Tour Date",
+                    value=(
+                        datetime.datetime.now(UTC).date() + datetime.timedelta(days=3)
+                    ).isoformat(),
+                    key=f"sess_lease_tdate_{session_id}",
+                )
+                t_type = st.selectbox(
+                    "Tour Format",
+                    ["in_person", "virtual", "self_guided"],
+                    key=f"sess_lease_ttype_{session_id}",
+                )
+                if st.button("Schedule Tour", key=f"btn_sess_lease_tour_{session_id}"):
+                    res = session_schedule_tour_api(
+                        session_id,
+                        {
+                            "prospect_id": sel_prospect,
+                            "scheduled_date": t_date,
+                            "tour_type": t_type,
+                        },
+                    )
+                    if res:
+                        st.success("Property tour scheduled!")
+                        st.rerun()
+            else:
+                inc = st.number_input(
+                    "Monthly Income ($)",
+                    min_value=500.0,
+                    value=7500.0,
+                    step=250.0,
+                    key=f"sess_lease_inc_{session_id}",
+                )
+                if st.button("Submit Application", key=f"btn_sess_lease_app_{session_id}"):
+                    res = session_submit_application_api(
+                        session_id,
+                        {"prospect_id": sel_prospect, "monthly_income": float(inc)},
+                    )
+                    if res:
+                        st.success("Rental application submitted!")
+                        st.rerun()
+        else:
+            st.caption("No prospective leads available yet.")
+
+
+def _render_leasing_prospects_tab() -> None:
+    """Render portfolio leasing funnel KPIs, prospect directory, and lead creator."""
+    metrics = get_leasing_metrics_api()
+    if metrics:
+        c1, c2 = st.columns(2)
+        c1.metric("Prospects", metrics.get("total_prospects", 0))
+        c2.metric("Approval Rate", f"{metrics.get('approval_rate_pct', 100.0)}%")
+        c3, c4 = st.columns(2)
+        c3.metric("Scheduled Tours", metrics.get("scheduled_tours", 0))
+        c4.metric("Pending Screening", metrics.get("pending_screening", 0))
+
+    stage_filter = st.selectbox(
+        "Filter Funnel Stage",
+        [
+            "all",
+            "new",
+            "contacted",
+            "tour_scheduled",
+            "toured",
+            "applied",
+            "approved",
+            "leased",
+            "lost",
+        ],
+        key="leasing_stage_filter",
+    )
+    prospects = list_leasing_prospects_api(
+        stage=None if stage_filter == "all" else stage_filter
+    )
+    st.caption(f"Showing **{len(prospects)}** prospective leads.")
+    for p in prospects[:15]:
+        st.markdown(
+            f"**{p.get('full_name')}** (`{p.get('id')}`) — `{p.get('stage')}` | "
+            f"Source: `{p.get('lead_source')}` | Budget `${p.get('max_budget', 0.0):,.0f}`"
+        )
+
+    st.divider()
+    st.caption("Add Prospective Renter Lead")
+    p_name = st.text_input("Full Name", value="", key="leasing_new_name")
+    p_email = st.text_input("Email", value="", key="leasing_new_email")
+    p_source = st.selectbox(
+        "Lead Source",
+        ["website", "zillow", "apartments_com", "walk_in", "referral", "broker"],
+        key="leasing_new_source",
+    )
+    p_budget = st.number_input(
+        "Max Budget ($)", min_value=500.0, value=2500.0, step=100.0, key="leasing_new_budget"
+    )
+    if st.button("Add Prospect", key="btn_leasing_add_prospect") and p_name and p_email:
+        created = create_leasing_prospect_api(
+            {
+                "full_name": p_name,
+                "email": p_email,
+                "lead_source": p_source,
+                "max_budget": float(p_budget),
+            }
+        )
+        if created:
+            st.success(f"Added prospect {created.get('id')}.")
+            st.rerun()
+
+
+def _render_leasing_tours_tab() -> None:
+    """Render scheduled unit tours with complete/cancel actions and quick scheduler."""
+    tours = list_leasing_tours_api()
+    st.caption(f"Showing **{len(tours)}** property tours.")
+    for t in tours[:15]:
+        tid = str(t.get("id") or "")
+        st.markdown(
+            f"**{tid}** (Unit `{t.get('unit_id')}`) — `{t.get('status')}` | "
+            f"{t.get('scheduled_date')} {t.get('scheduled_time')} ({t.get('tour_type')})"
+        )
+        if t.get("status") == "scheduled":
+            b1, b2 = st.columns(2)
+            if b1.button("Complete Tour", key=f"btn_tour_done_{tid}") and complete_leasing_tour_api(
+                tid, {"feedback_rating": 5}
+            ):
+                st.success(f"Tour {tid} completed.")
+                st.rerun()
+            if b2.button("Cancel Tour", key=f"btn_tour_cancel_{tid}") and cancel_leasing_tour_api(
+                tid
+            ):
+                st.success(f"Tour {tid} cancelled.")
+                st.rerun()
+
+    st.divider()
+    prospects = list_leasing_prospects_api()
+    if prospects:
+        p_ids = [str(p["id"]) for p in prospects if p.get("id")]
+        sel_p = st.selectbox("Prospect", p_ids, key="leasing_tour_prospect")
+        u_id = st.text_input("Unit ID", value="unit_101", key="leasing_tour_unit")
+        t_date = st.text_input(
+            "Date",
+            value=(datetime.datetime.now(UTC).date() + datetime.timedelta(days=2)).isoformat(),
+            key="leasing_tour_date",
+        )
+        if st.button("Schedule Unit Tour", key="btn_leasing_sched_tour"):
+            created = schedule_leasing_tour_api(
+                {"prospect_id": sel_p, "unit_id": u_id, "scheduled_date": t_date}
+            )
+            if created:
+                st.success(f"Scheduled tour {created.get('id')}.")
+                st.rerun()
+
+
+def _render_leasing_applications_tab() -> None:
+    """Render rental applications queue with 1-click screening, approval, and intake."""
+    apps = list_rental_applications_api()
+    st.caption(f"Showing **{len(apps)}** rental applications.")
+    for a in apps[:15]:
+        aid = str(a.get("id") or "")
+        st.markdown(
+            f"**{aid}** (Unit `{a.get('unit_id')}`) — `{a.get('status')}` | "
+            f"Ratio `{a.get('income_to_rent_ratio')}x` | "
+            f"Credit `{a.get('credit_score') or 'N/A'}` | Rec `{a.get('recommended_decision')}`"
+        )
+        if a.get("status") in ("submitted", "screening"):
+            b1, b2, b3 = st.columns(3)
+            if b1.button(
+                "Run Screen", key=f"btn_app_screen_{aid}"
+            ) and screen_rental_application_api(
+                aid, {"credit_score": 720, "background_status": "passed"}
+            ):
+                st.success(f"Screened {aid}.")
+                st.rerun()
+            if b2.button(
+                "Approve", key=f"btn_app_approve_{aid}"
+            ) and decide_rental_application_api(
+                aid, {"decision": "approved", "decision_notes": "Approved via board."}
+            ):
+                st.success(f"Approved {aid}!")
+                st.rerun()
+            if b3.button(
+                "Deny", key=f"btn_app_deny_{aid}"
+            ) and decide_rental_application_api(
+                aid, {"decision": "denied", "decision_notes": "Did not meet criteria."}
+            ):
+                st.success(f"Denied {aid}.")
+                st.rerun()
+
+    st.divider()
+    prospects = list_leasing_prospects_api()
+    if prospects:
+        p_ids = [str(p["id"]) for p in prospects if p.get("id")]
+        sel_p = st.selectbox("Applicant Prospect", p_ids, key="leasing_app_prospect")
+        u_id = st.text_input("Target Unit ID", value="unit_101", key="leasing_app_unit")
+        inc = st.number_input(
+            "Monthly Income ($)", min_value=500.0, value=7200.0, step=200.0, key="leasing_app_inc"
+        )
+        if st.button("Submit Application", key="btn_leasing_submit_app"):
+            created = submit_rental_application_api(
+                {"prospect_id": sel_p, "unit_id": u_id, "monthly_income": float(inc)}
+            )
+            if created:
+                st.success(f"Submitted application {created.get('id')}.")
+                st.rerun()
+
+
+def _render_leasing_crm_board() -> None:
+    """Render sidebar expander for Prospective Leasing CRM, Tours & Applications."""
+    with st.expander("🏢 Leasing CRM & Applications"):
+        tab1, tab2, tab3 = st.tabs(["Prospects & Funnel", "Unit Tours", "Applications"])
+        with tab1:
+            _render_leasing_prospects_tab()
+        with tab2:
+            _render_leasing_tours_tab()
+        with tab3:
+            _render_leasing_applications_tab()

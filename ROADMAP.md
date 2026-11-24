@@ -1840,6 +1840,63 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
+## v0.55.0 — Prospective Leasing CRM, Property Tours, Rental Applications & Applicant Screening Engine (COMPLETED)
+
+Deliver an end-to-end Prospective Leasing CRM, Property Tour Scheduling, Rental Application Intake & Automated Applicant Screening Engine (`api/leasing_crm.py`). The system tracks prospective renter leads (`leasing_prospects` with source attribution, desired bedrooms/budget, move-in target date, and funnel stage progression), schedules unit tours (`property_tours` across `in_person`, `virtual`, and `self_guided` formats with completion feedback), manages formal rental applications (`rental_applications` with monthly income, credit score, background/eviction screening, automated 3.0x income-to-rent qualification calculation, and approval/denial decisions), dispatches 6 real-time webhooks (`leasing.prospect_created`, `leasing.tour_scheduled`, `leasing.tour_completed`, `leasing.application_submitted`, `leasing.application_approved`, `leasing.application_denied`), grounds unit leasing demand into conversational RAG context (`[PROSPECTIVE LEASING, TOURS & APPLICATIONS]`), resolves 5 leasing macro variables (`{leasing_prospect_count}`, `{leasing_active_applications}`, `{leasing_next_tour_date}`, `{leasing_unit_demand_status}`, `{leasing_income_requirement}`), and provides a 3-tab Streamlit operations board plus 1-click resident/session actions.
+
+### Objective & Demonstrable End-to-End Outcome
+Via the API and Streamlit UI, leasing agents and property managers can:
+1. Capture, search, filter, and advance prospective renter leads through the leasing funnel (`new` -> `contacted` -> `tour_scheduled` -> `toured` -> `applied` -> `approved` -> `leased` / `lost`).
+2. Schedule, complete, and cancel unit tours (`in_person`, `virtual`, `self_guided`) with prospect feedback and automatic funnel stage updates.
+3. Submit rental applications, run automated credit/background/income-to-rent (3.0x) screening evaluations, and record approval or denial decisions with clear underwriting notes.
+4. Inspect unit-level leasing demand summaries and portfolio-wide conversion funnel KPIs (total prospects, tours scheduled/completed, active applications, approval rate, conversion rate).
+5. Ground active support sessions with unit leasing pipeline context and auto-resolve 5 leasing template macros.
+6. Operate the full leasing pipeline from a 3-tab Streamlit sidebar board (`🏢 Leasing CRM & Applications`) and 1-click session actions.
+
+### Scope
+- `api/leasing_crm.py`: SQLite tables `leasing_prospects`, `property_tours`, and `rental_applications` with indexes, foreign keys, enums, deterministic seeds, CRUD, tour lifecycle, automated screening & decisioning, unit summaries, and portfolio funnel KPIs.
+- `api/pydantic_models.py`: Request/response Pydantic models for prospects, tours, applications, screening, decisions, session actions, summaries, and metrics.
+- `api/db_utils.py`: Register 6 `leasing.*` webhook event types.
+- `api/main.py`: REST endpoints for `/leasing/*`, `/units/{id}/leasing/summary`, and 1-click session actions.
+- `api/tenant_context.py`: RAG prompt grounding block `[PROSPECTIVE LEASING, TOURS & APPLICATIONS]` and 5 macro variables.
+- `app/api_utils.py`: Typed Streamlit API client wrappers for all leasing CRM endpoints.
+- `app/sidebar.py`: 3-tab `🏢 Leasing CRM & Applications` sidebar board and 1-click session leasing widget.
+- Tests & Docs: Unit/integration tests across engine, models, routes, RAG context, API client, and UI; version bump to `0.55.0`; updated `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+
+### Exclusions
+- Live third-party credit bureau (TransUnion/Experian) API calls (simulated via structured screening record and deterministic underwriting score/income thresholds).
+- Automated MLS/Zillow feed syndication (lead source attribution is tracked explicitly per prospect).
+
+### Acceptance Criteria
+- [x] AC1: Core SQLite schema, enums, seeds, prospect CRUD, tour scheduling/completion, application intake, automated screening/decisioning, unit summary, and funnel KPIs in `api/leasing_crm.py`.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and 6 `leasing.*` webhook events in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
+- [x] AC4: Conversational RAG grounding and 5 macro variables in `api/tenant_context.py`.
+- [x] AC5: Typed Streamlit API client helpers in `app/api_utils.py`.
+- [x] AC6: Streamlit 3-tab Leasing CRM board and 1-click session widget in `app/sidebar.py`.
+- [x] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
+- [x] AC8: Version bump to `0.55.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
+
+### Validation & CI Plan
+- Local CI-parity commands:
+  - `python -m pytest` (includes >= 80% coverage gate)
+  - `python -m ruff check api/ app/ tests/ scripts/`
+  - `python -m mypy api/ app/ scripts/`
+  - Secret scan regex matching `.github/workflows/ci.yml`
+- End-to-end verification: Exercise full prospect -> tour -> application -> screening -> approval lifecycle via FastAPI TestClient and Streamlit FakeStreamlit harness.
+
+### Micro-Task Breakdown
+- [x] Task 1: Define v0.55.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/leasing_crm.py` (enums, schema, seeds, prospects, tours, applications, screening, decisioning, summaries, KPIs) with unit tests.
+- [x] Task 3: Register `leasing.*` webhook events in `api/db_utils.py` and add Pydantic models in `api/pydantic_models.py` with tests.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
+- [x] Task 7: Implement Streamlit 3-tab operations board and session widget in `app/sidebar.py` with UI tests.
+- [x] Task 8: Bump version to `0.55.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
+
 ## v0.54.0 — Security Deposit Escrow, Itemized Deductions, Statutory Disposition & Dispute Resolution Engine (COMPLETED)
 
 Deliver an end-to-end Security Deposit Escrow, Itemized Deductions, Statutory Return Deadline Compliance & Resident Dispute Resolution Engine (`api/security_deposits.py`). The system manages security deposits (`security_deposits` per unit and tenant across `standard_security`, `pet_deposit`, `key_deposit`, and `last_month_rent`), tracks escrow references, accrued statutory interest, move-out dates, and statutory return deadlines, itemizes move-out deductions (`deposit_deductions` with category, amount, and optional inspection/work-order evidence reference), generates formatted statutory itemized disposition statements, records refund disbursements (`check`, `ach`, `direct_deposit`, `applied_to_balance`), manages formal resident deposit disputes (`deposit_disputes`), grounds deposit balances in conversational RAG context (`[SECURITY DEPOSIT & REFUND DISPOSITION]`), resolves template macros (`{deposit_amount}`, `{deposit_status}`, `{deposit_deductions_total}`, `{deposit_net_refund}`, `{deposit_deadline_date}`), dispatches real-time webhooks (`deposit.created`, `deposit.deduction_added`, `deposit.statement_issued`, `deposit.refund_issued`, `deposit.dispute_opened`, `deposit.dispute_resolved`), and provides a 3-tab Streamlit operations board plus 1-click resident session actions.

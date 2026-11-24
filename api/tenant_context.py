@@ -15,6 +15,7 @@ from api import (
     announcements,
     incidents,
     insurance,
+    leasing_crm,
     move_logistics,
     packages,
     parking,
@@ -1565,6 +1566,10 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     elif resolved_unit_id:
         deposit_summary = security_deposits.get_unit_deposit_summary(resolved_unit_id)
 
+    leasing_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        leasing_summary = leasing_crm.get_unit_leasing_summary(resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -1690,6 +1695,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(deposit_lines)
+
+    leasing_lines = _format_leasing_lines(leasing_summary)
+    if leasing_lines:
+        if lines:
+            lines.append("")
+        lines.extend(leasing_lines)
 
     return "\n".join(lines)
 
@@ -1820,6 +1831,64 @@ def _extract_deposit_vars(deposit_summary: dict[str, Any] | None) -> dict[str, s
         vars_dict["deposit_deadline_date"] = str(
             primary.get("statutory_deadline_date") or "none"
         )
+    return vars_dict
+
+
+def _format_leasing_lines(leasing_summary: dict[str, Any] | None) -> list[str]:
+    """Format unit leasing demand, tours, and applications for prompt grounding."""
+    if not leasing_summary:
+        return []
+    if (
+        not leasing_summary.get("prospect_count")
+        and not leasing_summary.get("scheduled_tours_count")
+        and not leasing_summary.get("active_applications_count")
+    ):
+        return []
+    lines = ["[PROSPECTIVE LEASING, TOURS & APPLICATIONS]"]
+    lines.append(
+        f"Unit Leasing Demand: {str(leasing_summary.get('demand_status', 'available')).upper()} "
+        f"| Prospects: {leasing_summary.get('prospect_count', 0)} "
+        f"| Scheduled Tours: {leasing_summary.get('scheduled_tours_count', 0)} "
+        f"| Active Applications: {leasing_summary.get('active_applications_count', 0)}"
+    )
+    min_inc = leasing_summary.get("min_monthly_income", 0.0)
+    if min_inc:
+        lines.append(f"Minimum Qualifying Monthly Income (3.0x): ${min_inc:,.2f}")
+    next_tour = leasing_summary.get("next_tour")
+    if next_tour:
+        lines.append(
+            f"Next Scheduled Tour: {next_tour.get('scheduled_date')} at "
+            f"{next_tour.get('scheduled_time')} ({next_tour.get('tour_type')})"
+        )
+    lines.append("[END PROSPECTIVE LEASING, TOURS & APPLICATIONS]")
+    return lines
+
+
+def _extract_leasing_vars(leasing_summary: dict[str, Any] | None) -> dict[str, str]:
+    """Extract leasing CRM macro variables from a unit leasing summary."""
+    vars_dict: dict[str, str] = {
+        "leasing_prospect_count": "0",
+        "leasing_active_applications": "0",
+        "leasing_next_tour_date": "none",
+        "leasing_unit_demand_status": "available",
+        "leasing_income_requirement": "$0.00",
+    }
+    if not leasing_summary:
+        return vars_dict
+
+    vars_dict["leasing_prospect_count"] = str(leasing_summary.get("prospect_count", 0))
+    vars_dict["leasing_active_applications"] = str(
+        leasing_summary.get("active_applications_count", 0)
+    )
+    vars_dict["leasing_unit_demand_status"] = str(
+        leasing_summary.get("demand_status", "available")
+    )
+    vars_dict["leasing_income_requirement"] = (
+        f"${leasing_summary.get('min_monthly_income', 0.0):,.2f}"
+    )
+    next_tour = leasing_summary.get("next_tour")
+    if next_tour:
+        vars_dict["leasing_next_tour_date"] = str(next_tour.get("scheduled_date") or "none")
     return vars_dict
 
 
@@ -2107,5 +2176,10 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     elif resolved_unit_id:
         t_deposit_summary = security_deposits.get_unit_deposit_summary(resolved_unit_id)
     variables.update(_extract_deposit_vars(t_deposit_summary))
+
+    t_leasing_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        t_leasing_summary = leasing_crm.get_unit_leasing_summary(resolved_unit_id)
+    variables.update(_extract_leasing_vars(t_leasing_summary))
 
     return variables
