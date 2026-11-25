@@ -4311,3 +4311,76 @@ def test_leasing_crm_client_api_utils_errors(monkeypatch):
     assert api_utils.get_unit_leasing_summary_api("unit_101") is None
     assert api_utils.session_schedule_tour_api("s1", {}) is None
     assert api_utils.session_submit_application_api("s1", {}) is None
+
+
+def test_owner_portal_client_api_utils(monkeypatch):
+    """Verify owner portal, statements, and CapEx approvals API client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    class OwnerRouter:
+        def get(self, url, **kwargs):
+            routes = [
+                ("/owners/metrics", 200, {"total_owners": 2, "approval_rate_pct": 100.0}),
+                ("/owners/statements", 200, {"statements": [{"id": "stm_1"}], "total": 1}),
+                ("/owners/approvals", 200, {"approvals": [{"id": "apr_1"}], "total": 1}),
+                ("/owners", 200, {"owners": [{"id": "own_1"}], "total": 1}),
+                ("/owner-approvals/summary", 200, {"unit_id": "unit_101", "pending_count": 1}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(404, {"detail": "Not found"})
+
+        def post(self, url, **kwargs):
+            routes = [
+                ("/owners", 201, {"id": "own_new"}),
+                ("/statements", 201, {"id": "stm_new"}),
+                ("/approvals", 201, {"id": "apr_new"}),
+                ("/request-approval", 201, {"id": "apr_sess"}),
+                ("/disburse", 200, {"id": "stm_1", "status": "disbursed"}),
+                ("/decision", 200, {"id": "apr_1", "status": "approved"}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(400, {"detail": "Bad request"})
+
+    monkeypatch.setattr(api_utils, "requests", OwnerRouter())
+
+    expected_owners = 2
+    assert api_utils.get_owner_portal_metrics_api()["total_owners"] == expected_owners
+    assert api_utils.create_property_owner_api({"full_name": "Elena"})["id"] == "own_new"
+    assert len(api_utils.list_property_owners_api(status="active")) == 1
+    assert api_utils.generate_owner_statement_api("own_1", {"period_month": "2099-05"})["id"] == (
+        "stm_new"
+    )
+    assert len(api_utils.list_owner_statements_api(owner_id="own_1")) == 1
+    assert api_utils.disburse_owner_statement_api("stm_1")["status"] == "disbursed"
+    assert api_utils.create_owner_approval_api("own_1", {"title": "HVAC"})["id"] == "apr_new"
+    assert len(api_utils.list_owner_approvals_api(owner_id="own_1")) == 1
+    assert api_utils.decide_owner_approval_api("apr_1", {"decision": "approved"})["status"] == (
+        "approved"
+    )
+    assert api_utils.get_unit_owner_approvals_summary_api("unit_101")["pending_count"] == 1
+    sess_apr = api_utils.session_request_owner_approval_api("s1", {"owner_id": "own_1"})
+    assert sess_apr["id"] == "apr_sess"
+
+
+def test_owner_portal_client_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in owner portal API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_owner_portal_metrics_api() is None
+    assert api_utils.create_property_owner_api({}) is None
+    assert api_utils.list_property_owners_api() == []
+    assert api_utils.generate_owner_statement_api("own_1", {}) is None
+    assert api_utils.list_owner_statements_api() == []
+    assert api_utils.disburse_owner_statement_api("stm_1") is None
+    assert api_utils.create_owner_approval_api("own_1", {}) is None
+    assert api_utils.list_owner_approvals_api() == []
+    assert api_utils.decide_owner_approval_api("apr_1", {}) is None
+    assert api_utils.get_unit_owner_approvals_summary_api("unit_101") is None
+    assert api_utils.session_request_owner_approval_api("s1", {}) is None

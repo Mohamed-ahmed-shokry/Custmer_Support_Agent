@@ -152,6 +152,10 @@ from api.pydantic_models import (
     OccupantListResponse,
     OccupantResponse,
     OccupantUpdateRequest,
+    OwnerApprovalCreateRequest,
+    OwnerApprovalDecisionRequest,
+    OwnerPortalMetricsResponse,
+    OwnerStatementCreateRequest,
     PackageCarrier,
     PackageCreateRequest,
     PackageItem,
@@ -196,6 +200,7 @@ from api.pydantic_models import (
     PMTaskCompleteRequest,
     PMTaskCreateRequest,
     PMTaskItem,
+    PropertyOwnerCreateRequest,
     PropertyTourCompleteRequest,
     PropertyTourCreateRequest,
     QueryInput,
@@ -229,6 +234,7 @@ from api.pydantic_models import (
     SessionReportLostFobRequest,
     SessionReportRentalRequest,
     SessionReportUtilityLeakRequest,
+    SessionRequestOwnerApprovalRequest,
     SessionReserveElevatorRequest,
     SessionScheduleMoveRequest,
     SessionSchedulePMTaskRequest,
@@ -290,6 +296,7 @@ from api.pydantic_models import (
     UnitLeasingSummaryResponse,
     UnitListResponse,
     UnitOccupancyResponse,
+    UnitOwnerApprovalsSummaryResponse,
     UnitResponse,
     UnitUpdateRequest,
     UnitUtilitiesSummaryResponse,
@@ -3815,3 +3822,43 @@ def test_leasing_crm_models():
 
     sess_app = SessionSubmitApplicationRequest(prospect_id="prs_1", monthly_income=expected_income)
     assert sess_app.monthly_income == expected_income
+
+
+def test_owner_portal_models():
+    """Verify property owner portal, statement, and CapEx approval Pydantic models."""
+    expected_fee = 8.0
+    expected_gross = 15000.0
+    expected_cost = 4200.0
+    expected_rate = 90.0
+
+    o_req = PropertyOwnerCreateRequest(
+        full_name="Elena Rostova", email="elena@example.com", management_fee_pct=expected_fee
+    )
+    assert o_req.management_fee_pct == expected_fee
+    assert o_req.disbursement_method == "ach"
+
+    s_req = OwnerStatementCreateRequest(
+        period_month="2099-06", gross_rent_collected=expected_gross
+    )
+    assert s_req.gross_rent_collected == expected_gross
+
+    a_req = OwnerApprovalCreateRequest(
+        title="Water Heater Replacement", estimated_cost=expected_cost
+    )
+    assert a_req.estimated_cost == expected_cost
+
+    d_req = OwnerApprovalDecisionRequest(decision="approved", owner_decision_notes="Approved")
+    assert d_req.decision == "approved"
+
+    summary = UnitOwnerApprovalsSummaryResponse(
+        unit_id="unit_101", capex_status="awaiting_owner_approval"
+    )
+    assert summary.capex_status == "awaiting_owner_approval"
+
+    metrics = OwnerPortalMetricsResponse(total_owners=2, approval_rate_pct=expected_rate)
+    assert metrics.approval_rate_pct == expected_rate
+
+    sess_req = SessionRequestOwnerApprovalRequest(
+        owner_id="own_1", title="Boiler Repair", estimated_cost=expected_cost
+    )
+    assert sess_req.owner_id == "own_1"

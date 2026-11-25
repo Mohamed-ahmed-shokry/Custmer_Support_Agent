@@ -5186,3 +5186,169 @@ class SessionSubmitApplicationRequest(BaseModel):
     credit_score: int | None = Field(default=None, ge=300, le=850)
     desired_move_in_date: str | None = Field(default=None, max_length=30)
     lease_term_months: int = Field(default=12, ge=1, le=60)
+
+
+# --- Property Owner Portals, Statements & CapEx Approvals Schemas (v0.56.0) ---
+
+
+class PropertyOwnerCreateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=150)
+    email: str = Field(..., min_length=3, max_length=150)
+    phone: str = Field(default="", max_length=50)
+    entity_name: str = Field(default="", max_length=150)
+    management_fee_pct: float = Field(default=8.0, ge=0.0, le=50.0)
+    reserve_balance: float = Field(default=0.0, ge=0.0)
+    reserve_target: float = Field(default=5000.0, ge=0.0)
+    disbursement_method: str = Field(default="ach", max_length=30)
+    notes: str = Field(default="", max_length=2000)
+
+
+class PropertyOwnerUpdateRequest(BaseModel):
+    phone: str | None = Field(default=None, max_length=50)
+    entity_name: str | None = Field(default=None, max_length=150)
+    management_fee_pct: float | None = Field(default=None, ge=0.0, le=50.0)
+    reserve_balance: float | None = Field(default=None, ge=0.0)
+    reserve_target: float | None = Field(default=None, ge=0.0)
+    disbursement_method: str | None = Field(default=None, max_length=30)
+    status: str | None = Field(default=None, max_length=30)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class PropertyOwnerItem(BaseModel):
+    id: str
+    full_name: str
+    email: str
+    phone: str = ""
+    entity_name: str = ""
+    management_fee_pct: float = 8.0
+    reserve_balance: float = 0.0
+    reserve_target: float = 5000.0
+    reserve_funded_pct: float = 100.0
+    disbursement_method: str = "ach"
+    status: str = "active"
+    notes: str = ""
+    created_at: str
+    updated_at: str
+
+
+class PropertyOwnerListResponse(BaseModel):
+    owners: list[PropertyOwnerItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class OwnerStatementCreateRequest(BaseModel):
+    period_month: str = Field(..., min_length=4, max_length=20)
+    gross_rent_collected: float = Field(..., ge=0.0)
+    other_income: float = Field(default=0.0, ge=0.0)
+    operating_expenses: float = Field(default=0.0, ge=0.0)
+    reserve_contribution: float = Field(default=0.0, ge=0.0)
+    notes: str = Field(default="", max_length=2000)
+
+
+class OwnerStatementDisburseRequest(BaseModel):
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class OwnerStatementItem(BaseModel):
+    id: str
+    owner_id: str
+    period_month: str
+    gross_rent_collected: float
+    other_income: float = 0.0
+    operating_expenses: float = 0.0
+    management_fee_amount: float = 0.0
+    reserve_contribution: float = 0.0
+    net_disbursement: float = 0.0
+    status: str
+    disbursed_at: str | None = None
+    notes: str = ""
+    created_at: str
+    updated_at: str
+
+
+class OwnerStatementDetailResponse(OwnerStatementItem):
+    statement_markdown: str = ""
+
+
+class OwnerStatementListResponse(BaseModel):
+    statements: list[OwnerStatementItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class OwnerApprovalCreateRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=200)
+    estimated_cost: float = Field(..., gt=0.0)
+    unit_id: str | None = Field(default=None, max_length=80)
+    category: str = Field(default="capex", max_length=40)
+    description: str = Field(default="", max_length=2000)
+    vendor_name: str = Field(default="", max_length=150)
+
+
+class OwnerApprovalDecisionRequest(BaseModel):
+    decision: str = Field(..., min_length=3, max_length=40)
+    owner_decision_notes: str = Field(default="", max_length=2000)
+
+
+class OwnerApprovalItem(BaseModel):
+    id: str
+    owner_id: str
+    unit_id: str | None = None
+    category: str
+    title: str
+    description: str = ""
+    estimated_cost: float
+    vendor_name: str = ""
+    status: str
+    owner_decision_notes: str = ""
+    decided_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class OwnerApprovalListResponse(BaseModel):
+    approvals: list[OwnerApprovalItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class OwnerPortfolioSummaryResponse(BaseModel):
+    owner: PropertyOwnerItem
+    total_statements: int = 0
+    total_disbursed: float = 0.0
+    pending_disbursements: float = 0.0
+    pending_approvals_count: int = 0
+    pending_capex_exposure: float = 0.0
+    statements: list[OwnerStatementItem] = Field(default_factory=list)
+    approvals: list[OwnerApprovalItem] = Field(default_factory=list)
+
+
+class UnitOwnerApprovalsSummaryResponse(BaseModel):
+    unit_id: str
+    total_approvals: int = 0
+    pending_count: int = 0
+    pending_exposure: float = 0.0
+    capex_status: str = "none"
+    latest_approval: OwnerApprovalItem | None = None
+    approvals: list[OwnerApprovalItem] = Field(default_factory=list)
+
+
+class OwnerPortalMetricsResponse(BaseModel):
+    total_owners: int = 0
+    active_owners: int = 0
+    total_reserve_balance: float = 0.0
+    total_reserve_target: float = 0.0
+    total_statements: int = 0
+    pending_statements: int = 0
+    total_net_disbursed: float = 0.0
+    total_management_fees: float = 0.0
+    pending_approvals_count: int = 0
+    pending_capex_exposure: float = 0.0
+    approval_rate_pct: float = 100.0
+
+
+class SessionRequestOwnerApprovalRequest(BaseModel):
+    owner_id: str = Field(..., min_length=2, max_length=80)
+    title: str = Field(..., min_length=3, max_length=200)
+    estimated_cost: float = Field(..., gt=0.0)
+    category: str = Field(default="major_repair", max_length=40)
+    description: str = Field(default="", max_length=2000)
+    vendor_name: str = Field(default="", max_length=150)

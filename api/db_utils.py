@@ -363,6 +363,12 @@ VALID_WEBHOOK_EVENTS = {
     "leasing.application_submitted",
     "leasing.application_approved",
     "leasing.application_denied",
+    "owner.created",
+    "owner.statement_generated",
+    "owner.disbursement_sent",
+    "owner.approval_requested",
+    "owner.approval_approved",
+    "owner.approval_rejected",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (

@@ -38,11 +38,13 @@ from app.api_utils import (
     create_lease_renewal,
     create_leasing_prospect_api,
     create_macro,
+    create_owner_approval_api,
     create_package_api,
     create_parking_spot_api,
     create_pet_api,
     create_pet_policy_api,
     create_pm_schedule_api,
+    create_property_owner_api,
     create_reservation_api,
     create_session_inspection,
     create_session_lease_renewal,
@@ -56,6 +58,7 @@ from app.api_utils import (
     create_webhook,
     create_work_order,
     create_work_order_from_session,
+    decide_owner_approval_api,
     decide_rental_application_api,
     delete_announcement_api,
     delete_billing_transaction,
@@ -76,10 +79,12 @@ from app.api_utils import (
     delete_vendor,
     delete_webhook,
     delete_work_order,
+    disburse_owner_statement_api,
     dispatch_vendor_to_work_order,
     draft_article_from_session,
     evaluate_sla_alerts,
     export_session,
+    generate_owner_statement_api,
     get_access_control_metrics_api,
     get_agent_scorecards,
     get_agent_workload_analytics,
@@ -103,6 +108,7 @@ from app.api_utils import (
     get_leasing_metrics_api,
     get_metrics,
     get_move_logistics_metrics_api,
+    get_owner_portal_metrics_api,
     get_package_metrics_api,
     get_parking_metrics_api,
     get_pet_metrics_api,
@@ -128,6 +134,7 @@ from app.api_utils import (
     get_tenant_utilities_summary_api,
     get_unit_insurance_summary_api,
     get_unit_leasing_summary_api,
+    get_unit_owner_approvals_summary_api,
     get_unit_utilities_summary_api,
     get_unit_work_orders,
     get_utility_metrics_api,
@@ -165,6 +172,8 @@ from app.api_utils import (
     list_meter_readings_api,
     list_move_events_api,
     list_occupants_api,
+    list_owner_approvals_api,
+    list_owner_statements_api,
     list_packages_api,
     list_parking_spots_api,
     list_parking_violations_api,
@@ -173,6 +182,7 @@ from app.api_utils import (
     list_pets_api,
     list_pm_schedules_api,
     list_pm_tasks_api,
+    list_property_owners_api,
     list_rental_applications_api,
     list_reservations_api,
     list_sessions,
@@ -240,6 +250,7 @@ from app.api_utils import (
     session_report_unauthorized_rental_api,
     session_report_utility_leak_api,
     session_request_concierge_api,
+    session_request_owner_approval_api,
     session_reserve_elevator_api,
     session_schedule_move_api,
     session_schedule_pm_task_api,
@@ -1205,6 +1216,7 @@ def _render_linked_tenant_details(selected, tenant, unit):  # noqa: PLR0915
     _render_session_pm_widget(selected, tenant)
     _render_session_deposit_widget(selected, tenant)
     _render_session_leasing_widget(selected, tenant)
+    _render_session_owner_approval_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -6992,6 +7004,7 @@ def display_sidebar():
     _render_pm_board()
     _render_security_deposits_board()
     _render_leasing_crm_board()
+    _render_owner_portal_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
@@ -7712,3 +7725,194 @@ def _render_leasing_crm_board() -> None:
             _render_leasing_tours_tab()
         with tab3:
             _render_leasing_applications_tab()
+
+
+def _render_session_owner_approval_widget(
+    session_id: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click CapEx / major repair owner approval escalation widget for a session."""
+    unit_id = str(tenant.get("unit_id") or "")
+    if not unit_id:
+        return
+
+    with st.expander("🏛️ Owner CapEx Approval Quick Action"):
+        summary = get_unit_owner_approvals_summary_api(unit_id)
+        if summary:
+            status = str(summary.get("capex_status", "none")).upper()
+            pending = summary.get("pending_count", 0)
+            st.markdown(f"**CapEx Status:** `{status}` | **Pending Approvals:** `{pending}`")
+        owners = list_property_owners_api()
+        owner_opts = {
+            str(o["id"]): str(o.get("full_name", o["id"])) for o in owners if o.get("id")
+        }
+        if owner_opts:
+            sel_owner = st.selectbox(
+                "Property Owner",
+                list(owner_opts.keys()),
+                format_func=lambda x: owner_opts.get(x, x),
+                key=f"sess_own_id_{session_id}",
+            )
+            title = st.text_input(
+                "Repair / CapEx Title",
+                value="Major Appliance Replacement",
+                key=f"sess_own_title_{session_id}",
+            )
+            cost = st.number_input(
+                "Estimated Cost ($)",
+                min_value=50.0,
+                value=1500.0,
+                step=100.0,
+                key=f"sess_own_cost_{session_id}",
+            )
+            if st.button(
+                "Escalate to Owner", key=f"btn_sess_own_esc_{session_id}"
+            ) and session_request_owner_approval_api(
+                session_id,
+                {
+                    "owner_id": sel_owner,
+                    "title": title,
+                    "estimated_cost": float(cost),
+                    "category": "major_repair",
+                },
+            ):
+                st.success("Owner CapEx approval request submitted!")
+                st.rerun()
+        else:
+            st.caption("No property owners registered.")
+
+
+def _render_owners_directory_tab() -> None:
+    """Render owner portal financial KPIs, owner directory with reserves, and creator."""
+    metrics = get_owner_portal_metrics_api()
+    if metrics:
+        c1, c2 = st.columns(2)
+        c1.metric("Total Reserves", f"${metrics.get('total_reserve_balance', 0.0):,.2f}")
+        c2.metric("Net Disbursed", f"${metrics.get('total_net_disbursed', 0.0):,.2f}")
+        c3, c4 = st.columns(2)
+        c3.metric("Pending CapEx", f"${metrics.get('pending_capex_exposure', 0.0):,.2f}")
+        c4.metric("Approval Rate", f"{metrics.get('approval_rate_pct', 100.0)}%")
+
+    owners = list_property_owners_api()
+    st.caption(f"Showing **{len(owners)}** property owners.")
+    for o in owners[:15]:
+        st.markdown(
+            f"**{o.get('full_name')}** (`{o.get('id')}`) — Fee `{o.get('management_fee_pct')}%` | "
+            f"Reserve `${o.get('reserve_balance', 0.0):,.2f}` / "
+            f"`${o.get('reserve_target', 0.0):,.2f}` ({o.get('reserve_funded_pct', 0.0)}%)"
+        )
+
+    st.divider()
+    st.caption("Register New Property Owner")
+    o_name = st.text_input("Owner Full Name", value="", key="own_new_name")
+    o_email = st.text_input("Owner Email", value="", key="own_new_email")
+    o_entity = st.text_input("Holding Entity", value="", key="own_new_entity")
+    o_fee = st.number_input("Mgmt Fee (%)", min_value=0.0, max_value=50.0, value=8.0, key="own_fee")
+    if (
+        st.button("Create Owner", key="btn_own_create")
+        and o_name
+        and o_email
+        and create_property_owner_api(
+            {
+                "full_name": o_name,
+                "email": o_email,
+                "entity_name": o_entity,
+                "management_fee_pct": float(o_fee),
+            }
+        )
+    ):
+        st.success("Property owner registered.")
+        st.rerun()
+
+
+def _render_owner_statements_tab() -> None:
+    """Render monthly disbursement statements with 1-click disburse and statement generator."""
+    statements = list_owner_statements_api()
+    st.caption(f"Showing **{len(statements)}** monthly owner statements.")
+    for s in statements[:15]:
+        sid = str(s.get("id") or "")
+        st.markdown(
+            f"**{sid}** ({s.get('period_month')}) — `{s.get('status')}` | "
+            f"Gross `${s.get('gross_rent_collected', 0.0):,.2f}` | "
+            f"Net `${s.get('net_disbursement', 0.0):,.2f}`"
+        )
+        if (
+            s.get("status") != "disbursed"
+            and st.button("Disburse Payout", key=f"btn_stm_disb_{sid}")
+            and disburse_owner_statement_api(sid, {"notes": "Disbursed via Owner Portal board."})
+        ):
+            st.success(f"Statement {sid} disbursed!")
+            st.rerun()
+
+    st.divider()
+    owners = list_property_owners_api()
+    if owners:
+        o_ids = [str(o["id"]) for o in owners if o.get("id")]
+        sel_o = st.selectbox("Owner", o_ids, key="stm_owner_sel")
+        period = st.text_input(
+            "Period (YYYY-MM)",
+            value=datetime.datetime.now(UTC).strftime("%Y-%m"),
+            key="stm_period",
+        )
+        gross = st.number_input("Gross Rent ($)", min_value=0.0, value=12000.0, key="stm_gross")
+        exp = st.number_input("Expenses ($)", min_value=0.0, value=1200.0, key="stm_exp")
+        res_c = st.number_input("Reserve Contrib ($)", min_value=0.0, value=400.0, key="stm_res")
+        if st.button("Generate Statement", key="btn_stm_gen") and generate_owner_statement_api(
+            sel_o,
+            {
+                "period_month": period,
+                "gross_rent_collected": float(gross),
+                "operating_expenses": float(exp),
+                "reserve_contribution": float(res_c),
+            },
+        ):
+            st.success("Monthly owner statement generated.")
+            st.rerun()
+
+
+def _render_owner_approvals_tab() -> None:
+    """Render CapEx & major repair owner approval queue with approve/reject actions."""
+    approvals = list_owner_approvals_api()
+    st.caption(f"Showing **{len(approvals)}** owner CapEx approval requests.")
+    for a in approvals[:15]:
+        aid = str(a.get("id") or "")
+        st.markdown(
+            f"**{a.get('title')}** (`{aid}`) — `{a.get('status')}` | "
+            f"`${a.get('estimated_cost', 0.0):,.2f}` ({a.get('category')})"
+        )
+        if a.get("status") == "pending":
+            b1, b2 = st.columns(2)
+            if b1.button("Approve", key=f"btn_apr_ok_{aid}") and decide_owner_approval_api(
+                aid, {"decision": "approved", "owner_decision_notes": "Approved via portal."}
+            ):
+                st.success(f"Approved {aid}!")
+                st.rerun()
+            if b2.button("Reject", key=f"btn_apr_no_{aid}") and decide_owner_approval_api(
+                aid, {"decision": "rejected", "owner_decision_notes": "Deferred by owner."}
+            ):
+                st.success(f"Rejected {aid}.")
+                st.rerun()
+
+    st.divider()
+    owners = list_property_owners_api()
+    if owners:
+        o_ids = [str(o["id"]) for o in owners if o.get("id")]
+        sel_o = st.selectbox("Owner for Approval", o_ids, key="apr_owner_sel")
+        a_title = st.text_input("Project Title", value="HVAC Unit Upgrade", key="apr_title")
+        a_cost = st.number_input("Estimated Cost ($)", min_value=50.0, value=3500.0, key="apr_cost")
+        if st.button("Request Approval", key="btn_apr_create") and create_owner_approval_api(
+            sel_o, {"title": a_title, "estimated_cost": float(a_cost)}
+        ):
+            st.success("Owner approval request created.")
+            st.rerun()
+
+
+def _render_owner_portal_board() -> None:
+    """Render sidebar expander for Property Owner Portals, Disbursements & CapEx Approvals."""
+    with st.expander("🏛️ Owner Portal & Disbursements"):
+        tab1, tab2, tab3 = st.tabs(["Owners & Reserves", "Statements", "CapEx Approvals"])
+        with tab1:
+            _render_owners_directory_tab()
+        with tab2:
+            _render_owner_statements_tab()
+        with tab3:
+            _render_owner_approvals_tab()

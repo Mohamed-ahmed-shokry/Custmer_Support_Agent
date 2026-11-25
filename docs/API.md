@@ -1520,3 +1520,41 @@ The Resident Renters Insurance Compliance Engine automates proof-of-insurance re
   - `{leasing_next_tour_date}`: Next scheduled tour date for the unit
   - `{leasing_unit_demand_status}`: Unit demand level (`available`, `active_interest`, `high_demand`)
   - `{leasing_income_requirement}`: 3.0x minimum monthly qualifying income for the unit
+
+
+## Property Owner Portals, Disbursement Statements & CapEx Approvals (v0.56.0)
+
+### Property Owners & CapEx Reserves
+- `POST /owners`: Register a property owner / holding entity (`full_name`, `email`, `phone`, `entity_name`, `management_fee_pct`, `reserve_balance`, `reserve_target`, `disbursement_method`, `notes`). Dispatches `owner.created` webhook.
+- `GET /owners` / `GET /owners/{id}` / `PATCH /owners/{id}`: List, inspect, or update owner profiles and reserve targets.
+- `GET /owners/{id}/summary`: Owner portfolio summary including total disbursed, pending payouts, reserve funding %, and pending CapEx exposure.
+
+### Monthly Financial Statements & Disbursements
+- `POST /owners/{id}/statements`: Generate a monthly owner statement (`period_month`, `gross_rent_collected`, `other_income`, `operating_expenses`, `reserve_contribution`, `notes`). Auto-computes `management_fee_amount`, `net_disbursement`, and rendered Markdown (`statement_markdown`). Dispatches `owner.statement_generated` webhook.
+- `GET /owners/statements` / `GET /owners/statements/{id}`: List statements or retrieve a statement with rendered Markdown.
+- `POST /owners/statements/{id}/disburse`: Record owner payout disbursement and credit `reserve_contribution` into the owner's `reserve_balance`. Dispatches `owner.disbursement_sent` webhook.
+
+### CapEx & Major Repair Owner Approvals
+- `POST /owners/{id}/approvals`: Submit a CapEx or major repair approval request (`title`, `estimated_cost`, `unit_id`, `category`, `description`, `vendor_name`). Dispatches `owner.approval_requested` webhook.
+- `GET /owners/approvals`: List approval requests filtered by `owner_id`, `unit_id`, and `status`.
+- `POST /owners/approvals/{id}/decision`: Record owner decision (`approved`, `rejected`, `more_info_requested`) and dispatch `owner.approval_approved` or `owner.approval_rejected` webhook.
+
+### Summaries, KPIs & 1-Click Session Escalation
+- `GET /owners/metrics`: Portfolio-wide reserve balances, net disbursements, management fees, pending CapEx exposure, and approval rate KPIs.
+- `GET /units/{id}/owner-approvals/summary`: Unit-level pending/recent CapEx approval status and exposure.
+- `POST /sessions/{id}/owners/request-approval`: 1-click CapEx / major repair owner approval escalation from an active support session.
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**:
+  ```text
+  [OWNER CAPEX & MAJOR REPAIR APPROVALS]
+  Unit CapEx Status: AWAITING_OWNER_APPROVAL | Pending Owner Approvals: 1 | Pending Exposure: $4,850.00
+  Latest Request (apr_seed_01): High-Efficiency Heat Pump Condenser Replacement [capex] — $4,850.00 (Status: PENDING)
+  [END OWNER CAPEX & MAJOR REPAIR APPROVALS]
+  ```
+- **Macro Template Variables**:
+  - `{owner_pending_approvals_count}`: Count of pending owner approval requests for the unit
+  - `{owner_latest_approval_title}`: Title of the most recent CapEx/major repair request
+  - `{owner_latest_approval_status}`: Status of the latest owner approval request (`pending`, `approved`, `rejected`, `more_info_requested`)
+  - `{owner_latest_approval_cost}`: Formatted estimated cost of the latest request
+  - `{owner_capex_status}`: Unit CapEx status (`awaiting_owner_approval`, `approved`, `rejected`, `none`)
