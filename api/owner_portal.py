@@ -474,3 +474,188 @@ def update_owner(owner_id: str, updates: dict[str, Any]) -> dict[str, Any] | Non
         return _row_to_owner(cursor.fetchone())
     finally:
         conn.close()
+
+
+def render_statement_markdown(owner: dict[str, Any], statement: dict[str, Any]) -> str:
+    """Render a formatted monthly owner financial disbursement statement in Markdown."""
+    total_income = round(statement["gross_rent_collected"] + statement["other_income"], 2)
+    lines = [
+        f"# Monthly Owner Financial Statement — {statement['period_month']} ({statement['id']})",
+        "",
+        f"- **Owner:** {owner['full_name']}"
+        + (f" ({owner['entity_name']})" if owner.get("entity_name") else ""),
+        f"- **Disbursement Method:** {owner['disbursement_method'].upper()}",
+        f"- **Statement Status:** {statement['status'].upper()}",
+        "",
+        "## Cash Flow Summary",
+        f"- Gross Rent Collected: ${statement['gross_rent_collected']:,.2f}",
+        f"- Other Income: ${statement['other_income']:,.2f}",
+        f"- **Total Gross Income:** ${total_income:,.2f}",
+        f"- Operating Expenses: -${statement['operating_expenses']:,.2f}",
+        f"- Management Fee ({owner['management_fee_pct']}%): "
+        f"-${statement['management_fee_amount']:,.2f}",
+        f"- CapEx Reserve Contribution: -${statement['reserve_contribution']:,.2f}",
+        f"- **Net Owner Disbursement:** **${statement['net_disbursement']:,.2f}**",
+    ]
+    if statement.get("notes"):
+        lines.extend(["", f"**Notes:** {statement['notes']}"])
+    return "\n".join(lines)
+
+
+def generate_owner_statement(  # noqa: PLR0913
+    owner_id: str,
+    period_month: str,
+    gross_rent_collected: float,
+    *,
+    other_income: float = 0.0,
+    operating_expenses: float = 0.0,
+    reserve_contribution: float = 0.0,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Generate a monthly owner disbursement statement with auto-computed management fee."""
+    if gross_rent_collected < 0 or other_income < 0 or operating_expenses < 0:
+        raise ValueError("Financial amounts cannot be negative")
+    if reserve_contribution < 0:
+        raise ValueError("reserve_contribution cannot be negative")
+    if not period_month or not period_month.strip():
+        raise ValueError("period_month is required")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM property_owners WHERE id = ?", (owner_id,))
+        owner_row = cursor.fetchone()
+        if owner_row is None:
+            raise ValueError(f"Owner '{owner_id}' not found")
+        owner = _row_to_owner(owner_row)
+
+        total_income = float(gross_rent_collected) + float(other_income)
+        mgmt_fee = round(total_income * (owner["management_fee_pct"] / 100.0), 2)
+        net_payout = round(
+            total_income - float(operating_expenses) - mgmt_fee - float(reserve_contribution),
+            2,
+        )
+
+        sid = _generate_statement_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO owner_statements (
+                id, owner_id, period_month, gross_rent_collected, other_income,
+                operating_expenses, management_fee_amount, reserve_contribution,
+                net_disbursement, status, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sid,
+                owner_id,
+                period_month.strip(),
+                round(float(gross_rent_collected), 2),
+                round(float(other_income), 2),
+                round(float(operating_expenses), 2),
+                mgmt_fee,
+                round(float(reserve_contribution), 2),
+                net_payout,
+                StatementStatus.ISSUED.value,
+                notes.strip(),
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM owner_statements WHERE id = ?", (sid,))
+        stmt = _row_to_statement(cursor.fetchone())
+    finally:
+        conn.close()
+
+    result = {**stmt, "statement_markdown": render_statement_markdown(owner, stmt)}
+    webhooks.dispatch_event("owner.statement_generated", stmt)
+    return result
+
+
+def get_owner_statement(statement_id: str) -> dict[str, Any] | None:
+    """Retrieve a single owner statement with rendered Markdown."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM owner_statements WHERE id = ?", (statement_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        stmt = _row_to_statement(row)
+        cursor.execute("SELECT * FROM property_owners WHERE id = ?", (stmt["owner_id"],))
+        owner = _row_to_owner(cursor.fetchone())
+        return {**stmt, "statement_markdown": render_statement_markdown(owner, stmt)}
+    finally:
+        conn.close()
+
+
+def list_owner_statements(
+    owner_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List owner monthly financial statements with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM owner_statements WHERE 1=1"
+        params: list[Any] = []
+        if owner_id:
+            query += " AND owner_id = ?"
+            params.append(owner_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY period_month DESC, created_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_statement(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def disburse_owner_statement(
+    statement_id: str,
+    *,
+    notes: str | None = None,
+) -> dict[str, Any] | None:
+    """Mark an owner statement disbursed and credit reserve_contribution to reserve_balance."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM owner_statements WHERE id = ?", (statement_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        updated_notes = notes.strip() if notes is not None else (row["notes"] or "")
+        was_disbursed = row["status"] == StatementStatus.DISBURSED.value
+        cursor.execute(
+            """
+            UPDATE owner_statements
+            SET status = ?, disbursed_at = COALESCE(disbursed_at, ?), notes = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (StatementStatus.DISBURSED.value, now_iso, updated_notes, now_iso, statement_id),
+        )
+        if not was_disbursed and float(row["reserve_contribution"] or 0.0) > 0:
+            cursor.execute(
+                """
+                UPDATE property_owners
+                SET reserve_balance = ROUND(reserve_balance + ?, 2), updated_at = ?
+                WHERE id = ?
+                """,
+                (float(row["reserve_contribution"]), now_iso, row["owner_id"]),
+            )
+        conn.commit()
+        cursor.execute("SELECT * FROM owner_statements WHERE id = ?", (statement_id,))
+        updated = _row_to_statement(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("owner.disbursement_sent", updated)
+    return updated
