@@ -1840,7 +1840,7 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
-## v0.56.0 — Property Owner Portals, Monthly Disbursement Statements, CapEx Reserve Tracking & Owner Approvals Engine (IN PROGRESS)
+## v0.56.0 — Property Owner Portals, Monthly Disbursement Statements, CapEx Reserve Tracking & Owner Approvals Engine (COMPLETED)
 
 Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, CapEx Reserve Accounting & Owner Approvals Engine (`api/owner_portal.py`). The system manages property owners and holding entities (`property_owners` with management fee percentage, CapEx reserve balances/targets, and disbursement methods), generates itemized monthly financial disbursement statements (`owner_statements` auto-calculating management fees, reserve contributions, and net owner payouts with Markdown statement rendering), tracks CapEx and major repair approval requests (`owner_approvals` linked to owners and units with approve/reject/more-info workflows), dispatches 6 real-time webhooks (`owner.created`, `owner.statement_generated`, `owner.disbursement_sent`, `owner.approval_requested`, `owner.approval_approved`, `owner.approval_rejected`), grounds unit-level pending owner approvals into conversational RAG context (`[OWNER CAPEX & MAJOR REPAIR APPROVALS]`), resolves 5 owner-approval macro variables (`{owner_pending_approvals_count}`, `{owner_latest_approval_title}`, `{owner_latest_approval_status}`, `{owner_latest_approval_cost}`, `{owner_capex_status}`), and provides a 3-tab Streamlit operations board plus 1-click session approval escalation.
 
@@ -1867,14 +1867,14 @@ Via the API and Streamlit UI, property managers and asset managers can:
 - Live ACH/wire banking rails and IRS 1099-MISC e-filing (disbursements and management fees are recorded in the internal ledger for accounting export).
 
 ### Acceptance Criteria
-- [ ] AC1: Core SQLite schema, enums, seeds, owner CRUD, statement generation/disbursement, approval workflow, summaries, and KPIs in `api/owner_portal.py`.
-- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and 6 `owner.*` webhook events in `api/db_utils.py`.
-- [ ] AC3: RESTful FastAPI endpoints and 1-click session escalation in `api/main.py`.
-- [ ] AC4: Conversational RAG grounding and 5 macro variables in `api/tenant_context.py`.
-- [ ] AC5: Typed Streamlit API client helpers in `app/api_utils.py`.
-- [ ] AC6: Streamlit 3-tab Owner Portal board and 1-click session widget in `app/sidebar.py`.
-- [ ] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
-- [ ] AC8: Version bump to `0.56.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] AC1: Core SQLite schema, enums, seeds, owner CRUD, statement generation/disbursement, approval workflow, summaries, and KPIs in `api/owner_portal.py`.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and 6 `owner.*` webhook events in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints and 1-click session escalation in `api/main.py`.
+- [x] AC4: Conversational RAG grounding and 5 macro variables in `api/tenant_context.py`.
+- [x] AC5: Typed Streamlit API client helpers in `app/api_utils.py`.
+- [x] AC6: Streamlit 3-tab Owner Portal board and 1-click session widget in `app/sidebar.py`.
+- [x] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
+- [x] AC8: Version bump to `0.56.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
 - [ ] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
 
 ### Validation & CI Plan
@@ -1886,14 +1886,14 @@ Via the API and Streamlit UI, property managers and asset managers can:
 - End-to-end verification: Exercise full owner -> monthly statement -> disbursement -> CapEx approval lifecycle via FastAPI TestClient and Streamlit FakeStreamlit harness.
 
 ### Micro-Task Breakdown
-- [ ] Task 1: Define v0.56.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/owner_portal.py` (enums, schema, seeds, owner CRUD, statements, disbursements, CapEx approvals, summaries, KPIs) with unit tests.
-- [ ] Task 3: Register `owner.*` webhook events in `api/db_utils.py` and add Pydantic models in `api/pydantic_models.py` with tests.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
-- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests.
-- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
-- [ ] Task 7: Implement Streamlit 3-tab operations board and session widget in `app/sidebar.py` with UI tests.
-- [ ] Task 8: Bump version to `0.56.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] Task 1: Define v0.56.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/owner_portal.py` (enums, schema, seeds, owner CRUD, statements, disbursements, CapEx approvals, summaries, KPIs) with unit tests.
+- [x] Task 3: Register `owner.*` webhook events in `api/db_utils.py` and add Pydantic models in `api/pydantic_models.py` with tests.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
+- [x] Task 7: Implement Streamlit 3-tab operations board and session widget in `app/sidebar.py` with UI tests.
+- [x] Task 8: Bump version to `0.56.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
 - [ ] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## v0.55.0 — Prospective Leasing CRM, Property Tours, Rental Applications & Applicant Screening Engine (COMPLETED)
