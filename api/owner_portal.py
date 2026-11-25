@@ -7,8 +7,9 @@ import secrets
 import sqlite3
 from datetime import UTC
 from enum import StrEnum
+from typing import Any
 
-from api import db_utils
+from api import db_utils, webhooks
 
 
 class OwnerStatus(StrEnum):
@@ -269,3 +270,207 @@ def _seed_owner_portal_data(cursor: sqlite3.Cursor) -> None:
             now_iso,
         ),
     )
+
+
+def _row_to_owner(row: sqlite3.Row) -> dict[str, Any]:
+    reserve_balance = round(float(row["reserve_balance"]), 2)
+    reserve_target = round(float(row["reserve_target"]), 2)
+    reserve_funded_pct = (
+        round(min(100.0, (reserve_balance / reserve_target) * 100.0), 2)
+        if reserve_target > 0
+        else 100.0
+    )
+    return {
+        "id": row["id"],
+        "full_name": row["full_name"],
+        "email": row["email"],
+        "phone": row["phone"] or "",
+        "entity_name": row["entity_name"] or "",
+        "management_fee_pct": round(float(row["management_fee_pct"]), 2),
+        "reserve_balance": reserve_balance,
+        "reserve_target": reserve_target,
+        "reserve_funded_pct": reserve_funded_pct,
+        "disbursement_method": row["disbursement_method"],
+        "status": row["status"],
+        "notes": row["notes"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _row_to_statement(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "owner_id": row["owner_id"],
+        "period_month": row["period_month"],
+        "gross_rent_collected": round(float(row["gross_rent_collected"]), 2),
+        "other_income": round(float(row["other_income"]), 2),
+        "operating_expenses": round(float(row["operating_expenses"]), 2),
+        "management_fee_amount": round(float(row["management_fee_amount"]), 2),
+        "reserve_contribution": round(float(row["reserve_contribution"]), 2),
+        "net_disbursement": round(float(row["net_disbursement"]), 2),
+        "status": row["status"],
+        "disbursed_at": row["disbursed_at"],
+        "notes": row["notes"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _row_to_approval(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "owner_id": row["owner_id"],
+        "unit_id": row["unit_id"],
+        "category": row["category"],
+        "title": row["title"],
+        "description": row["description"] or "",
+        "estimated_cost": round(float(row["estimated_cost"]), 2),
+        "vendor_name": row["vendor_name"] or "",
+        "status": row["status"],
+        "owner_decision_notes": row["owner_decision_notes"] or "",
+        "decided_at": row["decided_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def create_owner(  # noqa: PLR0913
+    full_name: str,
+    email: str,
+    *,
+    phone: str = "",
+    entity_name: str = "",
+    management_fee_pct: float = DEFAULT_MGMT_FEE_PCT,
+    reserve_balance: float = 0.0,
+    reserve_target: float = 5000.0,
+    disbursement_method: str = DisbursementMethod.ACH.value,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Create a new property owner / holding entity profile."""
+    if not full_name or not full_name.strip():
+        raise ValueError("full_name is required")
+    if not email or "@" not in email:
+        raise ValueError("Valid email is required")
+    if not (0.0 <= management_fee_pct <= MAX_MGMT_FEE_PCT):
+        raise ValueError(f"management_fee_pct must be between 0 and {MAX_MGMT_FEE_PCT}")
+    if reserve_balance < 0 or reserve_target < 0:
+        raise ValueError("Reserve amounts cannot be negative")
+    if disbursement_method not in {m.value for m in DisbursementMethod}:
+        raise ValueError(f"Invalid disbursement_method '{disbursement_method}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        oid = _generate_owner_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO property_owners (
+                id, full_name, email, phone, entity_name, management_fee_pct,
+                reserve_balance, reserve_target, disbursement_method, status,
+                notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                oid,
+                full_name.strip(),
+                email.strip().lower(),
+                phone.strip(),
+                entity_name.strip(),
+                round(float(management_fee_pct), 2),
+                round(float(reserve_balance), 2),
+                round(float(reserve_target), 2),
+                disbursement_method,
+                OwnerStatus.ACTIVE.value,
+                notes.strip(),
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM property_owners WHERE id = ?", (oid,))
+        record = _row_to_owner(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("owner.created", record)
+    return record
+
+
+def get_owner(owner_id: str) -> dict[str, Any] | None:
+    """Retrieve a single property owner by ID."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM property_owners WHERE id = ?", (owner_id,))
+        row = cursor.fetchone()
+        return _row_to_owner(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_owners(status: str | None = None) -> list[dict[str, Any]]:
+    """List property owners with optional status filter."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM property_owners WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_owner(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_owner(owner_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """Update mutable metadata on a property owner profile."""
+    allowed = {
+        "phone",
+        "entity_name",
+        "management_fee_pct",
+        "reserve_balance",
+        "reserve_target",
+        "disbursement_method",
+        "status",
+        "notes",
+    }
+    filtered = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    if "status" in filtered and filtered["status"] not in {s.value for s in OwnerStatus}:
+        raise ValueError(f"Invalid owner status '{filtered['status']}'")
+    if "disbursement_method" in filtered and filtered["disbursement_method"] not in {
+        m.value for m in DisbursementMethod
+    }:
+        raise ValueError(f"Invalid disbursement_method '{filtered['disbursement_method']}'")
+    if "management_fee_pct" in filtered and not (
+        0.0 <= float(filtered["management_fee_pct"]) <= MAX_MGMT_FEE_PCT
+    ):
+        raise ValueError(f"management_fee_pct must be between 0 and {MAX_MGMT_FEE_PCT}")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM property_owners WHERE id = ?", (owner_id,))
+        existing = cursor.fetchone()
+        if existing is None:
+            return None
+        if not filtered:
+            return _row_to_owner(existing)
+
+        filtered["updated_at"] = _now_iso()
+        set_clause = ", ".join(f"{k} = ?" for k in filtered)
+        params = list(filtered.values()) + [owner_id]
+        cursor.execute(f"UPDATE property_owners SET {set_clause} WHERE id = ?", params)
+        conn.commit()
+        cursor.execute("SELECT * FROM property_owners WHERE id = ?", (owner_id,))
+        return _row_to_owner(cursor.fetchone())
+    finally:
+        conn.close()
