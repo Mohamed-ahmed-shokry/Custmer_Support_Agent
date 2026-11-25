@@ -15,9 +15,9 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
   - Context block `[OWNER CAPEX & MAJOR REPAIR APPROVALS]` and 5 macro variables (`{owner_pending_approvals_count}`, `{owner_latest_approval_title}`, `{owner_latest_approval_status}`, `{owner_latest_approval_cost}`, `{owner_capex_status}`).
 - [x] **AC5: Streamlit API Client Helpers (`app/api_utils.py`)** ✅
   - Typed client API wrappers for all owner portal endpoints.
-- [ ] **AC6: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)**
+- [x] **AC6: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)** ✅
   - 3-tab `🏛️ Owner Portal & Disbursements` sidebar expander and 1-click session approval widget.
-- [ ] **AC7: Automated Unit & Integration Tests (`tests/`)**
+- [x] **AC7: Automated Unit & Integration Tests (`tests/`)** ✅
   - Full test coverage across engine, models, routes, RAG context, API client, and UI with >= 80% total coverage.
 - [ ] **AC8: Version Bump & Documentation Updates**
   - Version bumped to `0.56.0` in `pyproject.toml` and `api/settings.py`; docs updated in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
@@ -32,7 +32,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
 - [x] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
 - [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
 - [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
-- [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
+- [x] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
 - [ ] Task 8: Version bump to `0.56.0` and update documentation.
 - [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
 
