@@ -17,6 +17,7 @@ from api import (
     insurance,
     leasing_crm,
     move_logistics,
+    owner_portal,
     packages,
     parking,
     pets,
@@ -1570,6 +1571,10 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     if resolved_unit_id:
         leasing_summary = leasing_crm.get_unit_leasing_summary(resolved_unit_id)
 
+    owner_approval_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        owner_approval_summary = owner_portal.get_unit_owner_approvals_summary(resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -1701,6 +1706,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(leasing_lines)
+
+    owner_approval_lines = _format_owner_approval_lines(owner_approval_summary)
+    if owner_approval_lines:
+        if lines:
+            lines.append("")
+        lines.extend(owner_approval_lines)
 
     return "\n".join(lines)
 
@@ -1889,6 +1900,49 @@ def _extract_leasing_vars(leasing_summary: dict[str, Any] | None) -> dict[str, s
     next_tour = leasing_summary.get("next_tour")
     if next_tour:
         vars_dict["leasing_next_tour_date"] = str(next_tour.get("scheduled_date") or "none")
+    return vars_dict
+
+
+def _format_owner_approval_lines(approval_summary: dict[str, Any] | None) -> list[str]:
+    """Format unit-level owner CapEx & major repair approvals for prompt grounding."""
+    if not approval_summary or not approval_summary.get("total_approvals"):
+        return []
+    lines = ["[OWNER CAPEX & MAJOR REPAIR APPROVALS]"]
+    lines.append(
+        f"Unit CapEx Status: {str(approval_summary.get('capex_status', 'none')).upper()} "
+        f"| Pending Owner Approvals: {approval_summary.get('pending_count', 0)} "
+        f"| Pending Exposure: ${approval_summary.get('pending_exposure', 0.0):,.2f}"
+    )
+    latest = approval_summary.get("latest_approval")
+    if latest:
+        lines.append(
+            f"Latest Request ({latest.get('id')}): {latest.get('title')} "
+            f"[{latest.get('category')}] — ${latest.get('estimated_cost', 0.0):,.2f} "
+            f"(Status: {str(latest.get('status', 'pending')).upper()})"
+        )
+    lines.append("[END OWNER CAPEX & MAJOR REPAIR APPROVALS]")
+    return lines
+
+
+def _extract_owner_approval_vars(approval_summary: dict[str, Any] | None) -> dict[str, str]:
+    """Extract owner CapEx approval macro variables from a unit approval summary."""
+    vars_dict: dict[str, str] = {
+        "owner_pending_approvals_count": "0",
+        "owner_latest_approval_title": "none",
+        "owner_latest_approval_status": "none",
+        "owner_latest_approval_cost": "$0.00",
+        "owner_capex_status": "none",
+    }
+    if not approval_summary:
+        return vars_dict
+
+    vars_dict["owner_pending_approvals_count"] = str(approval_summary.get("pending_count", 0))
+    vars_dict["owner_capex_status"] = str(approval_summary.get("capex_status", "none"))
+    latest = approval_summary.get("latest_approval")
+    if latest:
+        vars_dict["owner_latest_approval_title"] = str(latest.get("title") or "none")
+        vars_dict["owner_latest_approval_status"] = str(latest.get("status") or "none")
+        vars_dict["owner_latest_approval_cost"] = f"${latest.get('estimated_cost', 0.0):,.2f}"
     return vars_dict
 
 
@@ -2181,5 +2235,10 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     if resolved_unit_id:
         t_leasing_summary = leasing_crm.get_unit_leasing_summary(resolved_unit_id)
     variables.update(_extract_leasing_vars(t_leasing_summary))
+
+    t_owner_summary: dict[str, Any] | None = None
+    if resolved_unit_id:
+        t_owner_summary = owner_portal.get_unit_owner_approvals_summary(resolved_unit_id)
+    variables.update(_extract_owner_approval_vars(t_owner_summary))
 
     return variables
