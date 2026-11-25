@@ -16,6 +16,7 @@ from api import (
     insurance,
     leasing_crm,
     move_logistics,
+    owner_portal,
     packages,
     parking,
     pets,
@@ -1125,6 +1126,36 @@ def test_leasing_crm_rag_context_and_macros():
         "Hi {customer_name}, unit demand is {leasing_unit_demand_status} with "
         "{leasing_prospect_count} prospect(s), {leasing_active_applications} application(s), "
         "next tour on {leasing_next_tour_date}, 3x income {leasing_income_requirement}."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
+
+
+def test_owner_portal_rag_context_and_macros():
+    """Verify owner CapEx approval RAG context injection and macro resolution."""
+    sid = "sess-owner-context"
+    db_utils.insert_application_logs(
+        sid, "CapEx status", "Checking owner approval for HVAC replacement", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    owner_portal.init_owner_portal_db()
+
+    context = build_tenant_rag_context(session_id=sid)
+    assert "[OWNER CAPEX & MAJOR REPAIR APPROVALS]" in context
+    assert "Unit CapEx Status:" in context
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "owner_pending_approvals_count" in variables
+    assert "owner_latest_approval_title" in variables
+    assert "owner_latest_approval_status" in variables
+    assert "owner_latest_approval_cost" in variables
+    assert "owner_capex_status" in variables
+
+    template = (
+        "Hi {customer_name}, CapEx status is {owner_capex_status} with "
+        "{owner_pending_approvals_count} pending request(s): {owner_latest_approval_title} "
+        "({owner_latest_approval_status}, {owner_latest_approval_cost})."
     )
     rendered, unresolved = render_template(template, session_id=sid)
     assert unresolved == []
