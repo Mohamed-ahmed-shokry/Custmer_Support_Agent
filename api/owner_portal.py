@@ -659,3 +659,144 @@ def disburse_owner_statement(
 
     webhooks.dispatch_event("owner.disbursement_sent", updated)
     return updated
+
+
+def create_approval_request(  # noqa: PLR0913
+    owner_id: str,
+    title: str,
+    estimated_cost: float,
+    *,
+    unit_id: str | None = None,
+    category: str = ApprovalCategory.CAPEX.value,
+    description: str = "",
+    vendor_name: str = "",
+) -> dict[str, Any]:
+    """Submit a CapEx or major repair approval request to a property owner."""
+    if not title or not title.strip():
+        raise ValueError("title is required")
+    if estimated_cost <= 0:
+        raise ValueError("estimated_cost must be greater than 0")
+    if category not in {c.value for c in ApprovalCategory}:
+        raise ValueError(f"Invalid approval category '{category}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM property_owners WHERE id = ?", (owner_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Owner '{owner_id}' not found")
+        if unit_id:
+            cursor.execute("SELECT id FROM units WHERE id = ?", (unit_id,))
+            if cursor.fetchone() is None:
+                raise ValueError(f"Unit '{unit_id}' not found")
+
+        aid = _generate_approval_id()
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            INSERT INTO owner_approvals (
+                id, owner_id, unit_id, category, title, description, estimated_cost,
+                vendor_name, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                aid,
+                owner_id,
+                unit_id,
+                category,
+                title.strip(),
+                description.strip(),
+                round(float(estimated_cost), 2),
+                vendor_name.strip(),
+                ApprovalStatus.PENDING.value,
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM owner_approvals WHERE id = ?", (aid,))
+        approval = _row_to_approval(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("owner.approval_requested", approval)
+    return approval
+
+
+def list_approval_requests(
+    owner_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List owner CapEx/major repair approval requests with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM owner_approvals WHERE 1=1"
+        params: list[Any] = []
+        if owner_id:
+            query += " AND owner_id = ?"
+            params.append(owner_id)
+        if unit_id:
+            query += " AND unit_id = ?"
+            params.append(unit_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_approval(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def decide_approval_request(
+    approval_id: str,
+    decision: str,
+    *,
+    owner_decision_notes: str = "",
+) -> dict[str, Any] | None:
+    """Approve, reject, or request more info on an owner CapEx approval request."""
+    valid_decisions = {
+        ApprovalStatus.APPROVED.value,
+        ApprovalStatus.REJECTED.value,
+        ApprovalStatus.MORE_INFO_REQUESTED.value,
+    }
+    if decision not in valid_decisions:
+        raise ValueError(f"Invalid approval decision '{decision}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_owner_portal_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM owner_approvals WHERE id = ?", (approval_id,))
+        if cursor.fetchone() is None:
+            return None
+
+        now_iso = _now_iso()
+        decided_at = (
+            now_iso
+            if decision in (ApprovalStatus.APPROVED.value, ApprovalStatus.REJECTED.value)
+            else None
+        )
+        cursor.execute(
+            """
+            UPDATE owner_approvals
+            SET status = ?, owner_decision_notes = ?, decided_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (decision, owner_decision_notes.strip(), decided_at, now_iso, approval_id),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM owner_approvals WHERE id = ?", (approval_id,))
+        updated = _row_to_approval(cursor.fetchone())
+    finally:
+        conn.close()
+
+    if decision == ApprovalStatus.APPROVED.value:
+        webhooks.dispatch_event("owner.approval_approved", updated)
+    elif decision == ApprovalStatus.REJECTED.value:
+        webhooks.dispatch_event("owner.approval_rejected", updated)
+    return updated
