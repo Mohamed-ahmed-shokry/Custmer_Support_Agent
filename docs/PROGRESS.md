@@ -9,7 +9,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
   - Tables `property_owners`, `owner_statements`, and `owner_approvals` with indexes, foreign keys, enums, seeds, owner CRUD, statement generation/Markdown rendering/disbursement, CapEx approval workflow, summaries, and KPIs.
 - [x] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)** ✅
   - Request/response models for owners, statements, approvals, summaries, metrics, and 6 `owner.*` webhook events.
-- [ ] **AC3: FastAPI Endpoints & 1-Click Session Escalation (`api/main.py`)**
+- [x] **AC3: FastAPI Endpoints & 1-Click Session Escalation (`api/main.py`)** ✅
   - Endpoints for `/owners/*`, `/units/{id}/owner-approvals/summary`, and 1-click session escalation.
 - [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
   - Context block `[OWNER CAPEX & MAJOR REPAIR APPROVALS]` and 5 macro variables (`{owner_pending_approvals_count}`, `{owner_latest_approval_title}`, `{owner_latest_approval_status}`, `{owner_latest_approval_cost}`, `{owner_capex_status}`).
@@ -29,7 +29,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
 - [x] Task 1: Define v0.56.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
 - [x] Task 2: Implement `api/owner_portal.py` (enums, schema, seeds, owner CRUD, statements, disbursements, CapEx approvals, summaries, KPIs) with unit tests.
 - [x] Task 3: Register `owner.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
 - [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
 - [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
 - [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
