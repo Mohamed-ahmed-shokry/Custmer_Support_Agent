@@ -5,7 +5,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
 
 ## Acceptance Criteria Status
 
-- [ ] **AC1: Core Engine & SQLite Schema (`api/owner_portal.py`)**
+- [x] **AC1: Core Engine & SQLite Schema (`api/owner_portal.py`)** ✅
   - Tables `property_owners`, `owner_statements`, and `owner_approvals` with indexes, foreign keys, enums, seeds, owner CRUD, statement generation/Markdown rendering/disbursement, CapEx approval workflow, summaries, and KPIs.
 - [ ] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)**
   - Request/response models for owners, statements, approvals, summaries, metrics, and 6 `owner.*` webhook events.
@@ -27,7 +27,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
 ## Micro-Task Execution Checklist
 
 - [x] Task 1: Define v0.56.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/owner_portal.py` (enums, schema, seeds, owner CRUD, statements, disbursements, CapEx approvals, summaries, KPIs) with unit tests.
+- [x] Task 2: Implement `api/owner_portal.py` (enums, schema, seeds, owner CRUD, statements, disbursements, CapEx approvals, summaries, KPIs) with unit tests.
 - [ ] Task 3: Register `owner.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
 - [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
