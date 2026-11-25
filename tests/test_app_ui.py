@@ -5682,3 +5682,88 @@ def test_session_leasing_widget_ui(monkeypatch):
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_leasing_widget("sess_lease_ui", tenant)
     assert fake_st.errors == []
+
+
+def test_owner_portal_board_ui(monkeypatch):
+    """Verify rendering of Owner Portal & Disbursements sidebar board."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_owner_portal_metrics_api",
+        lambda: {
+            "total_reserve_balance": 19300.0,
+            "total_net_disbursed": 14784.0,
+            "pending_capex_exposure": 4850.0,
+            "approval_rate_pct": 100.0,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_property_owners_api",
+        lambda **kw: [
+            {
+                "id": "own_1",
+                "full_name": "Elena Rostova",
+                "management_fee_pct": 8.0,
+                "reserve_balance": 12500.0,
+                "reserve_target": 15000.0,
+                "reserve_funded_pct": 83.33,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_owner_statements_api",
+        lambda **kw: [
+            {
+                "id": "stm_1",
+                "period_month": "2099-05",
+                "status": "issued",
+                "gross_rent_collected": 18500.0,
+                "net_disbursement": 14784.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_owner_approvals_api",
+        lambda **kw: [
+            {
+                "id": "apr_1",
+                "title": "Heat Pump Replacement",
+                "status": "pending",
+                "estimated_cost": 4850.0,
+                "category": "capex",
+            }
+        ],
+    )
+
+    sidebar._render_owner_portal_board()
+    assert fake_st.errors == []
+
+
+def test_session_owner_approval_widget_ui(monkeypatch):
+    """Verify rendering of 1-click resident session owner CapEx approval widget."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_unit_owner_approvals_summary_api",
+        lambda uid: {
+            "unit_id": uid,
+            "capex_status": "awaiting_owner_approval",
+            "pending_count": 1,
+        },
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_property_owners_api",
+        lambda **kw: [{"id": "own_1", "full_name": "Elena Rostova"}],
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_owner_approval_widget("sess_own_ui", tenant)
+    assert fake_st.errors == []
