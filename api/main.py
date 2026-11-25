@@ -30,6 +30,7 @@ from api import (
     macro_suggestions,
     macros,
     move_logistics,
+    owner_portal,
     packages,
     parking,
     pets,
@@ -315,6 +316,8 @@ from api.pydantic_models import (
     OccupantListResponse,
     OccupantResponse,
     OccupantUpdateRequest,
+    OwnerPortalMetricsResponse,
+    OwnerPortfolioSummaryResponse,
     PackageCreateRequest,
     PackageItem,
     PackageListResponse,
@@ -363,6 +366,10 @@ from api.pydantic_models import (
     PMTaskListResponse,
     PMTaskResponse,
     PMTaskUpdateRequest,
+    PropertyOwnerCreateRequest,
+    PropertyOwnerItem,
+    PropertyOwnerListResponse,
+    PropertyOwnerUpdateRequest,
     PropertyTourCompleteRequest,
     PropertyTourCreateRequest,
     PropertyTourItem,
@@ -9546,3 +9553,71 @@ def session_submit_application_route(session_id: str, request: SessionSubmitAppl
         status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return RentalApplicationItem(**created)
+
+
+# --- Property Owner Portals, Statements & CapEx Approvals Routes (v0.56.0) ---
+
+
+@app.get("/owners/metrics", response_model=OwnerPortalMetricsResponse)
+def get_owner_portal_metrics_route():
+    """Portfolio-wide owner reserves, disbursements, and CapEx approval KPIs."""
+    return OwnerPortalMetricsResponse(**owner_portal.get_owner_portal_metrics_summary())
+
+
+@app.post("/owners", response_model=PropertyOwnerItem, status_code=201)
+def create_property_owner_route(request: PropertyOwnerCreateRequest):
+    """Create a new property owner / holding entity profile."""
+    try:
+        created = owner_portal.create_owner(
+            full_name=request.full_name,
+            email=request.email,
+            phone=request.phone,
+            entity_name=request.entity_name,
+            management_fee_pct=request.management_fee_pct,
+            reserve_balance=request.reserve_balance,
+            reserve_target=request.reserve_target,
+            disbursement_method=request.disbursement_method,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PropertyOwnerItem(**created)
+
+
+@app.get("/owners", response_model=PropertyOwnerListResponse)
+def list_property_owners_route(status: str | None = None):
+    """List property owners with optional status filter."""
+    rows = owner_portal.list_owners(status=status)
+    return PropertyOwnerListResponse(
+        owners=[PropertyOwnerItem(**r) for r in rows], total=len(rows)
+    )
+
+
+@app.get("/owners/{owner_id}", response_model=PropertyOwnerItem)
+def get_property_owner_route(owner_id: str):
+    """Retrieve a single property owner profile."""
+    row = owner_portal.get_owner(owner_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Owner not found: {owner_id}")
+    return PropertyOwnerItem(**row)
+
+
+@app.patch("/owners/{owner_id}", response_model=PropertyOwnerItem)
+def update_property_owner_route(owner_id: str, request: PropertyOwnerUpdateRequest):
+    """Update mutable metadata on a property owner profile."""
+    try:
+        updated = owner_portal.update_owner(owner_id, request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Owner not found: {owner_id}")
+    return PropertyOwnerItem(**updated)
+
+
+@app.get("/owners/{owner_id}/summary", response_model=OwnerPortfolioSummaryResponse)
+def get_owner_portfolio_summary_route(owner_id: str):
+    """Retrieve statements, reserves, and pending CapEx summary for an owner."""
+    summary = owner_portal.get_owner_summary(owner_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Owner not found: {owner_id}")
+    return OwnerPortfolioSummaryResponse(**summary)
