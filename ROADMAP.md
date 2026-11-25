@@ -1875,7 +1875,7 @@ Via the API and Streamlit UI, property managers and asset managers can:
 - [x] AC6: Streamlit 3-tab Owner Portal board and 1-click session widget in `app/sidebar.py`.
 - [x] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
 - [x] AC8: Version bump to `0.56.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
+- [x] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
 
 ### Validation & CI Plan
 - Local CI-parity commands:
@@ -1894,7 +1894,7 @@ Via the API and Streamlit UI, property managers and asset managers can:
 - [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
 - [x] Task 7: Implement Streamlit 3-tab operations board and session widget in `app/sidebar.py` with UI tests.
 - [x] Task 8: Bump version to `0.56.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
+- [x] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## v0.55.0 — Prospective Leasing CRM, Property Tours, Rental Applications & Applicant Screening Engine (COMPLETED)
 
