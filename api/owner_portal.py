@@ -800,3 +800,107 @@ def decide_approval_request(
     elif decision == ApprovalStatus.REJECTED.value:
         webhooks.dispatch_event("owner.approval_rejected", updated)
     return updated
+
+
+def get_owner_summary(owner_id: str) -> dict[str, Any] | None:
+    """Summarize statements, disbursements, reserves, and approvals for an owner."""
+    owner = get_owner(owner_id)
+    if owner is None:
+        return None
+    statements = list_owner_statements(owner_id=owner_id)
+    approvals = list_approval_requests(owner_id=owner_id)
+    total_disbursed = round(
+        sum(
+            s["net_disbursement"]
+            for s in statements
+            if s["status"] == StatementStatus.DISBURSED.value
+        ),
+        2,
+    )
+    pending_disbursements = round(
+        sum(
+            s["net_disbursement"]
+            for s in statements
+            if s["status"] in (StatementStatus.DRAFT.value, StatementStatus.ISSUED.value)
+        ),
+        2,
+    )
+    pending_approvals = [a for a in approvals if a["status"] == ApprovalStatus.PENDING.value]
+    return {
+        "owner": owner,
+        "total_statements": len(statements),
+        "total_disbursed": total_disbursed,
+        "pending_disbursements": pending_disbursements,
+        "pending_approvals_count": len(pending_approvals),
+        "pending_capex_exposure": round(sum(a["estimated_cost"] for a in pending_approvals), 2),
+        "statements": statements,
+        "approvals": approvals,
+    }
+
+
+def get_unit_owner_approvals_summary(unit_id: str) -> dict[str, Any]:
+    """Summarize pending and recent owner CapEx/major repair approvals for a unit."""
+    approvals = list_approval_requests(unit_id=unit_id)
+    pending = [a for a in approvals if a["status"] == ApprovalStatus.PENDING.value]
+    latest = approvals[0] if approvals else None
+    if pending:
+        capex_status = "awaiting_owner_approval"
+    elif latest and latest["status"] == ApprovalStatus.APPROVED.value:
+        capex_status = "approved"
+    elif latest and latest["status"] == ApprovalStatus.REJECTED.value:
+        capex_status = "rejected"
+    else:
+        capex_status = "none"
+    return {
+        "unit_id": unit_id,
+        "total_approvals": len(approvals),
+        "pending_count": len(pending),
+        "pending_exposure": round(sum(a["estimated_cost"] for a in pending), 2),
+        "capex_status": capex_status,
+        "latest_approval": latest,
+        "approvals": approvals,
+    }
+
+
+def get_owner_portal_metrics_summary() -> dict[str, Any]:
+    """Compute portfolio-wide owner portal reserves, disbursements, and CapEx KPIs."""
+    owners = list_owners()
+    statements = list_owner_statements()
+    approvals = list_approval_requests()
+
+    active_owners = sum(1 for o in owners if o["status"] == OwnerStatus.ACTIVE.value)
+    total_reserve_balance = round(sum(o["reserve_balance"] for o in owners), 2)
+    total_reserve_target = round(sum(o["reserve_target"] for o in owners), 2)
+    total_disbursed = round(
+        sum(
+            s["net_disbursement"]
+            for s in statements
+            if s["status"] == StatementStatus.DISBURSED.value
+        ),
+        2,
+    )
+    total_mgmt_fees = round(sum(s["management_fee_amount"] for s in statements), 2)
+    pending_statements = sum(
+        1
+        for s in statements
+        if s["status"] in (StatementStatus.DRAFT.value, StatementStatus.ISSUED.value)
+    )
+    pending_approvals = [a for a in approvals if a["status"] == ApprovalStatus.PENDING.value]
+    approved_count = sum(1 for a in approvals if a["status"] == ApprovalStatus.APPROVED.value)
+    rejected_count = sum(1 for a in approvals if a["status"] == ApprovalStatus.REJECTED.value)
+    decided = approved_count + rejected_count
+    approval_rate_pct = round((approved_count / decided) * 100.0, 2) if decided > 0 else 100.0
+
+    return {
+        "total_owners": len(owners),
+        "active_owners": active_owners,
+        "total_reserve_balance": total_reserve_balance,
+        "total_reserve_target": total_reserve_target,
+        "total_statements": len(statements),
+        "pending_statements": pending_statements,
+        "total_net_disbursed": total_disbursed,
+        "total_management_fees": total_mgmt_fees,
+        "pending_approvals_count": len(pending_approvals),
+        "pending_capex_exposure": round(sum(a["estimated_cost"] for a in pending_approvals), 2),
+        "approval_rate_pct": approval_rate_pct,
+    }
