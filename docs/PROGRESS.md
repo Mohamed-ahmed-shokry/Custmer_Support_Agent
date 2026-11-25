@@ -11,7 +11,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
   - Request/response models for owners, statements, approvals, summaries, metrics, and 6 `owner.*` webhook events.
 - [x] **AC3: FastAPI Endpoints & 1-Click Session Escalation (`api/main.py`)** ✅
   - Endpoints for `/owners/*`, `/units/{id}/owner-approvals/summary`, and 1-click session escalation.
-- [ ] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)**
+- [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
   - Context block `[OWNER CAPEX & MAJOR REPAIR APPROVALS]` and 5 macro variables (`{owner_pending_approvals_count}`, `{owner_latest_approval_title}`, `{owner_latest_approval_status}`, `{owner_latest_approval_cost}`, `{owner_capex_status}`).
 - [ ] **AC5: Streamlit API Client Helpers (`app/api_utils.py`)**
   - Typed client API wrappers for all owner portal endpoints.
@@ -30,7 +30,7 @@ Deliver an end-to-end Property Owner Portal, Monthly Disbursement Statements, Ca
 - [x] Task 2: Implement `api/owner_portal.py` (enums, schema, seeds, owner CRUD, statements, disbursements, CapEx approvals, summaries, KPIs) with unit tests.
 - [x] Task 3: Register `owner.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session escalation in `api/main.py` with route integration tests.
-- [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
+- [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
 - [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
 - [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
 - [ ] Task 8: Version bump to `0.56.0` and update documentation.
