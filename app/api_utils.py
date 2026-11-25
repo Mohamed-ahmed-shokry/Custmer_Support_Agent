@@ -6975,3 +6975,194 @@ def session_submit_application_api(
         "submitting application from session",
         json=payload,
     )
+
+
+# --- Property Owner Portals, Statements & CapEx Approvals API Client (v0.56.0) ---
+
+
+def _owner_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_owner_portal_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio-wide owner reserves, disbursements, and CapEx KPIs."""
+    return _owner_call(
+        "get",
+        "/owners/metrics",
+        HTTP_OK,
+        "Failed to fetch owner portal metrics",
+        "fetching owner portal metrics",
+    )
+
+
+def create_property_owner_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a new property owner / holding entity."""
+    return _owner_call(
+        "post",
+        "/owners",
+        HTTP_CREATED,
+        "Failed to create property owner",
+        "creating property owner",
+        json=payload,
+    )
+
+
+def list_property_owners_api(status: str | None = None) -> list[dict[str, Any]]:
+    """List property owners with optional status filter."""
+    params: dict[str, Any] = {}
+    if status:
+        params["status"] = status
+    data = _owner_call(
+        "get",
+        "/owners",
+        HTTP_OK,
+        "Failed to list property owners",
+        "listing property owners",
+        params=params,
+    )
+    return list(data.get("owners", [])) if data else []
+
+
+def generate_owner_statement_api(
+    owner_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Generate a monthly disbursement statement for an owner."""
+    return _owner_call(
+        "post",
+        f"/owners/{owner_id}/statements",
+        HTTP_CREATED,
+        f"Failed to generate statement for owner '{owner_id}'",
+        "generating owner statement",
+        json=payload,
+    )
+
+
+def list_owner_statements_api(
+    owner_id: str | None = None, status: str | None = None
+) -> list[dict[str, Any]]:
+    """List owner monthly financial statements."""
+    params: dict[str, Any] = {}
+    if owner_id:
+        params["owner_id"] = owner_id
+    if status:
+        params["status"] = status
+    data = _owner_call(
+        "get",
+        "/owners/statements",
+        HTTP_OK,
+        "Failed to list owner statements",
+        "listing owner statements",
+        params=params,
+    )
+    return list(data.get("statements", [])) if data else []
+
+
+def disburse_owner_statement_api(
+    statement_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Record disbursement for an owner financial statement."""
+    return _owner_call(
+        "post",
+        f"/owners/statements/{statement_id}/disburse",
+        HTTP_OK,
+        f"Failed to disburse statement '{statement_id}'",
+        "disbursing owner statement",
+        json=payload or {},
+    )
+
+
+def create_owner_approval_api(
+    owner_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Submit a CapEx or major repair approval request to an owner."""
+    return _owner_call(
+        "post",
+        f"/owners/{owner_id}/approvals",
+        HTTP_CREATED,
+        f"Failed to create approval request for owner '{owner_id}'",
+        "creating owner approval request",
+        json=payload,
+    )
+
+
+def list_owner_approvals_api(
+    owner_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List CapEx and major repair owner approval requests."""
+    params: dict[str, Any] = {}
+    if owner_id:
+        params["owner_id"] = owner_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    data = _owner_call(
+        "get",
+        "/owners/approvals",
+        HTTP_OK,
+        "Failed to list owner approvals",
+        "listing owner approvals",
+        params=params,
+    )
+    return list(data.get("approvals", [])) if data else []
+
+
+def decide_owner_approval_api(
+    approval_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Approve, reject, or request more info on an owner CapEx approval."""
+    return _owner_call(
+        "post",
+        f"/owners/approvals/{approval_id}/decision",
+        HTTP_OK,
+        f"Failed to record decision for approval '{approval_id}'",
+        "deciding owner approval",
+        json=payload,
+    )
+
+
+def get_unit_owner_approvals_summary_api(unit_id: str) -> dict[str, Any] | None:
+    """Fetch unit-level owner CapEx approval summary."""
+    return _owner_call(
+        "get",
+        f"/units/{unit_id}/owner-approvals/summary",
+        HTTP_OK,
+        f"Failed to fetch owner approvals summary for unit '{unit_id}'",
+        "fetching unit owner approvals summary",
+    )
+
+
+def session_request_owner_approval_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """1-click CapEx / major repair owner approval escalation from an active session."""
+    return _owner_call(
+        "post",
+        f"/sessions/{session_id}/owners/request-approval",
+        HTTP_CREATED,
+        f"Failed to escalate owner approval for session '{session_id}'",
+        "requesting owner approval from session",
+        json=payload,
+    )
