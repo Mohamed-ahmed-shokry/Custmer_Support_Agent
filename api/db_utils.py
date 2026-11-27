@@ -369,6 +369,12 @@ VALID_WEBHOOK_EVENTS = {
     "owner.approval_requested",
     "owner.approval_approved",
     "owner.approval_rejected",
+    "eviction.notice_served",
+    "eviction.court_filed",
+    "eviction.case_closed",
+    "eviction.payment_plan_created",
+    "eviction.plan_installment_paid",
+    "eviction.plan_defaulted",
 }
 
 _CREATE_KNOWLEDGE_GAPS_TABLE = (
