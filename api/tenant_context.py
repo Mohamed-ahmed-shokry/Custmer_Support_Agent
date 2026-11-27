@@ -13,6 +13,7 @@ from api import (
     access_control,
     amenities,
     announcements,
+    evictions,
     incidents,
     insurance,
     leasing_crm,
@@ -1575,6 +1576,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     if resolved_unit_id:
         owner_approval_summary = owner_portal.get_unit_owner_approvals_summary(resolved_unit_id)
 
+    eviction_summary: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        eviction_summary = evictions.get_tenant_eviction_summary(resolved_tenant_id)
+    elif resolved_unit_id:
+        eviction_summary = evictions.get_unit_eviction_summary(resolved_unit_id)
+
     if (
         not tenant
         and not unit
@@ -1712,6 +1719,12 @@ def build_tenant_rag_context(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
         if lines:
             lines.append("")
         lines.extend(owner_approval_lines)
+
+    eviction_lines = _format_eviction_lines(eviction_summary)
+    if eviction_lines:
+        if lines:
+            lines.append("")
+        lines.extend(eviction_lines)
 
     return "\n".join(lines)
 
@@ -1943,6 +1956,66 @@ def _extract_owner_approval_vars(approval_summary: dict[str, Any] | None) -> dic
         vars_dict["owner_latest_approval_title"] = str(latest.get("title") or "none")
         vars_dict["owner_latest_approval_status"] = str(latest.get("status") or "none")
         vars_dict["owner_latest_approval_cost"] = f"${latest.get('estimated_cost', 0.0):,.2f}"
+    return vars_dict
+
+
+def _format_eviction_lines(eviction_summary: dict[str, Any] | None) -> list[str]:
+    """Format resident eviction notices and payment plan workouts for prompt grounding."""
+    if not eviction_summary or (
+        not eviction_summary.get("total_cases")
+        and not eviction_summary.get("active_payment_plans_count")
+    ):
+        return []
+    lines = ["[EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]"]
+    lines.append(
+        f"Active Legal Cases: {eviction_summary.get('active_cases_count', 0)} "
+        f"| Active Payment Plans: {eviction_summary.get('active_payment_plans_count', 0)} "
+        f"| Total Active Arrears: ${eviction_summary.get('total_active_arrears', 0.0):,.2f}"
+    )
+    primary_case = eviction_summary.get("primary_case")
+    if primary_case:
+        lines.append(
+            f"Primary Case ({primary_case.get('id')}): {primary_case.get('notice_type')} "
+            f"| Status: {str(primary_case.get('status', 'none')).upper()} "
+            f"| Cure Deadline: {primary_case.get('cure_deadline_date') or 'N/A'}"
+        )
+    primary_plan = eviction_summary.get("primary_payment_plan")
+    if primary_plan:
+        lines.append(
+            f"Payment Plan ({primary_plan.get('id')}): Status={primary_plan.get('status')} "
+            f"| Paid ${primary_plan.get('amount_paid', 0.0):,.2f} / "
+            f"${primary_plan.get('total_arrears', 0.0):,.2f} "
+            f"| Next Due: {primary_plan.get('next_due_date') or 'N/A'}"
+        )
+    lines.append("[END EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]")
+    return lines
+
+
+def _extract_eviction_vars(eviction_summary: dict[str, Any] | None) -> dict[str, str]:
+    """Extract eviction compliance and payment plan macro variables."""
+    vars_dict: dict[str, str] = {
+        "eviction_case_status": "none",
+        "eviction_cure_deadline": "none",
+        "eviction_arrears_amount": "$0.00",
+        "payment_plan_status": "none",
+        "payment_plan_next_due": "none",
+    }
+    if not eviction_summary:
+        return vars_dict
+
+    vars_dict["eviction_arrears_amount"] = (
+        f"${eviction_summary.get('total_active_arrears', 0.0):,.2f}"
+    )
+    primary_case = eviction_summary.get("primary_case")
+    if primary_case:
+        vars_dict["eviction_case_status"] = str(primary_case.get("status") or "none")
+        vars_dict["eviction_cure_deadline"] = str(
+            primary_case.get("cure_deadline_date") or "none"
+        )
+    primary_plan = eviction_summary.get("primary_payment_plan")
+    if primary_plan:
+        vars_dict["payment_plan_status"] = str(primary_plan.get("status") or "none")
+        vars_dict["payment_plan_next_due"] = str(primary_plan.get("next_due_date") or "none")
     return vars_dict
 
 
@@ -2240,5 +2313,12 @@ def extract_tenant_macro_variables(  # noqa: PLR0912, PLR0915
     if resolved_unit_id:
         t_owner_summary = owner_portal.get_unit_owner_approvals_summary(resolved_unit_id)
     variables.update(_extract_owner_approval_vars(t_owner_summary))
+
+    t_eviction_summary: dict[str, Any] | None = None
+    if resolved_tenant_id:
+        t_eviction_summary = evictions.get_tenant_eviction_summary(resolved_tenant_id)
+    elif resolved_unit_id:
+        t_eviction_summary = evictions.get_unit_eviction_summary(resolved_unit_id)
+    variables.update(_extract_eviction_vars(t_eviction_summary))
 
     return variables
