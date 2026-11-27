@@ -4384,3 +4384,82 @@ def test_owner_portal_client_api_utils_errors(monkeypatch):
     assert api_utils.decide_owner_approval_api("apr_1", {}) is None
     assert api_utils.get_unit_owner_approvals_summary_api("unit_101") is None
     assert api_utils.session_request_owner_approval_api("s1", {}) is None
+
+
+def test_evictions_client_api_utils(monkeypatch):
+    """Verify eviction compliance and payment plan API client helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+
+    class EvictionRouter:
+        def get(self, url, **kwargs):
+            routes = [
+                ("/evictions/metrics", 200, {"total_cases": 2, "cure_rate_pct": 100.0}),
+                ("/evictions/cases", 200, {"cases": [{"id": "evc_1"}], "total": 1}),
+                ("/evictions/payment-plans", 200, {"payment_plans": [{"id": "ppl_1"}], "total": 1}),
+                ("/evictions/summary", 200, {"tenant_id": "tenant_1", "active_cases_count": 1}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(404, {"detail": "Not found"})
+
+        def post(self, url, **kwargs):
+            routes = [
+                ("/evictions/cases", 201, {"id": "evc_new"}),
+                ("/evictions/payment-plans", 201, {"id": "ppl_new"}),
+                ("/serve-notice", 201, {"id": "evc_sess"}),
+                ("/create-payment-plan", 201, {"id": "ppl_sess"}),
+                ("/file-court", 200, {"id": "evc_1", "status": "filed_in_court"}),
+                ("/close", 200, {"id": "evc_1", "status": "cured_dismissed"}),
+                ("/installment", 200, {"id": "ppl_1", "status": "completed"}),
+                ("/default", 200, {"id": "ppl_1", "status": "defaulted"}),
+            ]
+            for suffix, code, payload in routes:
+                if url.endswith(suffix):
+                    return FakeResponse(code, payload)
+            return FakeResponse(400, {"detail": "Bad request"})
+
+    monkeypatch.setattr(api_utils, "requests", EvictionRouter())
+
+    expected_cases = 2
+    assert api_utils.get_eviction_metrics_api()["total_cases"] == expected_cases
+    assert api_utils.create_eviction_case_api({"reason": "Late"})["id"] == "evc_new"
+    assert len(api_utils.list_eviction_cases_api(tenant_id="tenant_1")) == 1
+    assert api_utils.record_court_filing_api("evc_1", {"court_case_number": "CV-1"})["status"] == (
+        "filed_in_court"
+    )
+    assert api_utils.close_eviction_case_api("evc_1", {"status": "cured_dismissed"})["status"] == (
+        "cured_dismissed"
+    )
+    assert api_utils.create_payment_plan_api({"total_arrears": 1000.0})["id"] == "ppl_new"
+    assert len(api_utils.list_payment_plans_api(tenant_id="tenant_1")) == 1
+    assert api_utils.record_payment_plan_installment_api("ppl_1", {"amount": 500.0})["status"] == (
+        "completed"
+    )
+    assert api_utils.default_payment_plan_api("ppl_1")["status"] == "defaulted"
+    assert api_utils.get_tenant_eviction_summary_api("tenant_1")["active_cases_count"] == 1
+    assert api_utils.session_serve_notice_api("s1", {"reason": "Late"})["id"] == "evc_sess"
+    assert api_utils.session_create_payment_plan_api("s1", {"total_arrears": 500.0})["id"] == (
+        "ppl_sess"
+    )
+
+
+def test_evictions_client_api_utils_errors(monkeypatch):
+    """Verify error handling and network exceptions in eviction API helpers."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(api_utils, "st", fake_st)
+    monkeypatch.setattr(api_utils, "requests", BoomRequests())
+
+    assert api_utils.get_eviction_metrics_api() is None
+    assert api_utils.create_eviction_case_api({}) is None
+    assert api_utils.list_eviction_cases_api() == []
+    assert api_utils.record_court_filing_api("evc_1", {}) is None
+    assert api_utils.close_eviction_case_api("evc_1", {}) is None
+    assert api_utils.create_payment_plan_api({}) is None
+    assert api_utils.list_payment_plans_api() == []
+    assert api_utils.record_payment_plan_installment_api("ppl_1", {}) is None
+    assert api_utils.default_payment_plan_api("ppl_1") is None
+    assert api_utils.get_tenant_eviction_summary_api("tenant_1") is None
+    assert api_utils.session_serve_notice_api("s1", {}) is None
+    assert api_utils.session_create_payment_plan_api("s1", {}) is None
