@@ -7,8 +7,9 @@ import secrets
 import sqlite3
 from datetime import UTC
 from enum import StrEnum
+from typing import Any
 
-from api import db_utils
+from api import db_utils, webhooks
 
 
 class NoticeType(StrEnum):
@@ -239,3 +240,315 @@ def _seed_evictions_data(cursor: sqlite3.Cursor) -> None:
                 now_iso,
             ),
         )
+
+
+def _row_to_plan(row: sqlite3.Row) -> dict[str, Any]:
+    total = round(float(row["total_arrears"]), 2)
+    paid = round(float(row["amount_paid"]), 2)
+    remaining = max(0.0, round(total - paid, 2))
+    return {
+        "id": row["id"],
+        "case_id": row["case_id"],
+        "tenant_id": row["tenant_id"],
+        "unit_id": row["unit_id"],
+        "total_arrears": total,
+        "installment_amount": round(float(row["installment_amount"]), 2),
+        "installment_count": int(row["installment_count"]),
+        "installments_paid": int(row["installments_paid"]),
+        "amount_paid": paid,
+        "remaining_balance": remaining,
+        "next_due_date": row["next_due_date"],
+        "status": row["status"],
+        "notes": row["notes"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _row_to_case(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, Any]:
+    cid = row["id"]
+    cursor.execute(
+        "SELECT * FROM payment_plans WHERE case_id = ? ORDER BY created_at DESC",
+        (cid,),
+    )
+    plans = [_row_to_plan(r) for r in cursor.fetchall()]
+    status = row["status"]
+    deadline = row["cure_deadline_date"]
+    is_cure_expired = bool(
+        deadline
+        and status in (CaseStatus.NOTICE_SERVED.value, CaseStatus.CURE_WINDOW_ACTIVE.value)
+        and deadline < _today_str()
+    )
+    return {
+        "id": cid,
+        "unit_id": row["unit_id"],
+        "tenant_id": row["tenant_id"],
+        "notice_type": row["notice_type"],
+        "delivery_method": row["delivery_method"],
+        "reason": row["reason"],
+        "arrears_amount": round(float(row["arrears_amount"]), 2),
+        "notice_served_date": row["notice_served_date"],
+        "cure_deadline_date": deadline,
+        "is_cure_expired": is_cure_expired,
+        "status": status,
+        "court_case_number": row["court_case_number"] or "",
+        "court_name": row["court_name"] or "",
+        "filing_date": row["filing_date"],
+        "hearing_date": row["hearing_date"],
+        "attorney_name": row["attorney_name"] or "",
+        "resolution_notes": row["resolution_notes"] or "",
+        "closed_at": row["closed_at"],
+        "payment_plans": plans,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def create_eviction_case(  # noqa: PLR0913
+    unit_id: str,
+    tenant_id: str,
+    reason: str,
+    *,
+    notice_type: str = NoticeType.PAY_OR_QUIT.value,
+    delivery_method: str = DeliveryMethod.CERTIFIED_MAIL.value,
+    arrears_amount: float = 0.0,
+    notice_served_date: str | None = None,
+    cure_deadline_date: str | None = None,
+    cure_days: int = DEFAULT_CURE_DAYS,
+) -> dict[str, Any]:
+    """Serve a statutory notice and open an eviction compliance case."""
+    if not reason or not reason.strip():
+        raise ValueError("reason is required")
+    if arrears_amount < 0:
+        raise ValueError("arrears_amount cannot be negative")
+    if notice_type not in {n.value for n in NoticeType}:
+        raise ValueError(f"Invalid notice_type '{notice_type}'")
+    if delivery_method not in {d.value for d in DeliveryMethod}:
+        raise ValueError(f"Invalid delivery_method '{delivery_method}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM units WHERE id = ?", (unit_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Unit '{unit_id}' not found")
+        cursor.execute("SELECT id FROM tenants WHERE id = ?", (tenant_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Tenant '{tenant_id}' not found")
+
+        cid = _generate_case_id()
+        now_iso = _now_iso()
+        served = notice_served_date or _today_str()
+        deadline = cure_deadline_date or _compute_cure_deadline(served, cure_days)
+        cursor.execute(
+            """
+            INSERT INTO eviction_cases (
+                id, unit_id, tenant_id, notice_type, delivery_method, reason,
+                arrears_amount, notice_served_date, cure_deadline_date, status,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                cid,
+                unit_id,
+                tenant_id,
+                notice_type,
+                delivery_method,
+                reason.strip(),
+                round(float(arrears_amount), 2),
+                served,
+                deadline,
+                CaseStatus.CURE_WINDOW_ACTIVE.value,
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (cid,))
+        record = _row_to_case(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("eviction.notice_served", record)
+    return record
+
+
+def get_eviction_case(case_id: str) -> dict[str, Any] | None:
+    """Retrieve a single eviction compliance case by ID."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        row = cursor.fetchone()
+        return _row_to_case(cursor, row) if row else None
+    finally:
+        conn.close()
+
+
+def list_eviction_cases(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    notice_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """List eviction compliance cases with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM eviction_cases WHERE 1=1"
+        params: list[Any] = []
+        if tenant_id:
+            query += " AND tenant_id = ?"
+            params.append(tenant_id)
+        if unit_id:
+            query += " AND unit_id = ?"
+            params.append(unit_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if notice_type:
+            query += " AND notice_type = ?"
+            params.append(notice_type)
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [_row_to_case(cursor, r) for r in rows]
+    finally:
+        conn.close()
+
+
+def update_eviction_case(case_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """Update mutable metadata on an eviction case."""
+    allowed = {
+        "arrears_amount",
+        "cure_deadline_date",
+        "status",
+        "hearing_date",
+        "attorney_name",
+        "resolution_notes",
+    }
+    filtered = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    if "status" in filtered and filtered["status"] not in {s.value for s in CaseStatus}:
+        raise ValueError(f"Invalid case status '{filtered['status']}'")
+    if "arrears_amount" in filtered and float(filtered["arrears_amount"]) < 0:
+        raise ValueError("arrears_amount cannot be negative")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        existing = cursor.fetchone()
+        if existing is None:
+            return None
+        if not filtered:
+            return _row_to_case(cursor, existing)
+
+        filtered["updated_at"] = _now_iso()
+        set_clause = ", ".join(f"{k} = ?" for k in filtered)
+        params = list(filtered.values()) + [case_id]
+        cursor.execute(f"UPDATE eviction_cases SET {set_clause} WHERE id = ?", params)
+        conn.commit()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        return _row_to_case(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
+
+def record_court_filing(  # noqa: PLR0913
+    case_id: str,
+    court_case_number: str,
+    court_name: str,
+    *,
+    filing_date: str | None = None,
+    hearing_date: str | None = None,
+    attorney_name: str = "",
+) -> dict[str, Any] | None:
+    """Record formal court filing details and advance eviction case status."""
+    if not court_case_number or not court_case_number.strip():
+        raise ValueError("court_case_number is required")
+    if not court_name or not court_name.strip():
+        raise ValueError("court_name is required")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        if cursor.fetchone() is None:
+            return None
+
+        now_iso = _now_iso()
+        next_status = (
+            CaseStatus.HEARING_SCHEDULED.value if hearing_date else CaseStatus.FILED_IN_COURT.value
+        )
+        cursor.execute(
+            """
+            UPDATE eviction_cases
+            SET court_case_number = ?, court_name = ?, filing_date = ?,
+                hearing_date = ?, attorney_name = ?, status = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                court_case_number.strip(),
+                court_name.strip(),
+                filing_date or _today_str(),
+                hearing_date,
+                attorney_name.strip(),
+                next_status,
+                now_iso,
+                case_id,
+            ),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        updated = _row_to_case(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("eviction.court_filed", updated)
+    return updated
+
+
+def close_eviction_case(
+    case_id: str,
+    status: str = CaseStatus.CURED_DISMISSED.value,
+    resolution_notes: str = "",
+) -> dict[str, Any] | None:
+    """Close an eviction compliance case as cured/dismissed or evicted/closed."""
+    valid_close = {
+        CaseStatus.CURED_DISMISSED.value,
+        CaseStatus.EVICTED_CLOSED.value,
+        CaseStatus.JUDGMENT_GRANTED.value,
+    }
+    if status not in valid_close:
+        raise ValueError(f"Invalid closing status '{status}'")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        if cursor.fetchone() is None:
+            return None
+
+        now_iso = _now_iso()
+        cursor.execute(
+            """
+            UPDATE eviction_cases
+            SET status = ?, resolution_notes = ?, closed_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (status, resolution_notes.strip(), now_iso, now_iso, case_id),
+        )
+        conn.commit()
+        cursor.execute("SELECT * FROM eviction_cases WHERE id = ?", (case_id,))
+        updated = _row_to_case(cursor, cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("eviction.case_closed", updated)
+    return updated
