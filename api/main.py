@@ -224,6 +224,7 @@ from api.pydantic_models import (
     EvictionCaseItem,
     EvictionCaseListResponse,
     EvictionCaseUpdateRequest,
+    EvictionEntitySummaryResponse,
     EvictionMetricsResponse,
     FeedbackAnalyticsResponse,
     FeedbackInput,
@@ -353,6 +354,11 @@ from api.pydantic_models import (
     ParkingViolationListResponse,
     ParkingViolationResponse,
     ParkingViolationUpdateRequest,
+    PaymentPlanCreateRequest,
+    PaymentPlanDefaultRequest,
+    PaymentPlanInstallmentRequest,
+    PaymentPlanItem,
+    PaymentPlanListResponse,
     PetCreateRequest,
     PetIncidentCreateRequest,
     PetIncidentItem,
@@ -421,6 +427,7 @@ from api.pydantic_models import (
     SessionAssignmentRecord,
     SessionAssignmentRequest,
     SessionCreateConciergeRequest,
+    SessionCreatePaymentPlanRequest,
     SessionCreateReservationRequest,
     SessionDraftArticleRequest,
     SessionFileInsuranceClaimRequest,
@@ -445,6 +452,7 @@ from api.pydantic_models import (
     SessionSearchResponse,
     SessionSearchResult,
     SessionSendPMEntryNoticeRequest,
+    SessionServeNoticeRequest,
     SessionSLAStatusResponse,
     SessionSubmitApplicationRequest,
     SessionSubmitInsuranceRequest,
@@ -9879,3 +9887,145 @@ def close_eviction_case_route(case_id: str, request: EvictionCaseCloseRequest):
     if not updated:
         raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
     return EvictionCaseItem(**updated)
+
+
+@app.post("/evictions/payment-plans", response_model=PaymentPlanItem, status_code=201)
+def create_payment_plan_route(request: PaymentPlanCreateRequest):
+    """Create a structured resident repayment plan workout."""
+    try:
+        created = evictions.create_payment_plan(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            total_arrears=request.total_arrears,
+            installment_count=request.installment_count,
+            next_due_date=request.next_due_date,
+            case_id=request.case_id,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return PaymentPlanItem(**created)
+
+
+@app.get("/evictions/payment-plans", response_model=PaymentPlanListResponse)
+def list_payment_plans_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    case_id: str | None = None,
+    status: str | None = None,
+):
+    """List resident payment plan workouts with optional filters."""
+    rows = evictions.list_payment_plans(
+        tenant_id=tenant_id, unit_id=unit_id, case_id=case_id, status=status
+    )
+    return PaymentPlanListResponse(
+        payment_plans=[PaymentPlanItem(**r) for r in rows], total=len(rows)
+    )
+
+
+@app.post(
+    "/evictions/payment-plans/{plan_id}/installment",
+    response_model=PaymentPlanItem,
+)
+def record_payment_plan_installment_route(
+    plan_id: str, request: PaymentPlanInstallmentRequest
+):
+    """Record a payment plan installment (auto-cures linked case when paid in full)."""
+    try:
+        updated = evictions.record_plan_installment(
+            plan_id,
+            amount=request.amount,
+            next_due_date=request.next_due_date,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Payment plan not found: {plan_id}")
+    return PaymentPlanItem(**updated)
+
+
+@app.post(
+    "/evictions/payment-plans/{plan_id}/default",
+    response_model=PaymentPlanItem,
+)
+def default_payment_plan_route(plan_id: str, request: PaymentPlanDefaultRequest):
+    """Mark an active payment plan defaulted and reopen cure window on linked case."""
+    updated = evictions.default_payment_plan(plan_id, notes=request.notes)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Payment plan not found: {plan_id}")
+    return PaymentPlanItem(**updated)
+
+
+@app.get("/tenants/{tenant_id}/evictions/summary", response_model=EvictionEntitySummaryResponse)
+def get_tenant_eviction_summary_route(tenant_id: str):
+    """Retrieve eviction cases and payment plan workout summary for a resident."""
+    return EvictionEntitySummaryResponse(**evictions.get_tenant_eviction_summary(tenant_id))
+
+
+@app.get("/units/{unit_id}/evictions/summary", response_model=EvictionEntitySummaryResponse)
+def get_unit_eviction_summary_route(unit_id: str):
+    """Retrieve eviction cases and payment plan workout summary for a unit."""
+    return EvictionEntitySummaryResponse(**evictions.get_unit_eviction_summary(unit_id))
+
+
+@app.post(
+    "/sessions/{session_id}/evictions/serve-notice",
+    response_model=EvictionCaseItem,
+    status_code=201,
+)
+def session_serve_notice_route(session_id: str, request: SessionServeNoticeRequest):
+    """1-click statutory notice issuance directly from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant") or not context["tenant"].get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to a resident with an assigned unit.",
+        )
+    tenant = context["tenant"]
+    try:
+        created = evictions.create_eviction_case(
+            unit_id=str(tenant["unit_id"]),
+            tenant_id=str(tenant["id"]),
+            reason=request.reason,
+            notice_type=request.notice_type,
+            delivery_method=request.delivery_method,
+            arrears_amount=request.arrears_amount,
+            cure_days=request.cure_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EvictionCaseItem(**created)
+
+
+@app.post(
+    "/sessions/{session_id}/evictions/create-payment-plan",
+    response_model=PaymentPlanItem,
+    status_code=201,
+)
+def session_create_payment_plan_route(
+    session_id: str, request: SessionCreatePaymentPlanRequest
+):
+    """1-click resident payment plan workout creation from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant") or not context["tenant"].get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to a resident with an assigned unit.",
+        )
+    tenant = context["tenant"]
+    try:
+        created = evictions.create_payment_plan(
+            tenant_id=str(tenant["id"]),
+            unit_id=str(tenant["unit_id"]),
+            total_arrears=request.total_arrears,
+            installment_count=request.installment_count,
+            next_due_date=request.next_due_date,
+            case_id=request.case_id,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return PaymentPlanItem(**created)
