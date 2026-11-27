@@ -1840,7 +1840,7 @@ Via the API and Streamlit UI, property managers and residents can:
 - [x] Task 8: Version bump to `0.46.0` and documentation updates in `docs/API.md` and `README.md`.
 - [x] Task 9: Final local and remote CI verification, Draft PR delivery, and final delivery report.
 
-## v0.57.0 — Eviction Compliance, Legal Notices, Court Filings & Payment Plan Workouts Engine (IN PROGRESS)
+## v0.57.0 — Eviction Compliance, Legal Notices, Court Filings & Payment Plan Workouts Engine (COMPLETED)
 
 Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing Milestones & Resident Payment Plan Workouts Engine (`api/evictions.py`). The system tracks delinquency and lease-breach eviction cases (`eviction_cases` across `pay_or_quit`, `cure_or_quit`, `unconditional_quit`, and `non_renewal` notices with statutory delivery methods and cure deadlines), manages court filing milestones (`court_case_number`, `court_name`, `filing_date`, `hearing_date`, `attorney_name`) and case closure (`cured_dismissed`, `evicted_closed`), administers structured resident repayment workouts (`payment_plans` with auto-computed installments, payment tracking, automatic case cure on completion, and default handling), dispatches 6 real-time webhooks (`eviction.notice_served`, `eviction.court_filed`, `eviction.case_closed`, `eviction.payment_plan_created`, `eviction.plan_installment_paid`, `eviction.plan_defaulted`), grounds active legal notices and repayment schedules into conversational RAG context (`[EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]`), resolves 5 delinquency/workout macro variables (`{eviction_case_status}`, `{eviction_cure_deadline}`, `{eviction_arrears_amount}`, `{payment_plan_status}`, `{payment_plan_next_due}`), and provides a 3-tab Streamlit operations board plus 1-click resident session actions.
 
@@ -1867,14 +1867,14 @@ Via the API and Streamlit UI, property managers, compliance officers, and suppor
 - Electronic court e-filing gateway integration (court case numbers, filing dates, and hearing dates are recorded in the compliance audit trail).
 
 ### Acceptance Criteria
-- [ ] AC1: Core SQLite schema, enums, seeds, eviction case CRUD, court filings, closures, payment plans, summaries, and KPIs in `api/evictions.py`.
-- [ ] AC2: Pydantic schemas in `api/pydantic_models.py` and 6 `eviction.*` webhook events in `api/db_utils.py`.
-- [ ] AC3: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
-- [ ] AC4: Conversational RAG grounding and 5 macro variables in `api/tenant_context.py`.
-- [ ] AC5: Typed Streamlit API client helpers in `app/api_utils.py`.
-- [ ] AC6: Streamlit 3-tab Evictions & Payment Plans board and 1-click session widget in `app/sidebar.py`.
-- [ ] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
-- [ ] AC8: Version bump to `0.57.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] AC1: Core SQLite schema, enums, seeds, eviction case CRUD, court filings, closures, payment plans, summaries, and KPIs in `api/evictions.py`.
+- [x] AC2: Pydantic schemas in `api/pydantic_models.py` and 6 `eviction.*` webhook events in `api/db_utils.py`.
+- [x] AC3: RESTful FastAPI endpoints and 1-click session actions in `api/main.py`.
+- [x] AC4: Conversational RAG grounding and 5 macro variables in `api/tenant_context.py`.
+- [x] AC5: Typed Streamlit API client helpers in `app/api_utils.py`.
+- [x] AC6: Streamlit 3-tab Evictions & Payment Plans board and 1-click session widget in `app/sidebar.py`.
+- [x] AC7: Comprehensive unit and integration tests passing with >= 80% total coverage.
+- [x] AC8: Version bump to `0.57.0` and documentation updates in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
 - [ ] AC9: All local CI-parity checks (pytest, ruff, mypy, secret scan) and remote GitHub Actions CI runs pass 100%.
 
 ### Validation & CI Plan
@@ -1886,14 +1886,14 @@ Via the API and Streamlit UI, property managers, compliance officers, and suppor
 - End-to-end verification: Exercise full notice -> payment plan -> installment -> auto-cure & court filing lifecycle via FastAPI TestClient and Streamlit FakeStreamlit harness.
 
 ### Micro-Task Breakdown
-- [ ] Task 1: Define v0.57.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
-- [ ] Task 2: Implement `api/evictions.py` (enums, schema, seeds, cases, court filings, closures, payment plans, summaries, KPIs) with unit tests.
-- [ ] Task 3: Register `eviction.*` webhook events in `api/db_utils.py` and add Pydantic models in `api/pydantic_models.py` with tests.
-- [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
-- [ ] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests.
-- [ ] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
-- [ ] Task 7: Implement Streamlit 3-tab operations board and session widget in `app/sidebar.py` with UI tests.
-- [ ] Task 8: Bump version to `0.57.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
+- [x] Task 1: Define v0.57.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
+- [x] Task 2: Implement `api/evictions.py` (enums, schema, seeds, cases, court filings, closures, payment plans, summaries, KPIs) with unit tests.
+- [x] Task 3: Register `eviction.*` webhook events in `api/db_utils.py` and add Pydantic models in `api/pydantic_models.py` with tests.
+- [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
+- [x] Task 5: Implement RAG prompt grounding and macro variable resolution in `api/tenant_context.py` with tests.
+- [x] Task 6: Implement Streamlit API client wrappers in `app/api_utils.py` with tests.
+- [x] Task 7: Implement Streamlit 3-tab operations board and session widget in `app/sidebar.py` with UI tests.
+- [x] Task 8: Bump version to `0.57.0` and update `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
 - [ ] Task 9: Final self-review, full local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## v0.56.0 — Property Owner Portals, Monthly Disbursement Statements, CapEx Reserve Tracking & Owner Approvals Engine (COMPLETED)
