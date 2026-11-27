@@ -552,3 +552,223 @@ def close_eviction_case(
 
     webhooks.dispatch_event("eviction.case_closed", updated)
     return updated
+
+
+def create_payment_plan(  # noqa: PLR0913
+    tenant_id: str,
+    unit_id: str,
+    total_arrears: float,
+    installment_count: int,
+    next_due_date: str,
+    *,
+    case_id: str | None = None,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Create a structured resident repayment plan workout."""
+    if total_arrears <= 0:
+        raise ValueError("total_arrears must be greater than 0")
+    if installment_count <= 0:
+        raise ValueError("installment_count must be greater than 0")
+    if not next_due_date or not next_due_date.strip():
+        raise ValueError("next_due_date is required")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM tenants WHERE id = ?", (tenant_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Tenant '{tenant_id}' not found")
+        cursor.execute("SELECT id FROM units WHERE id = ?", (unit_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Unit '{unit_id}' not found")
+        if case_id:
+            cursor.execute("SELECT id FROM eviction_cases WHERE id = ?", (case_id,))
+            if cursor.fetchone() is None:
+                raise ValueError(f"Eviction case '{case_id}' not found")
+
+        pid = _generate_plan_id()
+        now_iso = _now_iso()
+        installment_amt = round(float(total_arrears) / int(installment_count), 2)
+        cursor.execute(
+            """
+            INSERT INTO payment_plans (
+                id, case_id, tenant_id, unit_id, total_arrears, installment_amount,
+                installment_count, installments_paid, amount_paid, next_due_date,
+                status, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                pid,
+                case_id,
+                tenant_id,
+                unit_id,
+                round(float(total_arrears), 2),
+                installment_amt,
+                int(installment_count),
+                0,
+                0.0,
+                next_due_date.strip(),
+                PaymentPlanStatus.ACTIVE.value,
+                notes.strip(),
+                now_iso,
+                now_iso,
+            ),
+        )
+        if case_id:
+            cursor.execute(
+                "UPDATE eviction_cases SET status = ?, updated_at = ? WHERE id = ?",
+                (CaseStatus.PAYMENT_PLAN_ACTIVE.value, now_iso, case_id),
+            )
+        conn.commit()
+        cursor.execute("SELECT * FROM payment_plans WHERE id = ?", (pid,))
+        plan = _row_to_plan(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("eviction.payment_plan_created", plan)
+    return plan
+
+
+def list_payment_plans(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    case_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List resident payment plan workouts with optional filters."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        query = "SELECT * FROM payment_plans WHERE 1=1"
+        params: list[Any] = []
+        if tenant_id:
+            query += " AND tenant_id = ?"
+            params.append(tenant_id)
+        if unit_id:
+            query += " AND unit_id = ?"
+            params.append(unit_id)
+        if case_id:
+            query += " AND case_id = ?"
+            params.append(case_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+        cursor.execute(query, params)
+        return [_row_to_plan(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def record_plan_installment(
+    plan_id: str,
+    amount: float,
+    *,
+    next_due_date: str | None = None,
+    notes: str = "",
+) -> dict[str, Any] | None:
+    """Record a payment plan installment; auto-completes plan & cures linked case when paid."""
+    if amount <= 0:
+        raise ValueError("amount must be greater than 0")
+
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM payment_plans WHERE id = ?", (plan_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        new_paid_count = int(row["installments_paid"]) + 1
+        new_amount_paid = round(float(row["amount_paid"]) + float(amount), 2)
+        total_arrears = round(float(row["total_arrears"]), 2)
+        is_completed = (
+            new_amount_paid >= total_arrears
+            or new_paid_count >= int(row["installment_count"])
+        )
+        new_status = (
+            PaymentPlanStatus.COMPLETED.value if is_completed else PaymentPlanStatus.ACTIVE.value
+        )
+        updated_due = next_due_date.strip() if next_due_date else row["next_due_date"]
+        updated_notes = notes.strip() if notes else (row["notes"] or "")
+
+        cursor.execute(
+            """
+            UPDATE payment_plans
+            SET installments_paid = ?, amount_paid = ?, next_due_date = ?,
+                status = ?, notes = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                new_paid_count,
+                new_amount_paid,
+                updated_due,
+                new_status,
+                updated_notes,
+                now_iso,
+                plan_id,
+            ),
+        )
+        if is_completed and row["case_id"]:
+            cursor.execute(
+                """
+                UPDATE eviction_cases
+                SET status = ?, resolution_notes = ?, closed_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    CaseStatus.CURED_DISMISSED.value,
+                    "Automatically cured upon payment plan completion.",
+                    now_iso,
+                    now_iso,
+                    row["case_id"],
+                ),
+            )
+        conn.commit()
+        cursor.execute("SELECT * FROM payment_plans WHERE id = ?", (plan_id,))
+        updated = _row_to_plan(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("eviction.plan_installment_paid", updated)
+    return updated
+
+
+def default_payment_plan(plan_id: str, notes: str = "") -> dict[str, Any] | None:
+    """Mark an active payment plan defaulted and reopen linked case cure window."""
+    conn = db_utils.get_db_connection()
+    try:
+        init_evictions_db(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM payment_plans WHERE id = ?", (plan_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        now_iso = _now_iso()
+        cursor.execute(
+            "UPDATE payment_plans SET status = ?, notes = ?, updated_at = ? WHERE id = ?",
+            (
+                PaymentPlanStatus.DEFAULTED.value,
+                notes.strip() or (row["notes"] or ""),
+                now_iso,
+                plan_id,
+            ),
+        )
+        if row["case_id"]:
+            cursor.execute(
+                "UPDATE eviction_cases SET status = ?, updated_at = ? WHERE id = ?",
+                (CaseStatus.CURE_WINDOW_ACTIVE.value, now_iso, row["case_id"]),
+            )
+        conn.commit()
+        cursor.execute("SELECT * FROM payment_plans WHERE id = ?", (plan_id,))
+        updated = _row_to_plan(cursor.fetchone())
+    finally:
+        conn.close()
+
+    webhooks.dispatch_event("eviction.plan_defaulted", updated)
+    return updated
