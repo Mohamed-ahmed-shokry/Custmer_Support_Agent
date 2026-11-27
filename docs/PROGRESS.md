@@ -19,10 +19,10 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
   - 3-tab `⚖️ Evictions & Payment Plans` sidebar expander and 1-click session delinquency/workout widget.
 - [x] **AC7: Automated Unit & Integration Tests (`tests/`)** ✅
   - Full test coverage across engine, models, routes, RAG context, API client, and UI with >= 80% total coverage.
-- [ ] **AC8: Version Bump & Documentation Updates**
+- [x] **AC8: Version Bump & Documentation Updates** ✅
   - Version bumped to `0.57.0` in `pyproject.toml` and `api/settings.py`; docs updated in `docs/API.md`, `README.md`, `ROADMAP.md`, and `docs/PROGRESS.md`.
-- [ ] **AC9: 100% Green CI Parity & Remote Actions Pass**
-  - Ruff, mypy, secret scan, pytest coverage, and remote GitHub Actions CI green.
+- [x] **AC9: 100% Green CI Parity & Remote Actions Pass** ✅
+  - Ruff, mypy, secret scan, pytest coverage (91.33%), and remote GitHub Actions CI (`test` + `e2e`) green.
 
 ## Micro-Task Execution Checklist
 
@@ -33,8 +33,8 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
 - [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
 - [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
 - [x] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
-- [ ] Task 8: Version bump to `0.57.0` and update documentation.
-- [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
+- [x] Task 8: Version bump to `0.57.0` and update documentation.
+- [x] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
 
 ## Decision Log
 - **D1: Dedicated Evictions & Payment Plans Module (`api/evictions.py`)**: Follows the modular architecture pattern of `api/owner_portal.py` and `api/leasing_crm.py` with self-initializing SQLite tables and foreign keys to `units` and `tenants`.
@@ -47,3 +47,9 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
   - `python -m ruff check api/ app/ tests/ scripts/` → exit 0 ✅
   - `python -m mypy api/ app/ scripts/` → exit 0 (48 source files) ✅
   - Remote GitHub Actions CI (`main`, run `45717019383`) → success ✅
+- Final (`phase/v0.57.0-eviction-compliance-payment-plans`):
+  - `python -m ruff check api/ app/ tests/ scripts/` → exit 0 ✅
+  - `python -m mypy api/ app/ scripts/` → exit 0 (49 source files) ✅
+  - Secret scan regex → 0 hits, exit 0 ✅
+  - `python -m pytest -q` → 1182 passed, 0 failed, 91.33% total coverage ✅
+  - Remote GitHub Actions CI (`phase/v0.57.0-eviction-compliance-payment-plans`, run `46013298451`, PR #29) → `test` ✅ + `e2e` ✅
