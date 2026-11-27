@@ -13,7 +13,7 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
   - Endpoints for `/evictions/*`, `/tenants/{id}/evictions/summary`, `/units/{id}/evictions/summary`, and 1-click session actions.
 - [x] **AC4: Conversational RAG Grounding & Prompt Macros (`api/tenant_context.py`)** ✅
   - Context block `[EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]` and 5 macro variables (`{eviction_case_status}`, `{eviction_cure_deadline}`, `{eviction_arrears_amount}`, `{payment_plan_status}`, `{payment_plan_next_due}`).
-- [ ] **AC5: Streamlit API Client Helpers (`app/api_utils.py`)**
+- [x] **AC5: Streamlit API Client Helpers (`app/api_utils.py`)** ✅
   - Typed client API wrappers for all eviction compliance and payment plan endpoints.
 - [ ] **AC6: Streamlit UI Operations Board & Session Widget (`app/sidebar.py`)**
   - 3-tab `⚖️ Evictions & Payment Plans` sidebar expander and 1-click session delinquency/workout widget.
@@ -31,7 +31,7 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
 - [x] Task 3: Register `eviction.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [x] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
 - [x] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
-- [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
+- [x] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
 - [ ] Task 7: Implement Streamlit UI operations board and session widget in `app/sidebar.py` with UI tests.
 - [ ] Task 8: Version bump to `0.57.0` and update documentation.
 - [ ] Task 9: Final self-review, local CI-parity verification, remote CI green check, and Draft PR delivery.
