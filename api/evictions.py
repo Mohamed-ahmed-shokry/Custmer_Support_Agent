@@ -772,3 +772,79 @@ def default_payment_plan(plan_id: str, notes: str = "") -> dict[str, Any] | None
 
     webhooks.dispatch_event("eviction.plan_defaulted", updated)
     return updated
+
+
+def _build_eviction_entity_summary(
+    entity_key: str,
+    entity_id: str,
+    cases: list[dict[str, Any]],
+    plans: list[dict[str, Any]],
+) -> dict[str, Any]:
+    closed_statuses = {CaseStatus.CURED_DISMISSED.value, CaseStatus.EVICTED_CLOSED.value}
+    active_cases = [c for c in cases if c["status"] not in closed_statuses]
+    active_plans = [p for p in plans if p["status"] == PaymentPlanStatus.ACTIVE.value]
+    primary_case = active_cases[0] if active_cases else (cases[0] if cases else None)
+    primary_plan = active_plans[0] if active_plans else (plans[0] if plans else None)
+    total_arrears = round(sum(c["arrears_amount"] for c in active_cases), 2)
+    return {
+        entity_key: entity_id,
+        "total_cases": len(cases),
+        "active_cases_count": len(active_cases),
+        "active_payment_plans_count": len(active_plans),
+        "total_active_arrears": total_arrears,
+        "primary_case": primary_case,
+        "primary_payment_plan": primary_plan,
+        "cases": cases,
+        "payment_plans": plans,
+    }
+
+
+def get_tenant_eviction_summary(tenant_id: str) -> dict[str, Any]:
+    """Summarize eviction notices, court cases, and payment plans for a resident."""
+    cases = list_eviction_cases(tenant_id=tenant_id)
+    plans = list_payment_plans(tenant_id=tenant_id)
+    return _build_eviction_entity_summary("tenant_id", tenant_id, cases, plans)
+
+
+def get_unit_eviction_summary(unit_id: str) -> dict[str, Any]:
+    """Summarize eviction notices, court cases, and payment plans for a unit."""
+    cases = list_eviction_cases(unit_id=unit_id)
+    plans = list_payment_plans(unit_id=unit_id)
+    return _build_eviction_entity_summary("unit_id", unit_id, cases, plans)
+
+
+def get_eviction_metrics_summary() -> dict[str, Any]:
+    """Compute portfolio-wide eviction compliance and payment plan workout KPIs."""
+    cases = list_eviction_cases()
+    plans = list_payment_plans()
+
+    closed_statuses = {CaseStatus.CURED_DISMISSED.value, CaseStatus.EVICTED_CLOSED.value}
+    court_statuses = {
+        CaseStatus.FILED_IN_COURT.value,
+        CaseStatus.HEARING_SCHEDULED.value,
+        CaseStatus.JUDGMENT_GRANTED.value,
+    }
+    active_cases = [c for c in cases if c["status"] not in closed_statuses]
+    court_filed = sum(1 for c in cases if c["status"] in court_statuses)
+    cured_cases = sum(1 for c in cases if c["status"] == CaseStatus.CURED_DISMISSED.value)
+    closed_cases = sum(1 for c in cases if c["status"] in closed_statuses)
+    expired_cures = sum(1 for c in cases if c["is_cure_expired"])
+
+    active_plans = [p for p in plans if p["status"] == PaymentPlanStatus.ACTIVE.value]
+    completed_plans = sum(1 for p in plans if p["status"] == PaymentPlanStatus.COMPLETED.value)
+    total_arrears_at_risk = round(sum(c["arrears_amount"] for c in active_cases), 2)
+    total_recovered_via_plans = round(sum(p["amount_paid"] for p in plans), 2)
+    cure_rate_pct = round((cured_cases / closed_cases) * 100.0, 2) if closed_cases > 0 else 100.0
+
+    return {
+        "total_cases": len(cases),
+        "active_cases": len(active_cases),
+        "court_filed_cases": court_filed,
+        "expired_cure_windows": expired_cures,
+        "cured_cases": cured_cases,
+        "active_payment_plans": len(active_plans),
+        "completed_payment_plans": completed_plans,
+        "total_arrears_at_risk": total_arrears_at_risk,
+        "total_recovered_via_plans": total_recovered_via_plans,
+        "cure_rate_pct": cure_rate_pct,
+    }
