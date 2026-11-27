@@ -21,6 +21,7 @@ from api import (
     business_hours,
     csat,
     db_utils,
+    evictions,
     incidents,
     inspections,
     insurance,
@@ -197,6 +198,7 @@ from api.pydantic_models import (
     ConciergeRequestResponse,
     ConciergeRequestUpdateRequest,
     ConfigResponse,
+    CourtFilingRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
     DeleteDocumentResponse,
@@ -217,6 +219,12 @@ from api.pydantic_models import (
     DocumentDetailResponse,
     DocumentInfo,
     DocumentRechunkItem,
+    EvictionCaseCloseRequest,
+    EvictionCaseCreateRequest,
+    EvictionCaseItem,
+    EvictionCaseListResponse,
+    EvictionCaseUpdateRequest,
+    EvictionMetricsResponse,
     FeedbackAnalyticsResponse,
     FeedbackInput,
     FeedbackItem,
@@ -9773,3 +9781,101 @@ def session_request_owner_approval_route(
         status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return OwnerApprovalItem(**created)
+
+
+# --- Eviction Compliance, Legal Notices & Payment Plan Routes (v0.57.0) ---
+
+
+@app.get("/evictions/metrics", response_model=EvictionMetricsResponse)
+def get_eviction_metrics_route():
+    """Portfolio-wide eviction compliance and payment plan workout KPIs."""
+    return EvictionMetricsResponse(**evictions.get_eviction_metrics_summary())
+
+
+@app.post("/evictions/cases", response_model=EvictionCaseItem, status_code=201)
+def create_eviction_case_route(request: EvictionCaseCreateRequest):
+    """Serve a statutory legal notice and open an eviction compliance case."""
+    try:
+        created = evictions.create_eviction_case(
+            unit_id=request.unit_id,
+            tenant_id=request.tenant_id,
+            reason=request.reason,
+            notice_type=request.notice_type,
+            delivery_method=request.delivery_method,
+            arrears_amount=request.arrears_amount,
+            notice_served_date=request.notice_served_date,
+            cure_deadline_date=request.cure_deadline_date,
+            cure_days=request.cure_days,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return EvictionCaseItem(**created)
+
+
+@app.get("/evictions/cases", response_model=EvictionCaseListResponse)
+def list_eviction_cases_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    notice_type: str | None = None,
+):
+    """List eviction compliance cases with optional filters."""
+    rows = evictions.list_eviction_cases(
+        tenant_id=tenant_id, unit_id=unit_id, status=status, notice_type=notice_type
+    )
+    return EvictionCaseListResponse(cases=[EvictionCaseItem(**r) for r in rows], total=len(rows))
+
+
+@app.get("/evictions/cases/{case_id}", response_model=EvictionCaseItem)
+def get_eviction_case_route(case_id: str):
+    """Retrieve a single eviction compliance case."""
+    row = evictions.get_eviction_case(case_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**row)
+
+
+@app.patch("/evictions/cases/{case_id}", response_model=EvictionCaseItem)
+def update_eviction_case_route(case_id: str, request: EvictionCaseUpdateRequest):
+    """Update mutable metadata on an eviction compliance case."""
+    try:
+        updated = evictions.update_eviction_case(case_id, request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**updated)
+
+
+@app.post("/evictions/cases/{case_id}/file-court", response_model=EvictionCaseItem)
+def record_court_filing_route(case_id: str, request: CourtFilingRequest):
+    """Record court filing number, hearing date, and attorney details."""
+    try:
+        updated = evictions.record_court_filing(
+            case_id,
+            court_case_number=request.court_case_number,
+            court_name=request.court_name,
+            filing_date=request.filing_date,
+            hearing_date=request.hearing_date,
+            attorney_name=request.attorney_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**updated)
+
+
+@app.post("/evictions/cases/{case_id}/close", response_model=EvictionCaseItem)
+def close_eviction_case_route(case_id: str, request: EvictionCaseCloseRequest):
+    """Close an eviction compliance case as cured/dismissed or evicted/closed."""
+    try:
+        updated = evictions.close_eviction_case(
+            case_id, status=request.status, resolution_notes=request.resolution_notes
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**updated)
