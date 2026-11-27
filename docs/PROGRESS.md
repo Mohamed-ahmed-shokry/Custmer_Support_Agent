@@ -7,7 +7,7 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
 
 - [x] **AC1: Core Engine & SQLite Schema (`api/evictions.py`)** ✅
   - Tables `eviction_cases` and `payment_plans` with indexes, foreign keys, enums, seeds, CRUD, court filing, case closure, payment plan workouts, summaries, and KPIs.
-- [ ] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)**
+- [x] **AC2: Pydantic Validation Schemas & Webhook Events (`api/pydantic_models.py`, `api/db_utils.py`)** ✅
   - Request/response models for eviction cases, court filings, closures, payment plans, installments, summaries, metrics, and 6 `eviction.*` webhook events.
 - [ ] **AC3: FastAPI Endpoints & 1-Click Session Actions (`api/main.py`)**
   - Endpoints for `/evictions/*`, `/tenants/{id}/evictions/summary`, `/units/{id}/evictions/summary`, and 1-click session actions.
@@ -28,7 +28,7 @@ Deliver an end-to-end Eviction Compliance, Statutory Legal Notices, Court Filing
 
 - [x] Task 1: Define v0.57.0 phase scope in `ROADMAP.md` and `docs/PROGRESS.md`.
 - [x] Task 2: Implement `api/evictions.py` (enums, schema, seeds, cases, court filings, closures, payment plans, summaries, KPIs) with unit tests.
-- [ ] Task 3: Register `eviction.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
+- [x] Task 3: Register `eviction.*` webhook events in `api/db_utils.py` and add Pydantic schemas in `api/pydantic_models.py` with tests.
 - [ ] Task 4: Implement FastAPI endpoints and 1-click session actions in `api/main.py` with route integration tests.
 - [ ] Task 5: Implement RAG prompt grounding and macro variables in `api/tenant_context.py` with tests.
 - [ ] Task 6: Implement Streamlit client API helpers in `app/api_utils.py` with tests.
