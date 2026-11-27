@@ -20,6 +20,7 @@ from app.api_utils import (
     book_freight_elevator_api,
     cancel_freight_elevator_booking_api,
     cancel_leasing_tour_api,
+    close_eviction_case_api,
     complete_inspection,
     complete_leasing_tour_api,
     complete_pm_task_api,
@@ -29,6 +30,7 @@ from app.api_utils import (
     create_announcement_api,
     create_billing_transaction,
     create_deposit_api,
+    create_eviction_case_api,
     create_guest_pass_api,
     create_incident_api,
     create_inspection,
@@ -41,6 +43,7 @@ from app.api_utils import (
     create_owner_approval_api,
     create_package_api,
     create_parking_spot_api,
+    create_payment_plan_api,
     create_pet_api,
     create_pet_policy_api,
     create_pm_schedule_api,
@@ -60,6 +63,7 @@ from app.api_utils import (
     create_work_order_from_session,
     decide_owner_approval_api,
     decide_rental_application_api,
+    default_payment_plan_api,
     delete_announcement_api,
     delete_billing_transaction,
     delete_collection,
@@ -98,6 +102,7 @@ from app.api_utils import (
     get_csat_summary,
     get_deposit_metrics_api,
     get_document_details,
+    get_eviction_metrics_api,
     get_feedback_analytics,
     get_health,
     get_incident_metrics_api,
@@ -124,6 +129,7 @@ from app.api_utils import (
     get_sublet_metrics_api,
     get_support_triage_analytics,
     get_tenant_deposit_summary_api,
+    get_tenant_eviction_summary_api,
     get_tenant_inspections,
     get_tenant_insurance_summary_api,
     get_tenant_lease_renewals,
@@ -153,6 +159,7 @@ from app.api_utils import (
     list_deposit_disputes_api,
     list_deposits_api,
     list_documents,
+    list_eviction_cases_api,
     list_feedback,
     list_feedback_review_queue,
     list_freight_elevator_bookings_api,
@@ -177,6 +184,7 @@ from app.api_utils import (
     list_packages_api,
     list_parking_spots_api,
     list_parking_violations_api,
+    list_payment_plans_api,
     list_pet_incidents_api,
     list_pet_policies_api,
     list_pets_api,
@@ -219,8 +227,10 @@ from app.api_utils import (
     publish_lease_renewal_document,
     rechunk_collection,
     rechunk_document,
+    record_court_filing_api,
     record_meter_reading_api,
     record_parking_violation_api,
+    record_payment_plan_installment_api,
     record_pet_incident_api,
     record_session_payment,
     record_tenant_payment,
@@ -237,6 +247,7 @@ from app.api_utils import (
     send_pm_entry_notice_api,
     session_acknowledge_alert_api,
     session_add_deposit_deduction_api,
+    session_create_payment_plan_api,
     session_create_reservation_api,
     session_file_insurance_claim_api,
     session_generate_guest_pass_api,
@@ -256,6 +267,7 @@ from app.api_utils import (
     session_schedule_pm_task_api,
     session_schedule_tour_api,
     session_send_pm_entry_notice_api,
+    session_serve_notice_api,
     session_submit_application_api,
     session_submit_insurance_api,
     session_submit_sublet_api,
@@ -1217,6 +1229,7 @@ def _render_linked_tenant_details(selected, tenant, unit):  # noqa: PLR0915
     _render_session_deposit_widget(selected, tenant)
     _render_session_leasing_widget(selected, tenant)
     _render_session_owner_approval_widget(selected, tenant)
+    _render_session_eviction_widget(selected, tenant)
     _render_session_work_order_dispatch(selected)
 
     if st.sidebar.button("Unlink Resident", key=f"btn_unlink_tenant_{selected}"):
@@ -7005,6 +7018,7 @@ def display_sidebar():
     _render_security_deposits_board()
     _render_leasing_crm_board()
     _render_owner_portal_board()
+    _render_evictions_board()
     _render_knowledge_studio()
     _render_ops_metrics()
 
@@ -7916,3 +7930,216 @@ def _render_owner_portal_board() -> None:
             _render_owner_statements_tab()
         with tab3:
             _render_owner_approvals_tab()
+
+
+def _render_session_eviction_widget(
+    session_id: str, tenant: dict[str, Any]
+) -> None:
+    """Render 1-click delinquency notice and payment plan workout widget for a session."""
+    tenant_id = str(tenant.get("id") or "")
+    if not tenant_id:
+        return
+
+    with st.expander("⚖️ Delinquency & Payment Plan Quick Action"):
+        summary = get_tenant_eviction_summary_api(tenant_id)
+        if summary:
+            active_c = summary.get("active_cases_count", 0)
+            active_p = summary.get("active_payment_plans_count", 0)
+            arrears = summary.get("total_active_arrears", 0.0)
+            st.markdown(
+                f"**Active Cases:** `{active_c}` | **Payment Plans:** `{active_p}` | "
+                f"**Arrears:** `${arrears:,.2f}`"
+            )
+        action = st.selectbox(
+            "Compliance Action",
+            ["Create Payment Plan Workout", "Serve Statutory Notice"],
+            key=f"sess_evc_action_{session_id}",
+        )
+        if action == "Create Payment Plan Workout":
+            arrears_amt = st.number_input(
+                "Total Arrears ($)",
+                min_value=50.0,
+                value=1200.0,
+                step=100.0,
+                key=f"sess_ppl_amt_{session_id}",
+            )
+            inst_cnt = st.number_input(
+                "Installments",
+                min_value=1,
+                max_value=24,
+                value=3,
+                key=f"sess_ppl_cnt_{session_id}",
+            )
+            due_date = st.text_input(
+                "First Due Date",
+                value=(datetime.datetime.now(UTC).date() + datetime.timedelta(days=10)).isoformat(),
+                key=f"sess_ppl_due_{session_id}",
+            )
+            if st.button(
+                "Create Payment Plan", key=f"btn_sess_ppl_{session_id}"
+            ) and session_create_payment_plan_api(
+                session_id,
+                {
+                    "total_arrears": float(arrears_amt),
+                    "installment_count": int(inst_cnt),
+                    "next_due_date": due_date,
+                },
+            ):
+                st.success("Payment plan workout created!")
+                st.rerun()
+        else:
+            n_type = st.selectbox(
+                "Notice Type",
+                ["pay_or_quit", "cure_or_quit", "unconditional_quit", "non_renewal"],
+                key=f"sess_evc_ntype_{session_id}",
+            )
+            n_reason = st.text_input(
+                "Notice Reason",
+                value="Past-due rent balance beyond grace period.",
+                key=f"sess_evc_reason_{session_id}",
+            )
+            n_arrears = st.number_input(
+                "Arrears ($)",
+                min_value=0.0,
+                value=1500.0,
+                step=100.0,
+                key=f"sess_evc_arrears_{session_id}",
+            )
+            if st.button(
+                "Serve Statutory Notice", key=f"btn_sess_evc_serve_{session_id}"
+            ) and session_serve_notice_api(
+                session_id,
+                {
+                    "notice_type": n_type,
+                    "reason": n_reason,
+                    "arrears_amount": float(n_arrears),
+                },
+            ):
+                st.success("Statutory legal notice served!")
+                st.rerun()
+
+
+def _render_eviction_cases_tab() -> None:
+    """Render eviction compliance cases with court filing, cure/close, and notice creator."""
+    cases = list_eviction_cases_api()
+    st.caption(f"Showing **{len(cases)}** eviction compliance cases.")
+    for c in cases[:15]:
+        cid = str(c.get("id") or "")
+        st.markdown(
+            f"**{cid}** (Unit `{c.get('unit_id')}`) — `{c.get('status')}` | "
+            f"`{c.get('notice_type')}` | Arrears `${c.get('arrears_amount', 0.0):,.2f}` | "
+            f"Cure `{c.get('cure_deadline_date')}`"
+        )
+        if c.get("status") not in ("cured_dismissed", "evicted_closed"):
+            b1, b2 = st.columns(2)
+            if b1.button("File in Court", key=f"btn_evc_court_{cid}") and record_court_filing_api(
+                cid,
+                {
+                    "court_case_number": f"CV-{cid[-4:].upper()}",
+                    "court_name": "County Civil Court",
+                },
+            ):
+                st.success(f"Recorded court filing for {cid}.")
+                st.rerun()
+            if b2.button("Mark Cured", key=f"btn_evc_cure_{cid}") and close_eviction_case_api(
+                cid,
+                {"status": "cured_dismissed", "resolution_notes": "Cured via board."},
+            ):
+                st.success(f"Case {cid} marked cured/dismissed!")
+                st.rerun()
+
+    st.divider()
+    st.caption("Serve New Statutory Notice")
+    u_id = st.text_input("Unit ID", value="unit_101", key="evc_new_unit")
+    t_id = st.text_input("Tenant ID", value="tenant_1", key="evc_new_tenant")
+    n_reason = st.text_input("Reason", value="Delinquent rent balance", key="evc_new_reason")
+    n_amt = st.number_input("Arrears ($)", min_value=0.0, value=1600.0, key="evc_new_amt")
+    if st.button("Open Compliance Case", key="btn_evc_create") and create_eviction_case_api(
+        {
+            "unit_id": u_id,
+            "tenant_id": t_id,
+            "reason": n_reason,
+            "arrears_amount": float(n_amt),
+        }
+    ):
+        st.success("Statutory notice served and case opened.")
+        st.rerun()
+
+
+def _render_payment_plans_tab() -> None:
+    """Render resident payment plan workouts with installment and default actions."""
+    plans = list_payment_plans_api()
+    st.caption(f"Showing **{len(plans)}** resident payment plans.")
+    for p in plans[:15]:
+        pid = str(p.get("id") or "")
+        st.markdown(
+            f"**{pid}** (Tenant `{p.get('tenant_id')}`) — `{p.get('status')}` | "
+            f"Paid `${p.get('amount_paid', 0.0):,.2f}` / `${p.get('total_arrears', 0.0):,.2f}` "
+            f"({p.get('installments_paid', 0)}/{p.get('installment_count', 1)}) | "
+            f"Next Due `{p.get('next_due_date')}`"
+        )
+        if p.get("status") == "active":
+            b1, b2 = st.columns(2)
+            inst_amt = float(p.get("installment_amount") or 500.0)
+            if b1.button(
+                "Log Installment", key=f"btn_ppl_pay_{pid}"
+            ) and record_payment_plan_installment_api(pid, {"amount": inst_amt}):
+                st.success(f"Recorded installment for {pid}!")
+                st.rerun()
+            if b2.button("Mark Defaulted", key=f"btn_ppl_def_{pid}") and default_payment_plan_api(
+                pid, {"notes": "Marked defaulted from board."}
+            ):
+                st.warning(f"Payment plan {pid} marked defaulted.")
+                st.rerun()
+
+    st.divider()
+    st.caption("Create Payment Plan Workout")
+    p_tenant = st.text_input("Tenant ID", value="tenant_1", key="ppl_new_tenant")
+    p_unit = st.text_input("Unit ID", value="unit_101", key="ppl_new_unit")
+    p_total = st.number_input("Total Arrears ($)", min_value=50.0, value=1500.0, key="ppl_new_tot")
+    p_cnt = st.number_input("Installments", min_value=1, max_value=24, value=3, key="ppl_new_cnt")
+    p_due = st.text_input(
+        "Next Due Date",
+        value=(datetime.datetime.now(UTC).date() + datetime.timedelta(days=10)).isoformat(),
+        key="ppl_new_due",
+    )
+    if st.button("Create Plan", key="btn_ppl_create") and create_payment_plan_api(
+        {
+            "tenant_id": p_tenant,
+            "unit_id": p_unit,
+            "total_arrears": float(p_total),
+            "installment_count": int(p_cnt),
+            "next_due_date": p_due,
+        }
+    ):
+        st.success("Payment plan created.")
+        st.rerun()
+
+
+def _render_eviction_kpis_tab() -> None:
+    """Render portfolio eviction compliance and workout recovery KPIs."""
+    metrics = get_eviction_metrics_api()
+    if metrics:
+        c1, c2 = st.columns(2)
+        c1.metric("Active Cases", metrics.get("active_cases", 0))
+        c2.metric("Cure Rate", f"{metrics.get('cure_rate_pct', 100.0)}%")
+        c3, c4 = st.columns(2)
+        c3.metric("Arrears at Risk", f"${metrics.get('total_arrears_at_risk', 0.0):,.2f}")
+        c4.metric("Recovered via Plans", f"${metrics.get('total_recovered_via_plans', 0.0):,.2f}")
+        st.caption(
+            f"Court Filed: {metrics.get('court_filed_cases', 0)} | "
+            f"Expired Cures: {metrics.get('expired_cure_windows', 0)} | "
+            f"Active Plans: {metrics.get('active_payment_plans', 0)}"
+        )
+
+
+def _render_evictions_board() -> None:
+    """Render sidebar expander for Eviction Compliance & Payment Plan Workouts."""
+    with st.expander("⚖️ Evictions & Payment Plans"):
+        tab1, tab2, tab3 = st.tabs(["Legal Cases", "Payment Plans", "Compliance KPIs"])
+        with tab1:
+            _render_eviction_cases_tab()
+        with tab2:
+            _render_payment_plans_tab()
+        with tab3:
+            _render_eviction_kpis_tab()
