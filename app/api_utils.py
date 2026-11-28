@@ -7166,3 +7166,202 @@ def session_request_owner_approval_api(
         "requesting owner approval from session",
         json=payload,
     )
+
+
+# --- Eviction Compliance, Legal Notices & Payment Plan API Client (v0.57.0) ---
+
+
+def _eviction_call(  # noqa: PLR0913, PLR0917
+    method: str,
+    path: str,
+    expected_status: int,
+    failure_message: str,
+    error_context: str,
+    **kwargs: Any,
+) -> dict[str, Any] | None:
+    try:
+        response = getattr(requests, method)(
+            f"{API_BASE_URL}{path}",
+            headers=_request_headers(),
+            timeout=10,
+            **kwargs,
+        )
+        if response.status_code == expected_status:
+            return cast(dict[str, Any], response.json())
+        show_api_error(failure_message, response)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while {error_context}: {str(e)}")
+        return None
+
+
+def get_eviction_metrics_api() -> dict[str, Any] | None:
+    """Fetch portfolio-wide eviction compliance and payment plan KPIs."""
+    return _eviction_call(
+        "get",
+        "/evictions/metrics",
+        HTTP_OK,
+        "Failed to fetch eviction metrics",
+        "fetching eviction metrics",
+    )
+
+
+def create_eviction_case_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Serve a statutory legal notice and open an eviction compliance case."""
+    return _eviction_call(
+        "post",
+        "/evictions/cases",
+        HTTP_CREATED,
+        "Failed to create eviction case",
+        "creating eviction case",
+        json=payload,
+    )
+
+
+def list_eviction_cases_api(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List eviction compliance cases with optional filters."""
+    params: dict[str, Any] = {}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if unit_id:
+        params["unit_id"] = unit_id
+    if status:
+        params["status"] = status
+    data = _eviction_call(
+        "get",
+        "/evictions/cases",
+        HTTP_OK,
+        "Failed to list eviction cases",
+        "listing eviction cases",
+        params=params,
+    )
+    return list(data.get("cases", [])) if data else []
+
+
+def record_court_filing_api(case_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Record court filing number and hearing details for an eviction case."""
+    return _eviction_call(
+        "post",
+        f"/evictions/cases/{case_id}/file-court",
+        HTTP_OK,
+        f"Failed to record court filing for '{case_id}'",
+        "recording court filing",
+        json=payload,
+    )
+
+
+def close_eviction_case_api(case_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Close an eviction case as cured/dismissed or evicted/closed."""
+    return _eviction_call(
+        "post",
+        f"/evictions/cases/{case_id}/close",
+        HTTP_OK,
+        f"Failed to close eviction case '{case_id}'",
+        "closing eviction case",
+        json=payload,
+    )
+
+
+def create_payment_plan_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Create a structured resident repayment plan workout."""
+    return _eviction_call(
+        "post",
+        "/evictions/payment-plans",
+        HTTP_CREATED,
+        "Failed to create payment plan",
+        "creating payment plan",
+        json=payload,
+    )
+
+
+def list_payment_plans_api(
+    tenant_id: str | None = None,
+    case_id: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """List resident payment plan workouts."""
+    params: dict[str, Any] = {}
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if case_id:
+        params["case_id"] = case_id
+    if status:
+        params["status"] = status
+    data = _eviction_call(
+        "get",
+        "/evictions/payment-plans",
+        HTTP_OK,
+        "Failed to list payment plans",
+        "listing payment plans",
+        params=params,
+    )
+    return list(data.get("payment_plans", [])) if data else []
+
+
+def record_payment_plan_installment_api(
+    plan_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Record a payment plan installment payment."""
+    return _eviction_call(
+        "post",
+        f"/evictions/payment-plans/{plan_id}/installment",
+        HTTP_OK,
+        f"Failed to record installment for plan '{plan_id}'",
+        "recording payment plan installment",
+        json=payload,
+    )
+
+
+def default_payment_plan_api(
+    plan_id: str, payload: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Mark an active payment plan defaulted."""
+    return _eviction_call(
+        "post",
+        f"/evictions/payment-plans/{plan_id}/default",
+        HTTP_OK,
+        f"Failed to default payment plan '{plan_id}'",
+        "defaulting payment plan",
+        json=payload or {},
+    )
+
+
+def get_tenant_eviction_summary_api(tenant_id: str) -> dict[str, Any] | None:
+    """Fetch eviction compliance and payment plan summary for a resident."""
+    return _eviction_call(
+        "get",
+        f"/tenants/{tenant_id}/evictions/summary",
+        HTTP_OK,
+        f"Failed to fetch eviction summary for resident '{tenant_id}'",
+        "fetching resident eviction summary",
+    )
+
+
+def session_serve_notice_api(session_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """1-click statutory notice issuance directly from an active session."""
+    return _eviction_call(
+        "post",
+        f"/sessions/{session_id}/evictions/serve-notice",
+        HTTP_CREATED,
+        f"Failed to serve notice for session '{session_id}'",
+        "serving notice from session",
+        json=payload,
+    )
+
+
+def session_create_payment_plan_api(
+    session_id: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """1-click payment plan creation directly from an active session."""
+    return _eviction_call(
+        "post",
+        f"/sessions/{session_id}/evictions/create-payment-plan",
+        HTTP_CREATED,
+        f"Failed to create payment plan for session '{session_id}'",
+        "creating payment plan from session",
+        json=payload,
+    )

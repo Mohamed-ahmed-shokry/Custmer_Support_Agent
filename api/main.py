@@ -21,6 +21,7 @@ from api import (
     business_hours,
     csat,
     db_utils,
+    evictions,
     incidents,
     inspections,
     insurance,
@@ -197,6 +198,7 @@ from api.pydantic_models import (
     ConciergeRequestResponse,
     ConciergeRequestUpdateRequest,
     ConfigResponse,
+    CourtFilingRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
     DeleteDocumentResponse,
@@ -217,6 +219,13 @@ from api.pydantic_models import (
     DocumentDetailResponse,
     DocumentInfo,
     DocumentRechunkItem,
+    EvictionCaseCloseRequest,
+    EvictionCaseCreateRequest,
+    EvictionCaseItem,
+    EvictionCaseListResponse,
+    EvictionCaseUpdateRequest,
+    EvictionEntitySummaryResponse,
+    EvictionMetricsResponse,
     FeedbackAnalyticsResponse,
     FeedbackInput,
     FeedbackItem,
@@ -345,6 +354,11 @@ from api.pydantic_models import (
     ParkingViolationListResponse,
     ParkingViolationResponse,
     ParkingViolationUpdateRequest,
+    PaymentPlanCreateRequest,
+    PaymentPlanDefaultRequest,
+    PaymentPlanInstallmentRequest,
+    PaymentPlanItem,
+    PaymentPlanListResponse,
     PetCreateRequest,
     PetIncidentCreateRequest,
     PetIncidentItem,
@@ -413,6 +427,7 @@ from api.pydantic_models import (
     SessionAssignmentRecord,
     SessionAssignmentRequest,
     SessionCreateConciergeRequest,
+    SessionCreatePaymentPlanRequest,
     SessionCreateReservationRequest,
     SessionDraftArticleRequest,
     SessionFileInsuranceClaimRequest,
@@ -437,6 +452,7 @@ from api.pydantic_models import (
     SessionSearchResponse,
     SessionSearchResult,
     SessionSendPMEntryNoticeRequest,
+    SessionServeNoticeRequest,
     SessionSLAStatusResponse,
     SessionSubmitApplicationRequest,
     SessionSubmitInsuranceRequest,
@@ -9773,3 +9789,243 @@ def session_request_owner_approval_route(
         status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return OwnerApprovalItem(**created)
+
+
+# --- Eviction Compliance, Legal Notices & Payment Plan Routes (v0.57.0) ---
+
+
+@app.get("/evictions/metrics", response_model=EvictionMetricsResponse)
+def get_eviction_metrics_route():
+    """Portfolio-wide eviction compliance and payment plan workout KPIs."""
+    return EvictionMetricsResponse(**evictions.get_eviction_metrics_summary())
+
+
+@app.post("/evictions/cases", response_model=EvictionCaseItem, status_code=201)
+def create_eviction_case_route(request: EvictionCaseCreateRequest):
+    """Serve a statutory legal notice and open an eviction compliance case."""
+    try:
+        created = evictions.create_eviction_case(
+            unit_id=request.unit_id,
+            tenant_id=request.tenant_id,
+            reason=request.reason,
+            notice_type=request.notice_type,
+            delivery_method=request.delivery_method,
+            arrears_amount=request.arrears_amount,
+            notice_served_date=request.notice_served_date,
+            cure_deadline_date=request.cure_deadline_date,
+            cure_days=request.cure_days,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return EvictionCaseItem(**created)
+
+
+@app.get("/evictions/cases", response_model=EvictionCaseListResponse)
+def list_eviction_cases_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    status: str | None = None,
+    notice_type: str | None = None,
+):
+    """List eviction compliance cases with optional filters."""
+    rows = evictions.list_eviction_cases(
+        tenant_id=tenant_id, unit_id=unit_id, status=status, notice_type=notice_type
+    )
+    return EvictionCaseListResponse(cases=[EvictionCaseItem(**r) for r in rows], total=len(rows))
+
+
+@app.get("/evictions/cases/{case_id}", response_model=EvictionCaseItem)
+def get_eviction_case_route(case_id: str):
+    """Retrieve a single eviction compliance case."""
+    row = evictions.get_eviction_case(case_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**row)
+
+
+@app.patch("/evictions/cases/{case_id}", response_model=EvictionCaseItem)
+def update_eviction_case_route(case_id: str, request: EvictionCaseUpdateRequest):
+    """Update mutable metadata on an eviction compliance case."""
+    try:
+        updated = evictions.update_eviction_case(case_id, request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**updated)
+
+
+@app.post("/evictions/cases/{case_id}/file-court", response_model=EvictionCaseItem)
+def record_court_filing_route(case_id: str, request: CourtFilingRequest):
+    """Record court filing number, hearing date, and attorney details."""
+    try:
+        updated = evictions.record_court_filing(
+            case_id,
+            court_case_number=request.court_case_number,
+            court_name=request.court_name,
+            filing_date=request.filing_date,
+            hearing_date=request.hearing_date,
+            attorney_name=request.attorney_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**updated)
+
+
+@app.post("/evictions/cases/{case_id}/close", response_model=EvictionCaseItem)
+def close_eviction_case_route(case_id: str, request: EvictionCaseCloseRequest):
+    """Close an eviction compliance case as cured/dismissed or evicted/closed."""
+    try:
+        updated = evictions.close_eviction_case(
+            case_id, status=request.status, resolution_notes=request.resolution_notes
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Eviction case not found: {case_id}")
+    return EvictionCaseItem(**updated)
+
+
+@app.post("/evictions/payment-plans", response_model=PaymentPlanItem, status_code=201)
+def create_payment_plan_route(request: PaymentPlanCreateRequest):
+    """Create a structured resident repayment plan workout."""
+    try:
+        created = evictions.create_payment_plan(
+            tenant_id=request.tenant_id,
+            unit_id=request.unit_id,
+            total_arrears=request.total_arrears,
+            installment_count=request.installment_count,
+            next_due_date=request.next_due_date,
+            case_id=request.case_id,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return PaymentPlanItem(**created)
+
+
+@app.get("/evictions/payment-plans", response_model=PaymentPlanListResponse)
+def list_payment_plans_route(
+    tenant_id: str | None = None,
+    unit_id: str | None = None,
+    case_id: str | None = None,
+    status: str | None = None,
+):
+    """List resident payment plan workouts with optional filters."""
+    rows = evictions.list_payment_plans(
+        tenant_id=tenant_id, unit_id=unit_id, case_id=case_id, status=status
+    )
+    return PaymentPlanListResponse(
+        payment_plans=[PaymentPlanItem(**r) for r in rows], total=len(rows)
+    )
+
+
+@app.post(
+    "/evictions/payment-plans/{plan_id}/installment",
+    response_model=PaymentPlanItem,
+)
+def record_payment_plan_installment_route(
+    plan_id: str, request: PaymentPlanInstallmentRequest
+):
+    """Record a payment plan installment (auto-cures linked case when paid in full)."""
+    try:
+        updated = evictions.record_plan_installment(
+            plan_id,
+            amount=request.amount,
+            next_due_date=request.next_due_date,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Payment plan not found: {plan_id}")
+    return PaymentPlanItem(**updated)
+
+
+@app.post(
+    "/evictions/payment-plans/{plan_id}/default",
+    response_model=PaymentPlanItem,
+)
+def default_payment_plan_route(plan_id: str, request: PaymentPlanDefaultRequest):
+    """Mark an active payment plan defaulted and reopen cure window on linked case."""
+    updated = evictions.default_payment_plan(plan_id, notes=request.notes)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Payment plan not found: {plan_id}")
+    return PaymentPlanItem(**updated)
+
+
+@app.get("/tenants/{tenant_id}/evictions/summary", response_model=EvictionEntitySummaryResponse)
+def get_tenant_eviction_summary_route(tenant_id: str):
+    """Retrieve eviction cases and payment plan workout summary for a resident."""
+    return EvictionEntitySummaryResponse(**evictions.get_tenant_eviction_summary(tenant_id))
+
+
+@app.get("/units/{unit_id}/evictions/summary", response_model=EvictionEntitySummaryResponse)
+def get_unit_eviction_summary_route(unit_id: str):
+    """Retrieve eviction cases and payment plan workout summary for a unit."""
+    return EvictionEntitySummaryResponse(**evictions.get_unit_eviction_summary(unit_id))
+
+
+@app.post(
+    "/sessions/{session_id}/evictions/serve-notice",
+    response_model=EvictionCaseItem,
+    status_code=201,
+)
+def session_serve_notice_route(session_id: str, request: SessionServeNoticeRequest):
+    """1-click statutory notice issuance directly from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant") or not context["tenant"].get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to a resident with an assigned unit.",
+        )
+    tenant = context["tenant"]
+    try:
+        created = evictions.create_eviction_case(
+            unit_id=str(tenant["unit_id"]),
+            tenant_id=str(tenant["id"]),
+            reason=request.reason,
+            notice_type=request.notice_type,
+            delivery_method=request.delivery_method,
+            arrears_amount=request.arrears_amount,
+            cure_days=request.cure_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EvictionCaseItem(**created)
+
+
+@app.post(
+    "/sessions/{session_id}/evictions/create-payment-plan",
+    response_model=PaymentPlanItem,
+    status_code=201,
+)
+def session_create_payment_plan_route(
+    session_id: str, request: SessionCreatePaymentPlanRequest
+):
+    """1-click resident payment plan workout creation from an active support session."""
+    context = db_utils.get_session_tenant_context(session_id)
+    if not context or not context.get("tenant") or not context["tenant"].get("unit_id"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session '{session_id}' is not linked to a resident with an assigned unit.",
+        )
+    tenant = context["tenant"]
+    try:
+        created = evictions.create_payment_plan(
+            tenant_id=str(tenant["id"]),
+            unit_id=str(tenant["unit_id"]),
+            total_arrears=request.total_arrears,
+            installment_count=request.installment_count,
+            next_due_date=request.next_due_date,
+            case_id=request.case_id,
+            notes=request.notes,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return PaymentPlanItem(**created)

@@ -48,6 +48,7 @@ from api.pydantic_models import (
     ConciergeRequestItem,
     ConciergeRequestResponse,
     ConciergeRequestUpdateRequest,
+    CourtFilingRequest,
     CSATFeedbackSubmitRequest,
     CSATSummaryResponse,
     DepositDeductionCreateRequest,
@@ -59,6 +60,10 @@ from api.pydantic_models import (
     DepositStatementRequest,
     DocumentDetailResponse,
     DocumentRechunkItem,
+    EvictionCaseCloseRequest,
+    EvictionCaseCreateRequest,
+    EvictionEntitySummaryResponse,
+    EvictionMetricsResponse,
     FeedbackReviewItemResponse,
     FeedbackReviewQueueResponse,
     FeedbackReviewUpdateRequest,
@@ -176,6 +181,8 @@ from api.pydantic_models import (
     ParkingViolationListResponse,
     ParkingViolationResponse,
     ParkingViolationUpdateRequest,
+    PaymentPlanCreateRequest,
+    PaymentPlanInstallmentRequest,
     PetCreateRequest,
     PetIncidentCreateRequest,
     PetIncidentItem,
@@ -220,6 +227,7 @@ from api.pydantic_models import (
     SessionAssignmentRecord,
     SessionAssignmentRequest,
     SessionCreateConciergeRequest,
+    SessionCreatePaymentPlanRequest,
     SessionDraftArticleRequest,
     SessionFileInsuranceClaimRequest,
     SessionGenerateGuestPassRequest,
@@ -240,6 +248,7 @@ from api.pydantic_models import (
     SessionSchedulePMTaskRequest,
     SessionScheduleTourRequest,
     SessionSendPMEntryNoticeRequest,
+    SessionServeNoticeRequest,
     SessionSLAStatusResponse,
     SessionSubmitApplicationRequest,
     SessionSubmitInsuranceRequest,
@@ -3862,3 +3871,51 @@ def test_owner_portal_models():
         owner_id="own_1", title="Boiler Repair", estimated_cost=expected_cost
     )
     assert sess_req.owner_id == "own_1"
+
+
+def test_eviction_compliance_models():
+    """Verify eviction compliance and payment plan Pydantic models validation."""
+    expected_arrears = 1800.0
+    expected_installment = 600.0
+    expected_cure_rate = 95.0
+
+    c_req = EvictionCaseCreateRequest(
+        unit_id="unit_101",
+        tenant_id="tenant_1",
+        reason="Past-due rent",
+        arrears_amount=expected_arrears,
+    )
+    assert c_req.notice_type == "pay_or_quit"
+    assert c_req.arrears_amount == expected_arrears
+
+    f_req = CourtFilingRequest(court_case_number="CV-2099-01", court_name="District Court")
+    assert f_req.court_case_number == "CV-2099-01"
+
+    cl_req = EvictionCaseCloseRequest(status="cured_dismissed", resolution_notes="Paid in full")
+    assert cl_req.status == "cured_dismissed"
+
+    p_req = PaymentPlanCreateRequest(
+        tenant_id="tenant_1",
+        unit_id="unit_101",
+        total_arrears=expected_arrears,
+        installment_count=3,
+        next_due_date="2099-08-01",
+    )
+    assert p_req.total_arrears == expected_arrears
+
+    i_req = PaymentPlanInstallmentRequest(amount=expected_installment)
+    assert i_req.amount == expected_installment
+
+    summary = EvictionEntitySummaryResponse(tenant_id="tenant_1", active_cases_count=1)
+    assert summary.active_cases_count == 1
+
+    metrics = EvictionMetricsResponse(total_cases=2, cure_rate_pct=expected_cure_rate)
+    assert metrics.cure_rate_pct == expected_cure_rate
+
+    s_notice = SessionServeNoticeRequest(reason="Unpaid balance", arrears_amount=expected_arrears)
+    assert s_notice.arrears_amount == expected_arrears
+
+    s_plan = SessionCreatePaymentPlanRequest(
+        total_arrears=expected_arrears, next_due_date="2099-08-01"
+    )
+    assert s_plan.total_arrears == expected_arrears

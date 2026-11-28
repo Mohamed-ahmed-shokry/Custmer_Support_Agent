@@ -5767,3 +5767,78 @@ def test_session_owner_approval_widget_ui(monkeypatch):
     tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
     sidebar._render_session_owner_approval_widget("sess_own_ui", tenant)
     assert fake_st.errors == []
+
+
+def test_evictions_board_ui(monkeypatch):
+    """Verify rendering of Evictions & Payment Plans sidebar board."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "list_eviction_cases_api",
+        lambda **kw: [
+            {
+                "id": "evc_1",
+                "unit_id": "unit_101",
+                "status": "cure_window_active",
+                "notice_type": "pay_or_quit",
+                "arrears_amount": 1800.0,
+                "cure_deadline_date": "2099-06-15",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "list_payment_plans_api",
+        lambda **kw: [
+            {
+                "id": "ppl_1",
+                "tenant_id": "tenant_1",
+                "status": "active",
+                "amount_paid": 600.0,
+                "total_arrears": 1800.0,
+                "installment_amount": 600.0,
+                "installments_paid": 1,
+                "installment_count": 3,
+                "next_due_date": "2099-07-01",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sidebar,
+        "get_eviction_metrics_api",
+        lambda: {
+            "active_cases": 2,
+            "cure_rate_pct": 100.0,
+            "total_arrears_at_risk": 1800.0,
+            "total_recovered_via_plans": 600.0,
+            "court_filed_cases": 0,
+            "expired_cure_windows": 0,
+            "active_payment_plans": 1,
+        },
+    )
+
+    sidebar._render_evictions_board()
+    assert fake_st.errors == []
+
+
+def test_session_eviction_widget_ui(monkeypatch):
+    """Verify rendering of 1-click resident session delinquency/payment plan widget."""
+    fake_st = FakeStreamlit()
+    monkeypatch.setattr(sidebar, "st", fake_st)
+
+    monkeypatch.setattr(
+        sidebar,
+        "get_tenant_eviction_summary_api",
+        lambda tid: {
+            "tenant_id": tid,
+            "active_cases_count": 1,
+            "active_payment_plans_count": 1,
+            "total_active_arrears": 1800.0,
+        },
+    )
+
+    tenant = {"id": "tenant_1", "first_name": "Sarah", "unit_id": "unit_101"}
+    sidebar._render_session_eviction_widget("sess_evc_ui", tenant)
+    assert fake_st.errors == []

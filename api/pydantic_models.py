@@ -5352,3 +5352,154 @@ class SessionRequestOwnerApprovalRequest(BaseModel):
     category: str = Field(default="major_repair", max_length=40)
     description: str = Field(default="", max_length=2000)
     vendor_name: str = Field(default="", max_length=150)
+
+
+# --- Eviction Compliance, Legal Notices & Payment Plan Schemas (v0.57.0) ---
+
+
+class EvictionCaseCreateRequest(BaseModel):
+    unit_id: str = Field(..., min_length=1, max_length=80)
+    tenant_id: str = Field(..., min_length=1, max_length=80)
+    reason: str = Field(..., min_length=3, max_length=2000)
+    notice_type: str = Field(default="pay_or_quit", max_length=40)
+    delivery_method: str = Field(default="certified_mail", max_length=40)
+    arrears_amount: float = Field(default=0.0, ge=0.0)
+    notice_served_date: str | None = Field(default=None, max_length=30)
+    cure_deadline_date: str | None = Field(default=None, max_length=30)
+    cure_days: int = Field(default=5, ge=1, le=90)
+
+
+class EvictionCaseUpdateRequest(BaseModel):
+    arrears_amount: float | None = Field(default=None, ge=0.0)
+    cure_deadline_date: str | None = Field(default=None, max_length=30)
+    status: str | None = Field(default=None, max_length=40)
+    hearing_date: str | None = Field(default=None, max_length=30)
+    attorney_name: str | None = Field(default=None, max_length=150)
+    resolution_notes: str | None = Field(default=None, max_length=2000)
+
+
+class CourtFilingRequest(BaseModel):
+    court_case_number: str = Field(..., min_length=2, max_length=100)
+    court_name: str = Field(..., min_length=2, max_length=200)
+    filing_date: str | None = Field(default=None, max_length=30)
+    hearing_date: str | None = Field(default=None, max_length=30)
+    attorney_name: str = Field(default="", max_length=150)
+
+
+class EvictionCaseCloseRequest(BaseModel):
+    status: str = Field(default="cured_dismissed", max_length=40)
+    resolution_notes: str = Field(default="", max_length=2000)
+
+
+class PaymentPlanCreateRequest(BaseModel):
+    tenant_id: str = Field(..., min_length=1, max_length=80)
+    unit_id: str = Field(..., min_length=1, max_length=80)
+    total_arrears: float = Field(..., gt=0.0)
+    installment_count: int = Field(..., ge=1, le=36)
+    next_due_date: str = Field(..., min_length=4, max_length=30)
+    case_id: str | None = Field(default=None, max_length=80)
+    notes: str = Field(default="", max_length=2000)
+
+
+class PaymentPlanInstallmentRequest(BaseModel):
+    amount: float = Field(..., gt=0.0)
+    next_due_date: str | None = Field(default=None, max_length=30)
+    notes: str = Field(default="", max_length=2000)
+
+
+class PaymentPlanDefaultRequest(BaseModel):
+    notes: str = Field(default="Missed scheduled installment.", max_length=2000)
+
+
+class PaymentPlanItem(BaseModel):
+    id: str
+    case_id: str | None = None
+    tenant_id: str
+    unit_id: str
+    total_arrears: float
+    installment_amount: float
+    installment_count: int
+    installments_paid: int = 0
+    amount_paid: float = 0.0
+    remaining_balance: float = 0.0
+    next_due_date: str
+    status: str
+    notes: str = ""
+    created_at: str
+    updated_at: str
+
+
+class PaymentPlanListResponse(BaseModel):
+    payment_plans: list[PaymentPlanItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class EvictionCaseItem(BaseModel):
+    id: str
+    unit_id: str
+    tenant_id: str
+    notice_type: str
+    delivery_method: str
+    reason: str
+    arrears_amount: float = 0.0
+    notice_served_date: str
+    cure_deadline_date: str
+    is_cure_expired: bool = False
+    status: str
+    court_case_number: str = ""
+    court_name: str = ""
+    filing_date: str | None = None
+    hearing_date: str | None = None
+    attorney_name: str = ""
+    resolution_notes: str = ""
+    closed_at: str | None = None
+    payment_plans: list[PaymentPlanItem] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class EvictionCaseListResponse(BaseModel):
+    cases: list[EvictionCaseItem] = Field(default_factory=list)
+    total: int = 0
+
+
+class EvictionEntitySummaryResponse(BaseModel):
+    tenant_id: str | None = None
+    unit_id: str | None = None
+    total_cases: int = 0
+    active_cases_count: int = 0
+    active_payment_plans_count: int = 0
+    total_active_arrears: float = 0.0
+    primary_case: EvictionCaseItem | None = None
+    primary_payment_plan: PaymentPlanItem | None = None
+    cases: list[EvictionCaseItem] = Field(default_factory=list)
+    payment_plans: list[PaymentPlanItem] = Field(default_factory=list)
+
+
+class EvictionMetricsResponse(BaseModel):
+    total_cases: int = 0
+    active_cases: int = 0
+    court_filed_cases: int = 0
+    expired_cure_windows: int = 0
+    cured_cases: int = 0
+    active_payment_plans: int = 0
+    completed_payment_plans: int = 0
+    total_arrears_at_risk: float = 0.0
+    total_recovered_via_plans: float = 0.0
+    cure_rate_pct: float = 100.0
+
+
+class SessionServeNoticeRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=2000)
+    notice_type: str = Field(default="pay_or_quit", max_length=40)
+    delivery_method: str = Field(default="certified_mail", max_length=40)
+    arrears_amount: float = Field(default=0.0, ge=0.0)
+    cure_days: int = Field(default=5, ge=1, le=90)
+
+
+class SessionCreatePaymentPlanRequest(BaseModel):
+    total_arrears: float = Field(..., gt=0.0)
+    installment_count: int = Field(default=3, ge=1, le=36)
+    next_due_date: str = Field(..., min_length=4, max_length=30)
+    case_id: str | None = Field(default=None, max_length=80)
+    notes: str = Field(default="", max_length=2000)

@@ -12,6 +12,7 @@ from api import (
     amenities,
     announcements,
     db_utils,
+    evictions,
     incidents,
     insurance,
     leasing_crm,
@@ -1156,6 +1157,36 @@ def test_owner_portal_rag_context_and_macros():
         "Hi {customer_name}, CapEx status is {owner_capex_status} with "
         "{owner_pending_approvals_count} pending request(s): {owner_latest_approval_title} "
         "({owner_latest_approval_status}, {owner_latest_approval_cost})."
+    )
+    rendered, unresolved = render_template(template, session_id=sid)
+    assert unresolved == []
+    assert "Sarah Connor" in rendered
+
+
+def test_evictions_rag_context_and_macros():
+    """Verify eviction compliance and payment plan RAG context and macro resolution."""
+    sid = "sess-eviction-context"
+    db_utils.insert_application_logs(
+        sid, "Payment plan", "Checking my payment plan due date", "gpt-4o"
+    )
+    db_utils.link_session_tenant(sid, tenant_id="tenant_1")
+    evictions.init_evictions_db()
+
+    context = build_tenant_rag_context(session_id=sid)
+    assert "[EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]" in context
+    assert "Active Legal Cases:" in context
+
+    variables = extract_tenant_macro_variables(session_id=sid)
+    assert "eviction_case_status" in variables
+    assert "eviction_cure_deadline" in variables
+    assert "eviction_arrears_amount" in variables
+    assert "payment_plan_status" in variables
+    assert "payment_plan_next_due" in variables
+
+    template = (
+        "Hi {customer_name}, case status is {eviction_case_status} (cure deadline "
+        "{eviction_cure_deadline}, arrears {eviction_arrears_amount}). Payment plan is "
+        "{payment_plan_status}, next due {payment_plan_next_due}."
     )
     rendered, unresolved = render_template(template, session_id=sid)
     assert unresolved == []

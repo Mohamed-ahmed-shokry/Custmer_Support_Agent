@@ -1558,3 +1558,39 @@ The Resident Renters Insurance Compliance Engine automates proof-of-insurance re
   - `{owner_latest_approval_status}`: Status of the latest owner approval request (`pending`, `approved`, `rejected`, `more_info_requested`)
   - `{owner_latest_approval_cost}`: Formatted estimated cost of the latest request
   - `{owner_capex_status}`: Unit CapEx status (`awaiting_owner_approval`, `approved`, `rejected`, `none`)
+
+
+## Eviction Compliance, Legal Notices & Payment Plan Workouts (v0.57.0)
+
+### Legal Notices, Eviction Cases & Court Filings
+- `POST /evictions/cases`: Serve a statutory legal notice (`pay_or_quit`, `cure_or_quit`, `unconditional_quit`, `non_renewal`) with delivery method, arrears amount, and auto-computed cure deadline (`cure_days=5` default). Dispatches `eviction.notice_served` webhook.
+- `GET /evictions/cases` / `GET /evictions/cases/{id}` / `PATCH /evictions/cases/{id}`: List, inspect, or update eviction cases with cure-window expiry flags and linked payment plans.
+- `POST /evictions/cases/{id}/file-court`: Record formal court filing number, court name, filing date, hearing date, and attorney name. Dispatches `eviction.court_filed` webhook.
+- `POST /evictions/cases/{id}/close`: Close an eviction case as `cured_dismissed`, `evicted_closed`, or `judgment_granted`. Dispatches `eviction.case_closed` webhook.
+
+### Resident Payment Plan Workouts
+- `POST /evictions/payment-plans`: Create a structured repayment workout (`tenant_id`, `unit_id`, `total_arrears`, `installment_count`, `next_due_date`, optional `case_id`). Transitions linked eviction case to `payment_plan_active` and dispatches `eviction.payment_plan_created` webhook.
+- `GET /evictions/payment-plans`: List payment plans filtered by `tenant_id`, `unit_id`, `case_id`, and `status`.
+- `POST /evictions/payment-plans/{id}/installment`: Record an installment payment; automatically completes the plan and cures/dismisses the linked eviction case once paid in full. Dispatches `eviction.plan_installment_paid` webhook.
+- `POST /evictions/payment-plans/{id}/default`: Mark an active payment plan defaulted and reopen the cure window on any linked case. Dispatches `eviction.plan_defaulted` webhook.
+
+### Summaries, KPIs & 1-Click Session Actions
+- `GET /evictions/metrics`: Portfolio eviction compliance and workout recovery KPIs (`active_cases`, `court_filed_cases`, `expired_cure_windows`, `active_payment_plans`, `total_arrears_at_risk`, `total_recovered_via_plans`, `cure_rate_pct`).
+- `GET /tenants/{id}/evictions/summary` / `GET /units/{id}/evictions/summary`: Resident- and unit-level active cases, arrears, and payment plan summaries.
+- `POST /sessions/{id}/evictions/serve-notice`: 1-click statutory notice issuance from an active support session.
+- `POST /sessions/{id}/evictions/create-payment-plan`: 1-click payment plan workout creation from an active support session.
+
+### Conversational RAG Grounding & Macro Templates
+- **RAG Context Grounding**:
+  ```text
+  [EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]
+  Active Legal Cases: 1 | Active Payment Plans: 1 | Total Active Arrears: $1,800.00
+  Primary Case (evc_seed_01): pay_or_quit | Status: PAYMENT_PLAN_ACTIVE | Cure Deadline: 2026-12-02
+  [END EVICTION COMPLIANCE, LEGAL NOTICES & PAYMENT PLANS]
+  ```
+- **Macro Template Variables**:
+  - `{eviction_case_status}`: Primary eviction case status
+  - `{eviction_cure_deadline}`: Statutory cure deadline date
+  - `{eviction_arrears_amount}`: Total active arrears across open cases
+  - `{payment_plan_status}`: Primary payment plan status (`active`, `completed`, `defaulted`, `none`)
+  - `{payment_plan_next_due}`: Next scheduled payment plan installment due date
